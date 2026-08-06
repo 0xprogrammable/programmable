@@ -1,0 +1,66 @@
+{
+  "id": "ladder",
+  "schemaVersion": 1,
+  "status": "design",
+  "compiler": {
+    "version": "0.8.26",
+    "evmVersion": "cancun",
+    "optimizer": true,
+    "runs": 1000,
+    "viaIR": false,
+    "bytecodeHash": "none",
+    "cborMetadata": false
+  },
+  "poolShape": {
+    "currency0": "native",
+    "tickSpacing": 200,
+    "lpFeePips": 0,
+    "transferTaxBps": 0
+  },
+  "fees": {
+    "denomination": "native",
+    "minTotalSwapFeeBps": 100,
+    "maxTotalSwapFeeBps": 1000,
+    "totalSwapFeeStepBps": 100,
+    "launcherFeeBps": 10,
+    "builderFeeBps": 10,
+    "carvedFromTotal": true
+  },
+  "ladder": {
+    "minTranches": 1,
+    "maxTranches": 5,
+    "minTrancheSharesBps": 500,
+    "totalSharesBps": 10000,
+    "minDwellBlocks": 7200,
+    "maxDwellBlocks": 216000,
+    "minUnlockTick": -887200,
+    "maxUnlockTick": 887200,
+    "ticksMustDescend": true,
+    "ticksAlignedToSpacing": true,
+    "minExpiryDays": 30,
+    "maxExpiryDays": 3650,
+    "expiryDisabledValue": 0,
+    "forfeitRecipient": "0x000000000000000000000000000000000000dEaD"
+  },
+  "hookPermissions": [
+    "beforeInitialize",
+    "beforeSwap",
+    "afterSwap",
+    "beforeSwapReturnDelta",
+    "afterSwapReturnDelta"
+  ],
+  "dependencies": {
+    "note": "Revisions are those installed by scripts/bootstrap-deps.sh and must be pinned before release.",
+    "v4-core": null,
+    "v4-periphery": null,
+    "openzeppelin-contracts": null,
+    "openzeppelin-uniswap-hooks": null,
+    "forge-std": null,
+    "solmate": null
+  },
+  "builder": {
+    "githubIdentity": null,
+    "beneficiaryAddress": null
+  },
+  "contracts": []
+}

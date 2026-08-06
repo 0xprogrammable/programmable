@@ -1,0 +1,54 @@
+{
+  "$schema": "../schema/model.schema.json",
+  "schemaVersion": 1,
+  "id": "ladder",
+  "name": "Ladder",
+  "status": "design",
+  "summary": "Releases the creator's initial buy in tranches when the pool holds a declared price level for a required number of blocks",
+  "documentation": "models/ladder/README.md",
+  "currentRelease": null,
+  "releaseManifest": null,
+  "specification": null,
+  "deployment": null,
+  "security": "models/ladder/SECURITY.md",
+  "network": {
+    "name": "Ethereum",
+    "chainId": 1
+  },
+  "contracts": [
+    {
+      "name": "EthLadderFeeHookV1",
+      "path": "src/EthLadderFeeHookV1.sol",
+      "role": "Applies the immutable buy and sell fee settings and records the pool's tranche breach history.",
+      "address": null
+    },
+    {
+      "name": "EthLadderFeeHookFactoryV1",
+      "path": "src/EthLadderFeeHookFactoryV1.sol",
+      "role": "Deterministically deploys the hook at a valid v4 hook address via CREATE2, mirroring Classic's factory shape.",
+      "address": null
+    },
+    {
+      "name": "ClassicPerformanceUnlockWalletV1",
+      "path": "src/ClassicPerformanceUnlockWalletV1.sol",
+      "role": "Holds one launch's Initial Buy and releases tranches the pool has earned.",
+      "address": null
+    },
+    {
+      "name": "LadderScheduleV1",
+      "path": "src/libraries/LadderScheduleV1.sol",
+      "role": "Pure unlock rule and release arithmetic.",
+      "address": null
+    }
+  ],
+  "review": {
+    "independentAudit": false,
+    "publicContest": false
+  },
+  "releaseGates": [
+    "Complete the mainnet-fork lifecycle covering registration, observation, release and forfeiture.",
+    "Publish fixed compiler and dependency revisions in spec/ladder.json.",
+    "Complete the Ethereum deployment, runtime hash and source verification record.",
+    "Record an acceptance record identifying the model version, commit and builder beneficiary."
+  ]
+}

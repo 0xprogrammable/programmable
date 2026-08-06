@@ -32,6 +32,14 @@
       "summary": "A proposed launch model that directs the creator fee share into add-only locked liquidity until an immutable target is reached.",
       "manifest": "models/deep/model.json",
       "documentation": "models/deep/README.md"
+    },
+    {
+      "id": "ladder",
+      "name": "Ladder",
+      "status": "design",
+      "summary": "Releases the creator's initial buy in tranches when the pool holds a declared price level for a required number of blocks",
+      "manifest": "models/ladder/model.json",
+      "documentation": "models/ladder/README.md"
     }
   ]
 }
