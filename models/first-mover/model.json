@@ -1,0 +1,36 @@
+{
+  "$schema": "../schema/model.schema.json",
+  "schemaVersion": 1,
+  "id": "first-mover",
+  "name": "First Mover",
+  "status": "design",
+  "summary": "Settles which pool owns a token symbol by trading volume rather than registration order",
+  "documentation": "models/first-mover/README.md",
+  "currentRelease": null,
+  "releaseManifest": null,
+  "specification": null,
+  "deployment": null,
+  "security": "models/first-mover/SECURITY.md",
+  "network": { "name": "Ethereum", "chainId": 1 },
+  "contracts": [
+    {
+      "name": "EthFirstMoverFeeHookV1",
+      "path": "src/EthFirstMoverFeeHookV1.sol",
+      "role": "Applies the immutable buy and sell fee settings, owns the ticker registry and routes tribute.",
+      "address": null
+    },
+    {
+      "name": "TickerClaimV1",
+      "path": "src/libraries/TickerClaimV1.sol",
+      "role": "Pure symbol normalization, claim lifecycle and tribute arithmetic.",
+      "address": null
+    }
+  ],
+  "review": { "independentAudit": false, "publicContest": false },
+  "releaseGates": [
+    "Complete the mainnet-fork lifecycle covering claiming, confirmation, lapse and tribute.",
+    "Publish fixed compiler and dependency revisions.",
+    "Complete the Ethereum deployment, runtime hash and source verification record.",
+    "Record an acceptance record identifying the model version, commit and builder beneficiary."
+  ]
+}

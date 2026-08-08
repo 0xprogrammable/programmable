@@ -1,7 +1,7 @@
 {
   "$schema": "./schema/registry.schema.json",
   "schemaVersion": 1,
-  "updatedAt": "2026-07-30",
+  "updatedAt": "2026-07-31",
   "statuses": [
     "design",
     "candidate",
@@ -32,6 +32,14 @@
       "summary": "A proposed launch model that directs the creator fee share into add-only locked liquidity until an immutable target is reached.",
       "manifest": "models/deep/model.json",
       "documentation": "models/deep/README.md"
+    },
+    {
+      "id": "first-mover",
+      "name": "First Mover",
+      "status": "design",
+      "summary": "Settles which pool owns a token symbol by trading volume rather than registration order",
+      "manifest": "models/first-mover/model.json",
+      "documentation": "models/first-mover/README.md"
     }
   ]
 }
