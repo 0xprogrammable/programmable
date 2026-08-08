@@ -11,8 +11,21 @@ describe("public shell polish", () => {
 
     expect(source).toContain("This page isn’t available.");
     expect(source).not.toContain("404 · Page not found");
-    expect(source).toContain("Explore tokens");
+    expect(source).toContain("Explore projects");
     expect(source).toContain("Open docs");
+    expect(source).toContain(
+      "/brand/loop/programmable-loop-mark-header-warm-ivory-v1-1536.png",
+    );
+  });
+
+  it("uses the branded shell for recoverable runtime errors", () => {
+    const source = read("app/error.tsx");
+
+    expect(source).toContain('"use client"');
+    expect(source).toContain("Something went wrong.");
+    expect(source).toContain("Check your wallet before repeating");
+    expect(source).toContain("onClick={reset}");
+    expect(source).toContain("Explore projects");
   });
 
   it("uses one aligned footer link set without duplicate social icons", () => {

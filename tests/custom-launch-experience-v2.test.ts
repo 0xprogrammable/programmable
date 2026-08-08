@@ -15,8 +15,10 @@ import {
   buildCustomLaunchSelection,
   configurationControlForKind,
   customApplicationDisplayState,
+  customApplicationDisplayStateV2,
   customApplicationOpensLaunchExperience,
   customApplicationOpensLaunchExperienceV2,
+  customApplicationSummaryCounts,
   customLaunchFeeReviewV1,
   defaultLaunchRoute,
   assertLaunchPermitFreshnessV2,
@@ -140,7 +142,7 @@ function application(): PrincipalCustomLaunchApplicationSummaryV2 {
     pullRequestNumber: 7,
     commitOid: "a".repeat(40),
     treeOid: "b".repeat(40),
-    state: "approved",
+    state: "ready_for_registration",
     reasonCodes: [],
     actionCodes: [],
     correctionCount: 0,
@@ -747,6 +749,12 @@ describe("custom launch browser authority", () => {
       presentation: presentationResponse(),
     })).toThrow("binding mismatch");
     expect(() => assertLaunchSetupBindings({
+      application: { ...application(), state: "approved" },
+      eligibility,
+      descriptor: descriptor(),
+      presentation: presentationResponse(),
+    })).toThrow("binding mismatch");
+    expect(() => assertLaunchSetupBindings({
       application: { ...application(), receiptDigest: null },
       eligibility,
       descriptor: descriptor(),
@@ -1214,6 +1222,37 @@ describe("custom launch browser authority", () => {
     expect(configurationControlForKind("image-url")).toBe("url");
   });
 
+  it("accepts approved launch plans without a universal ticker field", () => {
+    const current = descriptor();
+    const noConfiguration: LaunchDescriptorV2 = {
+      ...current,
+      configurationSchema: {
+        ...current.configurationSchema,
+        fields: [],
+      },
+    };
+    const gameConfiguration: LaunchDescriptorV2 = {
+      ...current,
+      configurationSchema: {
+        ...current.configurationSchema,
+        fields: [{
+          fieldId: "gameMode",
+          label: "Game mode",
+          kind: "text",
+          required: true,
+          maxLength: 64,
+        }],
+      },
+    };
+    expect(validateLaunchConfigurationV2(noConfiguration, {})).toBe("");
+    expect(validateLaunchConfigurationV2(gameConfiguration, { gameMode: "Arena" })).toBe("");
+    expect(buildCustomLaunchSelection({
+      descriptor: noConfiguration,
+      wallet: `0x${"1".repeat(40)}`,
+      configuration: {},
+    })).not.toHaveProperty("launchConfiguration");
+  });
+
   it("has a truthful action for every backend application state", () => {
     const states = [
       "received",
@@ -1233,8 +1272,8 @@ describe("custom launch browser authority", () => {
 
     expect(states.map((state) => customApplicationDisplayState(state))).toHaveLength(13);
     expect(customApplicationDisplayState("approved")).toMatchObject({
-      title: "Ready to launch",
-      tone: "ready",
+      title: "Approval recorded",
+      tone: "pending",
     });
     expect(customApplicationDisplayState("changes_required")).toMatchObject({
       title: "Changes needed",
@@ -1262,13 +1301,12 @@ describe("custom launch browser authority", () => {
       tone: "warning",
     });
     expect(customApplicationDisplayState("ready_for_registration")).toEqual({
-      title: "Ready for final verification",
-      action: "Finish verification",
-      tone: "pending",
+      title: "Ready to launch",
+      action: "Set up launch",
+      tone: "ready",
     });
     expect(states.filter(customApplicationOpensLaunchExperience)).toEqual([
       "ready_for_registration",
-      "approved",
       "launching",
       "launched",
     ]);
@@ -1280,6 +1318,57 @@ describe("custom launch browser authority", () => {
       controlRepositoryOwnerId: "309941960",
       grandfatheredAtReleaseBindingDigest: null,
     })).toBe(false);
+    expect(customApplicationOpensLaunchExperienceV2({
+      ...application(),
+      receiptDigest: null,
+      launchEntitlementBindingHash: null,
+    })).toBe(false);
+    expect(customApplicationDisplayStateV2({
+      ...application(),
+      receiptDigest: null,
+      launchEntitlementBindingHash: null,
+    })).toEqual({
+      title: "Launch authority pending",
+      action: "View on GitHub",
+      tone: "pending",
+    });
+  });
+
+  it("summarizes exact-revision states without treating pending as unsafe", () => {
+    const applications = [
+      { ...application(), state: "ready_for_registration" as const },
+      {
+        ...application(),
+        applicationId: "application-1b",
+        applicationHandle: `github-${"b".repeat(64)}` as const,
+        revisionId: "revision-1b",
+        state: "ready_for_registration" as const,
+      },
+      { ...application(), applicationId: "application-2", state: "changes_required" as const },
+      { ...application(), applicationId: "application-3", state: "in_review" as const },
+      { ...application(), applicationId: "application-4", state: "approved" as const, receiptDigest: null, launchEntitlementBindingHash: null },
+      { ...application(), applicationId: "application-5", state: "stale" as const },
+      { ...application(), applicationId: "application-6", state: "launching" as const },
+      { ...application(), applicationId: "application-7", state: "launched" as const },
+      { ...application(), applicationId: "application-8", state: "revoked" as const },
+      {
+        ...application(),
+        applicationId: "application-9",
+        state: "ready_for_registration" as const,
+        receiptDigest: null,
+        launchEntitlementBindingHash: null,
+      },
+    ];
+
+    expect(customApplicationSummaryCounts(applications)).toEqual({
+      readyToLaunch: 2,
+      changesRequested: 1,
+      analysisPending: 3,
+      changedSinceReview: 1,
+      launchPending: 1,
+      alreadyLaunched: 1,
+      unavailable: 1,
+    });
   });
 
   it("renders route-specific standard, AEON, and no-market fee summaries", () => {

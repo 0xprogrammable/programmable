@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, generateKeyPairSync } from "node:crypto";
 
 import { describe, expect, it, vi } from "vitest";
 
@@ -7,6 +7,11 @@ vi.mock("server-only", () => ({}));
 import {
   createCustomLaunchDeploymentReadinessHandlerV1,
 } from "../lib/server/custom-launch/deployment-readiness";
+import {
+  attestGitHubSessionAuthorityConfigurationV1,
+} from "../lib/server/custom-launch/github-session-authority-v1";
+// @ts-expect-error JavaScript release helper has no declaration file.
+import { computeSessionAuthorityRuntimeConfigurationHash } from "../scripts/verify-custom-launch-release-record.mjs";
 
 const NOW = new Date("2026-08-05T12:00:00.000Z");
 const PACKAGE_ARTIFACT_HASH = `sha256:${"9".repeat(64)}`;
@@ -21,6 +26,32 @@ const permitSigner = {
     rawPermitPublicKey,
   ])).digest("hex")}`,
 };
+const sessionAuthorityKey = generateKeyPairSync("ed25519");
+const sessionAuthorityWorkloadKey = generateKeyPairSync("ed25519");
+const sessionAuthorityConfiguration = {
+  PROGRAMMABLE_GITHUB_SESSION_AUTHORITY_AUDIENCE:
+    "programmable.github-session-authority.v1",
+  PROGRAMMABLE_GITHUB_SESSION_AUTHORITY_KEY_ID: "github-session-v1",
+  PROGRAMMABLE_GITHUB_SESSION_AUTHORITY_KEY_EPOCH: "1",
+  PROGRAMMABLE_GITHUB_SESSION_AUTHORITY_PRIVATE_KEY_PEM:
+    sessionAuthorityKey.privateKey.export({ format: "pem", type: "pkcs8" }).toString(),
+  PROGRAMMABLE_GITHUB_SESSION_AUTHORITY_PUBLIC_KEY_SPKI_SHA256:
+    `sha256:${createHash("sha256").update(sessionAuthorityKey.publicKey.export({
+      format: "der",
+      type: "spki",
+    })).digest("hex")}`,
+  PROGRAMMABLE_GITHUB_SESSION_AUTHORITY_WORKLOAD_ISSUER:
+    "programmable-authority-token-broker-v1",
+  PROGRAMMABLE_GITHUB_SESSION_AUTHORITY_WORKLOAD_SUBJECT: "approval-runtime-v1",
+  PROGRAMMABLE_GITHUB_SESSION_AUTHORITY_WORKLOAD_KEY_ID: "workload-access-v1",
+  PROGRAMMABLE_GITHUB_SESSION_AUTHORITY_WORKLOAD_PUBLIC_KEY_PEM:
+    sessionAuthorityWorkloadKey.publicKey.export({ format: "pem", type: "spki" }).toString(),
+  PROGRAMMABLE_GITHUB_SESSION_AUTHORITY_WORKLOAD_PUBLIC_KEY_SPKI_SHA256:
+    `sha256:${createHash("sha256").update(sessionAuthorityWorkloadKey.publicKey.export({
+      format: "der",
+      type: "spki",
+    })).digest("hex")}`,
+};
 const configured = {
   PROGRAMMABLE_CUSTOM_LAUNCH_PUBLIC_ENABLED: "true",
   PROGRAMMABLE_APPROVAL_SERVICE_V2_ORIGIN: "https://approval.programmable.example",
@@ -29,9 +60,12 @@ const configured = {
   NEXT_PUBLIC_PRIVY_APP_ID: "privy-app",
   PRIVY_APP_SECRET: "privy-secret",
   PROGRAMMABLE_LAUNCH_PERMIT_SIGNERS_V2_JSON: JSON.stringify([permitSigner]),
+  ...sessionAuthorityConfiguration,
   PROGRAMMABLE_RELEASE_COMMIT_SHA: "1".repeat(40),
   VERCEL_URL: "programmable-immutable-abc.vercel.app",
 };
+const sessionAuthorityAttestation =
+  attestGitHubSessionAuthorityConfigurationV1(configured);
 
 function request(extra: RequestInit = {}): Request {
   return new Request("https://programmable.example/api/custom-launch/readiness", {
@@ -56,6 +90,31 @@ function readyServiceResponse(body: unknown = {
 }
 
 describe("Custom launch deployment readiness", () => {
+  it("matches the release record's cross-language runtime configuration hash", () => {
+    expect(computeSessionAuthorityRuntimeConfigurationHash({
+      identity: {
+        privyApplicationId: configured.NEXT_PUBLIC_PRIVY_APP_ID,
+      },
+      sessionAuthority: {
+        audience:
+          configured.PROGRAMMABLE_GITHUB_SESSION_AUTHORITY_AUDIENCE,
+        keyId: configured.PROGRAMMABLE_GITHUB_SESSION_AUTHORITY_KEY_ID,
+        keyEpoch:
+          configured.PROGRAMMABLE_GITHUB_SESSION_AUTHORITY_KEY_EPOCH,
+        authorityPublicKeySpkiSha256:
+          configured.PROGRAMMABLE_GITHUB_SESSION_AUTHORITY_PUBLIC_KEY_SPKI_SHA256,
+        workloadIssuer:
+          configured.PROGRAMMABLE_GITHUB_SESSION_AUTHORITY_WORKLOAD_ISSUER,
+        workloadSubject:
+          configured.PROGRAMMABLE_GITHUB_SESSION_AUTHORITY_WORKLOAD_SUBJECT,
+        workloadKeyId:
+          configured.PROGRAMMABLE_GITHUB_SESSION_AUTHORITY_WORKLOAD_KEY_ID,
+        workloadPublicKeySpkiSha256:
+          configured.PROGRAMMABLE_GITHUB_SESSION_AUTHORITY_WORKLOAD_PUBLIC_KEY_SPKI_SHA256,
+      },
+    })).toBe(sessionAuthorityAttestation.configurationHash);
+  });
+
   it("reports disabled only after the complete dark deployment is ready", async () => {
     const serviceFetch = vi.fn<typeof fetch>().mockResolvedValue(readyServiceResponse());
     const database = vi.fn<() => Promise<void>>().mockResolvedValue();
@@ -73,6 +132,7 @@ describe("Custom launch deployment readiness", () => {
       chainId: "1",
       components: {
         approvalService: "ready",
+        githubSessionAuthority: "ready",
         permitSignerKeyring: "ready",
         publicConfiguration: "ready",
         websiteProjectionDatabase: "ready",
@@ -81,6 +141,7 @@ describe("Custom launch deployment readiness", () => {
         packageArtifactHash: PACKAGE_ARTIFACT_HASH,
         reviewAuthorityMode: "manual_review",
       },
+      sessionAuthority: sessionAuthorityAttestation,
       release: {
         commitSha: "1".repeat(40),
         deploymentHost: "programmable-immutable-abc.vercel.app",
@@ -125,6 +186,7 @@ describe("Custom launch deployment readiness", () => {
       chainId: "1",
       components: {
         approvalService: "ready",
+        githubSessionAuthority: "ready",
         permitSignerKeyring: "ready",
         publicConfiguration: "ready",
         websiteProjectionDatabase: "ready",
@@ -133,6 +195,7 @@ describe("Custom launch deployment readiness", () => {
         packageArtifactHash: PACKAGE_ARTIFACT_HASH,
         reviewAuthorityMode: "manual_review",
       },
+      sessionAuthority: sessionAuthorityAttestation,
       release: {
         commitSha: "1".repeat(40),
         deploymentHost: "programmable-immutable-abc.vercel.app",
@@ -168,6 +231,33 @@ describe("Custom launch deployment readiness", () => {
       code: "custom_launch_not_ready",
       chainId: "1",
     });
+  });
+
+  it("fails closed when the GitHub session authority is missing or key-substituted", async () => {
+    for (const environment of [
+      {
+        ...configured,
+        PROGRAMMABLE_GITHUB_SESSION_AUTHORITY_AUDIENCE: undefined,
+      },
+      {
+        ...configured,
+        PROGRAMMABLE_GITHUB_SESSION_AUTHORITY_PUBLIC_KEY_SPKI_SHA256:
+          `sha256:${"f".repeat(64)}`,
+      },
+      {
+        ...configured,
+        PROGRAMMABLE_GITHUB_SESSION_AUTHORITY_WORKLOAD_PUBLIC_KEY_SPKI_SHA256:
+          `sha256:${"e".repeat(64)}`,
+      },
+    ]) {
+      const handler = createCustomLaunchDeploymentReadinessHandlerV1({
+        environment,
+        serviceFetch: vi.fn<typeof fetch>(),
+        assertWebsiteProjectionDatabaseReadiness: vi.fn<() => Promise<void>>(),
+        now: () => NOW,
+      });
+      expect((await handler(request())).status).toBe(503);
+    }
   });
 
   it("does not mistake an absent or misspelled switch for an intentional disable", async () => {

@@ -21,6 +21,7 @@
     "verify:service-launch-permit-v2-golden:cross-stack": "node scripts/verify-service-launch-permit-v2-golden.mjs --require-canonical",
     "verify:uniswap-launcher-sdk": "node scripts/verify-uniswap-liquidity-launcher-sdk.mjs",
     "brand:favicons": "node scripts/generate-programmable-favicons.mjs",
+    "brand:social-preview": "node scripts/generate-programmable-social-preview.mjs",
     "audit:prod": "npm audit --omit=dev --audit-level=moderate",
     "release:custom-launch:record:verify": "node scripts/verify-custom-launch-release-record.mjs",
     "release:custom-launch:record:test": "node --test scripts/test/custom-launch-cross-repository-attestation.test.mjs scripts/test/custom-launch-release-record.test.mjs scripts/test/custom-launch-release-workflow-contract.test.mjs",

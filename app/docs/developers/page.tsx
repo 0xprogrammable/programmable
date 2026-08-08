@@ -57,11 +57,11 @@ export const metadata: Metadata = {
     url: "/docs/developers",
     images: [
       {
-        url: "/og/programmable-night-garden-og-1200x630.png",
+        url: "/og/programmable-night-garden-loop-og-v2-1200x630.png",
         width: 1200,
         height: 630,
         type: "image/png",
-        alt: "A starry night garden with pink wildflowers and a violet glow",
+        alt: "The Warm Ivory Programmable loop mark in a starry night garden",
       },
     ],
   },

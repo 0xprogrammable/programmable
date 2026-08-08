@@ -144,13 +144,15 @@
   opacity: 0.62;
 }
 
-.walletGate {
+.walletGate,
+.githubGate {
   display: grid;
   gap: 12px;
   margin-top: auto;
 }
 
-.walletGate > div {
+.walletGate > div,
+.githubGate > div {
   align-items: center;
   background: var(--liquid-glass-control-background);
   border: 1px solid var(--control-border);
@@ -162,13 +164,15 @@
   padding: 9px 12px;
 }
 
-.walletGate span {
+.walletGate span,
+.githubGate span {
   color: var(--muted);
   font-size: 10px;
   font-weight: 650;
 }
 
-.walletGate code {
+.walletGate code,
+.githubGate code {
   color: var(--text);
   font-family: var(--font-plex-mono), monospace;
   font-size: 12px;
@@ -187,6 +191,14 @@
 }
 
 .walletGate .githubButton {
+  margin-top: 0;
+}
+
+.githubGate > div {
+  grid-template-columns: 1fr;
+}
+
+.githubGate .githubButton {
   margin-top: 0;
 }
 
@@ -228,6 +240,46 @@
   gap: 10px;
   margin: 0 auto;
   max-width: 1000px;
+}
+
+.applicationSummary {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  margin: 0 auto 14px;
+  max-width: 1000px;
+}
+
+.applicationSummary > div {
+  background: var(--liquid-glass-control-background);
+  border: 1px solid var(--control-border);
+  border-radius: 14px;
+  display: grid;
+  gap: 3px;
+  min-height: 78px;
+  padding: 12px;
+}
+
+.applicationSummary dd {
+  font-family: var(--font-plex-mono), monospace;
+  font-size: 20px;
+  font-weight: 650;
+  margin: 0;
+}
+
+.applicationSummary dt {
+  color: var(--text-soft);
+  font-size: 10.5px;
+  line-height: 1.25;
+}
+
+.applicationSummary > div[data-tone="ready"] dd,
+.applicationSummary > div[data-tone="complete"] dd {
+  color: var(--success, #3e8b67);
+}
+
+.applicationSummary > div[data-tone="warning"] dd {
+  color: var(--error, #b24c55);
 }
 
 .applicationRow {
@@ -301,9 +353,56 @@
 .rowAction {
   border-radius: 12px;
   gap: 7px;
+  grid-column: 3;
+  grid-row: 1 / span 2;
   min-height: 44px;
   padding: 0 14px;
   white-space: nowrap;
+}
+
+.revisionDetails {
+  border-top: 1px solid var(--panel-border-soft);
+  grid-column: 1 / -1;
+  margin-top: 2px;
+  padding-top: 7px;
+}
+
+.revisionDetails summary {
+  align-items: center;
+  color: var(--text-soft);
+  cursor: pointer;
+  display: flex;
+  font-size: 11px;
+  min-height: 44px;
+}
+
+.revisionDetails summary:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 2px;
+}
+
+.revisionDetails dl {
+  display: grid;
+  gap: 8px;
+  margin: 2px 0 8px;
+}
+
+.revisionDetails dl > div {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 120px minmax(0, 1fr);
+}
+
+.revisionDetails dt {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.revisionDetails dd {
+  font-size: 10.5px;
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .loadingPanel {
@@ -665,6 +764,10 @@
     grid-template-columns: 1fr auto;
   }
 
+  .applicationSummary {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .applicationStatus {
     grid-column: 1;
   }
@@ -728,10 +831,19 @@
     padding: 17px;
   }
 
+  .applicationSummary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .rowAction {
     grid-column: 1;
     grid-row: auto;
     width: 100%;
+  }
+
+  .revisionDetails dl > div {
+    gap: 3px;
+    grid-template-columns: 1fr;
   }
 
   .identityGrid {
@@ -751,6 +863,12 @@
 
   .launchFooter :global(.primary-button) {
     width: 100%;
+  }
+}
+
+@media (max-width: 360px) {
+  .applicationSummary {
+    grid-template-columns: 1fr;
   }
 }
 

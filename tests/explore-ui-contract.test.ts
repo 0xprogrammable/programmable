@@ -12,6 +12,10 @@ describe("Explore UI contract", () => {
     );
 
     expect(source).toContain('id="explore-sort-label"');
+    expect(source).toContain('<option value="launch-date">Launch date</option>');
+    expect(source).toContain('<option value="market-cap">Market cap</option>');
+    expect(source).toContain('? "Newest first"');
+    expect(source).toContain('? "Oldest first"');
     expect(source).toContain('id="explore-socials-label"');
     expect(source).toContain('id="explore-model-label"');
     expect(source).toContain('{ id: "classic", label: "Classic" }');
@@ -80,8 +84,9 @@ describe("Explore UI contract", () => {
     );
     expect(styles).toMatch(/\.runnerCard::before\s*\{[^}]*content:\s*none;/s);
     expect(styles).toMatch(
-      /\.filterMenu\s*\{[^}]*background:\s*var\(--explore-glass-strong\);/s,
+      /\.filterMenu\s*\{[^}]*background:\s*linear-gradient\([^}]*rgba\(250, 246, 241, 0\.91\)[^}]*rgba\(226, 218, 226, 0\.86\)[^}]*color:\s*#181318;/s,
     );
+    expect(styles).toContain("color: #4b4148;");
     expect(styles).not.toContain("rgba(15, 18, 36, 0.84)");
     expect(styles).toMatch(
       /@media \(max-width: 700px\)[\s\S]*?\.runnerCard\s*\{[^}]*backdrop-filter:\s*none;[^}]*background:\s*rgba\(248, 240, 233, 0\.14\);/s,
@@ -101,8 +106,9 @@ describe("Explore UI contract", () => {
     expect(source).toContain("onBlur={(event) => {");
     expect(source).toContain("!event.currentTarget.contains(nextTarget)");
     expect(source).toContain('event.currentTarget.removeAttribute("open")');
+    expect(source).toContain('className="sr-only"');
     expect(source).toContain(
-      "resultStatusRef.current?.focus({ preventScroll: true })",
+      "searchInputRef.current?.focus({ preventScroll: true })",
     );
     expect(source).toContain(
       'displayState.phase === "error" ? "" : resultRangeLabel(payload)',
@@ -111,5 +117,19 @@ describe("Explore UI contract", () => {
     expect(source).not.toContain("Loading tokens");
     expect(source).not.toContain("Updating tokens");
     expect(source).not.toContain("Page {activePage} of {pageCount}");
+  });
+
+  it("uses the concise project heading without a visible launch count", () => {
+    const source = readFileSync(
+      join(root, "components/explore-view.tsx"),
+      "utf8",
+    );
+
+    expect(source).toContain("<h1>Explore Projects</h1>");
+    expect(source).not.toContain("Tokens that behave how you imagine");
+    expect(source).not.toContain(
+      "Browse launches by model, market cap or social presence.",
+    );
+    expect(source).not.toContain("styles.resultLabel");
   });
 });

@@ -19,7 +19,7 @@ import {
   getProductionWebsiteProjectionTargetV1,
 } from "./website-target";
 
-const GITHUB_USER_ID = /^[1-9][0-9]{0,63}$/u;
+const GITHUB_USER_ID = /^[1-9][0-9]{0,19}$/u;
 const MAXIMUM_PRIVY_TOKEN_BYTES = 131_072;
 
 export interface AuthenticatedGitHubPrincipalV1 {
@@ -251,7 +251,7 @@ export function createPrivyGitHubPrincipalAuthenticatorFromBoundaryV1(
           "github_account_required",
         );
       }
-      if (githubSubjects.size !== 1) {
+      if (githubAccounts.length !== 1 || githubSubjects.size !== 1) {
         throw new GitHubPrincipalAuthenticationErrorV1(
           403,
           "github_identity_ambiguous",

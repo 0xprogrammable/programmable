@@ -87,8 +87,8 @@ or client input.
 | `in_review` | `Review in progress` | Deterministic and semantic checks are running. | `View review` |
 | `changes_required` | `Changes needed` | The exact version cannot launch yet and has actionable corrections. | `Open requested changes` |
 | `platform_pending` | `Verification still running` | A platform, tool, provider, or evidence dependency is unavailable. This is not applicant rejection and does not imply that autonomous review is enabled. | `View on GitHub` |
-| `ready_for_registration` | `Ready for final verification` | A manual reviewer prepared the exact version, but no signed launch entitlement exists yet. | `View on GitHub` |
-| `approved` | `Ready to launch` | A current signed entitlement exists for the exact commit and GitHub identity. | `Set up launch` |
+| `ready_for_registration` | `Ready to launch` | A current signed entitlement exists for the exact commit and GitHub identity; fresh eligibility and descriptor checks still run before setup. | `Set up launch` |
+| `approved` | `Approval recorded` | The exact version is approved, but its current launch authority is not available yet. | `View on GitHub` |
 | `superseded` | `New version submitted` | A newer exact commit replaced this version. | `View current version` |
 | `expired` | `Approval expired` | The signed entitlement passed its exclusive expiry. | `Verify current version` |
 | `revoked` | `Approval revoked` | Source, policy, or authority changed after approval. | `View reason` |
@@ -244,8 +244,9 @@ order and do not collapse verified facts behind hover-only controls.
 
 ## Manual-review bridge during the first release
 
-A separate reviewer may inspect, test, and improve existing GitHub submissions in parallel. That
-review may produce `ready_for_registration`, never `approved` directly.
+A separate reviewer may inspect, test, and improve existing GitHub submissions in parallel. Its
+approval is recorded first; only the service may produce `ready_for_registration` after it has
+created and bound the exact current launch grant.
 
 Official registration must still:
 

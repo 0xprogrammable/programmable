@@ -25,6 +25,27 @@ export const REQUIRED_VALIDATION_GATES = Object.freeze([
 const SHA256_PATTERN = /^sha256:[0-9a-f]{64}$/;
 const COMMIT_PATTERN = /^[0-9a-f]{40}$/;
 const UTC_SECONDS_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
+const SAFE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:@/+\-]{0,255}$/;
+const WEBSITE_PROJECTION_MIGRATIONS = Object.freeze([
+  Object.freeze({
+    ordinal: 1,
+    path: "ops/website-projection-target/migrations/0001_projection_records_v1.sql",
+  }),
+  Object.freeze({
+    ordinal: 2,
+    path: "ops/website-projection-target/migrations/0002_custom_launch_wallet_profile_v2.sql",
+  }),
+  Object.freeze({
+    ordinal: 3,
+    path: "ops/website-projection-target/migrations/0003_registry_custom_public_read_v1.sql",
+  }),
+]);
+const WEBSITE_PROJECTION_MIGRATION_INVENTORY_SCHEMA_VERSION =
+  "programmable.website-projection-migration-inventory.v1";
+const SESSION_AUTHORITY_CONFIGURATION_EVIDENCE_SCHEMA_VERSION =
+  "programmable.github-session-authority-public-configuration-evidence.v1";
+const SESSION_AUTHORITY_RUNTIME_CONFIGURATION_SCHEMA_VERSION =
+  "programmable.github-session-authority-configuration-attestation.v1";
 const RECORD_STATUSES = new Set([
   "draft",
   "freeze_cleared",
@@ -34,7 +55,15 @@ const RECORD_STATUSES = new Set([
   "live",
 ]);
 const REVIEW_AUTHORITY_MODES = new Set(["manual_review", "autonomous_ai"]);
-const REQUIRED_LEVELS = new Set(["template", "clearance", "staging", "candidate", "promotion", "live"]);
+const REQUIRED_LEVELS = new Set([
+  "template",
+  "clearance",
+  "dark_staging",
+  "staging",
+  "candidate",
+  "promotion",
+  "live",
+]);
 const FORBIDDEN_SECRET_KEY = /^(?:access[_-]?token|identity[_-]?token|private[_-]?key|password|secret|database[_-]?url|credential)(?:[_-]?value)?$/i;
 const PLACEHOLDER_PATTERN = /(?:<[^>]+>|example\.invalid|replace[_ -]?me|todo|yyyy|nnn)/i;
 const CROSS_REPOSITORY_BINDING_REPOSITORY =
@@ -78,6 +107,58 @@ function sha256(value) {
   return `sha256:${createHash("sha256").update(value).digest("hex")}`;
 }
 
+export function computeWebsiteProjectionMigrationDigest(projection) {
+  return sha256(canonicalize({
+    schemaVersion: WEBSITE_PROJECTION_MIGRATION_INVENTORY_SCHEMA_VERSION,
+    migrations: projection.migrationInventory.map((migration) => ({
+      ordinal: migration.ordinal,
+      path: migration.path,
+      fileSha256: migration.fileSha256,
+    })),
+  }));
+}
+
+export function computeSessionAuthorityConfigurationEvidenceSha256(
+  dependencies,
+  productionAuthorityCandidateCommitSha,
+) {
+  const authority = dependencies.sessionAuthority;
+  return sha256(canonicalize({
+    schemaVersion: SESSION_AUTHORITY_CONFIGURATION_EVIDENCE_SCHEMA_VERSION,
+    productionAuthorityCandidateCommitSha,
+    privyApplicationId: dependencies.identity.privyApplicationId,
+    audience: authority.audience,
+    keyId: authority.keyId,
+    keyEpoch: authority.keyEpoch,
+    authorityPublicKeySpkiSha256: authority.authorityPublicKeySpkiSha256,
+    workloadIssuer: authority.workloadIssuer,
+    workloadSubject: authority.workloadSubject,
+    workloadKeyId: authority.workloadKeyId,
+    workloadPublicKeySpkiSha256: authority.workloadPublicKeySpkiSha256,
+  }));
+}
+
+export function computeSessionAuthorityRuntimeConfigurationHash(dependencies) {
+  const authority = dependencies.sessionAuthority;
+  const binding = {
+    schemaVersion: SESSION_AUTHORITY_RUNTIME_CONFIGURATION_SCHEMA_VERSION,
+    appId: dependencies.identity.privyApplicationId,
+    audience: authority.audience,
+    keyId: authority.keyId,
+    keyEpoch: authority.keyEpoch,
+    publicKeySpkiSha256: authority.authorityPublicKeySpkiSha256,
+    workloadIssuer: authority.workloadIssuer,
+    workloadSubject: authority.workloadSubject,
+    workloadKeyId: authority.workloadKeyId,
+    workloadPublicKeySpkiSha256: authority.workloadPublicKeySpkiSha256,
+  };
+  const hash = createHash("sha256");
+  hash.update(SESSION_AUTHORITY_RUNTIME_CONFIGURATION_SCHEMA_VERSION, "utf8");
+  hash.update(Uint8Array.of(0));
+  hash.update(canonicalize(binding), "utf8");
+  return `sha256:${hash.digest("hex")}`;
+}
+
 export function releaseSubject(record) {
   return {
     schemaVersion: record.schemaVersion,
@@ -105,6 +186,8 @@ export function releaseSubject(record) {
       documentSha256:
         record.subject?.crossRepositoryReleaseBinding?.documentSha256,
     },
+    productionDependencies: record.productionDependencies,
+    rollback: record.deployment?.rollback,
   };
 }
 
@@ -366,13 +449,44 @@ function validateValidationGates(errors, gates, requirePassed) {
   }
 }
 
-function validateDependencies(errors, dependencies) {
+function validateDependencies(errors, dependencies, crossRepositoryAttestation) {
   if (!requireObject(errors, dependencies, "productionDependencies")) return;
-  requireExactKeys(errors, dependencies, "productionDependencies", ["websiteProjection", "approvalService", "identity", "ethereum", "targets"]);
+  requireExactKeys(errors, dependencies, "productionDependencies", [
+    "websiteProjection",
+    "approvalService",
+    "identity",
+    "sessionAuthority",
+    "ethereum",
+    "targets",
+  ]);
   const projection = dependencies.websiteProjection;
   if (requireObject(errors, projection, "productionDependencies.websiteProjection")) {
-    requireExactKeys(errors, projection, "productionDependencies.websiteProjection", ["databaseIdentity", "migrationDigest", "runtimeRoleAttestationSha256", "backupId", "restoreDrillEvidenceSha256"]);
+    requireExactKeys(errors, projection, "productionDependencies.websiteProjection", ["databaseIdentity", "migrationInventory", "migrationDigest", "runtimeRoleAttestationSha256", "backupId", "restoreDrillEvidenceSha256"]);
     requireString(errors, projection.databaseIdentity, "productionDependencies.websiteProjection.databaseIdentity");
+    if (!Array.isArray(projection.migrationInventory)
+      || projection.migrationInventory.length !== WEBSITE_PROJECTION_MIGRATIONS.length) {
+      add(
+        errors,
+        "productionDependencies.websiteProjection.migrationInventory",
+        "must contain the complete ordered 0001, 0002, and 0003 inventory",
+      );
+    } else {
+      for (const [index, expected] of WEBSITE_PROJECTION_MIGRATIONS.entries()) {
+        const migration = projection.migrationInventory[index];
+        const path = `productionDependencies.websiteProjection.migrationInventory[${index}]`;
+        if (!requireObject(errors, migration, path)) continue;
+        requireExactKeys(errors, migration, path, ["ordinal", "path", "fileSha256"]);
+        requireExact(errors, migration.ordinal, `${path}.ordinal`, expected.ordinal);
+        requireExact(errors, migration.path, `${path}.path`, expected.path);
+        validateSha256(errors, migration.fileSha256, `${path}.fileSha256`);
+      }
+      requireExact(
+        errors,
+        projection.migrationDigest,
+        "productionDependencies.websiteProjection.migrationDigest",
+        computeWebsiteProjectionMigrationDigest(projection),
+      );
+    }
     validateSha256(errors, projection.migrationDigest, "productionDependencies.websiteProjection.migrationDigest");
     validateSha256(errors, projection.runtimeRoleAttestationSha256, "productionDependencies.websiteProjection.runtimeRoleAttestationSha256");
     requireString(errors, projection.backupId, "productionDependencies.websiteProjection.backupId");
@@ -392,9 +506,63 @@ function validateDependencies(errors, dependencies) {
   const identity = dependencies.identity;
   if (requireObject(errors, identity, "productionDependencies.identity")) {
     requireExactKeys(errors, identity, "productionDependencies.identity", ["privyApplicationId", "githubOauthEnabled", "identityTokensEnabled"]);
-    requireString(errors, identity.privyApplicationId, "productionDependencies.identity.privyApplicationId");
+    requirePattern(errors, identity.privyApplicationId, "productionDependencies.identity.privyApplicationId", SAFE_ID_PATTERN, "a bounded public Privy application id");
     requireExact(errors, identity.githubOauthEnabled, "productionDependencies.identity.githubOauthEnabled", true);
     requireExact(errors, identity.identityTokensEnabled, "productionDependencies.identity.identityTokensEnabled", true);
+  }
+  const sessionAuthority = dependencies.sessionAuthority;
+  if (requireObject(errors, sessionAuthority, "productionDependencies.sessionAuthority")) {
+    requireExactKeys(errors, sessionAuthority, "productionDependencies.sessionAuthority", [
+      "audience",
+      "keyId",
+      "keyEpoch",
+      "authorityPublicKeySpkiSha256",
+      "workloadIssuer",
+      "workloadSubject",
+      "workloadKeyId",
+      "workloadPublicKeySpkiSha256",
+      "configurationEvidenceSha256",
+    ]);
+    for (const [field, label] of [
+      ["audience", "authority audience"],
+      ["keyId", "authority key id"],
+      ["keyEpoch", "authority key epoch"],
+      ["workloadIssuer", "workload issuer"],
+      ["workloadSubject", "workload subject"],
+      ["workloadKeyId", "workload key id"],
+    ]) {
+      requirePattern(
+        errors,
+        sessionAuthority[field],
+        `productionDependencies.sessionAuthority.${field}`,
+        SAFE_ID_PATTERN,
+        `a bounded ${label}`,
+      );
+    }
+    validateSha256(
+      errors,
+      sessionAuthority.authorityPublicKeySpkiSha256,
+      "productionDependencies.sessionAuthority.authorityPublicKeySpkiSha256",
+    );
+    validateSha256(
+      errors,
+      sessionAuthority.workloadPublicKeySpkiSha256,
+      "productionDependencies.sessionAuthority.workloadPublicKeySpkiSha256",
+    );
+    validateSha256(
+      errors,
+      sessionAuthority.configurationEvidenceSha256,
+      "productionDependencies.sessionAuthority.configurationEvidenceSha256",
+    );
+    requireExact(
+      errors,
+      sessionAuthority.configurationEvidenceSha256,
+      "productionDependencies.sessionAuthority.configurationEvidenceSha256",
+      computeSessionAuthorityConfigurationEvidenceSha256(
+        dependencies,
+        crossRepositoryAttestation?.productionAuthorityCandidateCommitSha,
+      ),
+    );
   }
   const ethereum = dependencies.ethereum;
   if (requireObject(errors, ethereum, "productionDependencies.ethereum")) {
@@ -498,7 +666,7 @@ export function verifyReleaseRecord(
   if (schemaFailure !== null) return schemaFailure;
   const errors = [];
   const levels = ["template", "clearance", "staging", "candidate", "promotion", "live"];
-  const requiredIndex = levels.indexOf(require);
+  const requiredIndex = require === "dark_staging" ? 2 : levels.indexOf(require);
   requireExactKeys(errors, record, "$", ["schemaVersion", "recordStatus", "createdAt", "releaseIntent", "subject", "commandCenter", "validation", "productionDependencies", "deployment", "promotionGate", "canary"]);
   const allowPlaceholders = require === "template";
   walkForSecretsAndPlaceholders(record, "", errors, allowPlaceholders);
@@ -576,9 +744,32 @@ export function verifyReleaseRecord(
     }
   }
   if (requiredIndex >= 2) {
-    validateDependencies(errors, record.productionDependencies);
+    validateDependencies(
+      errors,
+      record.productionDependencies,
+      crossRepositoryAttestation,
+    );
     validateRollback(errors, record.deployment?.rollback);
-    requireExact(errors, record.releaseIntent?.targetMode, "releaseIntent.targetMode", "enabled");
+    requireExact(
+      errors,
+      record.releaseIntent?.targetMode,
+      "releaseIntent.targetMode",
+      require === "dark_staging" ? "disabled" : "enabled",
+    );
+    validateChronology(
+      errors,
+      record.deployment?.rollback?.capturedAt,
+      record.commandCenter?.freezeClearance?.decidedAt,
+      "commandCenter.freezeClearance.decidedAt",
+    );
+    for (const gate of record.validation?.gates ?? []) {
+      validateChronology(
+        errors,
+        gate.completedAt,
+        record.commandCenter?.freezeClearance?.decidedAt,
+        "commandCenter.freezeClearance.decidedAt",
+      );
+    }
   }
   if (requiredIndex === 2) {
     requireExact(errors, record.recordStatus, "recordStatus", "freeze_cleared");
@@ -644,6 +835,7 @@ export function verifyReleaseRecord(
     requireExact(errors, record.canary?.status, "canary.status", "pending");
   }
   if (requiredIndex >= 3) {
+    requireExact(errors, record.releaseIntent?.targetMode, "releaseIntent.targetMode", "enabled");
     validateCandidate(
       errors,
       record.deployment?.candidate,
@@ -740,6 +932,14 @@ export function verifyReleaseRecord(
   if (expected.rollbackWebsiteCommitSha !== undefined) {
     requireExact(errors, record.deployment?.rollback?.websiteCommitSha, "deployment.rollback.websiteCommitSha", expected.rollbackWebsiteCommitSha);
   }
+  if (expected.sessionAuthorityConfigurationEvidenceSha256 !== undefined) {
+    requireExact(
+      errors,
+      record.productionDependencies?.sessionAuthority?.configurationEvidenceSha256,
+      "productionDependencies.sessionAuthority.configurationEvidenceSha256",
+      expected.sessionAuthorityConfigurationEvidenceSha256,
+    );
+  }
 
   const detachedRecordSha256 = computeDetachedRecordSha256(record);
   if (expected.detachedRecordSha256 !== undefined) {
@@ -776,12 +976,13 @@ function parseArguments(argv) {
     else if (argument === "--expect-rollback-deployment-id") expected.rollbackDeploymentId = argv[++index];
     else if (argument === "--expect-rollback-deployment-url") expected.rollbackDeploymentUrl = argv[++index];
     else if (argument === "--expect-rollback-website-commit") expected.rollbackWebsiteCommitSha = argv[++index];
+    else if (argument === "--expect-session-authority-configuration-evidence-sha256") expected.sessionAuthorityConfigurationEvidenceSha256 = argv[++index];
     else if (argument === "--expect-detached-record-sha256") expected.detachedRecordSha256 = argv[++index];
     else if (argument.startsWith("-")) throw new Error(`unknown argument: ${argument}`);
     else if (file === null) file = argument;
     else throw new Error(`unexpected argument: ${argument}`);
   }
-  if (file === null) throw new Error("usage: verify-custom-launch-release-record.mjs <record.json> [--require template|clearance|staging|candidate|promotion|live] [--verify-cross-repository-attestation] [--cross-repository-attestation-summary path] [--json] [--github-output path] [expectation flags]");
+  if (file === null) throw new Error("usage: verify-custom-launch-release-record.mjs <record.json> [--require template|clearance|dark_staging|staging|candidate|promotion|live] [--verify-cross-repository-attestation] [--cross-repository-attestation-summary path] [--json] [--github-output path] [expectation flags]");
   if (crossRepositoryAttestationSummary !== null && !verifyCrossRepositoryAttestation) {
     throw new Error("cross-repository attestation summary output requires live attestation verification");
   }
@@ -834,6 +1035,9 @@ async function main(argv) {
         `cross_repository_attestation_commit_sha=${record.subject.crossRepositoryReleaseBinding.attestationCommitSha}`,
         `cross_repository_binding_document_sha256=${record.subject.crossRepositoryReleaseBinding.documentSha256}`,
         `review_authority_mode=${record.releaseIntent.reviewAuthorityMode}`,
+        `website_projection_migration_digest=${record.productionDependencies.websiteProjection.migrationDigest}`,
+        `session_authority_configuration_evidence_sha256=${record.productionDependencies.sessionAuthority.configurationEvidenceSha256}`,
+        `session_authority_runtime_configuration_hash=${computeSessionAuthorityRuntimeConfigurationHash(record.productionDependencies)}`,
         "",
       ].join("\n"),
       { encoding: "utf8", mode: 0o600 },

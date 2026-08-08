@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { describe, expect, it, vi } from "vitest";
 
 // @ts-expect-error JavaScript deployment helper has no declaration file.
@@ -6,6 +8,8 @@ import { parseCustomLaunchDeploymentProbeArguments, probeCustomLaunchDeployment 
 const NOW = new Date("2026-08-05T12:00:00.000Z");
 const HASH = `sha256:${"1".repeat(64)}`;
 const PACKAGE_ARTIFACT_HASH = `sha256:${"9".repeat(64)}`;
+const SESSION_AUTHORITY_PUBLIC_KEY_HASH = `sha256:${"2".repeat(64)}`;
+const SESSION_AUTHORITY_WORKLOAD_KEY_HASH = `sha256:${"3".repeat(64)}`;
 const COMMIT_SHA = "a".repeat(40);
 const DEPLOYMENT_HOST = "deployment.example";
 const OWN_APPLICATION_ID = "application-owned";
@@ -14,6 +18,43 @@ const FOREIGN_APPLICATION_HANDLE = `github-${"b".repeat(64)}`;
 const TRUSTED_TIME_PATH = "/api/custom-launch/trusted-time?keyId=current"
   + `&signerEpoch=1&signerComponentBindingHash=${encodeURIComponent(HASH)}`
   + `&publicKeySpkiSha256=${encodeURIComponent(HASH)}`;
+
+function canonicalSha256(domain: string, value: Record<string, string>) {
+  const canonical = `{${Object.keys(value)
+    .sort((left, right) => Buffer.from(left).compare(Buffer.from(right)))
+    .map((key) => `${JSON.stringify(key)}:${JSON.stringify(value[key])}`)
+    .join(",")}}`;
+  return `sha256:${createHash("sha256")
+    .update(domain, "utf8")
+    .update(Uint8Array.of(0))
+    .update(canonical, "utf8")
+    .digest("hex")}`;
+}
+
+const SESSION_AUTHORITY_BINDING = Object.freeze({
+  schemaVersion:
+    "programmable.github-session-authority-configuration-attestation.v1",
+  appId: "privy-app",
+  audience: "programmable.launch-session.v2",
+  keyId: "website-session-authority-v3",
+  keyEpoch: "3",
+  publicKeySpkiSha256: SESSION_AUTHORITY_PUBLIC_KEY_HASH,
+  workloadIssuer: "programmable-approval-service",
+  workloadSubject: "programmable-session-authority",
+  workloadKeyId: "approval-service-workload-v3",
+  workloadPublicKeySpkiSha256: SESSION_AUTHORITY_WORKLOAD_KEY_HASH,
+});
+const SESSION_AUTHORITY_CONFIGURATION_HASH = canonicalSha256(
+  "programmable.github-session-authority-configuration-attestation.v1",
+  SESSION_AUTHORITY_BINDING,
+);
+
+function sessionAuthority() {
+  return {
+    ...SESSION_AUTHORITY_BINDING,
+    configurationHash: SESSION_AUTHORITY_CONFIGURATION_HASH,
+  };
+}
 
 function json(body: unknown, init: ResponseInit = {}) {
   return new Response(JSON.stringify(body), {
@@ -29,6 +70,7 @@ function ready() {
     chainId: "1",
     components: {
       approvalService: "ready",
+      githubSessionAuthority: "ready",
       permitSignerKeyring: "ready",
       publicConfiguration: "ready",
       websiteProjectionDatabase: "ready",
@@ -41,6 +83,7 @@ function ready() {
       commitSha: COMMIT_SHA,
       deploymentHost: DEPLOYMENT_HOST,
     },
+    sessionAuthority: sessionAuthority(),
     trustedTimePath: TRUSTED_TIME_PATH,
     checkedAt: NOW.toISOString(),
   };
@@ -55,6 +98,7 @@ function disabled() {
     components: value.components,
     approvalServiceRelease: value.approvalServiceRelease,
     release: value.release,
+    sessionAuthority: value.sessionAuthority,
     checkedAt: value.checkedAt,
   };
 }
@@ -77,11 +121,7 @@ function principalList() {
       pullRequestNumber: 1,
       commitOid: "b".repeat(40),
       treeOid: "c".repeat(40),
-      intakeContract: "aeon-v1",
-      providerId: "aeon",
-      controlRepositoryId: "1325324453",
-      controlRepositoryOwnerId: "309941960",
-      state: "approved",
+      state: "ready_for_registration",
       reasonCodes: [],
       actionCodes: [],
       correctionCount: 0,
@@ -153,6 +193,8 @@ function probe(input: Record<string, unknown>) {
     expectedDeploymentHost: DEPLOYMENT_HOST,
     expectedApprovalServicePackageArtifactHash: PACKAGE_ARTIFACT_HASH,
     expectedApprovalServiceReviewAuthorityMode: "manual_review",
+    expectedSessionAuthorityConfigurationHash:
+      SESSION_AUTHORITY_CONFIGURATION_HASH,
     ...input,
   });
 }
@@ -183,6 +225,8 @@ describe("custom launch deployment probe", () => {
       baseUrl: "https://deployment.example",
       status: "ready",
       authenticatedCanary: "not_requested",
+      sessionAuthorityConfigurationHash:
+        SESSION_AUTHORITY_CONFIGURATION_HASH,
     });
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(fetchMock.mock.calls.some(([input]) => new URL(String(input)).pathname === "/")).toBe(false);
@@ -419,6 +463,33 @@ describe("custom launch deployment probe", () => {
         attempts: 1,
       });
 
+    await expect(run(principalList())).resolves.toMatchObject({
+      authenticatedCanary: "passed",
+    });
+
+    await expect(run({
+      ...principalList(),
+      applications: principalList().applications.map((application) => ({
+        ...application,
+        intakeContract: "aeon-v1",
+        providerId: "aeon",
+        controlRepositoryId: "1325324453",
+        controlRepositoryOwnerId: "309941960",
+      })),
+    })).resolves.toMatchObject({ authenticatedCanary: "passed" });
+
+    await expect(run({
+      ...principalList(),
+      applications: principalList().applications.map((application) => ({
+        ...application,
+        intakeContract: "registry-v3",
+        providerId: "programmable-registry",
+        controlRepositoryId: "1320171831",
+        controlRepositoryOwnerId: "309941960",
+        grandfatheredAtReleaseBindingDigest: null,
+      })),
+    })).rejects.toThrow("not launch-ready");
+
     await expect(run({
       ...principalList(),
       applications: principalList().applications.map((application) => ({
@@ -427,7 +498,17 @@ describe("custom launch deployment probe", () => {
         receiptDigest: null,
         launchEntitlementBindingHash: null,
       })),
-    })).rejects.toThrow("not launch-approved");
+    })).rejects.toThrow("not launch-ready");
+
+    await expect(run({
+      ...principalList(),
+      applications: principalList().applications.map((application) => ({
+        ...application,
+        state: "approved",
+        receiptDigest: null,
+        launchEntitlementBindingHash: null,
+      })),
+    })).rejects.toThrow("not launch-ready");
 
     await expect(run(principalList(), {
       ...launchEligibility(),
@@ -514,6 +595,8 @@ describe("custom launch deployment probe", () => {
       PROGRAMMABLE_RELEASE_EXPECTED_DEPLOYMENT_HOST: DEPLOYMENT_HOST,
       PROGRAMMABLE_APPROVAL_SERVICE_EXPECTED_PACKAGE_ARTIFACT_HASH: PACKAGE_ARTIFACT_HASH,
       PROGRAMMABLE_APPROVAL_SERVICE_EXPECTED_REVIEW_AUTHORITY_MODE: "manual_review",
+      PROGRAMMABLE_GITHUB_SESSION_AUTHORITY_EXPECTED_CONFIGURATION_HASH:
+        SESSION_AUTHORITY_CONFIGURATION_HASH,
     })).toEqual({
       baseUrl: "https://deployment.example/",
       requireEnabled: true,
@@ -524,6 +607,8 @@ describe("custom launch deployment probe", () => {
       expectedDeploymentHost: DEPLOYMENT_HOST,
       expectedApprovalServicePackageArtifactHash: PACKAGE_ARTIFACT_HASH,
       expectedApprovalServiceReviewAuthorityMode: "manual_review",
+      expectedSessionAuthorityConfigurationHash:
+        SESSION_AUTHORITY_CONFIGURATION_HASH,
     });
     expect(parseCustomLaunchDeploymentProbeArguments([
       "--base-url=https://deployment.example/",
@@ -538,6 +623,8 @@ describe("custom launch deployment probe", () => {
       PROGRAMMABLE_RELEASE_EXPECTED_DEPLOYMENT_HOST: DEPLOYMENT_HOST,
       PROGRAMMABLE_APPROVAL_SERVICE_EXPECTED_PACKAGE_ARTIFACT_HASH: PACKAGE_ARTIFACT_HASH,
       PROGRAMMABLE_APPROVAL_SERVICE_EXPECTED_REVIEW_AUTHORITY_MODE: "manual_review",
+      PROGRAMMABLE_GITHUB_SESSION_AUTHORITY_EXPECTED_CONFIGURATION_HASH:
+        SESSION_AUTHORITY_CONFIGURATION_HASH,
       VERCEL_AUTOMATION_BYPASS_SECRET: "automation-bypass",
     })).toMatchObject({
       accessToken: "access",

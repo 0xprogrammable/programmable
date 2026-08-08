@@ -18,6 +18,7 @@ import {
   parsePendingProfileTransactions,
   parseClaimedFeeWei,
   paginateProfileClaimableEntries,
+  PROFILE_LIVE_REFRESH_INTERVAL_MS,
   profileClaimableWei,
   profileClaimActionCount,
   profileEntryHasClaimableReward,
@@ -167,6 +168,10 @@ const deepV3Token = {
 } satisfies DeepV3CreatorToken;
 
 describe("profile workspace loading state", () => {
+  it("does not hammer reward providers with five-second profile polling", () => {
+    expect(PROFILE_LIVE_REFRESH_INTERVAL_MS).toBe(60_000);
+  });
+
   it("keeps the profile in a stable loading shell while the wallet session hydrates", () => {
     expect(getProfileSessionView(true)).toBe("loading");
     expect(getProfileSessionView(true, firstAddress)).toBe("loading");
@@ -210,13 +215,14 @@ describe("profile workspace loading state", () => {
     );
   });
 
-  it("contains five desktop claim rows inside the workspace while mobile keeps page flow", () => {
-    expect(profileExperienceCss).toMatch(
-      /@media \(min-width: 821px\) and \(min-height: 700px\)[\s\S]*?\.profileWorkspace\s*\{[\s\S]*?height: clamp\(/,
+  it("keeps claim rows in page flow and adapts the narrow claim panel", () => {
+    expect(profileExperienceCss).not.toMatch(
+      /\.profileWorkspace\s*\{[\s\S]*?height: clamp\(/,
     );
-    expect(profileExperienceCss).toMatch(
-      /@media \(min-width: 821px\) and \(min-height: 700px\)[\s\S]*?\.claimList\s*\{[\s\S]*?overflow-y: auto;/,
+    expect(profileExperienceCss).not.toMatch(
+      /\.claimList\s*\{[^}]*overflow-y: auto;/,
     );
+    expect(profileExperienceCss).toContain("@container (max-width: 420px)");
     expect(profileExperienceCss).toMatch(
       /@media \(max-width: 820px\)[\s\S]*?\.profileWorkspace/,
     );
@@ -617,7 +623,7 @@ describe("profile reward grouping", () => {
     );
   });
 
-  it("sorts six claimable entries before splitting them into five-row pages", () => {
+  it("keeps six claimable entries in a stable order before pagination", () => {
     const claimableAmounts = [1n, 9n, 3n, 7n, 5n, 2n];
     const claimTokens = claimableAmounts.map((_, index) => {
       const address = getAddress(
@@ -648,24 +654,24 @@ describe("profile reward grouping", () => {
     const secondPage = paginateProfileClaimableEntries(ranked, 2);
 
     expect(ranked.map((entry) => entry.token.symbol)).toEqual([
+      "C1",
       "C2",
+      "C3",
       "C4",
       "C5",
-      "C3",
       "C6",
-      "C1",
     ]);
     expect(firstPage).toMatchObject({ currentPage: 1, totalPages: 2 });
     expect(firstPage.items.map((entry) => entry.token.symbol)).toEqual([
+      "C1",
       "C2",
+      "C3",
       "C4",
       "C5",
-      "C3",
-      "C6",
     ]);
     expect(secondPage).toMatchObject({ currentPage: 2, totalPages: 2 });
     expect(secondPage.items.map((entry) => entry.token.symbol)).toEqual([
-      "C1",
+      "C6",
     ]);
     expect(claimTokens.map((token) => token.symbol)).toEqual([
       "C1",

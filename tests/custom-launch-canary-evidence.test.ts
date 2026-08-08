@@ -5,6 +5,7 @@ import { createCustomLaunchCanaryEvidence } from "../scripts/custom-launch-canar
 
 const OWN_APPLICATION_HANDLE = `github-${"a".repeat(64)}`;
 const FOREIGN_APPLICATION_HANDLE = `github-${"b".repeat(64)}`;
+const SESSION_AUTHORITY_CONFIGURATION_HASH = `sha256:${"7".repeat(64)}`;
 
 function evidence(overrides: Record<string, unknown> = {}) {
   return createCustomLaunchCanaryEvidence({
@@ -12,6 +13,8 @@ function evidence(overrides: Record<string, unknown> = {}) {
       baseUrl: "https://programmable-candidate.vercel.app",
       status: "ready",
       authenticatedCanary: "passed",
+      sessionAuthorityConfigurationHash:
+        SESSION_AUTHORITY_CONFIGURATION_HASH,
     },
     targetUrl: "https://programmable-candidate.vercel.app/",
     deploymentId: "dpl_12345678AbCd",
@@ -39,6 +42,9 @@ describe("Custom Launch candidate canary evidence", () => {
         packageArtifactHash: `sha256:${"9".repeat(64)}`,
         reviewAuthorityMode: "manual_review",
       },
+      sessionAuthority: {
+        configurationHash: SESSION_AUTHORITY_CONFIGURATION_HASH,
+      },
       canary: {
         authenticated: true,
         principalVerified: true,
@@ -54,12 +60,46 @@ describe("Custom Launch candidate canary evidence", () => {
     expect(result.canary.foreignApplicationHandleSha256).toMatch(/^sha256:[0-9a-f]{64}$/u);
   });
 
+  it("records a disabled dark-stage probe without claiming an authenticated canary", () => {
+    const result = evidence({
+      probeResult: {
+        baseUrl: "https://programmable-candidate.vercel.app",
+        status: "disabled",
+        authenticatedCanary: "not_requested",
+        sessionAuthorityConfigurationHash:
+          SESSION_AUTHORITY_CONFIGURATION_HASH,
+      },
+    });
+    expect(result).toEqual({
+      schemaVersion: "programmable.custom-launch-dark-readiness-evidence.v1",
+      result: "passed",
+      candidate: {
+        deploymentId: "dpl_12345678AbCd",
+        targetUrl: "https://programmable-candidate.vercel.app",
+        websiteCommitSha: "a".repeat(40),
+      },
+      approvalService: {
+        packageArtifactHash: `sha256:${"9".repeat(64)}`,
+        reviewAuthorityMode: "manual_review",
+      },
+      sessionAuthority: {
+        configurationHash: SESSION_AUTHORITY_CONFIGURATION_HASH,
+      },
+      readiness: {
+        status: "disabled",
+        authenticatedCanary: false,
+      },
+    });
+  });
+
   it("rejects a failed, unauthenticated or differently bound probe result", () => {
     expect(() => evidence({
       probeResult: {
         baseUrl: "https://programmable-candidate.vercel.app",
         status: "disabled",
-        authenticatedCanary: "not_requested",
+        authenticatedCanary: "passed",
+        sessionAuthorityConfigurationHash:
+          SESSION_AUTHORITY_CONFIGURATION_HASH,
       },
     })).toThrow("not release-ready");
     expect(() => evidence({
@@ -67,11 +107,21 @@ describe("Custom Launch candidate canary evidence", () => {
         baseUrl: "https://other-candidate.vercel.app",
         status: "ready",
         authenticatedCanary: "passed",
+        sessionAuthorityConfigurationHash:
+          SESSION_AUTHORITY_CONFIGURATION_HASH,
       },
     })).toThrow("not release-ready");
     expect(() => evidence({ foreignApplicationHandle: OWN_APPLICATION_HANDLE }))
       .toThrow("must differ");
     expect(() => evidence({ reviewAuthorityMode: "unconfigured" }))
       .toThrow("review authority mode");
+    expect(() => evidence({
+      probeResult: {
+        baseUrl: "https://programmable-candidate.vercel.app",
+        status: "ready",
+        authenticatedCanary: "passed",
+        sessionAuthorityConfigurationHash: `sha256:${"A".repeat(64)}`,
+      },
+    })).toThrow("session authority configuration");
   });
 });

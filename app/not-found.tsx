@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight, BookOpen } from "lucide-react";
 
@@ -12,12 +13,12 @@ export default function NotFound() {
           <div className={styles.copy}>
             <h1 id="not-found-title">This page isn’t available.</h1>
             <p className={styles.description}>
-              The link may have moved. Explore current tokens or return to the
+              The link may have moved. Explore current projects or return to the
               documentation.
             </p>
             <div className={styles.actions}>
               <Link className={styles.primaryAction} href="/explore">
-                Explore tokens
+                Explore projects
                 <ArrowRight aria-hidden="true" size={17} />
               </Link>
               <Link className={styles.secondaryAction} href="/docs/developers">
@@ -27,7 +28,17 @@ export default function NotFound() {
             </div>
           </div>
 
-          <p className={styles.code} aria-hidden="true">404</p>
+          <div className={styles.visual} aria-hidden="true">
+            <Image
+              className={styles.visualMark}
+              src="/brand/loop/programmable-loop-mark-header-warm-ivory-v1-1536.png"
+              alt=""
+              width={146}
+              height={192}
+              priority
+            />
+            <span className={styles.code}>404</span>
+          </div>
         </section>
       </div>
       <SiteFooter />

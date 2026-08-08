@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, generateKeyPairSync } from "node:crypto";
 
 import { describe, expect, it, vi } from "vitest";
 
@@ -24,6 +24,32 @@ const permitSigner = {
     rawPermitPublicKey,
   ])).digest("hex")}`,
 };
+const sessionAuthorityKey = generateKeyPairSync("ed25519");
+const sessionAuthorityWorkloadKey = generateKeyPairSync("ed25519");
+const sessionAuthorityConfiguration = {
+  PROGRAMMABLE_GITHUB_SESSION_AUTHORITY_AUDIENCE:
+    "programmable.github-session-authority.v1",
+  PROGRAMMABLE_GITHUB_SESSION_AUTHORITY_KEY_ID: "github-session-v1",
+  PROGRAMMABLE_GITHUB_SESSION_AUTHORITY_KEY_EPOCH: "1",
+  PROGRAMMABLE_GITHUB_SESSION_AUTHORITY_PRIVATE_KEY_PEM:
+    sessionAuthorityKey.privateKey.export({ format: "pem", type: "pkcs8" }).toString(),
+  PROGRAMMABLE_GITHUB_SESSION_AUTHORITY_PUBLIC_KEY_SPKI_SHA256:
+    `sha256:${createHash("sha256").update(sessionAuthorityKey.publicKey.export({
+      format: "der",
+      type: "spki",
+    })).digest("hex")}`,
+  PROGRAMMABLE_GITHUB_SESSION_AUTHORITY_WORKLOAD_ISSUER:
+    "programmable-authority-token-broker-v1",
+  PROGRAMMABLE_GITHUB_SESSION_AUTHORITY_WORKLOAD_SUBJECT: "approval-runtime-v1",
+  PROGRAMMABLE_GITHUB_SESSION_AUTHORITY_WORKLOAD_KEY_ID: "workload-access-v1",
+  PROGRAMMABLE_GITHUB_SESSION_AUTHORITY_WORKLOAD_PUBLIC_KEY_PEM:
+    sessionAuthorityWorkloadKey.publicKey.export({ format: "pem", type: "spki" }).toString(),
+  PROGRAMMABLE_GITHUB_SESSION_AUTHORITY_WORKLOAD_PUBLIC_KEY_SPKI_SHA256:
+    `sha256:${createHash("sha256").update(sessionAuthorityWorkloadKey.publicKey.export({
+      format: "der",
+      type: "spki",
+    })).digest("hex")}`,
+};
 
 const configured = {
   PROGRAMMABLE_CUSTOM_LAUNCH_PUBLIC_ENABLED: "true",
@@ -33,6 +59,7 @@ const configured = {
   NEXT_PUBLIC_PRIVY_APP_ID: "privy-app",
   PRIVY_APP_SECRET: "privy-secret",
   PROGRAMMABLE_LAUNCH_PERMIT_SIGNERS_V2_JSON: JSON.stringify([permitSigner]),
+  ...sessionAuthorityConfiguration,
 };
 
 function trustedTimeRequest(signer = permitSigner): Request {
@@ -70,6 +97,15 @@ describe("Custom launch public readiness", () => {
     expect(isCustomLaunchPublicEnabled({
       ...configured,
       PROGRAMMABLE_LAUNCH_PERMIT_SIGNERS_V2_JSON: "",
+    })).toBe(false);
+    expect(isCustomLaunchPublicEnabled({
+      ...configured,
+      PROGRAMMABLE_GITHUB_SESSION_AUTHORITY_AUDIENCE: "",
+    })).toBe(false);
+    expect(isCustomLaunchPublicEnabled({
+      ...configured,
+      PROGRAMMABLE_GITHUB_SESSION_AUTHORITY_WORKLOAD_PUBLIC_KEY_SPKI_SHA256:
+        `sha256:${"f".repeat(64)}`,
     })).toBe(false);
   });
 

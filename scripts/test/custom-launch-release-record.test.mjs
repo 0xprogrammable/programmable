@@ -9,6 +9,9 @@ import { fileURLToPath } from "node:url";
 import {
   computeDetachedRecordSha256,
   computeReleaseSubjectSha256,
+  computeSessionAuthorityConfigurationEvidenceSha256,
+  computeSessionAuthorityRuntimeConfigurationHash,
+  computeWebsiteProjectionMigrationDigest,
   verifyReleaseRecord as verifyReleaseRecordCore,
 } from "../verify-custom-launch-release-record.mjs";
 
@@ -30,6 +33,7 @@ const commits = {
   base: "2".repeat(40),
   other: "3".repeat(40),
   backendAttestation: "4".repeat(40),
+  productionAuthority: "9".repeat(40),
 };
 const hashes = Object.freeze({
   a: `sha256:${"a".repeat(64)}`,
@@ -61,7 +65,7 @@ function crossRepositoryAttestation(record) {
     websiteCandidateCommitSha: record.subject.website.commitSha,
     builderCandidateCommitSha: "7".repeat(40),
     registryCandidateCommitSha: "8".repeat(40),
-    productionAuthorityCandidateCommitSha: "9".repeat(40),
+    productionAuthorityCandidateCommitSha: commits.productionAuthority,
     applicationV3CompatibilityEvidenceSha256: hashes.zero,
     commitSignatureVerified: true,
   };
@@ -74,12 +78,12 @@ function verifyReleaseRecord(record, options = {}) {
   });
 }
 
-function decision(status, subjectHash, suffix) {
-  const decidedAt = suffix === "freeze"
+function decision(status, subjectHash, suffix, decidedAtOverride = null) {
+  const decidedAt = decidedAtOverride ?? (suffix === "freeze"
     ? "2026-08-06T12:00:00Z"
     : suffix === "promotion"
       ? "2026-08-06T13:30:00Z"
-      : "2026-08-06T16:00:00Z";
+      : "2026-08-06T16:00:00Z");
   return {
     authority: "command_center",
     status,
@@ -95,7 +99,7 @@ async function completeRecord(level = "live") {
   const record = await readTemplate();
   record.createdAt = "2026-08-06T11:00:00Z";
   record.releaseIntent.releaseId = "custom-launch-v1-20260806-001";
-  record.releaseIntent.targetMode = "enabled";
+  record.releaseIntent.targetMode = level === "dark_staging" ? "disabled" : "enabled";
   record.subject.website.commitSha = commits.website;
   record.subject.website.reviewedDiffBaseSha = commits.base;
   record.subject.website.reviewedDiffHeadSha = commits.website;
@@ -106,11 +110,14 @@ async function completeRecord(level = "live") {
   record.subject.crossRepositoryReleaseBinding.attestationCommitSha =
     commits.backendAttestation;
   record.subject.crossRepositoryReleaseBinding.documentSha256 = hashes.e;
-  const subjectHash = computeReleaseSubjectSha256(record);
-  record.subject.releaseSubjectSha256 = subjectHash;
-  record.commandCenter.freezeClearance = decision("cleared", subjectHash, "freeze");
-  record.recordStatus = "freeze_cleared";
-  if (level === "clearance") return record;
+  let subjectHash;
+  if (level === "clearance") {
+    subjectHash = computeReleaseSubjectSha256(record);
+    record.subject.releaseSubjectSha256 = subjectHash;
+    record.commandCenter.freezeClearance = decision("cleared", subjectHash, "freeze");
+    record.recordStatus = "freeze_cleared";
+    return record;
+  }
 
   record.validation.gates = record.validation.gates.map((gate, index) => ({
     ...gate,
@@ -122,7 +129,24 @@ async function completeRecord(level = "live") {
   record.productionDependencies = {
     websiteProjection: {
       databaseIdentity: "supabase:mnnvlrqwhfoppogslsje",
-      migrationDigest: hashes.a,
+      migrationInventory: [
+        {
+          ordinal: 1,
+          path: "ops/website-projection-target/migrations/0001_projection_records_v1.sql",
+          fileSha256: hashes.a,
+        },
+        {
+          ordinal: 2,
+          path: "ops/website-projection-target/migrations/0002_custom_launch_wallet_profile_v2.sql",
+          fileSha256: hashes.b,
+        },
+        {
+          ordinal: 3,
+          path: "ops/website-projection-target/migrations/0003_registry_custom_public_read_v1.sql",
+          fileSha256: hashes.c,
+        },
+      ],
+      migrationDigest: null,
       runtimeRoleAttestationSha256: hashes.b,
       backupId: "backup-20260806-001",
       restoreDrillEvidenceSha256: hashes.c,
@@ -141,6 +165,17 @@ async function completeRecord(level = "live") {
       githubOauthEnabled: true,
       identityTokensEnabled: true,
     },
+    sessionAuthority: {
+      audience: "programmable-launcher",
+      keyId: "github-session-authority-20260806",
+      keyEpoch: "2026-08",
+      authorityPublicKeySpkiSha256: hashes.e,
+      workloadIssuer: "programmable-authority-token-broker-v1",
+      workloadSubject: "approval-runtime-v1",
+      workloadKeyId: "workload-access-v1",
+      workloadPublicKeySpkiSha256: hashes.f,
+      configurationEvidenceSha256: null,
+    },
     ethereum: {
       chainId: "1",
       chainProfileSha256: hashes.a,
@@ -154,6 +189,15 @@ async function completeRecord(level = "live") {
       websiteProjectionBindingSha256: hashes.e,
     },
   };
+  record.productionDependencies.websiteProjection.migrationDigest =
+    computeWebsiteProjectionMigrationDigest(
+      record.productionDependencies.websiteProjection,
+    );
+  record.productionDependencies.sessionAuthority.configurationEvidenceSha256 =
+    computeSessionAuthorityConfigurationEvidenceSha256(
+      record.productionDependencies,
+      commits.productionAuthority,
+    );
   record.deployment.rollback = {
     deploymentId: "dpl_previous",
     immutableDeploymentUrl: "https://launcher-v4-previous.vercel.app",
@@ -162,7 +206,16 @@ async function completeRecord(level = "live") {
     configurationSnapshotSha256: hashes.f,
     capturedAt: "2026-08-06T13:10:00Z",
   };
-  if (level === "staging") return record;
+  subjectHash = computeReleaseSubjectSha256(record);
+  record.subject.releaseSubjectSha256 = subjectHash;
+  record.commandCenter.freezeClearance = decision(
+    "cleared",
+    subjectHash,
+    "freeze",
+    "2026-08-06T13:15:00Z",
+  );
+  record.recordStatus = "freeze_cleared";
+  if (level === "dark_staging" || level === "staging") return record;
   record.deployment.candidate = {
     deploymentId: "dpl_candidate",
     immutableDeploymentUrl: "https://launcher-v4-candidate.vercel.app",
@@ -274,6 +327,8 @@ test("AJV 2020 rejects unknown nested fields before semantic verification", asyn
     (record) => { record.commandCenter.freezeClearance.unexpected = true; },
     (record) => { record.validation.gates[0].unexpected = true; },
     (record) => { record.productionDependencies.approvalService.unexpected = true; },
+    (record) => { record.productionDependencies.sessionAuthority.unexpected = true; },
+    (record) => { record.productionDependencies.websiteProjection.migrationInventory[0].unexpected = true; },
     (record) => { record.deployment.candidate.unexpected = true; },
     (record) => { record.promotionGate.workflow.unexpected = true; },
     (record) => { record.canary.unexpected = true; },
@@ -337,10 +392,17 @@ test("clearance requires the observed GitHub attestation content", async () => {
 test("each release level is independently fail closed", async () => {
   const clearance = await completeRecord("clearance");
   assert.equal(verifyReleaseRecord(clearance, { require: "clearance" }).ok, true);
+  assert.equal(verifyReleaseRecord(clearance, { require: "dark_staging" }).ok, false);
   assert.equal(verifyReleaseRecord(clearance, { require: "staging" }).ok, false);
+
+  const darkStaging = await completeRecord("dark_staging");
+  assert.equal(verifyReleaseRecord(darkStaging, { require: "dark_staging" }).ok, true);
+  assert.equal(verifyReleaseRecord(darkStaging, { require: "staging" }).ok, false);
+  assert.equal(verifyReleaseRecord(darkStaging, { require: "candidate" }).ok, false);
 
   const staging = await completeRecord("staging");
   assert.equal(verifyReleaseRecord(staging, { require: "staging" }).ok, true);
+  assert.equal(verifyReleaseRecord(staging, { require: "dark_staging" }).ok, false);
   assert.equal(verifyReleaseRecord(staging, { require: "candidate" }).ok, false);
 
   const candidate = await completeRecord("candidate");
@@ -353,6 +415,192 @@ test("each release level is independently fail closed", async () => {
 
   const live = await completeRecord("live");
   assert.equal(verifyReleaseRecord(live, { require: "live" }).ok, true);
+});
+
+test("dark staging binds clearance, production dependencies, rollback, and an empty promotion surface", async () => {
+  const record = await completeRecord("dark_staging");
+  assert.equal(record.releaseIntent.targetMode, "disabled");
+  assert.equal(record.commandCenter.freezeClearance.status, "cleared");
+  assert.equal(record.commandCenter.promotionApproval.status, "pending");
+  assert.equal(record.commandCenter.liveDeclaration.status, "pending");
+  assert.equal(record.deployment.candidate.deploymentId, null);
+  assert.equal(record.deployment.promoted.deploymentId, null);
+  assert.equal(verifyReleaseRecord(record, { require: "dark_staging" }).ok, true);
+
+  record.deployment.candidate.deploymentId = "dpl_unbound_candidate";
+  const candidateSubstitution = verifyReleaseRecord(record, {
+    require: "dark_staging",
+  });
+  assert.equal(candidateSubstitution.ok, false);
+  assert.match(candidateSubstitution.errors.join("\n"), /must remain null before candidate staging/u);
+
+  const rollbackSubstitution = await completeRecord("dark_staging");
+  rollbackSubstitution.deployment.rollback.configurationSnapshotSha256 = hashes.a;
+  const rollbackResult = verifyReleaseRecord(rollbackSubstitution, {
+    require: "dark_staging",
+  });
+  assert.equal(rollbackResult.ok, false);
+  assert.match(rollbackResult.errors.join("\n"), /releaseSubjectSha256/u);
+});
+
+test("session-authority public configuration and cross-repository authority commit reject substitution", async () => {
+  const baseline = await completeRecord("dark_staging");
+  const expectedEvidence =
+    baseline.productionDependencies.sessionAuthority.configurationEvidenceSha256;
+  assert.equal(verifyReleaseRecord(baseline, {
+    require: "dark_staging",
+    expected: {
+      sessionAuthorityConfigurationEvidenceSha256: expectedEvidence,
+    },
+  }).ok, true);
+
+  const fieldMutations = [
+    ["audience", "programmable-launcher-substituted"],
+    ["keyId", "github-session-authority-substituted"],
+    ["keyEpoch", "2026-09"],
+    ["authorityPublicKeySpkiSha256", hashes.a],
+    ["workloadIssuer", "substituted-workload-issuer"],
+    ["workloadSubject", "substituted-workload-subject"],
+    ["workloadKeyId", "substituted-workload-key"],
+    ["workloadPublicKeySpkiSha256", hashes.a],
+    ["configurationEvidenceSha256", hashes.a],
+  ];
+  for (const [field, value] of fieldMutations) {
+    const substituted = structuredClone(baseline);
+    substituted.productionDependencies.sessionAuthority[field] = value;
+    const result = verifyReleaseRecord(substituted, { require: "dark_staging" });
+    assert.equal(result.ok, false, `${field} substitution must fail closed`);
+    assert.match(
+      result.errors.join("\n"),
+      /configurationEvidenceSha256|releaseSubjectSha256/u,
+    );
+  }
+
+  const substitutedObservation = crossRepositoryAttestation(baseline);
+  substitutedObservation.productionAuthorityCandidateCommitSha = commits.other;
+  const crossRepositoryResult = verifyReleaseRecordCore(baseline, {
+    require: "dark_staging",
+    crossRepositoryAttestation: substitutedObservation,
+  });
+  assert.equal(crossRepositoryResult.ok, false);
+  assert.match(
+    crossRepositoryResult.errors.join("\n"),
+    /productionDependencies\.sessionAuthority\.configurationEvidenceSha256/u,
+  );
+
+  const externalExpectation = verifyReleaseRecord(baseline, {
+    require: "dark_staging",
+    expected: {
+      sessionAuthorityConfigurationEvidenceSha256: hashes.zero,
+    },
+  });
+  assert.equal(externalExpectation.ok, false);
+  assert.match(
+    externalExpectation.errors.join("\n"),
+    /productionDependencies\.sessionAuthority\.configurationEvidenceSha256/u,
+  );
+});
+
+test("session-authority runtime hash matches the deployed public attestation binding", async () => {
+  const baseline = await completeRecord("dark_staging");
+  const baselineHash = computeSessionAuthorityRuntimeConfigurationHash(
+    baseline.productionDependencies,
+  );
+  assert.match(baselineHash, /^sha256:[0-9a-f]{64}$/u);
+  assert.notEqual(
+    baselineHash,
+    baseline.productionDependencies.sessionAuthority.configurationEvidenceSha256,
+  );
+
+  for (const [field, value] of [
+    ["audience", "programmable-launcher-substituted"],
+    ["keyId", "github-session-authority-substituted"],
+    ["keyEpoch", "2026-09"],
+    ["authorityPublicKeySpkiSha256", hashes.a],
+    ["workloadIssuer", "substituted-workload-issuer"],
+    ["workloadSubject", "substituted-workload-subject"],
+    ["workloadKeyId", "substituted-workload-key"],
+    ["workloadPublicKeySpkiSha256", hashes.a],
+  ]) {
+    const substituted = structuredClone(baseline);
+    substituted.productionDependencies.sessionAuthority[field] = value;
+    assert.notEqual(
+      computeSessionAuthorityRuntimeConfigurationHash(
+        substituted.productionDependencies,
+      ),
+      baselineHash,
+      `${field} substitution must change the runtime configuration hash`,
+    );
+  }
+  const substitutedApp = structuredClone(baseline);
+  substitutedApp.productionDependencies.identity.privyApplicationId =
+    "cm123substitutedappid";
+  assert.notEqual(
+    computeSessionAuthorityRuntimeConfigurationHash(
+      substitutedApp.productionDependencies,
+    ),
+    baselineHash,
+  );
+});
+
+test("Website projection migration digest binds the complete ordered 0001 through 0003 inventory", async () => {
+  const baseline = await completeRecord("dark_staging");
+  const projection = baseline.productionDependencies.websiteProjection;
+  assert.deepEqual(
+    projection.migrationInventory.map(({ ordinal, path }) => ({ ordinal, path })),
+    [
+      {
+        ordinal: 1,
+        path: "ops/website-projection-target/migrations/0001_projection_records_v1.sql",
+      },
+      {
+        ordinal: 2,
+        path: "ops/website-projection-target/migrations/0002_custom_launch_wallet_profile_v2.sql",
+      },
+      {
+        ordinal: 3,
+        path: "ops/website-projection-target/migrations/0003_registry_custom_public_read_v1.sql",
+      },
+    ],
+  );
+  assert.equal(
+    projection.migrationDigest,
+    computeWebsiteProjectionMigrationDigest(projection),
+  );
+
+  const reordered = structuredClone(baseline);
+  [
+    reordered.productionDependencies.websiteProjection.migrationInventory[0],
+    reordered.productionDependencies.websiteProjection.migrationInventory[1],
+  ] = [
+    reordered.productionDependencies.websiteProjection.migrationInventory[1],
+    reordered.productionDependencies.websiteProjection.migrationInventory[0],
+  ];
+  const reorderedResult = verifyReleaseRecord(reordered, {
+    require: "dark_staging",
+  });
+  assert.equal(reorderedResult.ok, false);
+  assert.match(reorderedResult.errors.join("\n"), /migrationInventory/u);
+
+  const truncated = structuredClone(baseline);
+  truncated.productionDependencies.websiteProjection.migrationInventory.pop();
+  const truncatedResult = verifyReleaseRecord(truncated, {
+    require: "dark_staging",
+  });
+  assert.equal(truncatedResult.ok, false);
+  assert.match(truncatedResult.errors.join("\n"), /migrationInventory/u);
+
+  const substitutedHash = structuredClone(baseline);
+  substitutedHash.productionDependencies.websiteProjection
+    .migrationInventory[2].fileSha256 = hashes.f;
+  const substitutedHashResult = verifyReleaseRecord(substitutedHash, {
+    require: "dark_staging",
+  });
+  assert.equal(substitutedHashResult.ok, false);
+  assert.match(
+    substitutedHashResult.errors.join("\n"),
+    /migrationDigest|releaseSubjectSha256/u,
+  );
 });
 
 test("release records reject the former production alias", async () => {
@@ -380,6 +628,8 @@ test("staging expectations bind the exact external workflow observations", async
     rollbackDeploymentId: "dpl_previous",
     rollbackDeploymentUrl: "https://launcher-v4-previous.vercel.app",
     rollbackWebsiteCommitSha: commits.base,
+    sessionAuthorityConfigurationEvidenceSha256:
+      record.productionDependencies.sessionAuthority.configurationEvidenceSha256,
     detachedRecordSha256: computeDetachedRecordSha256(record),
   };
   assert.equal(verifyReleaseRecord(record, { require: "staging", expected }).ok, true);

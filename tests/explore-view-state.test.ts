@@ -374,26 +374,26 @@ describe("Explore refresh state", () => {
   });
 
   it("refreshes only visible Explore content after the freshness interval", () => {
-    expect(EXPLORE_REFRESH_INTERVAL_MS).toBe(5_000);
+    expect(EXPLORE_REFRESH_INTERVAL_MS).toBe(30_000);
     expect(
       shouldRefreshExplore({
         visibilityState: "hidden",
         lastRefreshAt: 0,
-        now: 20_000,
+        now: 60_000,
       }),
     ).toBe(false);
     expect(
       shouldRefreshExplore({
         visibilityState: "visible",
         lastRefreshAt: 5_000,
-        now: 9_999,
+        now: 34_999,
       }),
     ).toBe(false);
     expect(
       shouldRefreshExplore({
         visibilityState: "visible",
         lastRefreshAt: 5_000,
-        now: 10_000,
+        now: 35_000,
       }),
     ).toBe(true);
   });

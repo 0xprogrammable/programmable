@@ -55,17 +55,6 @@
   width: max-content;
 }
 
-.pageDescription {
-  color: var(--explore-ivory-soft);
-  font-size: 16px;
-  font-weight: 430;
-  line-height: 1.5;
-  margin: 20px 0 0;
-  max-width: 54ch;
-  text-shadow: 0 2px 18px rgba(1, 5, 20, 0.58);
-  text-wrap: pretty;
-}
-
 .runnersSection {
   padding: 0 0 80px;
   position: relative;
@@ -233,31 +222,36 @@
 .filterMenu {
   -webkit-backdrop-filter: blur(34px) saturate(1.12);
   backdrop-filter: blur(34px) saturate(1.12);
-  background: var(--explore-glass-strong);
-  border-color: rgba(248, 240, 233, 0.26);
+  background: linear-gradient(
+    155deg,
+    rgba(250, 246, 241, 0.91),
+    rgba(226, 218, 226, 0.86)
+  );
+  border-color: rgba(255, 253, 249, 0.58);
   border-radius: 20px;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.72),
     0 24px 64px rgba(1, 1, 3, 0.52);
+  color: #181318;
   gap: 0;
   max-width: calc(100vw - 28px);
-  min-width: 248px;
+  min-width: 316px;
   padding: 8px;
 }
 
 .filterMenu button {
   border-radius: 12px;
-  color: var(--explore-ivory-soft);
+  color: rgba(24, 19, 24, 0.76);
   min-height: 44px;
 }
 
 .filterMenu button:global(.active) {
-  background: rgba(248, 240, 233, 0.13);
-  color: var(--explore-ivory);
+  background: rgba(79, 50, 70, 0.12);
+  color: #181318;
 }
 
 .filterMenu button svg {
-  color: var(--explore-pink);
+  color: #7d4264;
 }
 
 .filterGroup + .filterGroup {
@@ -265,13 +259,61 @@
 }
 
 .filterLabel {
-  color: var(--explore-ivory-muted);
+  color: #4b4148;
   font-family: var(--font-instrument), sans-serif;
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.01em;
   line-height: 1.3;
   margin: 8px 12px 6px;
+}
+
+.sortControls {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding-inline: 4px;
+}
+
+.sortControl {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.sortControl > span {
+  color: #4b4148;
+  font-size: 10px;
+  font-weight: 620;
+  letter-spacing: 0.04em;
+  padding-inline: 8px;
+  text-transform: uppercase;
+}
+
+.sortControl select {
+  -webkit-appearance: none;
+  appearance: none;
+  background:
+    linear-gradient(45deg, transparent 50%, currentColor 50%)
+      calc(100% - 15px) calc(50% - 2px) / 5px 5px no-repeat,
+    linear-gradient(135deg, currentColor 50%, transparent 50%)
+      calc(100% - 10px) calc(50% - 2px) / 5px 5px no-repeat,
+    rgba(255, 255, 255, 0.34);
+  border: 1px solid rgba(43, 31, 40, 0.16);
+  border-radius: 12px;
+  color: #181318;
+  font: inherit;
+  font-size: 13px;
+  min-height: 44px;
+  min-width: 0;
+  padding: 0 30px 0 11px;
+  width: 100%;
+}
+
+.sortControl select:focus-visible {
+  border-color: rgba(80, 49, 70, 0.48);
+  outline: 2px solid #5d3a50;
+  outline-offset: 2px;
 }
 
 .activeFilterCount {
@@ -289,21 +331,14 @@
   width: 18px;
 }
 
-.resultLabel {
-  color: var(--explore-ivory-muted);
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
-  line-height: 1.4;
-  margin: 12px auto 0;
-  min-height: 19px;
-  text-align: start;
-  width: min(100%, 1040px);
+.filterSpinner {
+  animation: filter-spin 800ms linear infinite;
 }
 
-.resultLabel:focus-visible {
-  border-radius: 4px;
-  outline: 2px solid var(--explore-ivory);
-  outline-offset: 4px;
+@keyframes filter-spin {
+  to {
+    transform: rotate(1turn);
+  }
 }
 
 .runnerGrid {
@@ -758,12 +793,6 @@
     width: auto;
   }
 
-  .pageDescription {
-    font-size: 15px;
-    margin-top: 16px;
-    max-width: 35ch;
-  }
-
   .runnersSection {
     padding-bottom: 72px;
   }
@@ -828,10 +857,6 @@
   .runnersIntro :global(.token-pagination) {
     grid-column: 1 / -1;
     justify-self: center;
-  }
-
-  .resultLabel {
-    margin-top: 12px;
   }
 
   .runnerGrid {
@@ -925,11 +950,6 @@
     font-size: clamp(38px, 11vw, 44px);
   }
 
-  .pageDescription {
-    font-size: 14px;
-    max-width: 31ch;
-  }
-
   .runnerHitArea,
   .skeletonCard {
     grid-template-columns: 104px minmax(0, 1fr);
@@ -1010,10 +1030,19 @@
   }
 }
 
+@media (max-width: 340px) {
+  .sortControls {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 @supports not (
   (-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))
 ) {
-  .filterMenu,
+  .filterMenu {
+    background: #e4dde3;
+  }
+
   .runnerCard,
   .messageState,
   .emptyState {
@@ -1035,6 +1064,10 @@
   .runnerCard:has(a.runnerHitArea):hover .runnerImage,
   .emptyAction:hover {
     transform: none;
+  }
+
+  .filterSpinner {
+    animation: none;
   }
 }
 

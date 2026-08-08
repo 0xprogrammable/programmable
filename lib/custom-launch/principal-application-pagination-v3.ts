@@ -2,6 +2,7 @@ import type {
   PrincipalCustomLaunchApplicationSummaryV2,
   Sha256DigestV2,
 } from "./contract-v2";
+import { canonicalBrowserSha256V2 } from "./browser-authority-v2";
 
 export const MAXIMUM_PRINCIPAL_APPLICATION_PAGES_V3 = 200;
 export const MAXIMUM_PRINCIPAL_APPLICATIONS_V3 = 100_000;
@@ -27,7 +28,10 @@ type ApplicationPageClientV3 = Readonly<{
     cursor?: string;
     signal?: AbortSignal;
   }>): Promise<Readonly<{
-    subject: Readonly<{ githubPrincipalHash: Sha256DigestV2 }>;
+    subject: Readonly<{
+      githubUserId: string;
+      githubPrincipalHash: Sha256DigestV2;
+    }>;
     applications: readonly PrincipalCustomLaunchApplicationSummaryV2[];
     nextCursor: string | null;
   }>>;
@@ -64,6 +68,7 @@ export async function readAllPrincipalApplicationsV3(
   const observedCursors = new Set<string>();
   const observedApplicationHandles = new Set<string>();
   let cursor: string | undefined;
+  let githubUserId: string | null = null;
   let githubPrincipalHash: Sha256DigestV2 | null = null;
 
   try {
@@ -73,10 +78,18 @@ export async function readAllPrincipalApplicationsV3(
         ...(cursor === undefined ? {} : { cursor }),
       }, aggregateController.signal);
       if (
-        !/^sha256:[0-9a-f]{64}$/u.test(page.subject.githubPrincipalHash)
+        !/^[1-9][0-9]{0,19}$/u.test(page.subject.githubUserId)
+        || !/^sha256:[0-9a-f]{64}$/u.test(page.subject.githubPrincipalHash)
+        || page.subject.githubPrincipalHash !== canonicalBrowserSha256V2(
+          "programmable.github-submitter-principal.v1",
+          { githubUserId: page.subject.githubUserId },
+        )
+        || (githubUserId !== null
+          && page.subject.githubUserId !== githubUserId)
         || (githubPrincipalHash !== null
           && page.subject.githubPrincipalHash !== githubPrincipalHash)
       ) throw new Error("GitHub submission identity changed while loading");
+      githubUserId ??= page.subject.githubUserId;
       githubPrincipalHash ??= page.subject.githubPrincipalHash;
       if (
         page.applications.length

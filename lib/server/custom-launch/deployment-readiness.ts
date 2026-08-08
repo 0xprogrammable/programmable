@@ -11,6 +11,7 @@ import {
   configuredLaunchPermitSignersV2,
   isCustomLaunchPublicEnabled,
 } from "./public-readiness";
+import { attestGitHubSessionAuthorityConfigurationV1 } from "./github-session-authority-v1";
 import {
   exactReviewAuthorityModeV1,
   type ReviewAuthorityModeV1,
@@ -62,6 +63,8 @@ export function createCustomLaunchDeploymentReadinessHandlerV1(
         throw new TypeError("Custom launch public configuration is incomplete");
       }
       const signers = configuredLaunchPermitSignersV2(dependencies.environment);
+      const sessionAuthority =
+        attestGitHubSessionAuthorityConfigurationV1(dependencies.environment);
       const release = exactReleaseIdentity(dependencies.environment);
       const approvalServiceRelease = exactExpectedApprovalServiceReleaseIdentity(
         dependencies.environment,
@@ -85,11 +88,13 @@ export function createCustomLaunchDeploymentReadinessHandlerV1(
           chainId: ETHEREUM_CHAIN_ID,
           components: {
             approvalService: "ready",
+            githubSessionAuthority: "ready",
             permitSignerKeyring: "ready",
             publicConfiguration: "ready",
             websiteProjectionDatabase: "ready",
           },
           approvalServiceRelease,
+          sessionAuthority,
           release,
           checkedAt: dependencies.now().toISOString(),
         }, { status: 200, headers: RESPONSE_HEADERS });
@@ -108,11 +113,13 @@ export function createCustomLaunchDeploymentReadinessHandlerV1(
         chainId: ETHEREUM_CHAIN_ID,
         components: {
           approvalService: "ready",
+          githubSessionAuthority: "ready",
           permitSignerKeyring: "ready",
           publicConfiguration: "ready",
           websiteProjectionDatabase: "ready",
         },
         approvalServiceRelease,
+        sessionAuthority,
         release,
         trustedTimePath: `/api/custom-launch/trusted-time?${query.toString()}`,
         checkedAt: dependencies.now().toISOString(),

@@ -19,7 +19,6 @@ import {
 
 import { useWallet } from "@/components/wallet-provider";
 import { useLiveDataRefresh } from "@/components/use-live-data-refresh";
-import type { AuthenticatedCustomLaunchProjectV2 } from "@/lib/custom-launch/contract-v2";
 import { isConfiguredClassicV3ReleaseReady } from "@/lib/classic-v3-release";
 import { prepareAvatarImage } from "@/lib/profile/avatar";
 import {
@@ -64,6 +63,7 @@ import {
   normalizeProfileUsername,
   parseLocalProfile,
   PROFILE_UPDATED_EVENT,
+  readLocalProfile,
   writeLocalProfile,
 } from "@/lib/profile/local-profile";
 import {
@@ -88,186 +88,6 @@ const fallbackTokenImages = [
   "/brand/programmable-token-fallback-06-dusk.webp",
 ] as const;
 
-type CustomProjectsProfileState =
-  | { phase: "loading"; requestKey: string }
-  | {
-      phase: "ready";
-      requestKey: string;
-      projects: readonly AuthenticatedCustomLaunchProjectV2[];
-    }
-  | { phase: "error"; requestKey: string };
-
-function customProfileChainId(): string {
-  return process.env.NEXT_PUBLIC_PROGRAMMABLE_ONCHAIN_NETWORK === "rehearsal"
-    ? "11155111"
-    : "1";
-}
-
-function customProfilePrimaryTokenAddress(
-  project: AuthenticatedCustomLaunchProjectV2,
-): `0x${string}` | null {
-  const token = project.discoverableAssets.find(({ role, provenance }) =>
-    role === "primary-token" && provenance.kind === "launch-produced");
-  if (token === undefined
-    || (token.identity.namespace !== `eip155:${project.chainId}`
-      && token.identity.namespace !== `eip155:${project.chainId}:erc20`)
-    || !/^0x[0-9a-f]{40}$/u.test(token.identity.value)) return null;
-  return token.identity.value as `0x${string}`;
-}
-
-function parseCustomWalletProfile(
-  value: unknown,
-  namespace: string,
-  account: string,
-): readonly AuthenticatedCustomLaunchProjectV2[] {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new Error("Custom projects returned an invalid response");
-  }
-  const profile = value as Record<string, unknown>;
-  if (profile.schemaVersion !== "programmable.custom-launch-wallet-profile.v2"
-    || typeof profile.subject !== "object" || profile.subject === null
-    || Array.isArray(profile.subject)
-    || (profile.subject as Record<string, unknown>).namespace !== namespace
-    || (profile.subject as Record<string, unknown>).value !== account
-    || !Array.isArray(profile.projects)) {
-    throw new Error("Custom projects returned an invalid wallet profile");
-  }
-  for (const candidate of profile.projects) {
-    if (typeof candidate !== "object" || candidate === null || Array.isArray(candidate)) {
-      throw new Error("Custom projects returned an invalid project");
-    }
-    const project = candidate as Record<string, unknown>;
-    if (project.schemaVersion !== "programmable.custom-launch-website-record.v2"
-      || project.category !== "custom"
-      || project.status !== "launched"
-      || typeof project.launchingWallet !== "object"
-      || project.launchingWallet === null
-      || Array.isArray(project.launchingWallet)
-      || (project.launchingWallet as Record<string, unknown>).namespace !== namespace
-      || (project.launchingWallet as Record<string, unknown>).value !== account
-      || typeof project.postLaunchAuthorityInventory !== "object"
-      || project.postLaunchAuthorityInventory === null
-      || Array.isArray(project.postLaunchAuthorityInventory)
-      || (project.postLaunchAuthorityInventory as Record<string, unknown>).githubAuthority
-        !== "provenance-only-never-post-launch-authority"
-      || !Array.isArray(
-        (project.postLaunchAuthorityInventory as Record<string, unknown>)
-          .postLaunchAuthorities,
-      )) throw new Error("Custom projects returned an invalid project binding");
-  }
-  return profile.projects as AuthenticatedCustomLaunchProjectV2[];
-}
-
-function CustomProjectsProfileSection({ account }: { account: `0x${string}` }) {
-  const namespace = `eip155:${customProfileChainId()}`;
-  const normalizedAccount = account.toLowerCase() as `0x${string}`;
-  const requestKey = `${namespace}:${normalizedAccount}`;
-  const [state, setState] = useState<CustomProjectsProfileState>({
-    phase: "loading",
-    requestKey,
-  });
-  const visibleState: CustomProjectsProfileState = state.requestKey === requestKey
-    ? state
-    : { phase: "loading", requestKey };
-
-  useEffect(() => {
-    const controller = new AbortController();
-    const query = new URLSearchParams({ namespace, wallet: normalizedAccount });
-    void fetch(`/api/custom-launch/v2/profile?${query.toString()}`, {
-      headers: { Accept: "application/json" },
-      signal: controller.signal,
-    }).then(async (response) => {
-      const body: unknown = await response.json().catch(() => null);
-      if (!response.ok) throw new Error("Custom projects are unavailable");
-      return parseCustomWalletProfile(body, namespace, normalizedAccount);
-    }).then((projects) => {
-      if (!controller.signal.aborted) {
-        setState({ phase: "ready", requestKey, projects });
-      }
-    }).catch(() => {
-      if (!controller.signal.aborted) setState({ phase: "error", requestKey });
-    });
-    return () => controller.abort();
-  }, [namespace, normalizedAccount, requestKey]);
-
-  return (
-    <section
-      className={styles.customProjects}
-      id="custom-projects"
-      aria-labelledby="custom-projects-title"
-    >
-      <header className={styles.customProjectsHeader}>
-        <div>
-          <span>Wallet-indexed</span>
-          <h2 id="custom-projects-title">Custom projects</h2>
-        </div>
-        <Link href="/explore?model=custom">Explore Custom</Link>
-      </header>
-      {visibleState.phase === "loading" ? (
-        <p className={styles.customProjectsState} role="status">Loading Custom projects</p>
-      ) : visibleState.phase === "error" ? (
-        <p className={styles.customProjectsState} role="status">
-          Custom projects are temporarily unavailable. Classic profile data is unaffected.
-        </p>
-      ) : visibleState.projects.length === 0 ? (
-        <p className={styles.customProjectsState}>
-          No finalized Custom launch is indexed for this wallet.
-        </p>
-      ) : (
-        <div className={styles.customProjectList}>
-          {visibleState.projects.map((project) => {
-            const tokenAddress = customProfilePrimaryTokenAddress(project);
-            const primaryToken = project.discoverableAssets.find(({ role }) =>
-              role === "primary-token");
-            const projectName = primaryToken?.onchainMetadata?.status === "available"
-              ? primaryToken.onchainMetadata.name
-              : project.modelId;
-            const walletAuthorities = project.postLaunchAuthorityInventory
-              .postLaunchAuthorities.filter(({ identity }) =>
-                identity.namespace === namespace
-                && identity.value === normalizedAccount);
-            return (
-              <article className={styles.customProjectCard} key={project.projectId}>
-                <div className={styles.customProjectIdentity}>
-                  <span>Custom</span>
-                  <h3>{projectName}</h3>
-                  <p>{project.modelId} · {new Date(project.finalizedAt).toLocaleDateString("en-GB")}</p>
-                </div>
-                <div className={styles.customProjectAuthority}>
-                  <span>Declared wallet authority</span>
-                  {walletAuthorities.length === 0 ? (
-                    <p>No post-launch role is declared for this wallet.</p>
-                  ) : (
-                    <ul>
-                      {walletAuthorities.map((authority) => (
-                        <li key={authority.authorityId}>
-                          <strong>{authority.disclosure.label}</strong>
-                          <span>{authority.postLaunchActions.join(" · ") || `${authority.feeRole} fee role`}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-                <p className={styles.customProjectProvenance}>
-                  GitHub is source provenance only, never post-launch authority.
-                </p>
-                {tokenAddress ? (
-                  <Link className={styles.customProjectAction} href={`/token/${tokenAddress}`}>
-                    View project
-                  </Link>
-                ) : (
-                  <Link className={styles.customProjectAction} href="/explore?model=custom">
-                    View in Explore
-                  </Link>
-                )}
-              </article>
-            );
-          })}
-        </div>
-      )}
-    </section>
-  );
-}
 const profileEnvironment =
   process.env.NEXT_PUBLIC_PROGRAMMABLE_ONCHAIN_NETWORK === "rehearsal"
     ? "rehearsal"
@@ -284,6 +104,7 @@ const creatorProfileCache = new Map<
 >();
 const CREATOR_PROFILE_CACHE_TTL_MS = 30_000;
 const MAX_CREATOR_PROFILE_CACHE_ENTRIES = 8;
+export const PROFILE_LIVE_REFRESH_INTERVAL_MS = 60_000;
 
 function readCachedCreatorProfile(account: string) {
   const key = account.toLowerCase();
@@ -1141,6 +962,7 @@ export function ProfileView({ onchainData }: ProfileViewProps = {}) {
   const [profileRefresh, setProfileRefresh] = useState(0);
   const liveProfileRefresh = useLiveDataRefresh({
     enabled: Boolean(account),
+    intervalMs: PROFILE_LIVE_REFRESH_INTERVAL_MS,
   });
   const [terminalErrorReadyKey, setTerminalErrorReadyKey] = useState("");
   const [classicV3Rewards, setClassicV3Rewards] =
@@ -1512,8 +1334,15 @@ export function ProfileView({ onchainData }: ProfileViewProps = {}) {
 
     try {
       writeLocalProfile(window.localStorage, account, nextProfile);
+      const persistedProfile = readLocalProfile(window.localStorage, account);
+      if (
+        persistedProfile.username !== nextProfile.username ||
+        persistedProfile.avatarDataUrl !== nextProfile.avatarDataUrl
+      ) {
+        throw new Error("Profile storage did not retain the saved values");
+      }
     } catch {
-      setSaveError("The profile could not be saved");
+      setSaveError("This browser could not save the profile");
       return;
     }
 
@@ -2743,7 +2572,7 @@ export function ProfileView({ onchainData }: ProfileViewProps = {}) {
                 {usernameError ||
                   avatarError ||
                   saveError ||
-                  "3–12 letters or numbers · square JPG, PNG or WebP"}
+                  "3–12 letters or numbers · square JPG, PNG or WebP · saved in this browser for this wallet"}
               </p>
             </form>
           ) : null}
@@ -2772,7 +2601,6 @@ export function ProfileView({ onchainData }: ProfileViewProps = {}) {
         terminalErrorReady={terminalErrorReady}
       />
 
-      <CustomProjectsProfileSection account={account} />
     </div>
   );
 }
@@ -3276,29 +3104,19 @@ export function sortProfileClaimableEntries(
   account?: string,
   actionStates?: ProfileActionStateCollections,
 ) {
+  void account;
+  void actionStates;
   return [...entries].sort((first, second) => {
-    const firstStock = profileEntryActionableStockAmounts(
-      first,
-      account,
-      actionStates,
-    );
-    const secondStock = profileEntryActionableStockAmounts(
-      second,
-      account,
-      actionStates,
-    );
-    const firstEstimatedEth =
-      profileEntryActionableNativeWei(first, account, actionStates) +
-      firstStock.estimatedEthWei;
-    const secondEstimatedEth =
-      profileEntryActionableNativeWei(second, account, actionStates) +
-      secondStock.estimatedEthWei;
-
-    if (firstEstimatedEth !== secondEstimatedEth) {
-      return firstEstimatedEth > secondEstimatedEth ? -1 : 1;
-    }
-    if (firstStock.raw !== secondStock.raw) {
-      return firstStock.raw > secondStock.raw ? -1 : 1;
+    const firstLaunchTime = Date.parse(first.token.launchedAt);
+    const secondLaunchTime = Date.parse(second.token.launchedAt);
+    const firstHasLaunchTime = Number.isFinite(firstLaunchTime);
+    const secondHasLaunchTime = Number.isFinite(secondLaunchTime);
+    if (firstHasLaunchTime && secondHasLaunchTime) {
+      if (firstLaunchTime !== secondLaunchTime) {
+        return firstLaunchTime < secondLaunchTime ? 1 : -1;
+      }
+    } else if (firstHasLaunchTime !== secondHasLaunchTime) {
+      return firstHasLaunchTime ? -1 : 1;
     }
     return first.token.address.localeCompare(second.token.address);
   });
@@ -3575,7 +3393,48 @@ function ProfileAccountWorkspace({
   onRetry: () => void;
   terminalErrorReady: boolean;
 }) {
-  const [claimPage, setClaimPage] = useState(1);
+  const currentReady = data.status === "ready";
+  const classicReady = classicV3Rewards.status === "ready";
+  const deepReady = deepRewards.status === "ready";
+  const deepV3Ready = deepV3Profile.status === "ready";
+  const stockPairedReady = stockPairedRewards.status === "ready";
+  const entries = buildProfilePortfolio(
+    currentReady ? data.tokens : [],
+    currentReady ? data.claims : [],
+    classicReady ? classicV3Rewards.rewards : [],
+    deepReady ? deepRewards.rewards : [],
+    deepV3Ready ? deepV3Profile.tokens : [],
+    stockPairedReady ? stockPairedRewards.rewards : [],
+  );
+  const actionStates: ProfileActionStateCollections = {
+    claim: claimActionStates,
+    classicV3: classicV3ActionStates,
+    deep: deepActionStates,
+    stockPaired: stockPairedActionStates,
+  };
+  const claimableEntries = sortProfileClaimableEntries(
+    entries.filter((entry) =>
+      profileEntryHasActionableReward(entry, account, actionStates),
+    ),
+    account,
+    actionStates,
+  );
+  const claimableEntryKey = claimableEntries
+    .map((entry) => entry.token.address)
+    .join("|");
+  const [claimPagination, setClaimPagination] = useState(() => ({
+    key: claimableEntryKey,
+    page: 1,
+  }));
+  const claimPage =
+    claimPagination.key === claimableEntryKey ? claimPagination.page : 1;
+  const setClaimPage = (page: number) => {
+    setClaimPagination({ key: claimableEntryKey, page });
+  };
+  const claimPageData = paginateProfileClaimableEntries(
+    claimableEntries,
+    claimPage,
+  );
 
   if (!connected) {
     return (
@@ -3593,11 +3452,6 @@ function ProfileAccountWorkspace({
     );
   }
 
-  const currentReady = data.status === "ready";
-  const classicReady = classicV3Rewards.status === "ready";
-  const deepReady = deepRewards.status === "ready";
-  const deepV3Ready = deepV3Profile.status === "ready";
-  const stockPairedReady = stockPairedRewards.status === "ready";
   const loading =
     data.status === "loading" ||
     classicV3Rewards.status === "loading" ||
@@ -3651,20 +3505,6 @@ function ProfileAccountWorkspace({
     );
   }
 
-  const entries = buildProfilePortfolio(
-    currentReady ? data.tokens : [],
-    currentReady ? data.claims : [],
-    classicReady ? classicV3Rewards.rewards : [],
-    deepReady ? deepRewards.rewards : [],
-    deepV3Ready ? deepV3Profile.tokens : [],
-    stockPairedReady ? stockPairedRewards.rewards : [],
-  );
-  const actionStates: ProfileActionStateCollections = {
-    claim: claimActionStates,
-    classicV3: classicV3ActionStates,
-    deep: deepActionStates,
-    stockPaired: stockPairedActionStates,
-  };
   const nativeClaimable = entries.reduce(
     (total, entry) =>
       total +
@@ -3703,17 +3543,6 @@ function ProfileAccountWorkspace({
       ).length,
     0,
   );
-  const claimableEntries = sortProfileClaimableEntries(
-    entries.filter((entry) =>
-      profileEntryHasActionableReward(entry, account, actionStates),
-    ),
-    account,
-    actionStates,
-  );
-  const claimPageData = paginateProfileClaimableEntries(
-    claimableEntries,
-    claimPage,
-  );
   const chainId = currentReady
     ? data.chainId
     : classicReady
@@ -3727,19 +3556,15 @@ function ProfileAccountWorkspace({
             : undefined;
   const sourceWarning =
     data.status === "error"
-      ? data.errorMessage || "Some token rewards could not be refreshed"
+      ? "Some token rewards are temporarily unavailable. Other verified balances remain visible."
       : classicV3Rewards.status === "error"
-        ? classicV3Rewards.errorMessage ||
-          "Some Classic rewards could not be refreshed"
+        ? "Classic rewards are temporarily unavailable. Other verified balances remain visible."
         : deepRewards.status === "error"
-          ? deepRewards.errorMessage ||
-            "Some Deep rewards could not be refreshed"
+          ? "Some rewards are temporarily unavailable. Other verified balances remain visible."
           : deepV3Profile.status === "error"
-            ? deepV3Profile.errorMessage ||
-              "Some Deep liquidity state could not be refreshed"
+            ? "Some liquidity data is temporarily unavailable. Other verified balances remain visible."
           : stockPairedRewards.status === "error"
-            ? stockPairedRewards.errorMessage ||
-              "Some Stock-Paired rewards could not be refreshed"
+            ? "Some quote rewards are temporarily unavailable. Other verified balances remain visible."
         : "";
 
   return (

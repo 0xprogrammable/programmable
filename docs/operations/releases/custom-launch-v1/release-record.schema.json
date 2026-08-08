@@ -103,14 +103,15 @@
     "productionDependencies": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["websiteProjection", "approvalService", "identity", "ethereum", "targets"],
+      "required": ["websiteProjection", "approvalService", "identity", "sessionAuthority", "ethereum", "targets"],
       "properties": {
         "websiteProjection": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["databaseIdentity", "migrationDigest", "runtimeRoleAttestationSha256", "backupId", "restoreDrillEvidenceSha256"],
+          "required": ["databaseIdentity", "migrationInventory", "migrationDigest", "runtimeRoleAttestationSha256", "backupId", "restoreDrillEvidenceSha256"],
           "properties": {
             "databaseIdentity": { "$ref": "#/$defs/nullableString" },
+            "migrationInventory": { "$ref": "#/$defs/websiteProjectionMigrationInventory" },
             "migrationDigest": { "$ref": "#/$defs/nullableSha256" },
             "runtimeRoleAttestationSha256": { "$ref": "#/$defs/nullableSha256" },
             "backupId": { "$ref": "#/$defs/nullableString" },
@@ -139,6 +140,22 @@
             "privyApplicationId": { "$ref": "#/$defs/nullableString" },
             "githubOauthEnabled": { "type": ["boolean", "null"] },
             "identityTokensEnabled": { "type": ["boolean", "null"] }
+          }
+        },
+        "sessionAuthority": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["audience", "keyId", "keyEpoch", "authorityPublicKeySpkiSha256", "workloadIssuer", "workloadSubject", "workloadKeyId", "workloadPublicKeySpkiSha256", "configurationEvidenceSha256"],
+          "properties": {
+            "audience": { "$ref": "#/$defs/nullableString" },
+            "keyId": { "$ref": "#/$defs/nullableString" },
+            "keyEpoch": { "$ref": "#/$defs/nullableString" },
+            "authorityPublicKeySpkiSha256": { "$ref": "#/$defs/nullableSha256" },
+            "workloadIssuer": { "$ref": "#/$defs/nullableString" },
+            "workloadSubject": { "$ref": "#/$defs/nullableString" },
+            "workloadKeyId": { "$ref": "#/$defs/nullableString" },
+            "workloadPublicKeySpkiSha256": { "$ref": "#/$defs/nullableSha256" },
+            "configurationEvidenceSha256": { "$ref": "#/$defs/nullableSha256" }
           }
         },
         "ethereum": {
@@ -213,6 +230,44 @@
     "timestamp": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$" },
     "nullableTimestamp": { "anyOf": [{ "$ref": "#/$defs/timestamp" }, { "type": "null" }] },
     "nullableString": { "type": ["string", "null"] },
+    "websiteProjectionMigrationInventory": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "prefixItems": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ordinal", "path", "fileSha256"],
+          "properties": {
+            "ordinal": { "const": 1 },
+            "path": { "const": "ops/website-projection-target/migrations/0001_projection_records_v1.sql" },
+            "fileSha256": { "$ref": "#/$defs/nullableSha256" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ordinal", "path", "fileSha256"],
+          "properties": {
+            "ordinal": { "const": 2 },
+            "path": { "const": "ops/website-projection-target/migrations/0002_custom_launch_wallet_profile_v2.sql" },
+            "fileSha256": { "$ref": "#/$defs/nullableSha256" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ordinal", "path", "fileSha256"],
+          "properties": {
+            "ordinal": { "const": 3 },
+            "path": { "const": "ops/website-projection-target/migrations/0003_registry_custom_public_read_v1.sql" },
+            "fileSha256": { "$ref": "#/$defs/nullableSha256" }
+          }
+        }
+      ],
+      "items": false
+    },
     "decision": {
       "type": "object",
       "additionalProperties": false,

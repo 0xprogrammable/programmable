@@ -13,7 +13,6 @@ import {
   ImagePlus,
   LoaderCircle,
   RefreshCw,
-  Wallet,
 } from "lucide-react";
 import {
   useCallback,
@@ -254,6 +253,60 @@ export type CustomApplicationDisplayState = Readonly<{
   tone: "pending" | "warning" | "ready" | "complete" | "muted";
 }>;
 
+export type CustomApplicationSummaryCounts = Readonly<{
+  readyToLaunch: number;
+  changesRequested: number;
+  analysisPending: number;
+  changedSinceReview: number;
+  launchPending: number;
+  alreadyLaunched: number;
+  unavailable: number;
+}>;
+
+export function customApplicationSummaryCounts(
+  applications: readonly PrincipalCustomLaunchApplicationSummaryV2[],
+): CustomApplicationSummaryCounts {
+  const counts = {
+    readyToLaunch: 0,
+    changesRequested: 0,
+    analysisPending: 0,
+    changedSinceReview: 0,
+    launchPending: 0,
+    alreadyLaunched: 0,
+    unavailable: 0,
+  };
+  for (const application of applications) {
+    if (
+      application.state === "ready_for_registration"
+      && customApplicationOpensLaunchExperienceV2(application)
+    ) {
+      counts.readyToLaunch += 1;
+    } else if (application.state === "changes_required") {
+      counts.changesRequested += 1;
+    } else if (
+      application.state === "received"
+      || application.state === "in_review"
+      || application.state === "platform_pending"
+      || application.state === "approved"
+      || application.state === "ready_for_registration"
+    ) {
+      counts.analysisPending += 1;
+    } else if (
+      application.state === "stale"
+      || application.state === "superseded"
+    ) {
+      counts.changedSinceReview += 1;
+    } else if (application.state === "launching") {
+      counts.launchPending += 1;
+    } else if (application.state === "launched") {
+      counts.alreadyLaunched += 1;
+    } else {
+      counts.unavailable += 1;
+    }
+  }
+  return Object.freeze(counts);
+}
+
 export function customApplicationDisplayState(
   state: CustomLaunchApplicationStateV2,
 ): CustomApplicationDisplayState {
@@ -262,8 +315,8 @@ export function customApplicationDisplayState(
     in_review: { title: "Review in progress", action: "View review", tone: "pending" },
     changes_required: { title: "Changes needed", action: "Open requested changes", tone: "warning" },
     platform_pending: { title: "Verification still running", action: "View on GitHub", tone: "pending" },
-    ready_for_registration: { title: "Ready for final verification", action: "Finish verification", tone: "pending" },
-    approved: { title: "Ready to launch", action: "Set up launch", tone: "ready" },
+    ready_for_registration: { title: "Ready to launch", action: "Set up launch", tone: "ready" },
+    approved: { title: "Approval recorded", action: "View on GitHub", tone: "pending" },
     stale: { title: "Source changed", action: "View current source", tone: "warning" },
     rejected: { title: "Not approved", action: "View decision", tone: "warning" },
     superseded: { title: "New version submitted", action: "View current version", tone: "muted" },
@@ -279,7 +332,6 @@ export function customApplicationOpensLaunchExperience(
   state: CustomLaunchApplicationStateV2,
 ): boolean {
   return state === "ready_for_registration"
-    || state === "approved"
     || state === "launching"
     || state === "launched";
 }
@@ -288,7 +340,24 @@ export function customApplicationOpensLaunchExperienceV2(
   application: PrincipalCustomLaunchApplicationSummaryV2,
 ): boolean {
   return customApplicationIntakeIsLaunchableV2(application)
-    && customApplicationOpensLaunchExperience(application.state);
+    && customApplicationOpensLaunchExperience(application.state)
+    && application.receiptDigest !== null
+    && application.launchEntitlementBindingHash !== null;
+}
+
+export function customApplicationDisplayStateV2(
+  application: PrincipalCustomLaunchApplicationSummaryV2,
+): CustomApplicationDisplayState {
+  if (application.intakeContract === "registry-v3") {
+    return { title: "Catalog entry", action: "View on GitHub", tone: "muted" };
+  }
+  if (
+    application.state === "ready_for_registration"
+    && !customApplicationOpensLaunchExperienceV2(application)
+  ) {
+    return { title: "Launch authority pending", action: "View on GitHub", tone: "pending" };
+  }
+  return customApplicationDisplayState(application.state);
 }
 
 export type CustomLaunchFeeReviewV1 = Readonly<{
@@ -387,7 +456,7 @@ export function assertLaunchSetupBindings(input: Readonly<{
   const { application, descriptor, eligibility, presentation } = input;
   if (
     !customApplicationIntakeIsLaunchableV2(application)
-    || application.state !== "approved"
+    || application.state !== "ready_for_registration"
     || application.receiptDigest === null
     || application.launchEntitlementBindingHash === null
     || eligibility.applicationId !== application.applicationId
@@ -1266,6 +1335,7 @@ export function CustomLaunchExperience({
     getAccessToken,
     getIdentityToken,
     githubConnected,
+    githubUserId,
     githubUsername,
     openWallet,
     sendBrowserWalletAction,
@@ -1302,7 +1372,7 @@ export function CustomLaunchExperience({
     new LaunchAuthorityRefreshSingleFlightV1(),
   );
   const launchAuthorityRefreshAttemptRef = useRef(new Map<string, number>());
-  const githubIdentityRef = useRef(githubUsername);
+  const githubIdentityRef = useRef(githubUserId);
   const walletAccountRef = useRef(wallet?.account ?? null);
 
   useEffect(() => {
@@ -1352,7 +1422,7 @@ export function CustomLaunchExperience({
   }, [getAccessToken, getIdentityToken]);
 
   const loadApplications = useCallback(async () => {
-    if (!wallet || !githubConnected) return;
+    if (!githubConnected) return;
     applicationsAbortControllerRef.current?.abort();
     const controller = new AbortController();
     applicationsAbortControllerRef.current = controller;
@@ -1380,17 +1450,17 @@ export function CustomLaunchExperience({
         setApplicationsLoading(false);
       }
     }
-  }, [getSession, githubConnected, wallet]);
+  }, [getSession, githubConnected]);
 
   useEffect(() => {
-    if (screen !== "intro" || !wallet || !githubConnected || applicationsLoaded) return;
+    if (screen !== "intro" || !githubConnected || applicationsLoaded) return;
     const timeout = window.setTimeout(() => void loadApplications(), 0);
     return () => window.clearTimeout(timeout);
-  }, [applicationsLoaded, githubConnected, loadApplications, screen, wallet]);
+  }, [applicationsLoaded, githubConnected, loadApplications, screen]);
 
   useEffect(() => {
-    const identityChanged = githubIdentityRef.current !== githubUsername;
-    githubIdentityRef.current = githubUsername;
+    const identityChanged = githubIdentityRef.current !== githubUserId;
+    githubIdentityRef.current = githubUserId;
     if (githubConnected && !identityChanged) return;
     applicationsAbortControllerRef.current?.abort();
     applicationsAbortControllerRef.current = null;
@@ -1405,7 +1475,7 @@ export function CustomLaunchExperience({
     setSelected(null);
     resetApplicationScopedState();
     setScreen("intro");
-  }, [githubConnected, githubUsername, resetApplicationScopedState]);
+  }, [githubConnected, githubUserId, resetApplicationScopedState]);
 
   useEffect(() => () => {
     flowGenerationRef.current += 1;
@@ -1476,11 +1546,11 @@ export function CustomLaunchExperience({
       }
       assertSamePrincipalApplicationRevisionV1(input.application, freshApplication);
       currentApplication = freshApplication;
-      if (currentApplication.state === "ready_for_registration") {
+      if (currentApplication.state === "approved") {
         await delay(750);
         continue;
       }
-      if (currentApplication.state !== "approved") {
+      if (currentApplication.state !== "ready_for_registration") {
         throw new LaunchAuthorityRefreshBindingErrorV1(
           "This exact GitHub version is no longer approved to launch",
         );
@@ -2312,6 +2382,7 @@ export function CustomLaunchExperience({
   const feeReview = approvedRoute
     ? customLaunchFeeReviewV1(approvedRoute.feePolicy)
     : null;
+  const applicationSummary = customApplicationSummaryCounts(applications);
 
   if (screen === "intro") {
     return (
@@ -2335,37 +2406,31 @@ export function CustomLaunchExperience({
           </section>
           <section className={styles.statusEntry}>
             <span className={styles.githubMark} aria-hidden="true">
-              {wallet ? <GitHubBrandIcon /> : <Wallet />}
+              <GitHubBrandIcon />
             </span>
-            <h2>{wallet ? "Already submitted?" : "Connect your launch wallet"}</h2>
+            <h2>{githubConnected ? "Check your submissions" : "Already submitted?"}</h2>
             <p>
-              {wallet
-                ? "Next, verify the GitHub account that opened the submission. GitHub is source provenance only."
-                : "Choose the wallet that will sign and submit the launch. You can change it before confirmation."}
+              Sign in with the GitHub account that opened the submission. We check
+              the exact reviewed revision. Connect a wallet only after choosing a
+              launch-ready submission.
             </p>
-            {wallet ? (
-              <div className={styles.walletGate}>
+            <div className={styles.githubGate}>
+              {githubConnected ? (
                 <div>
-                  <span>Launch wallet</span>
-                  <code>{shortAddress(wallet.account)}</code>
-                  <button type="button" onClick={openWallet}>Change wallet</button>
+                  <span>GitHub account</span>
+                  <code>{githubUsername ? `@${githubUsername}` : "Connected"}</code>
                 </div>
-                <button
-                  className={styles.githubButton}
-                  type="button"
-                  disabled={applicationsLoading}
-                  onClick={githubConnected ? () => void loadApplications() : connectGithub}
-                >
-                  {applicationsLoading ? <LoaderCircle aria-hidden="true" className={styles.spin} size={17} /> : <span className={styles.githubButtonMark} aria-hidden="true"><GitHubBrandIcon /></span>}
-                  {githubConnected ? "Check submission status" : authenticated ? "Link GitHub account" : "Verify with GitHub"}
-                </button>
-              </div>
-            ) : (
-              <button className={styles.githubButton} type="button" onClick={openWallet}>
-                <Wallet aria-hidden="true" size={17} />
-                Connect wallet
+              ) : null}
+              <button
+                className={styles.githubButton}
+                type="button"
+                disabled={applicationsLoading}
+                onClick={githubConnected ? () => void loadApplications() : connectGithub}
+              >
+                {applicationsLoading ? <LoaderCircle aria-hidden="true" className={styles.spin} size={17} /> : <span className={styles.githubButtonMark} aria-hidden="true"><GitHubBrandIcon /></span>}
+                {githubConnected ? "Check submission status" : authenticated ? "Link GitHub account" : "Continue with GitHub"}
               </button>
-            )}
+            </div>
           </section>
         </div>
         <LiveMessage message={error || statusMessage} error={Boolean(error)} />
@@ -2382,6 +2447,17 @@ export function CustomLaunchExperience({
             <RefreshCw aria-hidden="true" className={applicationsLoading ? styles.spin : undefined} size={17} />
           </button>
         </div>
+        {applications.length > 0 ? (
+          <dl className={styles.applicationSummary} aria-label="Submission overview" aria-live="polite">
+            <SummaryCount label="Ready to launch" value={applicationSummary.readyToLaunch} tone="ready" />
+            <SummaryCount label="Changes requested" value={applicationSummary.changesRequested} tone="warning" />
+            <SummaryCount label="Analysis pending" value={applicationSummary.analysisPending} tone="pending" />
+            <SummaryCount label="Changed since review" value={applicationSummary.changedSinceReview} tone="warning" />
+            <SummaryCount label="Launch pending" value={applicationSummary.launchPending} tone="pending" />
+            <SummaryCount label="Already launched" value={applicationSummary.alreadyLaunched} tone="complete" />
+            <SummaryCount label="Unavailable" value={applicationSummary.unavailable} tone="muted" />
+          </dl>
+        ) : null}
         {applications.length === 0 ? (
           <section className={styles.emptyState}>
             <h2>No custom submissions yet</h2>
@@ -2423,7 +2499,7 @@ export function CustomLaunchExperience({
             <h2>{launchProgress === "complete" ? "Launch complete" : "Launch submitted"}</h2>
             <p>{statusMessage || "The approved transaction is being verified."}</p>
             {transactionHash ? <TransactionEvidence chainId={transactionChainId} transactionHash={transactionHash} /> : null}
-            {launchProgress === "complete" ? <Link className={styles.secondaryButton} href="/profile#custom-projects">View custom projects</Link> : <button className={styles.secondaryButton} type="button" onClick={returnToApplications}>View submissions</button>}
+            {launchProgress === "complete" ? <Link className={styles.secondaryButton} href="/explore?model=custom">View in Explore</Link> : <button className={styles.secondaryButton} type="button" onClick={returnToApplications}>View submissions</button>}
           </div>
           <LiveMessage message={error} error />
         </section>
@@ -2493,6 +2569,7 @@ export function CustomLaunchExperience({
                       : "None"}
                   </dd>
                 </div>
+                <div><dt>GitHub source identity</dt><dd>{githubUsername ? `@${githubUsername}` : "Verified GitHub account"}</dd></div>
                 <div><dt>Wallet</dt><dd className={styles.reviewWallet}>{wallet ? <><span>{shortAddress(wallet.account)}</span><button type="button" onClick={openWallet}>Change wallet</button></> : "Connect an Ethereum wallet"}</dd></div>
               </dl>
             </section>
@@ -2504,7 +2581,7 @@ export function CustomLaunchExperience({
               <span>{statusMessage || "Exact approved commit ready"}</span>
             </div>
             {launchProgress === "complete" ? (
-              <Link className="primary-button" href="/profile#custom-projects">View custom projects <ArrowRight aria-hidden="true" size={16} /></Link>
+              <Link className="primary-button" href="/explore?model=custom">View in Explore <ArrowRight aria-hidden="true" size={16} /></Link>
             ) : pendingGrantReissue !== null ? (
               <button
                 className="primary-button"
@@ -2533,21 +2610,40 @@ export function CustomLaunchExperience({
 }
 
 function CustomLaunchFrame({ children, eyebrow = "Custom Hook", onBack, title }: { children: ReactNode; eyebrow?: string; onBack: () => void; title: string }) {
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    headingRef.current?.focus({ preventScroll: true });
+  }, [title]);
   return (
     <div className={`launch-page page-width ${launchExperience.formPage} ${styles.page}`} data-launch-model="custom">
       <header className="launch-page-heading">
         <button className="launch-model-back" type="button" onClick={onBack}><ArrowLeft aria-hidden="true" size={15} />Back</button>
-        <div className={`launch-page-title ${launchExperience.formPageTitle}`}><span className={launchExperience.formModelName}>{eyebrow}</span><h1>{title}</h1></div>
+        <div className={`launch-page-title ${launchExperience.formPageTitle}`}><span className={launchExperience.formModelName}>{eyebrow}</span><h1 ref={headingRef} tabIndex={-1}>{title}</h1></div>
       </header>
       {children}
     </div>
   );
 }
 
+function SummaryCount({
+  label,
+  tone,
+  value,
+}: {
+  label: string;
+  tone: CustomApplicationDisplayState["tone"];
+  value: number;
+}) {
+  return (
+    <div data-tone={tone}>
+      <dd>{value}</dd>
+      <dt>{label}</dt>
+    </div>
+  );
+}
+
 function ApplicationRow({ application, onOpen }: { application: PrincipalCustomLaunchApplicationSummaryV2; onOpen: () => void }) {
-  const display = application.intakeContract === "registry-v3"
-    ? { title: "Catalog entry", action: "View on GitHub", tone: "muted" as const }
-    : customApplicationDisplayState(application.state);
+  const display = customApplicationDisplayStateV2(application);
   const githubUrl = `https://github.com/${application.repositoryFullName}/pull/${application.pullRequestNumber}`;
   const opensSetup = customApplicationOpensLaunchExperienceV2(application);
   const guidance = applicationGuidance(application);
@@ -2557,7 +2653,16 @@ function ApplicationRow({ application, onOpen }: { application: PrincipalCustomL
       <div className={styles.applicationStatus} data-tone={display.tone}>{display.tone === "complete" || display.tone === "ready" ? <CircleCheck aria-hidden="true" size={17} /> : display.tone === "warning" ? <CircleAlert aria-hidden="true" size={17} /> : <Clock3 aria-hidden="true" size={17} />}<span><strong>{display.title}</strong><small>{formatObservedTime(application.updatedAt)}</small></span></div>
       {application.correctionPreview.length > 0 ? <ul className={styles.corrections}>{application.correctionPreview.slice(0, 3).map(({ correctionId, summary }) => <li key={correctionId}>{summary}</li>)}</ul> : null}
       {application.correctionPreview.length === 0 && guidance ? <p className={styles.guidance}>{guidance}</p> : null}
-      {application.state === "launched" ? <Link className={styles.rowAction} href="/profile#custom-projects">View project<ArrowRight aria-hidden="true" size={15} /></Link> : opensSetup ? <button className={styles.rowAction} type="button" onClick={onOpen}>{display.action}<ArrowRight aria-hidden="true" size={15} /></button> : <a className={styles.rowAction} href={githubUrl} target="_blank" rel="noreferrer">{display.action}<ExternalLink aria-hidden="true" size={14} /></a>}
+      {application.state === "launched" ? <Link className={styles.rowAction} href="/explore?model=custom">View in Explore<ArrowRight aria-hidden="true" size={15} /></Link> : opensSetup ? <button className={styles.rowAction} type="button" onClick={onOpen}>{display.action}<ArrowRight aria-hidden="true" size={15} /></button> : <a className={styles.rowAction} href={githubUrl} target="_blank" rel="noreferrer">{display.action}<ExternalLink aria-hidden="true" size={14} /></a>}
+      <details className={styles.revisionDetails}>
+        <summary>Exact submission revision</summary>
+        <dl>
+          <div><dt>Commit</dt><dd><code>{application.commitOid}</code></dd></div>
+          <div><dt>Tree</dt><dd><code>{application.treeOid}</code></dd></div>
+          <div><dt>Review receipt</dt><dd><code>{application.receiptDigest ?? "Not issued"}</code></dd></div>
+          <div><dt>Launch entitlement</dt><dd><code>{application.launchEntitlementBindingHash ?? "Not issued"}</code></dd></div>
+        </dl>
+      </details>
     </article>
   );
 }
@@ -2868,7 +2973,8 @@ function transactionExplorerUrl(chainId: string, transactionHash: string): strin
 function applicationGuidance(application: PrincipalCustomLaunchApplicationSummaryV2): string {
   if (application.intakeContract === "registry-v3") return "This legacy registry intake is catalog-only and cannot open a launch session.";
   if (application.state === "platform_pending") return "Platform verification is still running. Refresh this list shortly.";
-  if (application.state === "ready_for_registration") return "The review passed and final registry checks are still completing.";
+  if (application.state === "approved") return "The review passed. Exact launch authority is still being issued.";
+  if (application.state === "ready_for_registration" && !customApplicationOpensLaunchExperienceV2(application)) return "Exact launch authority is still being published. Refresh this list shortly.";
   if (application.state === "expired") return "This exact approval window ended. Follow the GitHub thread to renew or resubmit it.";
   if (application.state === "revoked") return "This exact version can no longer launch. The GitHub thread contains the recovery path.";
   if (application.state === "stale") return "The reviewed source tree changed. Submit or select the current exact revision.";

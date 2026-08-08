@@ -208,6 +208,34 @@ describe("custom launch client response contracts", () => {
     });
   });
 
+  it("uses the same bounded numeric GitHub identity contract as session authority", async () => {
+    const maximum = applicationList();
+    maximum.subject.githubUserId = "9".repeat(20);
+    await expect(clientFor(maximum).applications()).resolves.toMatchObject({
+      subject: { githubUserId: "9".repeat(20) },
+    });
+
+    const tooLong = applicationList();
+    tooLong.subject.githubUserId = "9".repeat(21);
+    await expectContractMismatch(clientFor(tooLong).applications());
+  });
+
+  it("uses the same bounded base64url pagination cursor contract as session authority", async () => {
+    for (const cursor of ["a".repeat(16), "A".repeat(512)]) {
+      const value = applicationList();
+      Object.assign(value, { nextCursor: cursor });
+      await expect(clientFor(value).applications()).resolves.toMatchObject({
+        nextCursor: cursor,
+      });
+    }
+
+    for (const cursor of ["a".repeat(15), "a".repeat(513), `${"a".repeat(16)}.`]) {
+      const value = applicationList();
+      Object.assign(value, { nextCursor: cursor });
+      await expectContractMismatch(clientFor(value).applications());
+    }
+  });
+
   it("accepts only the explicit AEON, registry-v3, and legacy compatibility shapes", async () => {
     const legacyOmitted = applicationList();
     await expect(clientFor(legacyOmitted).applications()).resolves.toMatchObject({

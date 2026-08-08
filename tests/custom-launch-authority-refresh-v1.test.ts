@@ -72,6 +72,18 @@ function refresh(
 }
 
 describe("principal launch authority refresh", () => {
+  it("rejects an approved outcome that has no current grant", async () => {
+    await expect(pollPrincipalLaunchAuthorityRefreshV1({
+      client: { launchAuthorityRefresh: async () => refresh("current") },
+      application: application({
+        state: "approved",
+        launchEntitlementBindingHash: null,
+      }),
+      idempotencyKey: "launch-authority-refresh-approved-without-grant",
+      isActive: () => true,
+    })).rejects.toBeInstanceOf(LaunchAuthorityRefreshBindingErrorV1);
+  });
+
   it("uses one deterministic key per generation and a fresh key for explicit retry", () => {
     const first = launchAuthorityRefreshIdempotencyKeyV1({ application: application() });
     const same = launchAuthorityRefreshIdempotencyKeyV1({ application: application() });

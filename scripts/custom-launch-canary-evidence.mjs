@@ -12,11 +12,9 @@ export function createCustomLaunchCanaryEvidence(input) {
     throw new TypeError("Custom Launch canary evidence input is invalid");
   }
   const targetUrl = exactHttpsOrigin(input.targetUrl);
-  if (
-    input.probeResult?.baseUrl !== targetUrl
-    || input.probeResult?.status !== "ready"
-    || input.probeResult?.authenticatedCanary !== "passed"
-  ) throw new TypeError("Custom Launch canary result is not release-ready");
+  if (input.probeResult?.baseUrl !== targetUrl) {
+    throw new TypeError("Custom Launch canary result is not release-ready");
+  }
   if (
     typeof input.deploymentId !== "string"
     || !VERCEL_DEPLOYMENT_ID.test(input.deploymentId)
@@ -32,6 +30,43 @@ export function createCustomLaunchCanaryEvidence(input) {
   if (!REVIEW_AUTHORITY_MODES.has(input.reviewAuthorityMode)) {
     throw new TypeError("Custom Launch review authority mode is invalid");
   }
+  const sessionAuthorityConfigurationHash = exactSha256(
+    input.probeResult?.sessionAuthorityConfigurationHash,
+    "session authority configuration",
+  );
+  const commonEvidence = {
+    result: "passed",
+    candidate: Object.freeze({
+      deploymentId: input.deploymentId,
+      targetUrl,
+      websiteCommitSha: input.websiteCommitSha,
+    }),
+    approvalService: Object.freeze({
+      packageArtifactHash: input.approvalServicePackageArtifactHash,
+      reviewAuthorityMode: input.reviewAuthorityMode,
+    }),
+    sessionAuthority: Object.freeze({
+      configurationHash: sessionAuthorityConfigurationHash,
+    }),
+  };
+
+  if (
+    input.probeResult.status === "disabled"
+    && input.probeResult.authenticatedCanary === "not_requested"
+  ) {
+    return Object.freeze({
+      schemaVersion: "programmable.custom-launch-dark-readiness-evidence.v1",
+      ...commonEvidence,
+      readiness: Object.freeze({
+        status: "disabled",
+        authenticatedCanary: false,
+      }),
+    });
+  }
+  if (
+    input.probeResult.status !== "ready"
+    || input.probeResult.authenticatedCanary !== "passed"
+  ) throw new TypeError("Custom Launch canary result is not release-ready");
   const ownApplicationHandle = exactApplicationHandle(
     input.ownApplicationHandle,
     "own application handle",
@@ -46,16 +81,7 @@ export function createCustomLaunchCanaryEvidence(input) {
 
   return Object.freeze({
     schemaVersion: "programmable.custom-launch-candidate-canary-evidence.v1",
-    result: "passed",
-    candidate: Object.freeze({
-      deploymentId: input.deploymentId,
-      targetUrl,
-      websiteCommitSha: input.websiteCommitSha,
-    }),
-    approvalService: Object.freeze({
-      packageArtifactHash: input.approvalServicePackageArtifactHash,
-      reviewAuthorityMode: input.reviewAuthorityMode,
-    }),
+    ...commonEvidence,
     canary: Object.freeze({
       authenticated: true,
       ownApplicationHandleSha256: digest(ownApplicationHandle),
@@ -105,4 +131,11 @@ function exactApplicationHandle(value, name) {
 
 function digest(value) {
   return `sha256:${createHash("sha256").update(value, "utf8").digest("hex")}`;
+}
+
+function exactSha256(value, name) {
+  if (typeof value !== "string" || !SHA256_DIGEST.test(value)) {
+    throw new TypeError(`Custom Launch ${name} is invalid`);
+  }
+  return value;
 }

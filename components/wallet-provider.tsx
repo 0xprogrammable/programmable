@@ -81,6 +81,7 @@ type WalletContextValue = {
   getAccessToken: () => Promise<string | null>;
   getIdentityToken: () => Promise<string | null>;
   githubConnected: boolean;
+  githubUserId: string;
   githubUsername: string;
   connectGithub: () => void;
   setUsername: (username: string) => void;
@@ -532,6 +533,7 @@ function PrivyWalletBridge({ children }: { children: ReactNode }) {
   const activeAuthenticated = authenticated && !sessionSuppressed;
   const githubAccount = user?.github;
   const githubConnected = Boolean(activeAuthenticated && githubAccount?.subject);
+  const githubUserId = githubConnected ? githubAccount?.subject ?? "" : "";
   const githubUsername = githubConnected ? githubAccount?.username ?? "" : "";
   const connectedWallet = useMemo(() => {
     if (!activeAuthenticated) return undefined;
@@ -1049,6 +1051,7 @@ function PrivyWalletBridge({ children }: { children: ReactNode }) {
       getAccessToken,
       getIdentityToken: async () => identityToken,
       githubConnected,
+      githubUserId,
       githubUsername,
       connectGithub,
       setUsername,
@@ -1066,6 +1069,7 @@ function PrivyWalletBridge({ children }: { children: ReactNode }) {
       disconnecting,
       getAccessToken,
       githubConnected,
+      githubUserId,
       githubUsername,
       hasSession,
       identityToken,
@@ -1130,6 +1134,7 @@ function UnconfiguredWalletProvider({ children }: { children: ReactNode }) {
       getAccessToken: async () => null,
       getIdentityToken: async () => null,
       githubConnected: false,
+      githubUserId: "",
       githubUsername: "",
       connectGithub: () => setDialogOpen(true),
       setUsername: () => undefined,

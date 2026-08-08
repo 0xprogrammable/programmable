@@ -20,6 +20,15 @@ function parseProductionMode(value) {
   );
 }
 
+function parseStageMode(value) {
+  if (value === "none" || value === "dark" || value === "enabled") {
+    return value;
+  }
+  throw new Error(
+    "Custom Launch stage mode must be exactly none, dark, or enabled",
+  );
+}
+
 export function readCustomLaunchPublicFlag(envSource) {
   const matches = [];
   for (const line of envSource.split(/\r?\n/u)) {
@@ -52,6 +61,7 @@ export function resolveCustomLaunchStagingPolicy({
   requested,
   productionEnvSource,
   productionMode,
+  stageMode,
 }) {
   const requestedEnablement = parseBoolean(
     requested,
@@ -59,6 +69,7 @@ export function resolveCustomLaunchStagingPolicy({
   );
   const configuredEnablement = readCustomLaunchPublicFlag(productionEnvSource);
   const modeEnablement = parseProductionMode(productionMode);
+  const exactStageMode = parseStageMode(stageMode);
   if (requestedEnablement !== configuredEnablement) {
     throw new Error(
       "Custom Launch dispatch request and pulled production configuration disagree",
@@ -69,8 +80,29 @@ export function resolveCustomLaunchStagingPolicy({
       "Custom Launch protected production mode and pulled production configuration disagree",
     );
   }
+  const stageEnablement = exactStageMode === "enabled";
+  if (stageEnablement !== configuredEnablement) {
+    throw new Error(
+      "Custom Launch stage mode and pulled production configuration disagree",
+    );
+  }
   return Object.freeze({
-    releaseRecordRequired: requestedEnablement,
+    stageMode: exactStageMode,
+    releaseRecordRequired: exactStageMode !== "none",
+    releaseRecordRequirement:
+      exactStageMode === "dark"
+        ? "dark_staging"
+        : exactStageMode === "enabled"
+          ? "staging"
+          : "none",
+    customLaunchProbeRequired: exactStageMode !== "none",
+    authenticatedCanaryRequired: exactStageMode === "enabled",
+    requiredDeploymentState:
+      exactStageMode === "dark"
+        ? "disabled"
+        : exactStageMode === "enabled"
+          ? "enabled"
+          : "none",
     configuredEnablement,
   });
 }
@@ -93,6 +125,7 @@ function argumentsFrom(argv) {
     "env-file",
     "requested",
     "production-mode",
+    "stage-mode",
     "github-output",
   ]) {
     if (!result[name]) throw new Error(`--${name} is required`);
@@ -106,18 +139,30 @@ async function main(argv) {
     requested: args.requested,
     productionEnvSource: await readFile(args["env-file"], "utf8"),
     productionMode: args["production-mode"],
+    stageMode: args["stage-mode"],
   });
   await appendFile(
     args["github-output"],
     [
       `release_record_required=${result.releaseRecordRequired}`,
+      `release_record_requirement=${result.releaseRecordRequirement}`,
+      `custom_launch_probe_required=${result.customLaunchProbeRequired}`,
+      `authenticated_canary_required=${result.authenticatedCanaryRequired}`,
+      `required_deployment_state=${result.requiredDeploymentState}`,
+      `stage_mode=${result.stageMode}`,
       `configured_enablement=${result.configuredEnablement}`,
       "",
     ].join("\n"),
     { encoding: "utf8", mode: 0o600 },
   );
   process.stdout.write(
-    `${JSON.stringify({ status: "verified", releaseRecordRequired: result.releaseRecordRequired })}\n`,
+    `${JSON.stringify({
+      status: "policy_resolved",
+      stageMode: result.stageMode,
+      releaseRecordRequired: result.releaseRecordRequired,
+      customLaunchProbeRequired: result.customLaunchProbeRequired,
+      authenticatedCanaryRequired: result.authenticatedCanaryRequired,
+    })}\n`,
   );
 }
 

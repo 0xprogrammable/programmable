@@ -166,12 +166,11 @@ export async function pollPrincipalLaunchAuthorityRefreshV1(input: Readonly<{
     code: string;
   }>) => void;
 }>): Promise<PrincipalLaunchAuthorityRefreshViewV1> {
-  if (
-    input.application.state !== "ready_for_registration"
-    && input.application.state !== "approved"
-  ) throw new LaunchAuthorityRefreshBindingErrorV1(
+  if (input.application.state !== "ready_for_registration") {
+    throw new LaunchAuthorityRefreshBindingErrorV1(
     "This exact GitHub submission is not ready for launch verification",
-  );
+    );
+  }
   if (
     input.application.receiptDigest === null
     || input.application.launchEntitlementBindingHash === null

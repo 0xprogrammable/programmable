@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 
 import type { TrustedLaunchPermitSignerV2 } from "@/lib/custom-launch/contract-v2";
 import { isReviewAuthorityModeV1 } from "@/lib/custom-launch/review-authority-v1";
+import { attestGitHubSessionAuthorityConfigurationV1 } from "./github-session-authority-v1";
 
 const SIGNER_KEYS = [
   "keyId",
@@ -36,6 +37,7 @@ export function isCustomLaunchPublicEnabled(
   ) return false;
   if (configuredLaunchPermitSignersV2(environment).length === 0) return false;
   try {
+    attestGitHubSessionAuthorityConfigurationV1(environment);
     const url = new URL(origin);
     return url.protocol === "https:"
       && (url.origin === origin || `${url.origin}/` === origin)

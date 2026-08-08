@@ -7,6 +7,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  LoaderCircle,
   Search,
   SlidersHorizontal,
   X as CloseIcon,
@@ -22,7 +23,6 @@ import { EXPLORE_PREVIEW_TOKENS } from "@/components/explore-preview-data";
 import { useInterfacePreview } from "@/components/interface-preview";
 import { SiteFooter } from "@/components/site-footer";
 import {
-  LIVE_DATA_REFRESH_INTERVAL_MS,
   shouldRefreshLiveData,
   useLiveDataRefresh,
 } from "@/components/use-live-data-refresh";
@@ -118,7 +118,10 @@ export const EXPLORE_TOKENS_PER_PAGE = 9;
 export const EXPLORE_MODEL_FILTER_SERVER_PAGE_SIZE = 100;
 const QUERY_DEBOUNCE_MS = 200;
 const EXPLORE_REQUEST_TIMEOUT_MS = 12_000;
-export const EXPLORE_REFRESH_INTERVAL_MS = LIVE_DATA_REFRESH_INTERVAL_MS;
+export const EXPLORE_REFRESH_INTERVAL_MS = 30_000;
+const EXPLORE_MODEL_DATASET_REFRESH_TICKS = 10;
+const EXPLORE_MODEL_DATASET_CACHE_TTL_MS =
+  EXPLORE_REFRESH_INTERVAL_MS * (EXPLORE_MODEL_DATASET_REFRESH_TICKS - 1);
 const fallbackTokenImages = [
   "/brand/programmable-token-fallback-01-dawn.webp",
   "/brand/programmable-token-fallback-02-moon.webp",
@@ -127,12 +130,6 @@ const fallbackTokenImages = [
   "/brand/programmable-token-fallback-05-lavender.webp",
   "/brand/programmable-token-fallback-06-dusk.webp",
 ] as const;
-const sortOptions: { id: TokenSort; label: string }[] = [
-  { id: "newest", label: "Newest" },
-  { id: "oldest", label: "Oldest" },
-  { id: "market-cap", label: "Highest market cap" },
-  { id: "market-cap-asc", label: "Lowest market cap" },
-];
 const socialFilterOptions: {
   id: Exclude<ExploreSocialFilter, "all">;
   label: string;
@@ -950,7 +947,11 @@ function resultRangeLabel(payload: ExplorePayload | null) {
   }`;
 }
 
-export function ExploreView() {
+export function ExploreView({
+  initialModelFilter = "all",
+}: Readonly<{
+  initialModelFilter?: ExploreModelFilter;
+}>) {
   const preview = useInterfacePreview();
   const [query, setQuery] = useState("");
   const normalizedQuery = query.trim();
@@ -958,23 +959,36 @@ export function ExploreView() {
   const [sort, setSort] = useState<TokenSort>("market-cap");
   const [socialFilter, setSocialFilter] =
     useState<ExploreSocialFilter>("all");
-  const [modelFilter, setModelFilter] = useState<ExploreModelFilter>("all");
+  const [modelFilter, setModelFilter] =
+    useState<ExploreModelFilter>(initialModelFilter);
   const [currentPage, setCurrentPage] = useState(1);
   const [retryKey, setRetryKey] = useState(0);
-  const refreshKey = useLiveDataRefresh({ enabled: !preview });
+  const refreshKey = useLiveDataRefresh({
+    enabled: !preview,
+    intervalMs: EXPLORE_REFRESH_INTERVAL_MS,
+  });
   const activeExploreContentKey = useRef<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const resultStatusRef = useRef<HTMLParagraphElement>(null);
   const modelDatasetCache = useRef<{
     key: string;
     payload: ExplorePayload;
+    updatedAt: number;
   } | null>(null);
   const filterRef = useRef<HTMLDetailsElement>(null);
   const contentKey = `${debouncedQuery}\u0000${sort}\u0000${socialFilter}\u0000${modelFilter}\u0000${currentPage}`;
-  const requestKey = `${contentKey}\u0000${retryKey}\u0000${refreshKey}`;
-  const modelDatasetKey = `${debouncedQuery}\u0000${sort}\u0000${socialFilter}\u0000${modelFilter}\u0000${retryKey}\u0000${refreshKey}`;
+  const modelDatasetKey = `${debouncedQuery}\u0000${sort}\u0000${socialFilter}`;
+  const modelDatasetRefreshKey = Math.floor(
+    refreshKey / EXPLORE_MODEL_DATASET_REFRESH_TICKS,
+  );
+  const requestKey =
+    modelFilter === "all"
+      ? `${contentKey}\u0000${retryKey}\u0000${refreshKey}`
+      : `${contentKey}\u0000${retryKey}\u0000${modelDatasetRefreshKey}`;
   const activeRequestContentKey =
-    modelFilter === "all" ? contentKey : modelDatasetKey;
+    modelFilter === "all"
+      ? contentKey
+      : `${modelDatasetKey}\u0000model-dataset`;
   const [state, setState] = useState<ExploreState>(() => {
     const cached = readResolvedExplorePayload(activeRequestContentKey);
     return cached
@@ -1058,9 +1072,12 @@ export function ExploreView() {
         if (modelFilter === "all") {
           payload = await loadExplorePayload(activeRequestContentKey, search);
         } else {
+          const cachedDataset = modelDatasetCache.current;
           let dataset =
-            modelDatasetCache.current?.key === modelDatasetKey
-              ? modelDatasetCache.current.payload
+            cachedDataset?.key === modelDatasetKey &&
+            Date.now() - cachedDataset.updatedAt <
+              EXPLORE_MODEL_DATASET_CACHE_TTL_MS
+              ? cachedDataset.payload
               : null;
           if (!dataset) {
             dataset = await loadExploreModelDataset(
@@ -1071,6 +1088,7 @@ export function ExploreView() {
             modelDatasetCache.current = {
               key: modelDatasetKey,
               payload: dataset,
+              updatedAt: Date.now(),
             };
           }
           payload = {
@@ -1196,8 +1214,32 @@ export function ExploreView() {
     modelFilter !== "all";
 
   function retryTokens() {
-    resultStatusRef.current?.focus({ preventScroll: true });
+    searchInputRef.current?.focus({ preventScroll: true });
+    if (modelFilter !== "all") {
+      modelDatasetCache.current = null;
+    }
     setRetryKey((value) => value + 1);
+  }
+
+  const sortField =
+    sort === "newest" || sort === "oldest" ? "launch-date" : "market-cap";
+  const sortDirection =
+    sort === "oldest" || sort === "market-cap-asc" ? "ascending" : "descending";
+
+  function updateSort(
+    field: "launch-date" | "market-cap",
+    direction: "ascending" | "descending",
+  ) {
+    setSort(
+      field === "launch-date"
+        ? direction === "descending"
+          ? "newest"
+          : "oldest"
+        : direction === "descending"
+          ? "market-cap"
+          : "market-cap-asc",
+    );
+    setCurrentPage(1);
   }
 
   function renderTokenState() {
@@ -1405,13 +1447,7 @@ export function ExploreView() {
     <>
       <div className={`${styles.page} explore-page page-width`}>
         <header className={styles.pageHeading}>
-          <h1 aria-label="Tokens that behave how you imagine">
-            <span>Tokens that behave</span>
-            <span>how you imagine</span>
-          </h1>
-          <p className={styles.pageDescription}>
-            Browse launches by model, market cap or social presence.
-          </p>
+          <h1>Explore Projects</h1>
         </header>
 
         <section
@@ -1475,7 +1511,9 @@ export function ExploreView() {
                       className="liquid-glass-control"
                       aria-controls="explore-filter-panel"
                       aria-label={
-                        activeFilterCount === 0
+                        busy
+                          ? "Filter and sort tokens, updating projects"
+                          : activeFilterCount === 0
                           ? "Filter and sort tokens"
                           : `Filter and sort tokens, ${activeFilterCount} ${
                               activeFilterCount === 1 ? "filter" : "filters"
@@ -1492,11 +1530,19 @@ export function ExploreView() {
                           {activeFilterCount}
                         </span>
                       ) : null}
-                      <ChevronDown
-                        className="token-filter-chevron"
-                        aria-hidden="true"
-                        size={15}
-                      />
+                      {busy ? (
+                        <LoaderCircle
+                          className={styles.filterSpinner}
+                          aria-hidden="true"
+                          size={15}
+                        />
+                      ) : (
+                        <ChevronDown
+                          className="token-filter-chevron"
+                          aria-hidden="true"
+                          size={15}
+                        />
+                      )}
                     </summary>
                     <div
                       id="explore-filter-panel"
@@ -1504,36 +1550,60 @@ export function ExploreView() {
                       role="group"
                       aria-label="Filter and sort tokens"
                     >
-                      <div
-                        className={styles.filterGroup}
-                        role="group"
-                        aria-labelledby="explore-sort-label"
-                      >
+                      <div className={styles.filterGroup}>
                         <p
                           className={styles.filterLabel}
                           id="explore-sort-label"
                         >
                           Sort by
                         </p>
-                        {sortOptions.map((option) => (
-                          <button
-                            key={option.id}
-                            className={
-                              sort === option.id ? "active" : undefined
-                            }
-                            type="button"
-                            aria-pressed={sort === option.id}
-                            onClick={() => {
-                              setSort(option.id);
-                              setCurrentPage(1);
-                            }}
-                          >
-                            <span>{option.label}</span>
-                            {sort === option.id ? (
-                              <Check aria-hidden="true" size={15} />
-                            ) : null}
-                          </button>
-                        ))}
+                        <div
+                          className={styles.sortControls}
+                          aria-labelledby="explore-sort-label"
+                        >
+                          <label className={styles.sortControl}>
+                            <span>Field</span>
+                            <select
+                              value={sortField}
+                              onChange={(event) =>
+                                updateSort(
+                                  event.target.value as
+                                    | "launch-date"
+                                    | "market-cap",
+                                  sortDirection,
+                                )
+                              }
+                            >
+                              <option value="launch-date">Launch date</option>
+                              <option value="market-cap">Market cap</option>
+                            </select>
+                          </label>
+                          <label className={styles.sortControl}>
+                            <span>Order</span>
+                            <select
+                              value={sortDirection}
+                              onChange={(event) =>
+                                updateSort(
+                                  sortField,
+                                  event.target.value as
+                                    | "ascending"
+                                    | "descending",
+                                )
+                              }
+                            >
+                              <option value="descending">
+                                {sortField === "launch-date"
+                                  ? "Newest first"
+                                  : "Highest first"}
+                              </option>
+                              <option value="ascending">
+                                {sortField === "launch-date"
+                                  ? "Oldest first"
+                                  : "Lowest first"}
+                              </option>
+                            </select>
+                          </label>
+                        </div>
                       </div>
 
                       <div
@@ -1681,11 +1751,7 @@ export function ExploreView() {
 
           <p
             ref={resultStatusRef}
-            className={
-              hasPublicTokens && displayState.phase !== "error"
-                ? styles.resultLabel
-                : "sr-only"
-            }
+            className="sr-only"
             role="status"
             aria-live="polite"
             aria-atomic="true"

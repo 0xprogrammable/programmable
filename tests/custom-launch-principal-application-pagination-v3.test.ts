@@ -12,8 +12,13 @@ import {
   PrincipalApplicationPaginationTimeoutErrorV3,
   readAllPrincipalApplicationsV3,
 } from "../lib/custom-launch/principal-application-pagination-v3";
+import { canonicalBrowserSha256V2 } from "../lib/custom-launch/browser-authority-v2";
 
-const GITHUB_PRINCIPAL_HASH = `sha256:${"f".repeat(64)}` as const;
+const GITHUB_USER_ID = "123456789";
+const GITHUB_PRINCIPAL_HASH = canonicalBrowserSha256V2(
+  "programmable.github-submitter-principal.v1",
+  { githubUserId: GITHUB_USER_ID },
+);
 
 function application(index: number): PrincipalCustomLaunchApplicationSummaryV2 {
   return {
@@ -40,9 +45,16 @@ function application(index: number): PrincipalCustomLaunchApplicationSummaryV2 {
 function page(
   applications: readonly PrincipalCustomLaunchApplicationSummaryV2[],
   nextCursor: string | null,
+  subject: Readonly<{
+    githubUserId: string;
+    githubPrincipalHash: `sha256:${string}`;
+  }> = {
+    githubUserId: GITHUB_USER_ID,
+    githubPrincipalHash: GITHUB_PRINCIPAL_HASH,
+  },
 ) {
   return {
-    subject: { githubPrincipalHash: GITHUB_PRINCIPAL_HASH },
+    subject,
     applications,
     nextCursor,
   };
@@ -87,6 +99,36 @@ describe("principal Application V3 pagination", () => {
       "Submission list pagination is invalid",
     );
     expect(applications).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects a principal ID or derived hash change between pages", async () => {
+    const otherUserId = "987654321";
+    const otherSubject = {
+      githubUserId: otherUserId,
+      githubPrincipalHash: canonicalBrowserSha256V2(
+        "programmable.github-submitter-principal.v1",
+        { githubUserId: otherUserId },
+      ),
+    };
+    const applications = vi.fn(async (input: Readonly<{ cursor?: string }>) =>
+      input.cursor === undefined
+        ? page([application(0)], "cursor-next-0001")
+        : page([application(1)], null, otherSubject));
+
+    await expect(readAllPrincipalApplicationsV3({ applications })).rejects.toThrow(
+      "GitHub submission identity changed while loading",
+    );
+  });
+
+  it("rejects a principal hash that was not derived from the numeric GitHub ID", async () => {
+    const applications = vi.fn(async () => page([], null, {
+      githubUserId: GITHUB_USER_ID,
+      githubPrincipalHash: `sha256:${"f".repeat(64)}`,
+    }));
+
+    await expect(readAllPrincipalApplicationsV3({ applications })).rejects.toThrow(
+      "GitHub submission identity changed while loading",
+    );
   });
 
   it("fails visibly at the explicit generous page safety bound", async () => {

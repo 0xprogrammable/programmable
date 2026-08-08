@@ -6,8 +6,17 @@ on:
       - production
   workflow_dispatch:
     inputs:
+      custom_launch_stage_mode:
+        description: Custom Launch evidence scope for this stage
+        required: true
+        default: none
+        type: choice
+        options:
+          - none
+          - dark
+          - enabled
       custom_launch_public_enablement:
-        description: Require the detached Custom Launch release record and stage an enabled candidate
+        description: Exact public flag requested from the pulled production configuration
         required: true
         default: false
         type: boolean
@@ -157,13 +166,15 @@ jobs:
       - name: Resolve Custom Launch release-record policy
         id: custom-launch-policy
         env:
-          CUSTOM_LAUNCH_PUBLIC_ENABLEMENT_REQUESTED: ${{ inputs.custom_launch_public_enablement }}
+          CUSTOM_LAUNCH_PUBLIC_ENABLEMENT_REQUESTED: ${{ inputs.custom_launch_public_enablement || false }}
           CUSTOM_LAUNCH_PRODUCTION_MODE: ${{ vars.CUSTOM_LAUNCH_PRODUCTION_MODE }}
+          CUSTOM_LAUNCH_STAGE_MODE: ${{ inputs.custom_launch_stage_mode || 'none' }}
         run: >-
           node scripts/resolve-custom-launch-staging-policy.mjs
           --env-file .vercel/.env.production.local
           --requested "$CUSTOM_LAUNCH_PUBLIC_ENABLEMENT_REQUESTED"
           --production-mode "$CUSTOM_LAUNCH_PRODUCTION_MODE"
+          --stage-mode "$CUSTOM_LAUNCH_STAGE_MODE"
           --github-output "$GITHUB_OUTPUT"
 
       - name: Capture sensitive production environment metadata
@@ -192,11 +203,14 @@ jobs:
           EXPECTED_PACKAGE_ARTIFACT_HASH: ${{ secrets.PROGRAMMABLE_APPROVAL_SERVICE_EXPECTED_PACKAGE_ARTIFACT_HASH }}
           EXPECTED_CROSS_REPOSITORY_ATTESTATION_COMMIT_SHA: ${{ vars.PROGRAMMABLE_BACKEND_CROSS_REPOSITORY_ATTESTATION_COMMIT_SHA }}
           EXPECTED_CROSS_REPOSITORY_BINDING_DOCUMENT_SHA256: ${{ vars.PROGRAMMABLE_BACKEND_CROSS_REPOSITORY_BINDING_DOCUMENT_SHA256 }}
+          EXPECTED_SESSION_AUTHORITY_CONFIGURATION_EVIDENCE_SHA256: ${{ vars.PROGRAMMABLE_GITHUB_SESSION_AUTHORITY_CONFIGURATION_EVIDENCE_SHA256 }}
           PROGRAMMABLE_BACKEND_RELEASE_READ_TOKEN: ${{ secrets.PROGRAMMABLE_BACKEND_RELEASE_READ_TOKEN }}
           COMMAND_CENTER_GITHUB_TOKEN: ${{ github.token }}
           ROLLBACK_DEPLOYMENT_ID: ${{ steps.production-before.outputs.deployment_id }}
           ROLLBACK_DEPLOYMENT_URL: ${{ steps.production-before.outputs.deployment_url }}
           ROLLBACK_WEBSITE_COMMIT_SHA: ${{ steps.production-before.outputs.git_head }}
+          RECORD_REQUIREMENT: ${{ steps.custom-launch-policy.outputs.release_record_requirement }}
+          REQUIRED_DEPLOYMENT_STATE: ${{ steps.custom-launch-policy.outputs.required_deployment_state }}
         run: |
           set -euo pipefail
           if [[ ! "$RECORD_COMMIT_SHA" =~ ^[0-9a-f]{40}$ ]]; then
@@ -239,21 +253,72 @@ jobs:
           }
           NODE
           git show "$RECORD_COMMIT_SHA:$record_path" > "$record_file"
+          RECORD_FILE="$record_file" node --input-type=module <<'NODE'
+          import { createHash } from "node:crypto";
+          import { readFileSync } from "node:fs";
+          const record = JSON.parse(readFileSync(process.env.RECORD_FILE, "utf8"));
+          const requiredState = process.env.REQUIRED_DEPLOYMENT_STATE;
+          if (
+            !new Set(["disabled", "enabled"]).has(requiredState) ||
+            record.releaseIntent?.targetMode !== requiredState
+          ) {
+            throw new Error("detached record target mode disagrees with the explicit stage mode");
+          }
+          const expectedMigrations = [
+            "ops/website-projection-target/migrations/0001_projection_records_v1.sql",
+            "ops/website-projection-target/migrations/0002_custom_launch_wallet_profile_v2.sql",
+            "ops/website-projection-target/migrations/0003_registry_custom_public_read_v1.sql",
+          ];
+          const inventory =
+            record.productionDependencies?.websiteProjection?.migrationInventory;
+          if (
+            !Array.isArray(inventory)
+            || inventory.length !== expectedMigrations.length
+          ) {
+            throw new Error("Website projection migration inventory is incomplete");
+          }
+          for (const [index, path] of expectedMigrations.entries()) {
+            const migration = inventory[index];
+            const fileSha256 = `sha256:${createHash("sha256")
+              .update(readFileSync(path))
+              .digest("hex")}`;
+            if (
+              migration?.ordinal !== index + 1
+              || migration?.path !== path
+              || migration?.fileSha256 !== fileSha256
+            ) {
+              throw new Error(
+                "Website projection migration bytes differ from the detached record",
+              );
+            }
+          }
+          NODE
           attestation_summary_file="$RUNNER_TEMP/custom-launch-cross-repository-attestation.json"
           test ! -e "$attestation_summary_file"
-          node scripts/verify-custom-launch-release-record.mjs "$record_file" \
-            --require staging \
-            --verify-cross-repository-attestation \
-            --cross-repository-attestation-summary "$attestation_summary_file" \
-            --expect-website-commit "$GITHUB_SHA" \
-            --expect-package-artifact-hash "$EXPECTED_PACKAGE_ARTIFACT_HASH" \
-            --expect-cross-repository-attestation-commit "$EXPECTED_CROSS_REPOSITORY_ATTESTATION_COMMIT_SHA" \
-            --expect-cross-repository-binding-document-sha256 "$EXPECTED_CROSS_REPOSITORY_BINDING_DOCUMENT_SHA256" \
-            --expect-rollback-deployment-id "$ROLLBACK_DEPLOYMENT_ID" \
-            --expect-rollback-deployment-url "$ROLLBACK_DEPLOYMENT_URL" \
-            --expect-rollback-website-commit "$ROLLBACK_WEBSITE_COMMIT_SHA" \
-            --expect-detached-record-sha256 "$EXPECTED_RECORD_SHA256" \
+          record_arguments=(
+            --require "$RECORD_REQUIREMENT"
+            --verify-cross-repository-attestation
+            --cross-repository-attestation-summary "$attestation_summary_file"
+            --expect-website-commit "$GITHUB_SHA"
+            --expect-package-artifact-hash "$EXPECTED_PACKAGE_ARTIFACT_HASH"
+            --expect-cross-repository-attestation-commit "$EXPECTED_CROSS_REPOSITORY_ATTESTATION_COMMIT_SHA"
+            --expect-cross-repository-binding-document-sha256 "$EXPECTED_CROSS_REPOSITORY_BINDING_DOCUMENT_SHA256"
+            --expect-session-authority-configuration-evidence-sha256 "$EXPECTED_SESSION_AUTHORITY_CONFIGURATION_EVIDENCE_SHA256"
+            --expect-detached-record-sha256 "$EXPECTED_RECORD_SHA256"
             --github-output "$GITHUB_OUTPUT"
+          )
+          if [[ "$RECORD_REQUIREMENT" == "dark_staging" || "$RECORD_REQUIREMENT" == "staging" ]]; then
+            record_arguments+=(
+              --expect-rollback-deployment-id "$ROLLBACK_DEPLOYMENT_ID"
+              --expect-rollback-deployment-url "$ROLLBACK_DEPLOYMENT_URL"
+              --expect-rollback-website-commit "$ROLLBACK_WEBSITE_COMMIT_SHA"
+            )
+          else
+            echo "Custom Launch record level must be dark_staging or staging" >&2
+            exit 1
+          fi
+          node scripts/verify-custom-launch-release-record.mjs \
+            "$record_file" "${record_arguments[@]}"
 
       - name: Preserve detached Custom Launch release record
         if: steps.custom-launch-policy.outputs.release_record_required == 'true'
@@ -280,7 +345,9 @@ jobs:
             echo "- Backend cross-repository attestation: \`${{ steps.custom-launch-record.outputs.cross_repository_attestation_commit_sha }}\`"
             echo "- Backend binding document: \`${{ steps.custom-launch-record.outputs.cross_repository_binding_document_sha256 }}\`"
             echo "- Review authority: \`${{ steps.custom-launch-record.outputs.review_authority_mode }}\`"
-            echo "- Gate: verified for staging only"
+            echo "- Stage mode: \`${{ steps.custom-launch-policy.outputs.stage_mode }}\`"
+            echo "- Record level: \`${{ steps.custom-launch-policy.outputs.release_record_requirement }}\`"
+            echo "- Gate: verified for this immutable staging candidate only"
             echo
             echo "No promotion is authorized by this staging gate."
           } >> "$GITHUB_STEP_SUMMARY"
@@ -326,15 +393,56 @@ jobs:
           --target-url "$DEPLOYMENT_URL"
           --github-output "$GITHUB_OUTPUT"
 
-      - name: Gate exact staged Custom Launch candidate
-        id: custom-launch-canary
-        if: steps.custom-launch-policy.outputs.release_record_required == 'true'
+      - name: Gate exact dark Custom Launch readiness
+        id: custom-launch-dark-readiness
+        if: steps.custom-launch-policy.outputs.stage_mode == 'dark'
         env:
           STAGED_DEPLOYMENT_ID: ${{ steps.staged-deployment.outputs.deployment_id }}
           STAGED_TARGET_URL: ${{ steps.staged-deployment.outputs.target_url }}
           PROGRAMMABLE_RELEASE_EXPECTED_COMMIT_SHA: ${{ github.sha }}
           PROGRAMMABLE_APPROVAL_SERVICE_EXPECTED_PACKAGE_ARTIFACT_HASH: ${{ secrets.PROGRAMMABLE_APPROVAL_SERVICE_EXPECTED_PACKAGE_ARTIFACT_HASH }}
           PROGRAMMABLE_APPROVAL_SERVICE_EXPECTED_REVIEW_AUTHORITY_MODE: ${{ steps.custom-launch-record.outputs.review_authority_mode }}
+          PROGRAMMABLE_GITHUB_SESSION_AUTHORITY_EXPECTED_CONFIGURATION_HASH: ${{ steps.custom-launch-record.outputs.session_authority_runtime_configuration_hash }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          deployment_host="$(node --input-type=module -e '
+            const url = new URL(process.env.STAGED_TARGET_URL);
+            if (
+              url.protocol !== "https:" ||
+              url.pathname !== "/" ||
+              url.search !== "" ||
+              url.hash !== "" ||
+              !url.hostname.endsWith(".vercel.app")
+            ) throw new Error("Custom Launch dark target is not an immutable Vercel origin");
+            process.stdout.write(url.host);
+          ')"
+          export PROGRAMMABLE_RELEASE_EXPECTED_DEPLOYMENT_HOST="$deployment_host"
+          npm run probe:custom-launch -- \
+            "--base-url=$STAGED_TARGET_URL" \
+            "--deployment-id=$STAGED_DEPLOYMENT_ID" \
+            "--evidence-output=$RUNNER_TEMP/custom-launch-dark-readiness-evidence.json" \
+            --require-disabled
+          echo "evidence_path=$RUNNER_TEMP/custom-launch-dark-readiness-evidence.json" >> "$GITHUB_OUTPUT"
+
+      - name: Preserve redacted dark Custom Launch readiness evidence
+        if: steps.custom-launch-policy.outputs.stage_mode == 'dark'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: custom-launch-dark-readiness-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.custom-launch-dark-readiness.outputs.evidence_path }}
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Gate exact enabled Custom Launch candidate
+        id: custom-launch-enabled-canary
+        if: steps.custom-launch-policy.outputs.stage_mode == 'enabled'
+        env:
+          STAGED_DEPLOYMENT_ID: ${{ steps.staged-deployment.outputs.deployment_id }}
+          STAGED_TARGET_URL: ${{ steps.staged-deployment.outputs.target_url }}
+          PROGRAMMABLE_RELEASE_EXPECTED_COMMIT_SHA: ${{ github.sha }}
+          PROGRAMMABLE_APPROVAL_SERVICE_EXPECTED_PACKAGE_ARTIFACT_HASH: ${{ secrets.PROGRAMMABLE_APPROVAL_SERVICE_EXPECTED_PACKAGE_ARTIFACT_HASH }}
+          PROGRAMMABLE_APPROVAL_SERVICE_EXPECTED_REVIEW_AUTHORITY_MODE: ${{ steps.custom-launch-record.outputs.review_authority_mode }}
+          PROGRAMMABLE_GITHUB_SESSION_AUTHORITY_EXPECTED_CONFIGURATION_HASH: ${{ steps.custom-launch-record.outputs.session_authority_runtime_configuration_hash }}
           PROGRAMMABLE_CUSTOM_LAUNCH_CANARY_ACCESS_TOKEN: ${{ secrets.PROGRAMMABLE_CUSTOM_LAUNCH_CANARY_ACCESS_TOKEN }}
           PROGRAMMABLE_CUSTOM_LAUNCH_CANARY_IDENTITY_TOKEN: ${{ secrets.PROGRAMMABLE_CUSTOM_LAUNCH_CANARY_IDENTITY_TOKEN }}
           PROGRAMMABLE_CUSTOM_LAUNCH_CANARY_EXPECTED_GITHUB_USER_ID: ${{ secrets.PROGRAMMABLE_CUSTOM_LAUNCH_CANARY_EXPECTED_GITHUB_USER_ID }}
@@ -357,17 +465,17 @@ jobs:
           npm run probe:custom-launch -- \
             "--base-url=$STAGED_TARGET_URL" \
             "--deployment-id=$STAGED_DEPLOYMENT_ID" \
-            "--evidence-output=$RUNNER_TEMP/custom-launch-candidate-canary-evidence.json" \
+            "--evidence-output=$RUNNER_TEMP/custom-launch-enabled-canary-evidence.json" \
             --require-enabled \
             --authenticated-canary
-          echo "evidence_path=$RUNNER_TEMP/custom-launch-candidate-canary-evidence.json" >> "$GITHUB_OUTPUT"
+          echo "evidence_path=$RUNNER_TEMP/custom-launch-enabled-canary-evidence.json" >> "$GITHUB_OUTPUT"
 
-      - name: Preserve redacted Custom Launch candidate evidence
-        if: steps.custom-launch-policy.outputs.release_record_required == 'true'
+      - name: Preserve redacted enabled Custom Launch candidate evidence
+        if: steps.custom-launch-policy.outputs.stage_mode == 'enabled'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: custom-launch-candidate-canary-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ steps.custom-launch-canary.outputs.evidence_path }}
+          name: custom-launch-enabled-canary-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.custom-launch-enabled-canary.outputs.evidence_path }}
           if-no-files-found: error
           retention-days: 90
 

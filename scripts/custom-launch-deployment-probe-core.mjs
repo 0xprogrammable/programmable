@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 const READINESS_PATH = "/api/custom-launch/readiness";
 const AUTHENTICATED_CANARY_PATH = "/api/custom-launch/v3/applications?limit=100";
 const READINESS_SCHEMA = "programmable.custom-launch-deployment-readiness.v1";
@@ -81,8 +83,12 @@ export async function probeCustomLaunchDeployment(input) {
   const readinessStatus = validateReadiness(readiness, now, settings.maximumTimeSkewMs);
   validateExpectedRelease(readiness.release, input);
   validateExpectedApprovalServiceRelease(readiness.approvalServiceRelease, input);
+  validateExpectedSessionAuthorityConfiguration(
+    readinessStatus.sessionAuthorityConfigurationHash,
+    input,
+  );
 
-  if (readinessStatus === "disabled") {
+  if (readinessStatus.status === "disabled") {
     if (input.requireEnabled === true) {
       throw new Error("Custom launch is disabled");
     }
@@ -93,6 +99,8 @@ export async function probeCustomLaunchDeployment(input) {
       baseUrl: baseUrl.origin,
       status: "disabled",
       authenticatedCanary: "not_requested",
+      sessionAuthorityConfigurationHash:
+        readinessStatus.sessionAuthorityConfigurationHash,
     });
   }
   if (input.requireDisabled === true) {
@@ -196,6 +204,8 @@ export async function probeCustomLaunchDeployment(input) {
     baseUrl: baseUrl.origin,
     status: "ready",
     authenticatedCanary,
+    sessionAuthorityConfigurationHash:
+      readinessStatus.sessionAuthorityConfigurationHash,
   });
 }
 
@@ -252,6 +262,8 @@ export function parseCustomLaunchDeploymentProbeArguments(
       environment.PROGRAMMABLE_APPROVAL_SERVICE_EXPECTED_PACKAGE_ARTIFACT_HASH,
     expectedApprovalServiceReviewAuthorityMode:
       environment.PROGRAMMABLE_APPROVAL_SERVICE_EXPECTED_REVIEW_AUTHORITY_MODE,
+    expectedSessionAuthorityConfigurationHash:
+      environment.PROGRAMMABLE_GITHUB_SESSION_AUTHORITY_EXPECTED_CONFIGURATION_HASH,
     ...(environment.VERCEL_AUTOMATION_BYPASS_SECRET === undefined ? {} : {
       automationBypassSecret: environment.VERCEL_AUTOMATION_BYPASS_SECRET,
     }),
@@ -387,12 +399,16 @@ function validateReadiness(value, now, maximumTimeSkewMs) {
   if (value.status === "disabled") {
     assertExactKeys(value, [
       "approvalServiceRelease", "chainId", "checkedAt", "components", "release",
-      "schemaVersion", "status",
+      "schemaVersion", "sessionAuthority", "status",
     ]);
     validateReadyComponents(value.components);
     validateReleaseIdentity(value.release);
     validateApprovalServiceReleaseIdentity(value.approvalServiceRelease);
-    return "disabled";
+    return Object.freeze({
+      status: "disabled",
+      sessionAuthorityConfigurationHash:
+        validateSessionAuthorityConfiguration(value.sessionAuthority),
+    });
   }
   if (value.status !== "ready") throw new TypeError("Custom launch is not ready");
   assertExactKeys(value, [
@@ -402,19 +418,25 @@ function validateReadiness(value, now, maximumTimeSkewMs) {
     "components",
     "release",
     "schemaVersion",
+    "sessionAuthority",
     "status",
     "trustedTimePath",
   ]);
   validateReadyComponents(value.components);
   validateReleaseIdentity(value.release);
   validateApprovalServiceReleaseIdentity(value.approvalServiceRelease);
-  return "ready";
+  return Object.freeze({
+    status: "ready",
+    sessionAuthorityConfigurationHash:
+      validateSessionAuthorityConfiguration(value.sessionAuthority),
+  });
 }
 
 function validateReadyComponents(components) {
   assertRecord(components, "Custom launch readiness components");
   assertExactKeys(components, [
     "approvalService",
+    "githubSessionAuthority",
     "permitSignerKeyring",
     "publicConfiguration",
     "websiteProjectionDatabase",
@@ -486,6 +508,83 @@ function validateExpectedApprovalServiceRelease(value, input) {
   }
 }
 
+function validateSessionAuthorityConfiguration(value) {
+  assertRecord(value, "GitHub session authority configuration");
+  assertExactKeys(value, [
+    "appId",
+    "audience",
+    "configurationHash",
+    "keyEpoch",
+    "keyId",
+    "publicKeySpkiSha256",
+    "schemaVersion",
+    "workloadIssuer",
+    "workloadKeyId",
+    "workloadPublicKeySpkiSha256",
+    "workloadSubject",
+  ]);
+  const binding = {
+    schemaVersion:
+      "programmable.github-session-authority-configuration-attestation.v1",
+    appId: value.appId,
+    audience: value.audience,
+    keyId: value.keyId,
+    keyEpoch: value.keyEpoch,
+    publicKeySpkiSha256: value.publicKeySpkiSha256,
+    workloadIssuer: value.workloadIssuer,
+    workloadSubject: value.workloadSubject,
+    workloadKeyId: value.workloadKeyId,
+    workloadPublicKeySpkiSha256: value.workloadPublicKeySpkiSha256,
+  };
+  for (const field of [
+    "appId",
+    "audience",
+    "keyId",
+    "keyEpoch",
+    "workloadIssuer",
+    "workloadSubject",
+    "workloadKeyId",
+  ]) {
+    if (typeof binding[field] !== "string" || !SAFE_ID.test(binding[field])) {
+      throw new TypeError("GitHub session authority configuration is invalid");
+    }
+  }
+  if (
+    value.schemaVersion !== binding.schemaVersion
+    || !SHA256_DIGEST.test(binding.publicKeySpkiSha256 ?? "")
+    || !SHA256_DIGEST.test(binding.workloadPublicKeySpkiSha256 ?? "")
+    || !SHA256_DIGEST.test(value.configurationHash ?? "")
+    || value.configurationHash !== canonicalSha256(
+      "programmable.github-session-authority-configuration-attestation.v1",
+      binding,
+    )
+  ) throw new TypeError("GitHub session authority configuration is invalid");
+  return value.configurationHash;
+}
+
+function validateExpectedSessionAuthorityConfiguration(value, input) {
+  const expected = input.expectedSessionAuthorityConfigurationHash;
+  if (
+    typeof expected !== "string"
+    || !SHA256_DIGEST.test(expected)
+    || value !== expected
+  ) {
+    throw new TypeError(
+      "GitHub session authority configuration does not match the reviewed release",
+    );
+  }
+}
+
+function canonicalSha256(domain, value) {
+  const canonical = `{${Object.keys(value).sort().map((key) =>
+    `${JSON.stringify(key)}:${JSON.stringify(value[key])}`).join(",")}}`;
+  const hash = createHash("sha256");
+  hash.update(domain, "utf8");
+  hash.update(Uint8Array.of(0));
+  hash.update(canonical, "utf8");
+  return `sha256:${hash.digest("hex")}`;
+}
+
 function validateTrustedTime(value, now, maximumTimeSkewMs) {
   assertRecord(value, "Trusted time response");
   assertExactKeys(value, ["now", "schemaVersion"]);
@@ -527,15 +626,12 @@ function validatePrincipalApplicationList(value, expectedGithubUserId, ownApplic
     throw new TypeError("Authenticated canary own application is unavailable");
   }
   if (
-    ownApplication.state !== "approved"
-    || ownApplication.intakeContract !== "aeon-v1"
-    || ownApplication.providerId !== "aeon"
-    || ownApplication.controlRepositoryId !== "1325324453"
-    || ownApplication.controlRepositoryOwnerId !== "309941960"
+    ownApplication.state !== "ready_for_registration"
+    || ownApplication.intakeContract === "registry-v3"
     || !SHA256_DIGEST.test(ownApplication.receiptDigest ?? "")
     || !SHA256_DIGEST.test(ownApplication.launchEntitlementBindingHash ?? "")
   ) {
-    throw new TypeError("Authenticated canary own application is not launch-approved");
+    throw new TypeError("Authenticated canary own application is not launch-ready");
   }
   if (value.nextCursor !== null && (
     typeof value.nextCursor !== "string" || !CURSOR.test(value.nextCursor)

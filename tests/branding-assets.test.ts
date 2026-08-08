@@ -133,19 +133,22 @@ describe("Programmable branding assets", () => {
     ).toBe(true);
   });
 
-  it("uses the text-free Night Garden social preview at both exact sizes", async () => {
+  it("uses the centered Warm Ivory Night Garden social preview at both exact sizes", async () => {
     const layout = read("app/layout.tsx");
     const docs = read("app/docs/developers/page.tsx");
     const expected = [
-      ["public/og/programmable-night-garden-og-1200x630.png", 1200, 630],
-      ["public/og/programmable-night-garden-og-2400x1260.png", 2400, 1260],
+      ["public/og/programmable-night-garden-loop-og-v2-1200x630.png", 1200, 630],
+      ["public/og/programmable-night-garden-loop-og-v2-2400x1260.png", 2400, 1260],
     ] as const;
 
     expect(layout).toContain(
-      '"/og/programmable-night-garden-og-1200x630.png"',
+      '"/og/programmable-night-garden-loop-og-v2-1200x630.png"',
     );
     expect(docs).toContain(
-      'url: "/og/programmable-night-garden-og-1200x630.png"',
+      'url: "/og/programmable-night-garden-loop-og-v2-1200x630.png"',
+    );
+    expect(layout).not.toContain(
+      '"/og/programmable-night-garden-og-1200x630.png"',
     );
 
     for (const [path, width, height] of expected) {
@@ -153,7 +156,27 @@ describe("Programmable branding assets", () => {
       expect(metadata.format).toBe("png");
       expect(metadata.width).toBe(width);
       expect(metadata.height).toBe(height);
+      expect(metadata.space).toBe("srgb");
+      expect(metadata.hasAlpha).toBe(false);
       expect(statSync(join(root, path)).size).toBeLessThan(5 * 1024 * 1024);
     }
+
+    const { data, info } = await sharp(
+      join(root, "public/og/programmable-night-garden-loop-og-v2-1200x630.png"),
+    )
+      .extract({ left: 400, top: 130, width: 400, height: 370 })
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    let ivoryPixels = 0;
+    for (let index = 0; index < data.length; index += info.channels) {
+      if (
+        data[index] >= 244 &&
+        data[index + 1] >= 236 &&
+        data[index + 2] >= 229
+      ) {
+        ivoryPixels += 1;
+      }
+    }
+    expect(ivoryPixels).toBeGreaterThan(10_000);
   });
 });

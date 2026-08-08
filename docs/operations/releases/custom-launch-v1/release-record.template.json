@@ -87,6 +87,23 @@
   "productionDependencies": {
     "websiteProjection": {
       "databaseIdentity": null,
+      "migrationInventory": [
+        {
+          "ordinal": 1,
+          "path": "ops/website-projection-target/migrations/0001_projection_records_v1.sql",
+          "fileSha256": null
+        },
+        {
+          "ordinal": 2,
+          "path": "ops/website-projection-target/migrations/0002_custom_launch_wallet_profile_v2.sql",
+          "fileSha256": null
+        },
+        {
+          "ordinal": 3,
+          "path": "ops/website-projection-target/migrations/0003_registry_custom_public_read_v1.sql",
+          "fileSha256": null
+        }
+      ],
       "migrationDigest": null,
       "runtimeRoleAttestationSha256": null,
       "backupId": null,
@@ -105,6 +122,17 @@
       "privyApplicationId": null,
       "githubOauthEnabled": null,
       "identityTokensEnabled": null
+    },
+    "sessionAuthority": {
+      "audience": null,
+      "keyId": null,
+      "keyEpoch": null,
+      "authorityPublicKeySpkiSha256": null,
+      "workloadIssuer": null,
+      "workloadSubject": null,
+      "workloadKeyId": null,
+      "workloadPublicKeySpkiSha256": null,
+      "configurationEvidenceSha256": null
     },
     "ethereum": {
       "chainId": "1",
