@@ -27,7 +27,7 @@ function errorMessage(error: unknown) {
   return String(message).slice(0, 600);
 }
 function timestamp(value: bigint) {
-  if (value > 8_640_000_000_000n) return `${value.toString()} Unix seconds`;
+  if (value > 8_640_000_000_000n || value < -8_640_000_000_000n) return `${value.toString()} Unix seconds`;
   return new Date(Number(value) * 1000).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }
 function displayValue(read: ManagementRead, value: ManagementValue | undefined) {

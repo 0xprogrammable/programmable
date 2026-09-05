@@ -64,6 +64,10 @@ describe("Module Mode coin controls", () => {
     expect(html).not.toContain("Review funding"); expect(html).not.toContain("Review reclaim");
     expect(button(html, "Claim ETH")).not.toContain("disabled");
   });
+  it("keeps extreme declared timestamps readable without breaking the remaining controls", () => {
+    const snapshot = state(); snapshot.instances[0].reads["ends-at"] = -(2n ** 128n);
+    const html = view(props(snapshot)); expect(html).toContain("Unix seconds"); expect(button(html, "Claim ETH")).not.toContain("disabled");
+  });
   it("gates refund controls by the declared wallet and deadline, and renders a new action schema without a module-name branch", () => {
     const snapshot = state(); const manifest = snapshot.instances[0].manifest!;
     const label = `Review ${manifest.actions[0].label.toLowerCase()}`;
