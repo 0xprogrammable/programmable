@@ -80,9 +80,9 @@ function harness(withModules = false) {
     }
     throw new Error("Unexpected eth_call");
   });
-  const block = () => ({ number: 100n, hash: blockHash, timestamp: now });
+  const block = (number = 100n) => ({ number, hash: blockHash, timestamp: now });
   const client = {
-    getChainId: vi.fn(async () => chainId), getBlock: vi.fn(async () => block()), readContract, call,
+    getChainId: vi.fn(async () => chainId), getBlock: vi.fn(async ({ blockNumber }: { blockNumber?: bigint }) => block(blockNumber)), readContract, call,
     getCode: vi.fn(async ({ address }: { address: Address }) => {
       const role = roleByAddress.get(address.toLowerCase());
       if (role) return codeMismatch && role === "hook" ? "0x1234" : toHex(`fixture ${role}`);
@@ -97,8 +97,8 @@ function harness(withModules = false) {
     if (!result.ok) throw new Error(JSON.stringify(result.issues)); return result.draft;
   }
   const launch = (raw = draft()) => prepareModuleNativeLaunch({ client, availability, draft: raw, account: f.wallet, creatorSalt: h(500), image: { uri: "https://example.com/fixture.webp" } });
-  function setupReceipt(prepared: PreparedModuleNativeTransaction, status: "success" | "reverted" = "success") {
-    const transactionHash = h(600); const blockNumber = 100n;
+  function setupReceipt(prepared: PreparedModuleNativeTransaction, status: "success" | "reverted" = "success", blockNumber = 101n) {
+    const transactionHash = h(600);
     const logs: TransactionReceipt["logs"] = [];
     function add(abi: Abi, eventName: string, address: Address, args: Record<string, unknown>) {
       const event = abi.find(item => item.type === "event" && item.name === eventName)!;
@@ -259,5 +259,21 @@ describe("native wallet transaction adapter", () => {
     f.setCreator(a(92));
     await expect(revalidateModuleNativeTransaction(rotation, f.f.wallet)).rejects.toThrow("current recipient");
     await expect(prepareModuleNativeManagementTransaction({ ...common, deadline: now, intent: { kind: "claim-fees", recipient: a(91) } })).rejects.toThrow("expired");
+  });
+  it("rejects an old identical claim or approval hash and rechecks the canonical block after receipt reads", async () => {
+    const f = harness();
+    const claim = await prepareModuleNativeManagementTransaction({ client: f.client, release: f.release, catalog: [], token: f.f.token,
+      actor: f.f.wallet, intent: { kind: "claim-fees", recipient: f.f.wallet }, deadline: now + 300n });
+    const approval = await prepareModuleNativeApproval({ client: f.client, availability: f.availability, account: f.f.wallet, token: f.f.token, amount: 100n });
+    for (const prepared of [claim, approval]) {
+      for (const height of [prepared.blockNumber - 1n, prepared.blockNumber]) {
+        const old = f.setupReceipt(prepared, "success", height);
+        await expect(waitForModuleNativeReceipt({ client: f.client, prepared, transactionHash: old.transactionHash })).rejects.toThrow("predates this preparation");
+      }
+    }
+    const fresh = f.setupReceipt(approval);
+    vi.mocked(f.client.getBlock).mockResolvedValueOnce({ number: 101n, hash: fresh.receipt.blockHash, timestamp: now } as never)
+      .mockResolvedValueOnce({ number: 101n, hash: h(999), timestamp: now } as never);
+    await expect(waitForModuleNativeReceipt({ client: f.client, prepared: approval, transactionHash: fresh.transactionHash })).rejects.toThrow("Canonical receipt block after verification");
   });
 });

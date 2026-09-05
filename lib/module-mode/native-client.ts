@@ -501,7 +501,12 @@ export async function waitForModuleNativeReceipt(input: { client: ModuleNativeCl
   same(tx.input, input.prepared.transaction.data, "Transaction calldata"); requireCondition(tx.value === BigInt(input.prepared.transaction.value) && tx.chainId === 4663, "Transaction value or chain mismatch.");
   same(receipt.from, tx.from, "Receipt sender"); same(receipt.to, tx.to, "Receipt target"); same(tx.blockHash, receipt.blockHash, "Transaction block"); same(block.hash, receipt.blockHash, "Canonical receipt block");
   requireCondition(tx.blockNumber === receipt.blockNumber && block.number === receipt.blockNumber && receipt.blockNumber >= BigInt(binding.release.startBlock), "Receipt block number mismatch.");
+  requireCondition(receipt.blockNumber > input.prepared.blockNumber, "Receipt predates this preparation. An earlier transaction cannot confirm a new request.");
   if (receipt.status === "reverted") throw new ModuleNativeTransactionRevertedError(transactionHash, receipt.blockNumber, receipt.blockHash);
   requireCondition(receipt.status === "success", "Receipt status is unavailable.");
-  return binding.receipt(receipt);
+  const result = await binding.receipt(receipt);
+  const canonical = await input.client.getBlock({ blockNumber: receipt.blockNumber });
+  requireCondition(canonical.number === receipt.blockNumber, "Canonical receipt block number changed.");
+  same(canonical.hash, receipt.blockHash, "Canonical receipt block after verification");
+  return result;
 }
