@@ -264,3 +264,81 @@ test("rejects an external applicant owner identity in tests", async () => {
   assert.equal(result.status, 1);
   assert.match(result.stderr, /tests\/wallet-state\.test\.ts/u);
 });
+
+function sourceMap(overrides = {}) {
+  return { version: 3, sources: ["dependency.js"], sourcesContent: ["export const generic = true;"],
+    names: [], mappings: ["AAAA", ["AE", "ON"].join(""), "CAAA"].join(","), ...overrides };
+}
+
+test("numeric VLQ coincidences in emitted source maps are not candidate identities", async () => {
+  const map = sourceMap();
+  const root = await fixture({
+    ".next/server/chunks/node_modules_library.js.map": JSON.stringify(map),
+    ".next/static/chunks/app.js.map": JSON.stringify({ version: 3, sources: [],
+      sections: [{ offset: { line: 0, column: 0 }, map }] }),
+    ".next/server/app/empty/route.js.map": JSON.stringify({ version: 3, sources: [], sections: [] }),
+  });
+  const result = verify(root, "--include-build");
+  assert.equal(result.status, 0, result.stderr);
+});
+
+test("dependency and application source-map semantic fields remain candidate-checked", async () => {
+  const identity = ["a", "eon"].join("");
+  for (const override of [
+    { sources: [`${identity}.js`] },
+    { sourcesContent: [`export const applicant = '${identity}';`] },
+    { names: [identity] },
+    { file: `${identity}.js` },
+    { sourceRoot: `https://${identity}.example/` },
+    { x_application: { identity } },
+  ]) {
+    const map = sourceMap(override);
+    const root = await fixture({
+      ".next/server/chunks/node_modules_library.js.map": JSON.stringify(map),
+      ".next/static/chunks/app.js.map": JSON.stringify({ version: 3,
+        sections: [{ offset: { line: 0, column: 0 }, map }] }),
+    });
+    const result = verify(root, "--include-build");
+    assert.equal(result.status, 1, JSON.stringify(override));
+    assert.match(result.stderr, /node_modules_library\.js\.map: forbidden/u);
+    assert.match(result.stderr, /app\.js\.map: forbidden/u);
+  }
+});
+
+test("escaped source-map identities are decoded before checking", async () => {
+  const map = JSON.stringify(sourceMap({ names: [["a", "eon"].join("")] }));
+  const root = await fixture({ ".next/server/chunks/app.js.map": map.replace(
+    ["a", "eon"].join(""), "\\u0061\\u0065\\u006f\\u006e") });
+  const result = verify(root, "--include-build");
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /app\.js\.map: forbidden/u);
+});
+
+test("malformed emitted source maps fail closed", async () => {
+  for (const invalid of ["not JSON", "null", JSON.stringify(sourceMap({ version: 2 })),
+    JSON.stringify(sourceMap({ mappings: "AAAA,?" })),
+    JSON.stringify(sourceMap({ mappings: "AAAA,g" })),
+    JSON.stringify(sourceMap({ mappings: "AA" })),
+    JSON.stringify(sourceMap({ names: "ignored" })),
+    JSON.stringify(sourceMap({ sourcesContent: [] })),
+    JSON.stringify({ version: 3, sections: [{ offset: { line: 0, column: 0 }, url: "other.map" }] })]) {
+    const root = await fixture({ ".next/server/chunks/app.js.map": invalid });
+    const result = verify(root, "--include-build");
+    assert.equal(result.status, 1, invalid);
+    assert.match(result.stderr, /app\.js\.map: invalid emitted source map/u);
+  }
+});
+
+test("mapping exception does not cover source files, paths or generated JavaScript", async () => {
+  const identity = ["AE", "ON"].join("");
+  const root = await fixture({
+    "public/vendor.js.map": JSON.stringify(sourceMap()),
+    [`.next/static/chunks/${identity}.js.map`]: JSON.stringify(sourceMap({ mappings: "AAAA" })),
+    ".next/server/chunks/library.js": `export const identity = '${identity}';`,
+  });
+  const result = verify(root, "--include-build");
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /public\/vendor\.js\.map: forbidden/u);
+  assert.match(result.stderr, /forbidden candidate or legacy route path/u);
+  assert.match(result.stderr, /library\.js: forbidden/u);
+});

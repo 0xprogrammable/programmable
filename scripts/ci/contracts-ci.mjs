@@ -18,6 +18,10 @@ export const CONTRACT_CI_BUILD = Object.freeze([
 ]);
 export const CONTRACT_CI_RELEASE = Object.freeze([
   ["npm", "run", "contracts:bootstrap"],
+  // The downloaded contract artifact does not install solc on this worker.
+  // Warm the starter's pinned compiler in its own output directory before its
+  // offline test runner; leave the attested default contract outputs intact.
+  ["forge", "build", "--root", "../packages/classic-modules/examples/native-program"],
   ["npm", "run", "modules:starter:test"],
   ["npm", "run", "contracts:custom-registry-v2:test"],
   ["npm", "run", "contracts:custom-registry-v2:artifacts"],
