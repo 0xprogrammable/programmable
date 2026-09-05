@@ -70,6 +70,31 @@ test('preserves a previous change request when an operator rebuilds the same sou
   assert.equal(result.review.artifactDigest, null);
 });
 
+test('preserves versioned private review failure codes without exposing response text or credentials', async t => {
+  const route = reviewHandler();
+  let problem = { code: 'MODULE_REVIEW_JOB_UNAVAILABLE', message: `Private operator detail ${TEST_KEY}` };
+  const { apiOrigin, seen } = await localServer(t, (request, response) => {
+    if (request.url === `/v1/modules/submissions/${SUBMISSION_ID}/review`) {
+      json(response, 503, { schemaVersion: 'programmable.modules.review-status.v1', error: problem });
+      return;
+    }
+    return route(request, response);
+  });
+  const client = createModuleApiClient({ apiOrigin, apiKey: TEST_KEY });
+  await assert.rejects(client.reviewStatus(SUBMISSION_ID), error => {
+    assert.equal(error.code, 'MODULE_REVIEW_JOB_UNAVAILABLE');
+    assert.equal(error.httpStatus, 503);
+    assert.equal(error.submissionMayExist, undefined);
+    assert.ok(!error.message.includes(TEST_KEY));
+    assert.ok(!error.message.includes('Private operator detail'));
+    return true;
+  });
+  problem = { code: TEST_KEY, message: 'Unsafe response code.' };
+  await assert.rejects(client.reviewStatus(SUBMISSION_ID), { code: 'MODULE_API_HTTP', httpStatus: 503 });
+  assert.ok(seen.every(request => request.method === 'GET'));
+  assert.equal(seen.filter(request => request.url.endsWith('/review')).length, 2);
+});
+
 test('bounds and rejects review capability redirects before private reads', async t => {
   const { apiOrigin, seen } = await localServer(t, (_request, response) => {
     response.writeHead(302, { Location: 'https://example.invalid/review' }); response.end();

@@ -111,7 +111,9 @@ test('compares committed bytes even when the Git index hides a worktree edit', a
 test('requires a new package version for a committed release with changed source', async (t) => {
   const root = await fixture(t);
   const first = await buildModuleCli({ root, write: true });
-  const firstBytes = await fs.readFile(path.join(root, first.artifactPath));
+  const firstDirectory = path.dirname(first.artifactPath);
+  const firstFiles = new Map(await Promise.all((await fs.readdir(path.join(root, firstDirectory)))
+    .map(async (name) => [name, await fs.readFile(path.join(root, firstDirectory, name))])));
   git(root, ['add', '--', MODULE_CLI_RELEASE_ROOT]);
   git(root, ['commit', '--quiet', '-m', 'Versioned fixture release']);
   const cliPath = 'packages/classic-modules/src/cli.mjs';
@@ -121,7 +123,8 @@ test('requires a new package version for a committed release with changed source
   await assert.rejects(buildModuleCli({ root, write: true }), { code: 'VERSION_ALREADY_BOUND' });
   const packagePath = 'packages/classic-modules/package.json';
   const metadata = JSON.parse(await fs.readFile(path.join(root, packagePath), 'utf8'));
-  metadata.version = '1.0.0-development.2';
+  const [, major, minor, patch] = metadata.version.match(/^(\d+)\.(\d+)\.(\d+)/u);
+  metadata.version = `${major}.${minor}.${Number(patch) + 1}-distribution-test`;
   await fs.writeFile(path.join(root, packagePath), `${JSON.stringify(metadata, null, 2)}\n`);
   await assert.rejects(buildModuleCli({ root, write: true }), { code: 'SOURCE_NOT_COMMITTED' });
   git(root, ['add', '--', packagePath]);
@@ -129,7 +132,8 @@ test('requires a new package version for a committed release with changed source
   const next = await buildModuleCli({ root, write: true });
   assert.notEqual(next.artifactPath, first.artifactPath);
   assert.notEqual(next.sourceDigest, first.sourceDigest);
-  assert.deepEqual(await fs.readFile(path.join(root, first.artifactPath)), firstBytes);
+  assert.deepEqual((await fs.readdir(path.join(root, firstDirectory))).sort(), [...firstFiles.keys()].sort());
+  for (const [name, bytes] of firstFiles) assert.deepEqual(await fs.readFile(path.join(root, firstDirectory, name)), bytes);
 });
 
 test('detects modified output without silently replacing it', async (t) => {
