@@ -145,6 +145,8 @@ Public capabilities do not require `apiKey`. Authenticated methods require a key
 
 Each request contains the descriptor and exactly its pinned source files, encoded as canonical base64. Local limits are 128 files, 4 MiB per file, 16 MiB total raw source and 24 MiB serialized HTTP request bytes. Base64 expansion is included in the HTTP limit. The deployment may publish lower limits; the client checks those before uploading. A source hash match proves the received bytes match the descriptor. It does not prove source ownership, repository history, a successful build, runtime safety or approval.
 
+Build profiles have separate limits. The first `programmable.native-solidity@1` reviewer-selected profile supports at most 4 MiB of total submitted source bytes, including packaged dependencies and documentation, and 16 KiB of encoded configuration. An intake receipt for a larger package does not promise that this profile can build it. `MODULE_BUILD_PROFILE_CAPACITY_EXCEEDED` identifies that mismatch; a different host/profile requires its own supported review path. The open intake format and contributor source identity remain unchanged.
+
 CLI failures return a nonzero exit code and structured JSON on stderr. Codes and safe field paths are retained; arbitrary server messages, raw response bodies and credential echoes are not printed. Relevant failures include:
 
 | Code or HTTP status | Action |

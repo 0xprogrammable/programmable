@@ -84,6 +84,9 @@ export default function ModuleModeDeveloperPage() {
       <p className={styles.bodyCopy}><code>status-module</code> keeps the historical intake receipt.
         <code> review-status-module</code> reads current progress with your existing Module contributions key.
         An <code>accepted</code> review still reports no onchain approval or public availability.</p>
+      <p className={styles.bodyCopy}>The first native Solidity build profile accepts up to 4 MiB of packaged
+        source, dependencies and documentation. Intake can store larger packages; a successful upload does
+        not establish compatibility with this build profile.</p>
       <p className={styles.bodyCopy}>Public availability needs a reproducible build, the required security and
         compatibility checks, a reviewed version, exact deployed code and an active catalog binding.
         A new version does not silently change existing coins. Modules that need a new host capability
