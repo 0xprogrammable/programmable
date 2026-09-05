@@ -162,6 +162,7 @@ describe("wallet recovery state", () => {
       "/profile/settings",
       "/token/0x7987f03462200b3d8a072e02c89a8a41dcb124ee",
       "/admin/partners",
+      "/admin/modules",
     ]) {
       expect(subject.shouldEagerLoadWalletRuntime(pathname)).toBe(true);
       expect(subject.shouldBackgroundLoadWalletRuntime(pathname, true)).toBe(false);

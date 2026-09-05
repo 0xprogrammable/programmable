@@ -134,7 +134,7 @@ export function ModuleSchemaField({ schema, value, onChange, label, path, schema
     return (
       <fieldset className={styles.collection}>
         <legend>{title}</legend>
-        <div className={styles.field}>
+        {roles.length > 0 || role ? <div className={styles.field}>
           <label htmlFor={`${id}-kind`}>Use</label>
           <select id={`${id}-kind`} value={role ? "role" : "address"} onChange={(event) => {
             savedAccounts.current[role ? "role" : "address"] = record;
@@ -144,7 +144,7 @@ export function ModuleSchemaField({ schema, value, onChange, label, path, schema
             <option value="address">Wallet address</option>
             <option value="role" disabled={roles.length === 0}>Named role{roles.length === 0 ? " · none supplied" : ""}</option>
           </select>
-        </div>
+        </div> : null}
         <div className={styles.field}>
           <label htmlFor={id}>{role ? "Role" : "Wallet address"}</label>
           {role ? <select id={id} value={String(record.role ?? "")} aria-invalid={Boolean(issue) || undefined} aria-describedby={describedBy} onChange={(event) => onChange({ role: event.target.value })}><option value="">Choose a role</option>{roles.map((key) => <option value={key} key={key}>{key}</option>)}</select> : <input id={id} type="text" spellCheck={false} autoComplete="off" placeholder="0x…" value={String(record.address ?? "")} aria-invalid={Boolean(issue) || undefined} aria-describedby={describedBy} onChange={(event) => onChange({ address: event.target.value })} />}

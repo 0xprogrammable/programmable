@@ -46,6 +46,7 @@ describe("Module Mode coin controls", () => {
   it("shows real units, module budgets, generic declared reads and the global fee-claim scope", () => {
     const html = view();
     expect(html).toContain("0.5 ETH"); expect(html).toContain("0.01 ETH"); expect(html).toContain("Buyer rewards");
+    expect(html).toContain("1970-01-24 03:33 UTC");
     expect(html).toContain("Available fees across your Module Mode coins"); expect(html).toContain("Earned from this coin");
     expect(button(html, "Claim ETH")).not.toContain("disabled"); expect(button(html, "Review buy")).not.toContain("disabled");
     expect(html).toContain('id="trade"'); expect(html).not.toMatch(/<p[^>]*>[^<]*<details/);

@@ -269,6 +269,7 @@ export function shouldEagerLoadWalletRuntime(pathname: string) {
     "/token",
     "/developers/api-keys",
     "/admin/partners",
+    "/admin/modules",
     "/ops/privy-policy-owner",
   ].some(
     (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
@@ -3458,6 +3459,8 @@ export function WalletButton({ compact = false }: { compact?: boolean }) {
   const [menuError, setMenuError] = useState("");
   const [partnerAdminAccount, setPartnerAdminAccount] =
     useState<string | null>(null);
+  const [moduleReviewerAccount, setModuleReviewerAccount] =
+    useState<string | null>(null);
   const hydrationPending = connecting && !openingWallet;
 
   useEffect(() => {
@@ -3510,17 +3513,22 @@ export function WalletButton({ compact = false }: { compact?: boolean }) {
           page: "1",
           pageSize: "1",
         });
-        const response = await fetch(`/api/admin/partners?${query}`, {
-          cache: "no-store",
-          headers,
-          signal: controller.signal,
-        });
-        if (response.ok && !controller.signal.aborted) {
-          setPartnerAdminAccount(account);
-        }
+        const moduleQuery = new URLSearchParams({ walletAddress: account });
+        const [partner, modules] = await Promise.allSettled([
+          fetch(`/api/admin/partners?${query}`, {
+            cache: "no-store", headers, signal: controller.signal, redirect: "error",
+          }),
+          fetch(`/api/admin/modules?${moduleQuery}`, {
+            cache: "no-store", headers, signal: controller.signal, redirect: "error",
+          }),
+        ]);
+        if (controller.signal.aborted) return;
+        setPartnerAdminAccount(partner.status === "fulfilled" && partner.value.ok ? account : null);
+        setModuleReviewerAccount(modules.status === "fulfilled" && modules.value.ok ? account : null);
       } catch (error) {
         if (!(error instanceof DOMException && error.name === "AbortError")) {
           setPartnerAdminAccount(null);
+          setModuleReviewerAccount(null);
         }
       }
     })();
@@ -3571,6 +3579,7 @@ export function WalletButton({ compact = false }: { compact?: boolean }) {
         if (wallet) {
           setMenuError("");
           setPartnerAdminAccount(null);
+          setModuleReviewerAccount(null);
           setMenuOpen((current) => !current);
         } else {
           openWallet();
@@ -3673,6 +3682,16 @@ export function WalletButton({ compact = false }: { compact?: boolean }) {
             onClick={() => setMenuOpen(false)}
           >
             Partner admin
+          </Link>
+        ) : null}
+        {moduleReviewerAccount?.toLowerCase() === wallet.account.toLowerCase() ? (
+          <Link
+            href="/admin/modules"
+            prefetch={false}
+            tabIndex={menuOpen ? undefined : -1}
+            onClick={() => setMenuOpen(false)}
+          >
+            Module reviews
           </Link>
         ) : null}
         <button

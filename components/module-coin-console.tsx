@@ -28,7 +28,7 @@ function errorMessage(error: unknown) {
 }
 function timestamp(value: bigint) {
   if (value > 8_640_000_000_000n || value < -8_640_000_000_000n) return `${value.toString()} Unix seconds`;
-  return new Date(Number(value) * 1000).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  return new Date(Number(value) * 1000).toISOString().replace("T", " ").replace(/:\d{2}\.\d{3}Z$/u, " UTC");
 }
 function displayValue(read: ManagementRead, value: ManagementValue | undefined) {
   if (value === null) return "Connect your wallet";
@@ -162,14 +162,14 @@ export function ModuleCoinConsoleView(props: ModuleCoinConsoleViewProps) {
   const { snapshot, loading, phase, prepared } = props;
   const busy = ["preparing", "wallet", "pending", "unconfirmed", "checking"].includes(phase);
   const disabled = busy || loading || !props.walletReady || !props.onChain || phase === "review";
-  return <main className={styles.console}>
+  return <section className={styles.console} aria-labelledby="module-coin-console-title">
     <div className={styles.topline}>
       <Link href="/launch/modules" className={styles.back}><ArrowLeft size={16} aria-hidden="true" />Module Mode</Link>
       <button type="button" className={styles.quietButton} onClick={props.onRefresh} disabled={loading || phase === "wallet"}><RefreshCw size={16} aria-hidden="true" />{loading ? "Refreshing…" : "Refresh"}</button>
     </div>
     <header className={styles.heading}>
       <span className={styles.eyebrow}>Coin controls · Robinhood Chain</span>
-      <h1>{snapshot ? `Manage ${snapshot.name}` : "Manage your coin"}</h1>
+      <h1 id="module-coin-console-title">{snapshot ? `Manage ${snapshot.name}` : "Manage your coin"}</h1>
       <p>Fund your modules, claim ETH and manage creator fee recipients.</p>
       <a className={styles.tokenLink} href={`${ROBINHOOD_BLOCK_EXPLORER_URL}/token/${props.token}`} target="_blank" rel="noreferrer">{snapshot?.symbol ? `${snapshot.symbol} · ` : ""}{shortAddress(props.token)}<ArrowUpRight size={14} aria-hidden="true" /></a>
     </header>
@@ -199,7 +199,7 @@ export function ModuleCoinConsoleView(props: ModuleCoinConsoleViewProps) {
         <p className={styles.small}>Balances were read at block {snapshot.blockNumber.toString()}. Refresh before acting on a recent change.</p>
       </aside>
     </div> : null}
-  </main>;
+  </section>;
 }
 
 function PreparedReview({ prepared, symbol, onConfirm, onCancel }: { prepared: ConsolePrepared; symbol: string; onConfirm: () => void; onCancel: () => void }) {
