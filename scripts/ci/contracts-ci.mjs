@@ -23,6 +23,7 @@ export const CONTRACT_CI_RELEASE = Object.freeze([
   // offline test runner; leave the attested default contract outputs intact.
   ["forge", "build", "--root", "../packages/classic-modules/examples/native-program"],
   ["npm", "run", "modules:starter:test"],
+  ["node", "--test", "contracts/scripts/module-mode/operator.test.mjs", "contracts/scripts/module-mode/source-readback.test.mjs"],
   ["npm", "run", "contracts:custom-registry-v2:test"],
   ["npm", "run", "contracts:custom-registry-v2:artifacts"],
   ["npm", "run", "contracts:test:forks"],
