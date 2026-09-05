@@ -1,0 +1,6 @@
+{
+  "owner": "0x79879fe6f00c0986ca521ea6f5b276b5e28b1b9c",
+  "reviewAuthority": "0x79879fe6f00c0986ca521ea6f5b276b5e28b1b9c",
+  "minimumInitialBuyNative": "400000000000000",
+  "releaseLabel": "robinhood-native-v1"
+}
