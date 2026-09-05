@@ -270,10 +270,10 @@ export async function buildModuleManagementTransaction(input: ModuleManagementBu
   }
   const transaction = { chainId: 4663 as const, from: actor, to, data, value: toHex(value) };
   await input.client.call({ account: actor, to, data, value, blockNumber: snapshot.blockNumber });
-  const gasEstimate = await input.client.estimateGas({ account: actor, to, data, value });
+  const gasEstimate = await input.client.estimateGas({ account: actor, to, data, value, blockNumber: snapshot.blockNumber });
   const canonical = await input.client.getBlock({ blockNumber: snapshot.blockNumber });
   requireValue(canonical.hash && same(canonical.hash, snapshot.blockHash), "The chain changed during simulation. Prepare the action again.");
-  return { transaction, expiresAt: input.deadline, gasEstimate, description };
+  return { transaction, expiresAt: input.deadline, gasEstimate, description, blockNumber: snapshot.blockNumber, blockHash: snapshot.blockHash };
 }
 
 export function moduleManagementChainMatches(chainId: string | null | undefined): boolean {
