@@ -8,9 +8,10 @@ import { MAX_TOKEN_DESCRIPTION_BYTES, MAX_TOKEN_NAME_BYTES } from "@/lib/metadat
 import { compileOpenConfig, type OpenConfigValue } from "@/packages/classic-modules/src/open-config.mjs";
 import { evaluateOpenConstraints } from "@/packages/classic-modules/src/open-constraints.mjs";
 import { NATIVE_ENGINE_PROFILE, validateTokenImage, type ModuleModeDraft } from "./builder";
-import { MODULE_MODE_DEPENDENCIES, bindActiveModuleModeRelease, moduleAddress, moduleHash, moduleRecord, moduleUint, type ModuleModeRelease } from "./release";
+import { MODULE_MODE_DEPENDENCIES, bindActiveModuleModeRelease, moduleAddress, moduleBytes, moduleHash, moduleRecord, moduleUint, type ModuleModeRelease } from "./release";
 import { bindNativeCatalogEntry, moduleNativeCatalogDigest, nativeCanonicalJson, nativeJson, parseModuleModeAvailability, type ModuleModeAvailability, type NativeModuleModeCatalogEntry } from "./native-catalog";
 import { MODULE_NATIVE_METADATA_TYPE, MODULE_NATIVE_SELECTION_TYPE, moduleNativeApprovalAbi, moduleNativeLaunchAbi, moduleNativePoolParameters, moduleNativeReadAbi, moduleNativeRouterAbi } from "./native-abi";
+import type { ModuleManagementBuildInput } from "./management";
 
 export type ModuleNativeClient = Pick<PublicClient, "getChainId" | "getBlock" | "getCode" | "readContract" | "call" | "estimateGas" | "getTransaction" | "waitForTransactionReceipt">;
 export function createModuleNativeClient(): ModuleNativeClient {
@@ -44,7 +45,7 @@ export interface PreparedModuleNativeSwap extends PreparedBase {
   readonly feeComponents: { creatorBps: number; platformBps: number; poolProtocolPips: number; poolLpPips: number };
 }
 export interface PreparedModuleNativeApproval extends PreparedBase { readonly kind: "approve"; readonly token: Address; readonly amount: bigint }
-export interface PreparedModuleNativeManagement extends PreparedBase { readonly kind: "manage" }
+export interface PreparedModuleNativeManagement extends PreparedBase { readonly kind: "manage"; readonly token: Address }
 export type PreparedModuleNativeTransaction = PreparedModuleNativeLaunch | PreparedModuleNativeSwap | PreparedModuleNativeApproval | PreparedModuleNativeManagement;
 export interface ModuleNativeApprovalRequired { kind: "approval-required"; token: Address; spender: Address; amount: bigint; currentAllowance: bigint }
 export interface ModuleNativeImageBinding { uri: string; sourceSha256?: Hex }
@@ -183,18 +184,27 @@ function validateDraft(raw: ModuleModeDraft, availability: ModuleModeAvailabilit
   const root = moduleRecord(draft, ["format", "status", "launchable", "onchainApproved", "walletAuthorizationVerified", "chainId", "quoteAsset", "engine", "token", "initialBuyWei", "totalProgramFundingWei", "totalNativeValueWei", "fees", "modules", "draftId"], "draft");
   const { draftId, ...body } = root;
   same(sha256(toHex(nativeCanonicalJson(body))), draftId, "Draft digest");
+  moduleRecord(draft.engine, ["id", "version", "label"], "draft.engine");
+  moduleRecord(draft.token, ["name", "symbol", "description", "image"], "draft.token");
+  moduleRecord(draft.fees, ["creatorBuyBps", "creatorSellBps", "programmableBps", "asset"], "draft.fees");
   requireCondition(draft.format === "programmable.module-mode.draft.v0.1" && draft.status === "preview" && draft.launchable === false && draft.onchainApproved === false && draft.walletAuthorizationVerified === false && draft.chainId === 4663 && draft.quoteAsset === "native-ETH" && draft.engine.id === NATIVE_ENGINE_PROFILE.id && draft.engine.version === 1, "Unsupported draft or engine.");
   requireCondition(typeof draft.token.name === "string" && draft.token.name.trim() === draft.token.name && draft.token.name.length > 0 && new TextEncoder().encode(draft.token.name).length <= MAX_TOKEN_NAME_BYTES
     && /^[a-zA-Z0-9]{1,12}$/.test(draft.token.symbol) && typeof draft.token.description === "string" && new TextEncoder().encode(draft.token.description).length <= MAX_TOKEN_DESCRIPTION_BYTES, "Invalid token metadata.");
   requireCondition(validateTokenImage(draft.token.image) === null && validateTokenImage({ kind: "uri", uri: image.uri, contentVerified: false }) === null, "Invalid token image binding.");
-  if (draft.token.image.kind === "uri") requireCondition(image.uri === draft.token.image.uri, "Reviewed image URI changed.");
-  else same(image.sourceSha256, draft.token.image.sha256, "Uploaded image source digest");
+  if (draft.token.image.kind === "uri") {
+    moduleRecord(draft.token.image, ["kind", "uri", "contentVerified"], "draft.image");
+    requireCondition(draft.token.image.contentVerified === false && image.uri === draft.token.image.uri, "Reviewed image URI or verification state changed.");
+  } else {
+    moduleRecord(draft.token.image, ["kind", "sha256", "mimeType", "bytes"], "draft.image");
+    same(image.sourceSha256, draft.token.image.sha256, "Uploaded image source digest");
+  }
   for (const fee of [draft.fees.creatorBuyBps, draft.fees.creatorSellBps]) requireCondition(Number.isSafeInteger(fee) && fee >= 0 && fee <= 1000 && fee % 100 === 0, "Creator fees must be 0–10% in whole percentages.");
   requireCondition(draft.fees.programmableBps === 20 && draft.fees.asset === "native-ETH", "The additional protocol fee must be 20 bps in ETH.");
   const initialBuy = checkedAmount(uint(draft.initialBuyWei, "initialBuy", true), "initial buy");
   requireCondition(initialBuy >= BigInt(availability.release!.minimumInitialBuyNative), "Initial buy is below the released minimum.");
   requireCondition(Array.isArray(draft.modules) && draft.modules.length <= 8 && new Set(draft.modules.map(item => item.id)).size === draft.modules.length, "Invalid module count or duplicate selection.");
   const paired = draft.modules.map(selected => {
+    moduleRecord(selected, ["id", "version", "catalogDigest", "source", "configuration", "configurationBytes", "programConfigurationBytes", "fundingWei", "bindings"], "draft.module");
     const entry = bindNativeCatalogEntry(availability.catalog.find(candidate => candidate.id === selected.id));
     same(selected.catalogDigest, moduleNativeCatalogDigest(entry), "Module catalog digest");
     requireCondition(selected.version === entry.version && nativeCanonicalJson(selected.source) === nativeCanonicalJson(entry.source), "Reviewed module source differs.");
@@ -231,11 +241,12 @@ function active(value: ModuleModeAvailability): ModuleModeAvailability & { relea
 function transaction(account: Address, to: Address, data: Hex, value: bigint, action: ModuleNativeWalletTransaction["action"], description: string): ModuleNativeWalletTransaction {
   return { chainId: 4663, from: account, to, data, value: toHex(value), action, description };
 }
+function gasReserve(estimate: bigint): bigint { return (uint(estimate, "gasEstimate", true) * 120n + 99n) / 100n; }
 async function simulate(client: ModuleNativeClient, tx: ModuleNativeWalletTransaction, blockNumber: bigint) {
   const request = { account: tx.from, to: tx.to, data: tx.data, value: BigInt(tx.value), blockNumber };
   const [call, gas] = await Promise.all([client.call(request), client.estimateGas(request)]);
   requireCondition(call.data && call.data !== "0x", "Simulation returned no result.");
-  return { data: call.data, gasEstimate: (gas * 120n + 99n) / 100n };
+  return { data: call.data, gasEstimate: gasReserve(gas) };
 }
 function seal<T extends PreparedModuleNativeTransaction>(prepared: T, binding: PrivateBinding): T {
   frozen(prepared); preparations.set(prepared, binding); return prepared;
@@ -393,6 +404,53 @@ export async function prepareModuleNativeApproval(input: { client: ModuleNativeC
   } });
 }
 
+/** Reconstruct an allowed management intent; callers cannot supply transaction bytes to the branding boundary. */
+export async function prepareModuleNativeManagementTransaction(input: ModuleManagementBuildInput): Promise<PreparedModuleNativeManagement> {
+  const { client } = input;
+  const release = frozen(bindActiveModuleModeRelease(input.release));
+  const account = moduleAddress(input.actor, "management.actor"); const token = moduleAddress(input.token, "management.token");
+  requireCondition(typeof input.deadline === "bigint" && input.deadline > 0n, "Invalid management deadline.");
+  const catalog = frozen(nativeJson(input.catalog)) as ModuleManagementBuildInput["catalog"];
+  requireCondition(Array.isArray(catalog) && catalog.length <= 1000, "Invalid management catalog.");
+  const intent = frozen(nativeJson(input.intent)) as ModuleManagementBuildInput["intent"];
+  const context: ModuleManagementBuildInput = Object.freeze({ client, release, catalog, token, actor: account, intent, deadline: input.deadline });
+  // Dynamic import avoids a runtime cycle: management reads use this module's authenticated release and launch helpers.
+  const { buildModuleManagementTransaction } = await import("./management");
+  const reconstruct = async () => {
+    const candidate = await buildModuleManagementTransaction(context);
+    const target = intent.kind === "program" ? release.contracts.runtime.address
+      : intent.kind === "fund" || intent.kind === "claim" ? release.contracts.budgetVault.address : release.contracts.rewardLedger.address;
+    requireCondition(candidate.transaction.chainId === 4663 && candidate.expiresAt === context.deadline, "Management chain or deadline changed.");
+    same(candidate.transaction.from, account, "Management actor"); same(candidate.transaction.to, target, "Management target");
+    const value = uint(BigInt(candidate.transaction.value), "management.value");
+    requireCondition(value === (intent.kind === "fund" ? uint(intent.amountWei, "management.funding", true) : 0n), "Management value changed.");
+    const data = moduleBytes(candidate.transaction.data, "management.calldata", 65_536);
+    requireCondition(data.length >= 10 && typeof candidate.description === "string" && candidate.description.length > 0 && candidate.description.length <= 65_536, "Invalid management transaction description or calldata.");
+    requireCondition(typeof candidate.blockNumber === "bigint" && candidate.blockNumber >= BigInt(release.startBlock), "Management snapshot block is unavailable.");
+    const hash = moduleHash(candidate.blockHash, "management.blockHash");
+    const canonical = await client.getBlock({ blockNumber: candidate.blockNumber });
+    requireCondition(canonical.number === candidate.blockNumber, "Management snapshot block number changed."); same(canonical.hash, hash, "Management snapshot block");
+    requireCondition(canonical.timestamp < context.deadline && Math.abs(Date.now() / 1000 - Number(canonical.timestamp)) <= 120, "Management review expired or RPC state is stale. Prepare again.");
+    return { transaction: transaction(account, target, data, value, "manage", candidate.description), blockNumber: candidate.blockNumber, gasEstimate: gasReserve(candidate.gasEstimate) };
+  };
+  const candidate = await reconstruct();
+  const prepared: PreparedModuleNativeManagement = { kind: "manage", token, transaction: candidate.transaction, account, releaseDigest: release.releaseDigest,
+    blockNumber: candidate.blockNumber, expiresAt: context.deadline, gasEstimate: candidate.gasEstimate };
+  return seal(prepared, { client, release,
+    refresh: async () => {
+      const current = await reconstruct();
+      for (const field of ["from", "to", "data", "value"] as const) same(current.transaction[field], prepared.transaction[field], `Reviewed management ${field}`);
+      requireCondition(current.transaction.description === prepared.transaction.description, "Management effects changed. Prepare again.");
+      return current.gasEstimate;
+    },
+    receipt: async receipt => {
+      const block = await assertModuleNativeRelease({ client, release, blockNumber: receipt.blockNumber });
+      await boundLaunch(client, block, token); await assertCanonical(client, block);
+      return receiptResult(receipt, "manage", { token });
+    },
+  });
+}
+
 /** Only in-memory preparations made by this module can cross the wallet boundary. A signing attempt consumes the review. */
 export async function revalidateModuleNativeTransaction(prepared: PreparedModuleNativeTransaction, expectedAccount: Address): Promise<ModuleNativeWalletTransaction> {
   const binding = preparations.get(prepared);
@@ -442,7 +500,7 @@ export async function waitForModuleNativeReceipt(input: { client: ModuleNativeCl
   same(tx.hash, transactionHash, "Transaction hash"); same(tx.from, input.prepared.account, "Transaction sender"); same(tx.to, input.prepared.transaction.to, "Transaction target");
   same(tx.input, input.prepared.transaction.data, "Transaction calldata"); requireCondition(tx.value === BigInt(input.prepared.transaction.value) && tx.chainId === 4663, "Transaction value or chain mismatch.");
   same(receipt.from, tx.from, "Receipt sender"); same(receipt.to, tx.to, "Receipt target"); same(tx.blockHash, receipt.blockHash, "Transaction block"); same(block.hash, receipt.blockHash, "Canonical receipt block");
-  requireCondition(tx.blockNumber === receipt.blockNumber && receipt.blockNumber >= BigInt(binding.release.startBlock), "Receipt block number mismatch.");
+  requireCondition(tx.blockNumber === receipt.blockNumber && block.number === receipt.blockNumber && receipt.blockNumber >= BigInt(binding.release.startBlock), "Receipt block number mismatch.");
   if (receipt.status === "reverted") throw new ModuleNativeTransactionRevertedError(transactionHash, receipt.blockNumber, receipt.blockHash);
   requireCondition(receipt.status === "success", "Receipt status is unavailable.");
   return binding.receipt(receipt);

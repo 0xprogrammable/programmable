@@ -4,7 +4,8 @@ import { createModuleModeState, PREVIEW_MODULE_CATALOG, setModuleSelected, valid
 import { bindActiveModuleModeRelease, type ModuleModeDependency } from "../lib/module-mode/release";
 import { MODULE_MODE_AVAILABILITY_SCHEMA, nativeCanonicalJson, type ModuleModeAvailability, type NativeModuleModeCatalogEntry } from "../lib/module-mode/native-catalog";
 import { MODULE_NATIVE_METADATA_TYPE, MODULE_NATIVE_SELECTION_TYPE, moduleNativeApprovalAbi, moduleNativeLaunchAbi, moduleNativeRouterAbi } from "../lib/module-mode/native-abi";
-import { assertModuleNativeRelease, prepareModuleNativeApproval, prepareModuleNativeLaunch, prepareModuleNativeSwap, revalidateModuleNativeTransaction, waitForModuleNativeReceipt, ModuleNativeTransactionRevertedError, type ModuleNativeClient, type PreparedModuleNativeTransaction } from "../lib/module-mode/native-client";
+import { assertModuleNativeRelease, prepareModuleNativeApproval, prepareModuleNativeLaunch, prepareModuleNativeManagementTransaction, prepareModuleNativeSwap, revalidateModuleNativeTransaction, waitForModuleNativeReceipt, ModuleNativeTransactionRevertedError, type ModuleNativeClient, type PreparedModuleNativeTransaction } from "../lib/module-mode/native-client";
+import { managementCoreAbi, type ModuleManagementBuildInput } from "../lib/module-mode/management";
 import { moduleEvidenceFixture, a, h } from "./fixtures/module-mode-evidence";
 
 const now = BigInt(Math.floor(Date.now() / 1000));
@@ -20,6 +21,7 @@ function harness(withModules = false) {
   } })) : [];
   const availability: ModuleModeAvailability = { schemaVersion: MODULE_MODE_AVAILABILITY_SCHEMA, release, catalog, reason: null };
   let chainId = 4663; let codeMismatch = false; let disabled = false; let allowance = 0n; let blockHash = h(400);
+  let adminRevision = 0n; let currentCreator = f.wallet;
   let lastLaunch: Record<string, unknown> | null = null;
   let simulatedLaunch = { ...f.evidence.getLaunch.record, positionTokenId: 1n, initialBuyNative: 1000n, initialBuyTokens: 90_000n };
   let receipt: TransactionReceipt; let receiptTx: Record<string, unknown>;
@@ -34,6 +36,14 @@ function harness(withModules = false) {
     if (fn === "creator") return pins.launcher.address;
     if (fn === "totalSupply") return 1_000_000_000n * 10n ** 18n;
     if (fn === "decimals") return 18;
+    if (fn === "name") return "Fixture 0";
+    if (fn === "symbol") return "F0";
+    if (fn === "instances") return [];
+    if (fn === "creatorRecipients") return [[currentCreator], [10000], adminRevision];
+    if (fn === "treasury") return a(901);
+    if (fn === "rewardAdmin") return f.wallet;
+    if (fn === "claimable") return 500n;
+    if (fn === "claimedBy" || fn === "contributionByPool") return 100n;
     if (fn === "allowance") return allowance;
     if (fn === "poolConfig") return [pins.launcher.address, f.wallet, pins.swapRouter.address, pins.swapRouter.runtimeCodeHash, 0, 1000, simulatedLaunch.recipeHash, simulatedLaunch.launchKey];
     if (fn === "feeComponents") return [0, 20, 500, 0];
@@ -47,7 +57,7 @@ function harness(withModules = false) {
     throw new Error(`Unexpected read ${role}.${fn}`);
   });
   const call = vi.fn(async ({ data }: Call) => {
-    for (const abi of [moduleNativeLaunchAbi, moduleNativeRouterAbi, moduleNativeApprovalAbi]) {
+    for (const abi of [moduleNativeLaunchAbi, moduleNativeRouterAbi, moduleNativeApprovalAbi, managementCoreAbi]) {
       let decoded: ReturnType<typeof decodeFunctionData<Abi>>;
       try { decoded = decodeFunctionData({ abi, data }); } catch { continue; }
       if (decoded.functionName === "launch") {
@@ -66,6 +76,7 @@ function harness(withModules = false) {
         return { data: encodeFunctionResult({ abi: moduleNativeRouterAbi, functionName: "swap", result: values as [bigint, bigint] }) };
       }
       if (decoded.functionName === "approve") return { data: encodeFunctionResult({ abi: moduleNativeApprovalAbi, functionName: "approve", result: true }) };
+      if (["claimTo", "replaceCreatorWallets", "changeCreatorWallet"].includes(decoded.functionName)) return { data: "0x" };
     }
     throw new Error("Unexpected eth_call");
   });
@@ -113,6 +124,7 @@ function harness(withModules = false) {
     return { transactionHash, receipt, transaction: receiptTx };
   }
   return { client, f, release, availability, state, catalog, draft, launch, setupReceipt, readContract, call,
+    setAdminRevision: (revision: bigint) => { adminRevision = revision; }, setCreator: (wallet: Address) => { currentCreator = wallet; },
     setChain: (id: number) => { chainId = id; }, setCodeMismatch: () => { codeMismatch = true; }, disable: () => { disabled = true; }, setAllowance: (n: bigint) => { allowance = n; }, setBlockHash: (value: Hex) => { blockHash = value; } };
 }
 function redigest(draft: ModuleModeDraft): ModuleModeDraft {
@@ -147,6 +159,10 @@ describe("native wallet transaction adapter", () => {
     await expect(f.launch(redigest({ ...f.draft(), fees: { ...f.draft().fees, creatorBuyBps: 50 } }))).rejects.toThrow("whole percentages");
     await expect(f.launch(redigest({ ...f.draft(), totalNativeValueWei: "999999" }))).rejects.toThrow("Launch value");
     await expect(f.launch(redigest({ ...f.draft(), initialBuyWei: "999", totalNativeValueWei: "999" }))).rejects.toThrow("released minimum");
+    const addedFeeField = f.draft(); Object.assign(addedFeeField.fees, { feeRecipient: a(999) });
+    await expect(f.launch(redigest(addedFeeField))).rejects.toThrow("draft.fees.keys");
+    const fakeImageVerification = f.draft(); Object.assign(fakeImageVerification.token.image, { contentVerified: true });
+    await expect(f.launch(redigest(fakeImageVerification))).rejects.toThrow("verification state changed");
   });
   it("refuses fresh gas growth and immutable dependency mismatch before the signing boundary", async () => {
     const f = harness(); const prepared = await f.launch();
@@ -214,5 +230,34 @@ describe("native wallet transaction adapter", () => {
     await expect(waitForModuleNativeReceipt({ client: f.client, prepared, transactionHash: data.transactionHash })).rejects.not.toBeInstanceOf(ModuleNativeTransactionRevertedError);
     const next = f.setupReceipt(prepared); next.receipt.logs[0].address = a(999);
     await expect(waitForModuleNativeReceipt({ client: f.client, prepared, transactionHash: next.transactionHash })).rejects.toThrow("exactly one ModuleNativeLaunched");
+  });
+  it("reconstructs a fee claim through the real management builder, isolates the reviewed intent and binds its receipt", async () => {
+    const f = harness();
+    const input: ModuleManagementBuildInput = { client: f.client, release: f.release, catalog: [], token: f.f.token, actor: f.f.wallet,
+      intent: { kind: "claim-fees", recipient: a(91) }, deadline: now + 300n };
+    const prepared = await prepareModuleNativeManagementTransaction(input);
+    expect(prepared).toMatchObject({ kind: "manage", token: f.f.token, blockNumber: 100n, gasEstimate: 120_000n, expiresAt: now + 300n });
+    const decoded = decodeFunctionData({ abi: managementCoreAbi, data: prepared.transaction.data });
+    expect(decoded.functionName).toBe("claimTo"); expect(String(decoded.args?.[0]).toLowerCase()).toBe(a(91));
+    input.intent = { kind: "claim-fees", recipient: a(92) }; input.deadline += 100n;
+    const checked = await revalidateModuleNativeTransaction(prepared, f.f.wallet);
+    expect(checked).toEqual({ ...prepared.transaction, gas: toHex(120_000n) });
+    expect(f.client.estimateGas).toHaveBeenLastCalledWith(expect.objectContaining({ blockNumber: 100n, account: f.f.wallet, to: f.release.contracts.rewardLedger.address }));
+    const mined = f.setupReceipt(prepared);
+    expect(await waitForModuleNativeReceipt({ client: f.client, prepared, transactionHash: mined.transactionHash })).toMatchObject({ status: "mined", kind: "manage", token: f.f.token, finalized: false, indexed: false });
+    mined.transaction.input = "0x1234";
+    await expect(waitForModuleNativeReceipt({ client: f.client, prepared, transactionHash: mined.transactionHash })).rejects.toThrow("calldata");
+    const reverted = f.setupReceipt(prepared, "reverted");
+    await expect(waitForModuleNativeReceipt({ client: f.client, prepared, transactionHash: reverted.transactionHash })).rejects.toBeInstanceOf(ModuleNativeTransactionRevertedError);
+  });
+  it("refuses changed CTO revisions or lost recipient rights when revalidating the actual management action", async () => {
+    const f = harness(); const common = { client: f.client, release: f.release, catalog: [], token: f.f.token, actor: f.f.wallet, deadline: now + 300n };
+    const prepared = await prepareModuleNativeManagementTransaction({ ...common, intent: { kind: "replace-creators", recipients: [a(91)] } });
+    f.setAdminRevision(1n);
+    await expect(revalidateModuleNativeTransaction(prepared, f.f.wallet)).rejects.toThrow("Reviewed management data changed");
+    const rotation = await prepareModuleNativeManagementTransaction({ ...common, intent: { kind: "rotate-creator", index: 0, recipient: a(91) } });
+    f.setCreator(a(92));
+    await expect(revalidateModuleNativeTransaction(rotation, f.f.wallet)).rejects.toThrow("current recipient");
+    await expect(prepareModuleNativeManagementTransaction({ ...common, deadline: now, intent: { kind: "claim-fees", recipient: a(91) } })).rejects.toThrow("expired");
   });
 });
