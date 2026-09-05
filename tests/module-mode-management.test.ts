@@ -1,16 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { decodeFunctionData, encodeAbiParameters, encodeFunctionData, encodeFunctionResult, keccak256, type Address, type Hex } from "viem";
+import { decodeFunctionData, encodeAbiParameters, encodeFunctionData, keccak256, type Address, type Hex } from "viem";
 import { PREVIEW_MODULE_CATALOG } from "@/lib/module-mode/builder";
 import { buildModuleManagementTransaction, managementCoreAbi, readModuleManagementSnapshot, moduleManagementChainMatches, type ModuleManagementIntent } from "@/lib/module-mode/management";
 import { managementReadAbi, referenceManagementManifest } from "@/lib/module-mode/management-manifest";
 import { assertModuleNativeRelease, readModuleNativeLaunch, type ModuleNativeClient, type ModuleNativeLaunchRecord } from "@/lib/module-mode/native-client";
 import type { NativeModuleModeCatalogEntry } from "@/lib/module-mode/native-catalog";
+import { bindActiveModuleModeRelease } from "@/lib/module-mode/release";
 import { moduleEvidenceFixture, a, h } from "./fixtures/module-mode-evidence";
 
 vi.mock("@/lib/module-mode/native-client", () => ({ assertModuleNativeRelease: vi.fn(), readModuleNativeLaunch: vi.fn() }));
 
 function fixture() {
-  const release = moduleEvidenceFixture().release;
+  const release = bindActiveModuleModeRelease(moduleEvidenceFixture().release);
   const actor = a(901); const outsider = a(902); const program = a(903); const factory = a(904);
   const programCode = "0x6000600055" as Hex; const factoryCode = "0x6001600055" as Hex;
   const launch: ModuleNativeLaunchRecord = { launchId: h(20), launchWallet: actor, token: a(21), poolId: h(22), recipeHash: h(23), hook: release.contracts.hook.address,
@@ -49,7 +50,7 @@ function fixture() {
         if (encodeFunctionData({ abi: [abi], functionName: abi.name, args: [] }).slice(0, 10) === call.data.slice(0, 10)) {
           expect(call.to).toBe(program);
           const value = abi.name === "endsAt" ? state.end : abi.name === "refundWallet" ? state.refund : reads[abi.name];
-          return { data: encodeFunctionResult({ abi: [abi], functionName: abi.name, result: value }) };
+          return { data: encodeAbiParameters(abi.outputs, [value]) };
         }
       }
       simulated(call); return { data: "0x" };
@@ -80,6 +81,8 @@ describe("bound Module Mode management", () => {
     const first = await f.build(intent);
     expect(first.transaction.to).toBe(f.launch.runtime);
     expect(first.transaction.from).toBe(f.actor); expect(first.transaction.value).toBe("0x0");
+    expect(first.blockNumber).toBe(100n); expect(first.blockHash).toBe(h(100));
+    expect(f.client.estimateGas).toHaveBeenCalledWith(expect.objectContaining({ blockNumber: 100n }));
     const decoded = decodeFunctionData({ abi: managementCoreAbi, data: first.transaction.data });
     expect(decoded.functionName).toBe("executeAction");
     expect(decoded.args).toEqual([f.launch.launchKey, 0n, referenceManagementManifest("reward").actions[0].actionId, "0x", 0n, 2_000_300n]);
