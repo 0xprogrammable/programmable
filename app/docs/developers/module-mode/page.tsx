@@ -15,7 +15,7 @@ const sections = [
   { id: "review", label: "Review and availability" },
   { id: "rewards", label: "Author rewards" },
 ] as const;
-const cliDirectory = "/developers/module-mode-cli/v1.0.0-development.1";
+const cliDirectory = "/developers/module-mode-cli/v1.0.0-development.2";
 
 export default function ModuleModeDeveloperPage() {
   return <DocsShell currentPath="/docs/developers/module-mode" title="Build a module"
@@ -36,7 +36,8 @@ export default function ModuleModeDeveloperPage() {
           that manifest before running the standalone CLI with Node.js 24.14 or later in the Node 24 line.</li>
         <li>Provide your idea, author wallet and reward wallet. Keep the API key in the agent&apos;s
           <code> PROGRAMMABLE_MODULES_API_KEY</code> secret environment.</li>
-        <li>Build and test the module, prepare its exact source request, submit it, then keep the returned ID.</li>
+        <li>Build and test the module, prepare its exact source request, submit it, then keep the returned ID.
+          Use <code> review-status-module</code> to follow its build, review feedback and next step.</li>
       </ol>
       <p className={styles.bodyCopy}>A GitHub repository or pull request is optional. The API receives the complete,
         hash-bound source package directly.</p>
@@ -62,18 +63,27 @@ export default function ModuleModeDeveloperPage() {
         <div><dt>Submit source</dt><dd><code>POST /v1/modules/submissions</code></dd></div>
         <div><dt>Your submissions</dt><dd><code>GET /v1/modules/submissions</code></dd></div>
         <div><dt>One submission</dt><dd><code>GET /v1/modules/submissions/:id</code></dd></div>
+        <div><dt>Review readiness</dt><dd><code>GET /v1/modules/review-capabilities</code></dd></div>
+        <div><dt>Build and review progress</dt><dd><code>GET /v1/modules/submissions/:id/review</code></dd></div>
       </dl>
       <p className={styles.bodyCopy}>Module keys carry <code>modules:submit</code> and <code>modules:read</code>.
         Use one stable idempotency key for each exact request. If a connection fails, retry the same saved request
         and key. Changed source becomes a new immutable revision.</p>
       <p className={styles.bodyCopy}><a href="/developers/module-mode-api-v1.md">Read the complete API and CLI guide</a>
-        {" · "}<a href={`${cliDirectory}/programmable-module-mode-1.0.0-development.1.mjs`}>Standalone CLI</a></p>
+        {" · "}<a href={`${cliDirectory}/programmable-module-mode-1.0.0-development.2.mjs`}>Standalone CLI</a></p>
     </section>
     <section id="review">
       <h2>Review and availability</h2>
-      <p className={styles.bodyCopy}>The first API contract stores an unreviewed source draft. Its
+      <p className={styles.bodyCopy}>The intake API stores an unreviewed source draft. Its
         <code> draft_received</code> receipt proves that the exact package was saved. It does not execute the
         uploaded source or approve the module.</p>
+      <p className={styles.bodyCopy}>The separate review status follows the operator&apos;s build plan,
+        queued build, result and reviewer decision. Read its <code>nextAction</code>: wait for the build or
+        decision, apply requested changes in a new source version, or wait for registry admission after acceptance.
+        The review capability must be enabled before these private progress reads are available.</p>
+      <p className={styles.bodyCopy}><code>status-module</code> keeps the historical intake receipt.
+        <code> review-status-module</code> reads current progress with your existing Module contributions key.
+        An <code>accepted</code> review still reports no onchain approval or public availability.</p>
       <p className={styles.bodyCopy}>Public availability needs a reproducible build, the required security and
         compatibility checks, a reviewed version, exact deployed code and an active catalog binding.
         A new version does not silently change existing coins. Modules that need a new host capability

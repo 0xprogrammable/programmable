@@ -1,4 +1,4 @@
-import { createModuleApiClient, type ModuleSubmissionPage, type ModuleSubmissionResponse } from '../src/open-client.mjs';
+import { createModuleApiClient, type ModuleSubmissionPage, type ModuleSubmissionResponse, type ModuleReviewStatus, type ModuleReviewCapabilities } from '../src/open-client.mjs';
 import { moduleSubmissionFromPack } from '../src/open-transport.mjs';
 
 /** Compile-only SDK consumer. This function is not executed by the test suite. */
@@ -14,5 +14,8 @@ export async function checkClientTypes(sourcePack: unknown, apiOrigin: string, a
   const rewardWallet: `0x${string}` = receipt.submission.rewardWallet;
   const status: ModuleSubmissionResponse = await client.status(receipt.submission.submissionId);
   const page: ModuleSubmissionPage = await client.list({ cursor: status.submission.submissionId });
-  return { schema, format, idempotent, approved, available, rewardWallet, page };
+  const reviewCaps: ModuleReviewCapabilities = await client.reviewCapabilities();
+  const review: ModuleReviewStatus = await client.reviewStatus(status.submission.submissionId);
+  const reviewApproved: false = review.approved;
+  return { schema, format, idempotent, approved, available, rewardWallet, page, reviewCaps, review, reviewApproved };
 }

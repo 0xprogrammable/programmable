@@ -2,6 +2,8 @@ import { Buffer } from 'node:buffer';
 import { canonicalJson } from './canonical-json.mjs';
 import { MODULE_SUBMISSION_FORMAT, MODULE_TRANSPORT_LIMITS, ModuleTransportError,
   validateModuleSubmissionRequest } from './open-transport.mjs';
+import { MODULE_REVIEW_CAPABILITIES_SCHEMA, MODULE_REVIEW_STATUS_SCHEMA, bindModuleReviewCapabilities, bindModuleReviewStatus } from './open-review.mjs';
+export { MODULE_REVIEW_CAPABILITIES_SCHEMA, MODULE_REVIEW_STATUS_SCHEMA } from './open-review.mjs';
 
 export const MODULE_API_SCHEMA = 'programmable.modules.api.v0.1';
 export const MODULE_API_CLIENT_LIMITS = Object.freeze({ responseBytes: 1024 * 1024, timeoutMs: 20_000, pageSize: 20 });
@@ -104,7 +106,7 @@ async function boundedJson(response) {
   } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
 }
 function responseError(response, body, apiKey) {
-  const problem = plain(body) && body.schemaVersion === MODULE_API_SCHEMA && plain(body.error) ? body.error : {};
+  const problem = plain(body) && [MODULE_API_SCHEMA, MODULE_REVIEW_CAPABILITIES_SCHEMA, MODULE_REVIEW_STATUS_SCHEMA].includes(body.schemaVersion) && plain(body.error) ? body.error : {};
   const code = typeof problem.code === 'string' && /^[A-Z][A-Z0-9_]{0,95}$/.test(problem.code)
     && (!apiKey || !problem.code.includes(apiKey)) ? problem.code : 'MODULE_API_HTTP';
   const path = typeof problem.path === 'string' && problem.path.length <= 512 && !/[\u0000-\u001f\u007f]/.test(problem.path)
@@ -115,7 +117,7 @@ function responseError(response, body, apiKey) {
     400: 'The API rejected the submission or request parameters', 401: 'The module API key is missing, revoked or invalid',
     403: 'The API key lacks the required scope or does not own the declared author wallet', 404: 'The submission is not available to this API key',
     409: 'The submission conflicts with an existing immutable request or revision', 413: 'The API rejected the request byte size',
-    429: 'The module contribution quota is exhausted; wait before retrying', 503: 'Module submissions are currently unavailable',
+    429: 'The module contribution quota is exhausted; wait before retrying', 503: 'The requested module API operation is currently unavailable',
   };
   return new ModuleApiError(code, messages[response.status] || 'The module API request failed', {
     httpStatus: response.status, ...(path === undefined ? {} : { path }),
@@ -162,8 +164,30 @@ export function createModuleApiClient({ apiOrigin, apiKey, timeoutMs = MODULE_AP
     } finally { clearTimeout(timer); }
   }
   async function capabilities() { return noKeyEcho(publicCapabilities((await request('/v1/modules/capabilities')).body)); }
+  const reviewResponse = (bind, ...args) => {
+    try { return noKeyEcho(bind(...args)); }
+    catch { throw new ModuleApiError('MODULE_REVIEW_RESPONSE', 'The module review response is unsupported, inconsistent or bound to a different source request'); }
+  };
+  async function reviewCapabilities() {
+    return reviewResponse(bindModuleReviewCapabilities, (await request('/v1/modules/review-capabilities')).body);
+  }
+  async function status(id) {
+    const expectedId = submissionId(id);
+    const { body } = await request(`/v1/modules/submissions/${expectedId}`, { authenticated: true });
+    validEnvelope(body); const submission = publicSubmission(body.submission);
+    need(submission.submissionId === expectedId, 'MODULE_API_RECEIPT_MISMATCH', 'The API returned a different submission');
+    return noKeyEcho({ schemaVersion: MODULE_API_SCHEMA, submission });
+  }
   return Object.freeze({
-    capabilities,
+    capabilities, reviewCapabilities,
+    async reviewStatus(id) {
+      requireKey(); const expectedId = submissionId(id);
+      const caps = await reviewCapabilities();
+      need(caps.statusReadAvailable, 'MODULE_REVIEW_UNAVAILABLE', 'This deployment is not ready to provide module review progress. The original intake receipt remains separate');
+      const receipt = await status(expectedId);
+      const { body } = await request(`/v1/modules/submissions/${expectedId}/review`, { authenticated: true });
+      return reviewResponse(bindModuleReviewStatus, body, receipt.submission);
+    },
     async submit(input, { idempotencyKey } = {}) {
       requireKey();
       need(typeof idempotencyKey === 'string' && /^[A-Za-z0-9._:-]{16,128}$/.test(idempotencyKey),
@@ -194,13 +218,7 @@ export function createModuleApiClient({ apiOrigin, apiKey, timeoutMs = MODULE_AP
         throw error;
       }
     },
-    async status(id) {
-      const expectedId = submissionId(id);
-      const { body } = await request(`/v1/modules/submissions/${expectedId}`, { authenticated: true });
-      validEnvelope(body); const submission = publicSubmission(body.submission);
-      need(submission.submissionId === expectedId, 'MODULE_API_RECEIPT_MISMATCH', 'The API returned a different submission');
-      return noKeyEcho({ schemaVersion: MODULE_API_SCHEMA, submission });
-    },
+    status,
     async list({ cursor } = {}) {
       const query = cursor === undefined ? '' : `?cursor=${submissionId(cursor)}`;
       const { body } = await request(`/v1/modules/submissions${query}`, { authenticated: true });

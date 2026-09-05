@@ -2,6 +2,8 @@ import type { OpenHex } from './open-packages.mjs';
 import type { MODULE_SUBMISSION_FORMAT, ModuleSubmissionRequest } from './open-transport.mjs';
 
 export const MODULE_API_SCHEMA: 'programmable.modules.api.v0.1';
+export const MODULE_REVIEW_CAPABILITIES_SCHEMA: 'programmable.modules.review-capabilities.v1';
+export const MODULE_REVIEW_STATUS_SCHEMA: 'programmable.modules.review-status.v1';
 export const MODULE_API_CLIENT_LIMITS: Readonly<{ responseBytes: number; timeoutMs: 20000; pageSize: 20 }>;
 export interface ModuleApiErrorDetails { httpStatus?: number; path?: string; retryAfterSeconds?: number; submissionMayExist?: boolean }
 export class ModuleApiError extends Error implements ModuleApiErrorDetails {
@@ -24,8 +26,29 @@ export interface ModuleSubmissionReceipt {
 }
 export interface ModuleSubmissionResponse { schemaVersion: typeof MODULE_API_SCHEMA; submission: ModuleSubmissionReceipt }
 export interface ModuleSubmissionPage { schemaVersion: typeof MODULE_API_SCHEMA; submissions: ModuleSubmissionReceipt[]; nextCursor: string | null }
+export interface ModuleReviewCapabilities {
+  schemaVersion: typeof MODULE_REVIEW_CAPABILITIES_SCHEMA;
+  reviewAvailable: boolean; statusReadAvailable: boolean; reviewerPolicyDigest: OpenHex | null;
+  workerSourceCommit: string | null; workerAuthorityReady: boolean; databaseReady: boolean; approved: false; available: false;
+}
+export type ModuleReviewState = 'awaiting_plan' | 'queued' | 'running' | 'built' | 'build_failed' | 'changes_requested' | 'rejected' | 'accepted';
+export type ModuleReviewNextAction = 'await_review_plan' | 'await_build' | 'await_reviewer_decision' | 'submit_new_version' | 'review_rejection' | 'await_registry_admission';
+export interface ModuleReviewDecision {
+  outcome: 'accept' | 'request_changes' | 'reject'; reason: string; reviewerWallet: OpenHex; decidedAt: string;
+  decisionDigest: OpenHex; artifactDigest: OpenHex | null; hostManifestHash: OpenHex | null;
+}
+export interface ModuleReviewStatus {
+  schemaVersion: typeof MODULE_REVIEW_STATUS_SCHEMA;
+  submissionId: string; packageId: OpenHex; familyId: OpenHex; requestDigest: OpenHex; author: OpenHex; rewardWallet: OpenHex; version: string;
+  review: { state: ModuleReviewState; revision: number; attempt: number; createdAt: string; updatedAt: string;
+    buildEvidenceRecorded: boolean; artifactDigest: OpenHex | null; lastError: string | null;
+    latestDecision: ModuleReviewDecision | null; nextAction: ModuleReviewNextAction };
+  sourceBytesVerified: true; sourceRevisionVerified: false; runtimeVerified: false; approved: false; available: false;
+}
 export interface ModuleApiClient {
   capabilities(): Promise<ModuleApiCapabilities>;
+  reviewCapabilities(): Promise<ModuleReviewCapabilities>;
+  reviewStatus(submissionId: string): Promise<ModuleReviewStatus>;
   submit(request: ModuleSubmissionRequest, options: { idempotencyKey: string }): Promise<ModuleSubmissionResponse & { idempotent: boolean }>;
   status(submissionId: string): Promise<ModuleSubmissionResponse>;
   list(options?: { cursor?: string }): Promise<ModuleSubmissionPage>;

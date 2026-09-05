@@ -4,7 +4,9 @@ An agent submits the module's exact source files, configuration schema, wallet d
 
 A GitHub repository is not required. The descriptor always pins `source.files` with their SHA-256 hashes. Git provenance is optional: provide both `source.repository` and `source.revision`, or omit both. Providing that pair records a provenance claim; it does not verify remote Git history.
 
-The wire contract is `programmable.modules.api.v0.1`, with source requests in `programmable.modules.submission.v0.1`. The initial API exposes durable source intake and private status reads. A later review or admission contract must provide its own evidence; these client commands do not invent that evidence.
+The source-intake wire contract stays `programmable.modules.api.v0.1`, with source requests in `programmable.modules.submission.v0.1`. Its receipt is a historical record of the saved source. The separate `programmable.modules.review-status.v1` response reports the current build and reviewer workflow; neither response grants onchain admission.
+
+Use the immutable **1.0.0-development.2** standalone CLI for the review commands. Its manifest is `/developers/module-mode-cli/v1.0.0-development.2/manifest.json` and its file is `/developers/module-mode-cli/v1.0.0-development.2/programmable-module-mode-1.0.0-development.2.mjs`. Verify the downloaded bytes against that manifest before running them. The older development.1 file remains unchanged and supports intake receipts only. These are development distribution versions; the live API capabilities determine which operations are enabled.
 
 ## Author and reward wallet
 
@@ -68,7 +70,36 @@ node packages/classic-modules/bin/programmable-classic-modules.mjs list-module-s
   --cursor NEXT_CURSOR_UUID
 ```
 
-Status and listing are private to the authenticated principal. Lists contain at most 20 items. Follow the returned `nextCursor` until it is `null`; do not construct offset or limit queries.
+`status-module` and listing read historical intake receipts, which continue to say `draft_received` and `unreviewed` after later review work. They are private to the authenticated principal. Lists contain at most 20 items. Follow the returned `nextCursor` until it is `null`; do not construct offset or limit queries.
+
+Read current build and review progress separately:
+
+```bash
+node packages/classic-modules/bin/programmable-classic-modules.mjs review-capabilities \
+  --api-origin "$MODULE_API_ORIGIN"
+
+node packages/classic-modules/bin/programmable-classic-modules.mjs review-status-module \
+  --api-origin "$MODULE_API_ORIGIN" \
+  --id YOUR_SUBMISSION_UUID
+```
+
+`GET /v1/modules/review-capabilities` is public. Its schema is `programmable.modules.review-capabilities.v1`. It exposes `reviewAvailable`, `statusReadAvailable`, `reviewerPolicyDigest`, `workerSourceCommit`, `workerAuthorityReady` and `databaseReady`; `approved` and `available` remain false. Ready status requires the database, reviewer policy and worker authority together. A false capability means the review endpoint is unavailable. The legacy intake capability's fixed `reviewAvailable: false` describes the older receipt contract; use this separate review capability for the current workflow.
+
+`GET /v1/modules/submissions/:id/review` requires the owner's `modules:read` key. The new client checks review readiness before sending credentials, then binds the response's submission, package, family, request digest, author, reward wallet and version to the immutable intake receipt. It prints the current `review.state`, `review.revision`, `review.attempt`, timestamps, `review.nextAction` and any latest reviewer decision.
+
+| Review state | `nextAction` | Contributor's next step |
+| --- | --- | --- |
+| `awaiting_plan` | `await_review_plan` | Wait for the reviewer to select the build plan for this source package. |
+| `queued` / `running` | `await_build` | Check again later; do not upload a duplicate revision. |
+| `built` | `await_reviewer_decision` | Build evidence was recorded. Wait for the security and compatibility decision. |
+| `build_failed` | `await_review_plan` | Read `lastError`; the operator must address the build plan or request source changes. |
+| `changes_requested` | `submit_new_version` | Apply the review feedback, update the source version and hashes, and submit a linked revision. |
+| `rejected` | `review_rejection` | Read the reason before deciding whether a revised contribution is appropriate. |
+| `accepted` | `await_registry_admission` | Review is complete. Registry admission, deployed-code verification and public catalog activation are still required. |
+
+The projected decision uses `outcome: "accept" | "request_changes" | "reject"`, plus its reason, reviewer wallet, decision time and digest. An accepted decision references the recorded build artifact and host manifest. `buildEvidenceRecorded` and these digests describe records held by the review service; the status response is not the full artifact or an independent audit. It still returns `sourceRevisionVerified: false`, `runtimeVerified: false`, `approved: false` and `available: false`, including after acceptance. Source-byte verification proves only that uploaded bytes match the declared source hashes.
+
+Treat the reason as review feedback and `nextAction` as workflow data. The client does not execute response text, links, uploaded scripts or module code. It does not poll or retry automatically. If readiness is absent, retain the submission ID and check again later; do not recreate the submission. A missing durable review job is a service error (`MODULE_REVIEW_JOB_UNAVAILABLE`), not an invented waiting state.
 
 To submit an edited revision, update the package version and hashes, then prepare a new file linked to the previous submission:
 
@@ -101,6 +132,11 @@ const request = moduleSubmissionFromPack(pack);
 const receipt = await client.submit(request, { idempotencyKey: 'my-module-0.1.0-intake-001' });
 const status = await client.status(receipt.submission.submissionId);
 const page = await client.list();
+const reviewCapabilities = await client.reviewCapabilities();
+if (reviewCapabilities.statusReadAvailable) {
+  const progress = await client.reviewStatus(receipt.submission.submissionId);
+  console.log(progress.review.state, progress.review.nextAction);
+}
 ```
 
 Public capabilities do not require `apiKey`. Authenticated methods require a key and send it only to the explicit origin. Redirects are rejected. The client has a default 20-second timeout covering headers and streamed body reads, and a maximum 1 MiB response size after decompression. A caller may set a timeout between 1 and 120,000 milliseconds. There are no automatic retries or arbitrary URL fetches from package metadata.
@@ -121,6 +157,9 @@ CLI failures return a nonzero exit code and structured JSON on stderr. Codes and
 | `MODULE_REVISION_LINEAGE_INVALID` | The supplied predecessor is not a valid revision for this author and package family. |
 | 429 | Observe `retryAfterSeconds` when returned; reduce request frequency or resolve the indicated quota. |
 | `MODULE_SUBMISSIONS_UNAVAILABLE` | This deployment currently does not accept uploads. |
+| `MODULE_REVIEW_UNAVAILABLE` | The review service is not ready. Keep the original receipt and check the separate review capabilities later. |
+| `MODULE_REVIEW_JOB_UNAVAILABLE` | The expected durable review job is missing; retain the source identity and report the service failure. |
+| `MODULE_REVIEW_RESPONSE` | The review response is inconsistent, unsupported or does not match the saved source receipt. Do not treat it as a valid review result. |
 | `MODULE_API_NETWORK` / `MODULE_API_TIMEOUT` | Connectivity, redirect or timeout failure. A POST may already have reached the server. |
 | `MODULE_API_RECEIPT_MISMATCH` / `MODULE_API_RESPONSE` | Do not treat the response as a valid receipt. Preserve the request and investigate the deployment. |
 
@@ -128,9 +167,10 @@ When `submissionMayExist: true` is returned, retain the original idempotency key
 
 ## Verification scope
 
-The local HTTP tests cover credential boundaries, redirect refusal, real POST/GET requests, canonical source identity, idempotency, lost-response recovery, receipt substitution, author/reward wallet requirements, response limits, timeouts and cursor pagination. These checks do not constitute a deployment, independent review, contract audit or proof that the public API is enabled.
+The local HTTP tests cover credential boundaries, redirect refusal, real POST/GET requests, canonical source identity, idempotency, lost-response recovery, receipt substitution, author/reward wallet requirements, response limits, timeouts and cursor pagination. Review tests cover all eight workflow states, source binding, readiness before authentication, next steps and rejection of unsupported approval claims. The standalone distribution tests run the copied file without npm or node_modules through source upload and an accepted review projection. These synthetic checks do not constitute a deployment, independent review, contract audit or proof that the public API is enabled.
 
 ```bash
 node --test packages/classic-modules/test/open-client.test.mjs \
-  packages/classic-modules/test/module-api-cli.test.mjs
+  packages/classic-modules/test/module-api-cli.test.mjs \
+  packages/classic-modules/test/open-review.test.mjs
 ```

@@ -22,9 +22,11 @@ Commands:
   plan-open-template --template path --packages path --bindings path --out path
   prepare-module-submission --package path --out path [--supersedes UUID]
   module-capabilities --api-origin https://api.example
+  review-capabilities --api-origin https://api.example
   submit-module --package path --api-origin https://api.example --idempotency-key stable-key-at-least-16-chars [--supersedes UUID]
   submit-module --request path --api-origin https://api.example --idempotency-key stable-key-at-least-16-chars
   status-module --api-origin https://api.example --id UUID
+  review-status-module --api-origin https://api.example --id UUID
   list-module-submissions --api-origin https://api.example [--cursor UUID]
 
 All file paths are relative to --root (default: current directory).
@@ -40,6 +42,7 @@ rewardWallet is a required nonzero EVM payout wallet. Source bytes and rewardWal
 Keep the same Idempotency-Key and package bytes when retrying an uncertain submission. No automatic retries.
 --request sends a previously prepared source request, independently of later workspace source edits.
 draft_received means durable unreviewed intake, not review, approval, launch or public availability.
+review-status-module reads separate build/review progress and nextAction; accepted still requires registry admission.
 `;
 const fields = {
   'validate-module': ['manifest'], 'validate-recipe': ['recipe', 'catalogue'], pack: ['manifest', 'out'],
@@ -51,6 +54,7 @@ const fields = {
   'prepare-module-submission': ['package', 'out'], 'module-capabilities': ['api-origin'],
   'submit-module': ['api-origin', 'idempotency-key'], 'status-module': ['api-origin', 'id'],
   'list-module-submissions': ['api-origin'],
+  'review-capabilities': ['api-origin'], 'review-status-module': ['api-origin', 'id'],
 };
 const optionalFields = { 'prepare-module-submission': ['supersedes'], 'submit-module': ['package', 'request', 'supersedes'], 'list-module-submissions': ['cursor'] };
 export async function runCli(args, { stdout = process.stdout, stderr = process.stderr, env = process.env } = {}) {
@@ -97,10 +101,11 @@ export async function runCli(args, { stdout = process.stdout, stderr = process.s
           reviewStatus: 'unreviewed', approved: false, available: false };
       } else result = { ok: true, ...await createModuleApiClient({ apiOrigin: options['api-origin'], apiKey })
         .submit(request, { idempotencyKey: options['idempotency-key'] }) };
-    } else if (['module-capabilities', 'status-module', 'list-module-submissions'].includes(command)) {
-      const client = createModuleApiClient({ apiOrigin: options['api-origin'], ...(command === 'module-capabilities' ? {} : { apiKey }) });
-      result = { ok: true, ...await (command === 'module-capabilities' ? client.capabilities()
-        : command === 'status-module' ? client.status(options.id) : client.list(options.cursor ? { cursor: options.cursor } : {})) };
+    } else if (['module-capabilities', 'review-capabilities', 'status-module', 'review-status-module', 'list-module-submissions'].includes(command)) {
+      const client = createModuleApiClient({ apiOrigin: options['api-origin'], ...(['module-capabilities', 'review-capabilities'].includes(command) ? {} : { apiKey }) });
+      result = { ok: true, ...await (command === 'module-capabilities' ? client.capabilities() : command === 'review-capabilities' ? client.reviewCapabilities()
+        : command === 'status-module' ? client.status(options.id) : command === 'review-status-module' ? client.reviewStatus(options.id)
+          : client.list(options.cursor ? { cursor: options.cursor } : {})) };
     } else if (command === 'validate-open-package' || command === 'pack-open-package') {
       const pack = await loadOpenSourcePackage(root, options.package);
       if (command === 'pack-open-package' && !await writeJsonExclusive(root, options.out, pack)) throw new Error('Output exists; choose a new path');

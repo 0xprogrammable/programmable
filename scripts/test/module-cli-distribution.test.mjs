@@ -10,8 +10,9 @@ import test from 'node:test';
 import {
   buildModuleCli, MODULE_CLI_SOURCE_PATHS, MODULE_CLI_RELEASE_ROOT,
 } from '../build-module-cli.mjs';
-import { localServer, intakeHandler, sourceRequest, TEST_KEY, IDEMPOTENCY_KEY, SUBMISSION_ID } from
+import { localServer, sourceRequest, TEST_KEY, IDEMPOTENCY_KEY, SUBMISSION_ID } from
   '../../packages/classic-modules/test/open-client-fixture.mjs';
+import { reviewHandler, reviewStatus } from '../../packages/classic-modules/test/open-review-fixture.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const digest = (bytes) => createHash('sha256').update(bytes).digest('hex');
@@ -77,6 +78,8 @@ test('reproduces a source-bound CLI and runs the copied file without npm or node
   assert.match(help, /module-capabilities/u);
   assert.match(help, /submit-module/u);
   assert.match(help, /status-module/u);
+  assert.match(help, /review-status-module/u);
+  assert.match(help, /review-capabilities/u);
   assert.equal((await fs.readdir(isolated)).length, 1);
 });
 
@@ -177,7 +180,7 @@ test('the copied standalone file submits pinned source and reads it through a re
   const download = path.join(isolated, path.basename(built.artifactPath));
   await fs.copyFile(path.join(root, built.artifactPath), download);
   await fs.writeFile(path.join(isolated, 'request.json'), JSON.stringify(sourceRequest()));
-  const { apiOrigin, seen } = await localServer(t, intakeHandler());
+  const { apiOrigin, seen } = await localServer(t, reviewHandler({ status: () => reviewStatus('accepted') }));
   const run = async (args, authenticated = false) => {
     const { stdout, stderr } = await execAsync(process.execPath, [download, ...args], {
       cwd: isolated, timeout: 10_000, maxBuffer: 1024 * 1024,
@@ -201,6 +204,14 @@ test('the copied standalone file submits pinned source and reads it through a re
   const status = await run(['status-module', '--api-origin', apiOrigin, '--id', SUBMISSION_ID], true);
   assert.equal(status.submission.submissionId, SUBMISSION_ID);
   assert.equal(status.submission.available, false);
+  const reviewCaps = await run(['review-capabilities', '--api-origin', apiOrigin]);
+  assert.equal(reviewCaps.statusReadAvailable, true);
+  const review = await run(['review-status-module', '--api-origin', apiOrigin, '--id', SUBMISSION_ID], true);
+  assert.equal(review.review.state, 'accepted');
+  assert.equal(review.review.nextAction, 'await_registry_admission');
+  assert.equal(review.packageId, submitted.submission.packageId);
+  assert.equal(review.requestDigest, submitted.submission.requestDigest);
+  assert.equal(review.approved, false); assert.equal(review.available, false); assert.equal(review.runtimeVerified, false);
   assert.ok(seen.filter((request) => request.url.endsWith('/capabilities'))
     .every((request) => request.headers.authorization === undefined));
   assert.deepEqual((await fs.readdir(isolated)).sort(), [path.basename(download), 'request.json'].sort());
