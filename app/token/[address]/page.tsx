@@ -8,6 +8,7 @@ import { TokenRouteChainSync } from "@/components/token-route-chain-sync";
 import { resolveTokenPage } from "@/lib/server/token-page";
 import { genericTokenDetailMetadata } from "@/lib/token-detail-metadata";
 import { tokenDetailPageChainId } from "@/lib/token-page-chain";
+import { robinhoodLaunchDescription } from "@/lib/robinhood-launches";
 
 type TokenPageSearchParams = Promise<
   Record<string, string | string[] | undefined>
@@ -29,7 +30,7 @@ export async function generateMetadata({
     const token = resolved?.chainId === 4663 ? resolved.token : null;
     if (token) return {
       title: `${token.name || address} · Programmable`,
-      description: "Programmable Custom launch on Robinhood Chain. Token, hook and launch stamp details.",
+      description: robinhoodLaunchDescription(token),
       alternates: { canonical: `/token/${token.tokenAddress}` },
     };
   }

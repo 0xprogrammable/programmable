@@ -49,6 +49,6 @@ describe("Robinhood website HTTP boundaries", () => {
       headers: { authorization: `Bearer ${"a".repeat(48)}` },
     }));
     expect(response.status).toBe(503);
-    expect(await response.json()).toEqual({ error: "index_update_unavailable" });
+    expect(await response.json()).toEqual({ error: "index_update_unavailable", custom: { status: "unavailable" }, moduleMode: { status: "disabled" } });
   });
 });

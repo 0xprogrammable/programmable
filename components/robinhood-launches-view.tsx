@@ -13,6 +13,7 @@ import { RobinhoodCoinArtwork } from "@/components/robinhood-coin-artwork";
 import { rememberRobinhoodTokenPresentations } from "@/components/robinhood-presentation-cache";
 import { coinAge, coinTicker, mergeRobinhoodPresentations, type RobinhoodCoinPresentation } from "@/lib/robinhood-presentation";
 import { activeExploreFilterCount, DEFAULT_EXPLORE_FILTERS, type RobinhoodExploreFilters } from "@/lib/robinhood-explore-filters";
+import { isRobinhoodModuleLaunch } from "@/lib/robinhood-launches";
 import styles from "@/components/robinhood-launches-view.module.css";
 
 type Launch = {
@@ -80,6 +81,7 @@ function isText(value: unknown): value is string | null {
 function isLaunch(value: unknown): value is Launch {
   if (!isObject(value)) return false;
   return typeof value.launchId === "string" && HASH.test(value.launchId)
+    && (value.sourceKind === undefined || isRobinhoodModuleLaunch(value))
     && typeof value.tokenAddress === "string" && ADDRESS.test(value.tokenAddress)
     && typeof value.hookAddress === "string" && ADDRESS.test(value.hookAddress)
     && typeof value.creator === "string" && ADDRESS.test(value.creator)
@@ -315,7 +317,7 @@ function RobinhoodLaunchList({ embedded, enabled }: { embedded: boolean; enabled
                     <div className={styles.nameRow}>
                       <strong className={styles.name} title={launch.name?.trim() || "Unnamed token"}>{launch.name?.trim() || "Unnamed token"}</strong>
                     </div>
-                    <span className={styles.symbol} title={launch.symbol || undefined}>{coinTicker(launch.symbol)}</span>
+                    <span className={styles.symbol} title={launch.symbol || undefined}>{coinTicker(launch.symbol)}{isRobinhoodModuleLaunch(launch) ? " · Module Mode" : ""}</span>
                   </div>
                   <div className={styles.cardFooter}>
                     <div className={styles.marketCap} title={details?.market ? `Observed ${new Date(details.market.observedAt).toUTCString()}` : "Market data is not available yet"}>

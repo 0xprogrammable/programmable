@@ -1,4 +1,4 @@
-import type { RobinhoodProfileLaunchList } from "@/lib/robinhood-launches";
+import { isRobinhoodModuleLaunch, type RobinhoodProfileLaunchList } from "@/lib/robinhood-launches";
 
 const ADDRESS = /^0x[\da-f]{40}$/i;
 const HASH = /^0x[\da-f]{64}$/i;
@@ -21,6 +21,7 @@ export function readRobinhoodProfileResponse(value: unknown, account: string): R
       || typeof row.launchId !== "string" || !HASH.test(row.launchId)
       || !text(row.name) || !text(row.symbol)
       || !(row.launchedAt === null || (typeof row.launchedAt === "string" && Number.isFinite(Date.parse(row.launchedAt))))
+      || (row.sourceKind !== undefined && !isRobinhoodModuleLaunch(row))
       || tokens.has(row.tokenAddress.toLowerCase())) throw new Error("Invalid profile launch");
     tokens.add(row.tokenAddress.toLowerCase());
   }

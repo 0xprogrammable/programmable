@@ -22,17 +22,23 @@ export async function GET(request: Request) {
   const startedAt = Date.now();
   try {
     const store = indexStore();
-    const source = await robinhoodSource();
-    const result = await syncRobinhoodIndex(source, store);
+    let result: Awaited<ReturnType<typeof syncRobinhoodIndex>> | null = null;
+    try { result = await syncRobinhoodIndex(await robinhoodSource(), store); }
+    catch { /* A failed Custom source must not suppress independent Module Mode verification. */ }
     // Keep a genuine rollup proof inside the job's wall-clock budget. A deadline is an error,
     // never permission to publish a partial proof or skip the final canonical checkpoint read.
     const remaining = 165_000 - (Date.now() - startedAt);
-    if (remaining <= 0) throw new Error("Index deadline exceeded");
-    const moduleSource = await configuredModuleModeSource(undefined, AbortSignal.timeout(remaining));
-    if (!moduleSource) return reply(result, result.status === "partial" ? 503 : 200);
-    const moduleMode = await syncModuleModeIndex(moduleSource, store, {
-      budgetMs: Math.max(0, Math.min(90_000, 165_000 - (Date.now() - startedAt))),
-    });
-    return reply({ ...result, moduleMode }, result.status === "partial" || moduleMode.status === "partial" ? 503 : 200);
+    let moduleMode: Awaited<ReturnType<typeof syncModuleModeIndex>> | { status: "disabled" | "unavailable" } = { status: "unavailable" };
+    if (remaining > 0) {
+      try {
+        const moduleSource = await configuredModuleModeSource(undefined, AbortSignal.timeout(remaining));
+        moduleMode = moduleSource ? await syncModuleModeIndex(moduleSource, store, {
+          budgetMs: Math.max(0, Math.min(90_000, 165_000 - (Date.now() - startedAt))),
+        }) : { status: "disabled" };
+      } catch { /* Preserve each lane's last verified state; never report a failed source as an empty success. */ }
+    }
+    const failed = result === null || result.status === "partial" || moduleMode.status === "partial" || moduleMode.status === "unavailable";
+    return reply({ ...(result ?? { error: "index_update_unavailable" }),
+      custom: result ?? { status: "unavailable" }, moduleMode }, failed ? 503 : 200);
   } catch { return reply({ error: "index_update_unavailable" }, 503); }
 }
