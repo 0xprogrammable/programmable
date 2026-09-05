@@ -7,13 +7,14 @@ export type { ModuleReviewDecisionCommandV1, ModuleReviewDecisionRecordV1 };
 export const MODULE_REVIEW_STATES = ["awaiting_plan", "queued", "running", "built", "build_failed", "changes_requested", "accepted", "rejected"] as const;
 export type ModuleReviewState = typeof MODULE_REVIEW_STATES[number];
 export interface ReviewSubject { submissionId: string; principalId: string; author: string; requestDigest: Hex }
-export interface ReviewPlan { schemaVersion: "programmable.modules.native-build-plan.v1"; submissionId: string; requestDigest: Hex; programComponentId: string; factoryComponentId: string; callbackGas: number; cases: { id: string; parameters: unknown; budgetWei: string; expectedDeployment: "success" | "revert"; rawConfigBytes?: Hex }[] }
+export interface ReviewProgramArgument { path: string[]; type: string }
+export interface ReviewPlan { schemaVersion: "programmable.modules.native-build-plan.v1"; submissionId: string; requestDigest: Hex; programComponentId: string; factoryComponentId: string; configurationCodec: "programmable.native-abi@1"; programAbi: ReviewProgramArgument[]; callbackGas: number; cases: { id: string; parameters: unknown; budgetWei: string; expectedDeployment: "success" | "revert"; rawConfigBytes?: Hex }[] }
 export interface ReviewContractArtifact { componentId: string; sourcePath: string; contractName: string; abi: unknown[]; abiHash: Hex; creationBytecode: Hex; creationCodeHash: Hex; runtimeBytecode: Hex; runtimeCodeHash: Hex; externalSelectors: string[] }
 export interface ReviewBuildArtifact {
   schemaVersion: "programmable.modules.native-build.v1"; authority: "programmable.module-review.native-build.v1";
   subject: ReviewSubject; packageId: Hex; familyId: Hex; rewardWallet: string; sourceManifestHash: Hex; planDigest: Hex; configurationSchemaHash: Hex;
   compiler: { version: string; binarySha256: string; imageDigest: string; settingsHash: Hex; completeInputHash: Hex; reproducible: true };
-  factory: ReviewContractArtifact; program: ReviewContractArtifact; callbackGas: number; cases: unknown[];
+  factory: ReviewContractArtifact; program: ReviewContractArtifact; configurationCodec: "programmable.native-abi@1"; programAbi: ReviewProgramArgument[]; callbackGas: number; cases: unknown[];
   tests: { schemaVersion: "programmable.modules.native-test-results.v1"; requestDigest: Hex; planDigest: Hex; harnessDigest: Hex; execution: "isolated-docker-anvil"; cases: Record<string, unknown>[]; allRequiredChecksPassed: boolean };
   reviewRequired: string[]; approved: false; registryApproved: false; available: false; artifactDigest: Hex;
 }
@@ -49,9 +50,28 @@ export function parseReviewSubject(value: unknown): ReviewSubject {
   requireValue(isReviewId(r.submissionId) && isReviewId(r.principalId) && typeof r.author === "string" && ADDRESS.test(r.author) && isReviewDigest(r.requestDigest), "subject");
   return r as unknown as ReviewSubject;
 }
+export function parseReviewProgramAbi(value: unknown): ReviewProgramArgument[] {
+  requireValue(Array.isArray(value) && value.length <= 128, "configuration ABI");
+  for (const raw of value) {
+    const argument = reviewRecord(raw, ["path", "type"]);
+    requireValue(Array.isArray(argument.path) && argument.path.length <= 16 && argument.path.every(key => typeof key === "string" && /^(?:[A-Za-z_][A-Za-z0-9_]{0,63}|0|[1-9][0-9]{0,2})$/u.test(key) && !["__proto__", "prototype", "constructor"].includes(key)), "configuration ABI path");
+    requireValue(typeof argument.type === "string" && argument.type.length > 0 && argument.type.length <= 128, "configuration ABI type");
+    const type = /^(address|bool|string|bytes(?:[1-9]|[12][0-9]|3[0-2])?|uint(?:[1-9][0-9]{0,2})?)((?:\[(?:[1-9][0-9]{0,2})?\])*)$/u.exec(argument.type);
+    requireValue(type !== null, "configuration ABI type");
+    if (type[1].startsWith("uint") && type[1] !== "uint") {
+      const bits = Number(type[1].slice(4));
+      requireValue(bits >= 8 && bits <= 256 && bits % 8 === 0, "configuration ABI integer width");
+    }
+    const dimensions = [...type[2].matchAll(/\[([0-9]*)\]/gu)];
+    requireValue(dimensions.length <= 12 && dimensions.every(([, size]) => size === "" || Number(size) <= 256), "configuration ABI array bounds");
+  }
+  return value as ReviewProgramArgument[];
+}
 export function parseReviewPlan(value: unknown, subject: ReviewSubject): ReviewPlan {
-  const p = reviewRecord(nativeJson(value), ["schemaVersion", "submissionId", "requestDigest", "programComponentId", "factoryComponentId", "callbackGas", "cases"]);
+  const p = reviewRecord(nativeJson(value), ["schemaVersion", "submissionId", "requestDigest", "programComponentId", "factoryComponentId", "configurationCodec", "programAbi", "callbackGas", "cases"]);
   requireValue(p.schemaVersion === "programmable.modules.native-build-plan.v1" && p.submissionId === subject.submissionId && p.requestDigest === subject.requestDigest, "plan subject");
+  requireValue(p.configurationCodec === "programmable.native-abi@1", "configuration codec");
+  parseReviewProgramAbi(p.programAbi);
   const identifier = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/u;
   requireValue(typeof p.programComponentId === "string" && identifier.test(p.programComponentId) && typeof p.factoryComponentId === "string" && identifier.test(p.factoryComponentId) && p.programComponentId !== p.factoryComponentId, "plan components");
   requireValue(integer(p.callbackGas) && Number(p.callbackGas) >= 25_000 && Number(p.callbackGas) <= 500_000, "callback gas");
@@ -73,6 +93,8 @@ export function parseReviewArtifact(value: unknown, subject: ReviewSubject): Rev
   const { artifactDigest, ...contents } = r;
   requireValue(r.schemaVersion === "programmable.modules.native-build.v1" && r.authority === "programmable.module-review.native-build.v1" && isReviewDigest(artifactDigest) && reviewDigest("programmable.modules.native-build.v1", contents) === artifactDigest, "build digest");
   requireValue(nativeCanonicalJson(parseReviewSubject(r.subject)) === nativeCanonicalJson(subject), "build subject");
+  requireValue(r.configurationCodec === "programmable.native-abi@1", "configuration codec");
+  parseReviewProgramAbi(r.programAbi);
   for (const field of ["packageId", "familyId", "sourceManifestHash", "planDigest", "configurationSchemaHash"]) requireValue(isReviewDigest(r[field]), field);
   requireValue(typeof r.rewardWallet === "string" && ADDRESS.test(r.rewardWallet) && r.approved === false && r.registryApproved === false && r.available === false, "build authority");
   requireValue(integer(r.callbackGas) && Number(r.callbackGas) >= 25_000 && Number(r.callbackGas) <= 500_000 && Array.isArray(r.cases) && r.cases.length >= 1 && r.cases.length <= 16, "build cases");
@@ -108,6 +130,7 @@ export function parseReviewJob(value: unknown): ReviewJob {
   requireValue(plan === null ? r.planDigest === null : r.planDigest === reviewDigest("programmable.modules.native-build-plan.v1", plan), "plan digest");
   const artifact = r.artifact === null ? null : parseReviewArtifact(r.artifact, subject);
   requireValue(!artifact || artifact.planDigest === r.planDigest, "build plan binding");
+  requireValue(!artifact || (plan !== null && artifact.configurationCodec === plan.configurationCodec && nativeCanonicalJson(artifact.programAbi) === nativeCanonicalJson(plan.programAbi)), "build configuration ABI binding");
   requireValue(!["built", "accepted"].includes(String(r.state)) || artifact !== null, "required build");
   return { ...(r as unknown as ReviewJob), subject, plan, artifact };
 }

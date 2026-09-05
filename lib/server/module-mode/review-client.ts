@@ -105,6 +105,8 @@ export function createModuleReviewClient(input: {
         const artifact = detail.job.artifact;
         if (nativeBinding.familyId !== artifact.familyId || nativeBinding.packageId !== artifact.packageId || nativeBinding.factoryCodeHash !== artifact.factory.runtimeCodeHash || nativeBinding.moduleCodeHash !== artifact.program.runtimeCodeHash || nativeBinding.callbackGas !== artifact.callbackGas) fail(400, "MODULE_REVIEW_MANIFEST_BUILD_MISMATCH");
         const expected = userInput(() => createModuleModeHostManifest({ release: release as ModuleModeHostReleaseIdentity, definition: manifest.catalogDefinition as ModuleModeCatalogDefinition, nativeBinding: nativeBinding as Parameters<typeof createModuleModeHostManifest>[0]["nativeBinding"], descriptor: detail.source.descriptor }));
+        const plan = detail.job.plan;
+        if (!plan || plan.configurationCodec !== "programmable.native-abi@1" || artifact.configurationCodec !== plan.configurationCodec || !same(plan.programAbi, artifact.programAbi) || !same(expected.manifest.configuration.abiMapping, plan.programAbi) || !same(expected.manifest.catalogDefinition.programAbi, plan.programAbi)) fail(400, "MODULE_REVIEW_MANIFEST_ABI_MISMATCH");
         if (!same(raw, expected) || unsupportedManagementCapabilities(expected.manifest.management).length) fail(400, "MODULE_REVIEW_MANIFEST_INVALID");
         return computeModuleModeHostManifestHash(expected);
       };

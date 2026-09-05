@@ -23,6 +23,13 @@ copied into the manifest field. This rendering adapter intentionally returns the
 real validation is covered by `tests/module-review-admin-bff.test.ts` and remains in the authenticated
 server client. A fixture screenshot proves interface behavior only.
 
+Build plans explicitly include `configurationCodec: "programmable.native-abi@1"` and an ordered
+`programAbi` array. The build artifact repeats both fields and binds them through its plan digest. For
+example, the fixture uses `[{"path":["capNative"],"type":"uint128"},{"path":["duration"],"type":"uint64"}]`.
+The host manifest must preserve this exact argument order, paths, and types. Omitting the codec or
+mapping does not select an implicit alphabetical encoding. An explicit empty mapping produces zero
+configuration bytes.
+
 Verified in the rendered local application on 6 September 2026:
 
 - Production page presents its admin wallet gate without a connected session.

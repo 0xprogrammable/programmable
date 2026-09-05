@@ -5,6 +5,7 @@ import { computeModuleReviewDecisionDigestV1, type ModuleReviewDecisionCommandV1
 import type { WalletPrincipalAuthenticatorV1 } from "../lib/server/creator-article/wallet-principal.server";
 import { moduleReviewAdminFixture } from "./fixtures/module-review-admin";
 import { reviewDigest } from "../lib/module-mode/review-contract";
+import { computeModuleModeHostManifestHash } from "../lib/server/module-mode/catalog";
 
 vi.mock("server-only", () => ({}));
 
@@ -76,6 +77,22 @@ describe("Module review admin BFF", () => {
   it("checks the canonical host manifest without publishing it", async () => {
     const f = setup(); const result = await f.client.handle(f.post("manifest", { expectedReviewRevision: 2, hostManifestJson: JSON.stringify(f.manifest) }), "manifest", f.subject.submissionId);
     expect(result.status).toBe(200); expect(await result.json()).toMatchObject({ hostManifestHash: f.manifestHash, artifactDigest: f.artifact.artifactDigest, reviewRevision: 2 });
+    expect(f.fetchBackend.mock.calls.every(([, init]) => init?.method === "GET")).toBe(true);
+  });
+  it.each(["type", "order"] as const)("rejects an internally canonical host manifest whose ABI %s differs from the built plan", async kind => {
+    const f = setup(); const manifest = structuredClone(f.manifest);
+    const mapping = structuredClone(f.plan.programAbi);
+    if (kind === "type") mapping[0].type = "uint256";
+    else mapping.reverse();
+    manifest.manifest.configuration.abiMapping = mapping;
+    manifest.manifest.catalogDefinition.programAbi = mapping;
+    const manifestJson = JSON.stringify(manifest);
+    const checked = await f.client.handle(f.post("manifest", { expectedReviewRevision: 2, hostManifestJson: manifestJson }), "manifest", f.subject.submissionId);
+    expect(checked.status).toBe(400);
+    expect(await checked.json()).toEqual({ error: { code: "MODULE_REVIEW_MANIFEST_ABI_MISMATCH" } });
+    const command = { ...f.command(), hostManifestHash: computeModuleModeHostManifestHash(manifest) };
+    const decision = await f.client.handle(f.post("decisions", { command, hostManifestJson: manifestJson }), "decision", f.subject.submissionId);
+    expect(decision.status).toBe(400);
     expect(f.fetchBackend.mock.calls.every(([, init]) => init?.method === "GET")).toBe(true);
   });
   it("records an exact accepted review and rechecks the manifest on the final POST", async () => {
