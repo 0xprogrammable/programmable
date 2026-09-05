@@ -6,7 +6,7 @@ A GitHub repository is not required. The descriptor always pins `source.files` w
 
 The source-intake wire contract stays `programmable.modules.api.v0.1`, with source requests in `programmable.modules.submission.v0.1`. Its receipt is a historical record of the saved source. The separate `programmable.modules.review-status.v1` response reports the current build and reviewer workflow; neither response grants onchain admission.
 
-Use the immutable **1.0.0-development.2** standalone CLI for the review commands. Its manifest is `/developers/module-mode-cli/v1.0.0-development.2/manifest.json` and its file is `/developers/module-mode-cli/v1.0.0-development.2/programmable-module-mode-1.0.0-development.2.mjs`. Verify the downloaded bytes against that manifest before running them. The older development.1 file remains unchanged and supports intake receipts only. These are development distribution versions; the live API capabilities determine which operations are enabled.
+Use the immutable **1.0.0-development.2** standalone CLI for the review commands. Download its [manifest](https://programmable.market/developers/module-mode-cli/v1.0.0-development.2/manifest.json) and [CLI file](https://programmable.market/developers/module-mode-cli/v1.0.0-development.2/programmable-module-mode-1.0.0-development.2.mjs), and verify the file's SHA-256 against `artifact.sha256` in the manifest before running it. It needs Node.js, with no npm install or repository checkout. The older development.1 file remains unchanged and supports intake receipts only. These are development distribution versions; the live API capabilities determine which operations are enabled.
 
 ## Author and reward wallet
 
@@ -21,21 +21,26 @@ The CLI reads only `PROGRAMMABLE_MODULES_API_KEY` for authentication. Inject it 
 
 ## Prepare, submit and track
 
-Use Node.js 24.14 or newer within the supported Node 24 release line. These commands use the repository's existing CLI entry; the public standalone distribution uses the same commands. Set `MODULE_API_ORIGIN` to the verified origin of the deployment you intend to use. There is no guessed production endpoint. HTTPS is required; `http://localhost`, `http://127.0.0.1` and `http://[::1]` with an optional port are allowed for local integration.
+Use Node.js 24.14 or newer within the supported Node 24 release line. Set `MODULE_CLI` to the absolute path of the verified download. `MODULE_API_ORIGIN` identifies the API deployment; read its capabilities before submitting. HTTPS is required; `http://localhost`, `http://127.0.0.1` and `http://[::1]` with an optional port are allowed for local integration.
 
-From a checkout with its dependencies installed:
+The standalone CLI works from your own module directory:
 
 ```bash
-node packages/classic-modules/bin/programmable-classic-modules.mjs module-capabilities \
+MODULE_CLI=/absolute/path/to/programmable-module-mode-1.0.0-development.2.mjs
+MODULE_API_ORIGIN=https://api.programmable.market
+
+node "$MODULE_CLI" module-capabilities \
   --api-origin "$MODULE_API_ORIGIN"
 ```
+
+When developing the SDK from a checkout with its dependencies installed, set `MODULE_CLI` to the absolute path of `packages/classic-modules/bin/programmable-classic-modules.mjs` instead. Both entries support the commands below.
 
 Check `moduleContributions.submissions`. A false value means this deployment is not accepting drafts. `apiKeyIssuance` independently states whether it issues new module keys. The client also verifies capabilities before every upload; it sends no credentials or source when intake is unavailable or the format is incompatible.
 
 Prepare a reviewable source request offline. Every path is relative to the explicit `--root` directory; source files must be ordinary files below that root, with no symlinks or traversal. `module.json` is an open source-package descriptor, not the older fixed-module manifest.
 
 ```bash
-node packages/classic-modules/bin/programmable-classic-modules.mjs prepare-module-submission \
+node "$MODULE_CLI" prepare-module-submission \
   --root /absolute/path/to/my-module \
   --package module.json \
   --out submission.json
@@ -46,7 +51,7 @@ The command verifies every declared SHA-256 against the local bytes and writes t
 Submit the prepared bytes with a stable idempotency key of 16–128 letters, digits, dots, underscores, colons or hyphens:
 
 ```bash
-node packages/classic-modules/bin/programmable-classic-modules.mjs submit-module \
+node "$MODULE_CLI" submit-module \
   --root /absolute/path/to/my-module \
   --request submission.json \
   --api-origin "$MODULE_API_ORIGIN" \
@@ -58,14 +63,14 @@ For a one-step source upload, replace `--request submission.json` with `--packag
 An HTTP 201 response is a newly persisted draft; HTTP 200 is an idempotent replay. Both return `status: "draft_received"`, `reviewStatus: "unreviewed"`, `approved: false` and `available: false`. The client verifies the receipt's package, family, request digest, author, reward wallet, byte count, name, version and supersession against what it sent. The returned `submissionId` is a UUID; use it for subsequent reads.
 
 ```bash
-node packages/classic-modules/bin/programmable-classic-modules.mjs status-module \
+node "$MODULE_CLI" status-module \
   --api-origin "$MODULE_API_ORIGIN" \
   --id YOUR_SUBMISSION_UUID
 
-node packages/classic-modules/bin/programmable-classic-modules.mjs list-module-submissions \
+node "$MODULE_CLI" list-module-submissions \
   --api-origin "$MODULE_API_ORIGIN"
 
-node packages/classic-modules/bin/programmable-classic-modules.mjs list-module-submissions \
+node "$MODULE_CLI" list-module-submissions \
   --api-origin "$MODULE_API_ORIGIN" \
   --cursor NEXT_CURSOR_UUID
 ```
@@ -75,10 +80,10 @@ node packages/classic-modules/bin/programmable-classic-modules.mjs list-module-s
 Read current build and review progress separately:
 
 ```bash
-node packages/classic-modules/bin/programmable-classic-modules.mjs review-capabilities \
+node "$MODULE_CLI" review-capabilities \
   --api-origin "$MODULE_API_ORIGIN"
 
-node packages/classic-modules/bin/programmable-classic-modules.mjs review-status-module \
+node "$MODULE_CLI" review-status-module \
   --api-origin "$MODULE_API_ORIGIN" \
   --id YOUR_SUBMISSION_UUID
 ```
@@ -104,7 +109,7 @@ Treat the reason as review feedback and `nextAction` as workflow data. The clien
 To submit an edited revision, update the package version and hashes, then prepare a new file linked to the previous submission:
 
 ```bash
-node packages/classic-modules/bin/programmable-classic-modules.mjs prepare-module-submission \
+node "$MODULE_CLI" prepare-module-submission \
   --root /absolute/path/to/my-module \
   --package module.json \
   --supersedes PREVIOUS_SUBMISSION_UUID \
