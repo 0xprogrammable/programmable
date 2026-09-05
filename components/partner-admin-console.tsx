@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import {
   useCallback,
   useEffect,
@@ -676,7 +678,7 @@ export function PartnerAdminConsole() {
       </p>
       <header className={styles.hero}>
         <div>
-          <p className={styles.kicker}>Admin</p>
+          <p className={styles.kicker}>Admin · <Link href="/admin/modules">Module review</Link></p>
           <h1>Partner access</h1>
           <p>
             Give a partner its own launch infrastructure without sharing a
