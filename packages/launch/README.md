@@ -4,8 +4,8 @@
 five source commands: `coverage`, `pack`, `validate`, `submit`, and `status`. It never signs or broadcasts a wallet transaction.
 Release and installability are version-specific.
 
-The additive `coverage` command requires a separately published and verified new CLI release. The immutable
-`4.0.0` and `4.1.0` assets retain their original four commands; do not reinstall the same version expecting this command.
+CLI `4.1.1` adds `coverage` while the active API profile remains `4.1.0`. Verify the separately published immutable
+client release before installing it. The immutable `4.0.0` and `4.1.0` assets retain their original four commands.
 
 ## Install the current public Ethereum V3 release
 
@@ -67,7 +67,8 @@ local preparation is not a public release or permission to submit.
 selects `4.0.0`, or `programmable-launch-v4.1.0` when it selects `4.1.0`, in
 `programmablehq/PROGRAMMABLE`. Stop if discovery selects any other version. Require the release manifest and tarball checksum to match the advertised version,
 exact source commit and downloaded tarball bytes. Install only that verified tarball and
-require `programmable-launch --version` to match the advertised version. If any check fails, stop; a published artifact alone is
+require `programmable-launch --version` to match that release's version. The separate CLI `4.1.1` patch below can use
+the same activated API profile `4.1.0`; verify its own immutable release identity. If any check fails, stop; a published artifact alone is
 not public activation. This conditional procedure does not assert today's release state.
 
 Before authenticated preflight or submission, also fetch the public
@@ -119,6 +120,37 @@ leg once per successful buy or sell, rounded up, separately from creator and LP 
 native claims for `0xD88539d3c4C460136a733A3Fd60cf6BF269079da`, with permissionless claims paid only to that recipient.
 Source admission is not proof of deployed state, trades or collected revenue; the CLI and API key do not claim fees.
 
+## Install the additive CLI 4.1.1 release
+
+This conditional procedure does not assert that the release is published. Check the immutable release and download
+its four assets into an empty directory. If it is absent or any verification fails, stop; do not fall back to an
+unverified npm-registry package or an older release with a different identity.
+
+```sh
+coverage_cli_dir="$(mktemp -d)"
+gh release verify programmable-launch-v4.1.1 --repo programmablehq/PROGRAMMABLE
+gh release download programmable-launch-v4.1.1 --repo programmablehq/PROGRAMMABLE --dir "$coverage_cli_dir"
+for coverage_asset in "$coverage_cli_dir"/*; do
+  gh release verify-asset programmable-launch-v4.1.1 "$coverage_asset" --repo programmablehq/PROGRAMMABLE
+done
+(cd "$coverage_cli_dir" && shasum -a 256 -c programmable-launch-4.1.1.tgz.sha256)
+```
+
+Require exactly the tarball, its adjacent checksum, CycloneDX inventory and release manifest for `4.1.1`. Check the
+manifest's version, tag, protected production commit/tree, exact Node/npm toolchain and every asset digest. Its
+`machineContractBinding` must reference `docs/operations/releases/custom-launch-v4.1.1/cli-release-binding.json`
+with the matching digest at that exact source commit. That client record binds the separate coverage schemas and
+references the unchanged API `4.1.0` release record by digest. The [release runbook](../../docs/operations/releases/custom-launch-v4.1.1/README.md)
+describes the full source and production-evidence verification. Only after those checks pass:
+
+```sh
+npm install --global "$coverage_cli_dir/programmable-launch-4.1.1.tgz"
+programmable-launch --version
+```
+
+The version must print `4.1.1`. Installation does not activate a write profile; authenticated V4 operations still
+require the public-release, capabilities, preflight and wallet gates above. The public coverage read requires no key.
+
 ## Read Robinhood architecture coverage
 
 Before building, read the separate public report. It requires no API key or query parameters:
@@ -127,7 +159,7 @@ Before building, read the separate public report. It requires no API key or quer
 curl --fail --silent --show-error https://api.programmable.market/v4/chains/4663/launch-coverage
 ```
 
-With a verified new CLI release containing this command:
+With the separately verified CLI `4.1.1` release:
 
 ```sh
 programmable-launch coverage --chain-id 4663

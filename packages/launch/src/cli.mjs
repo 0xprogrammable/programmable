@@ -244,7 +244,7 @@ function usage(command) {
       "Reads public launch coverage with no API key. A ready service does not mean every architecture is supported.",
       "The report does not authorize a request, clear findings, issue a permit, sign, or broadcast.",
       "A missing endpoint means coverage discovery is unavailable; do not replace credentials or assume support.",
-      "Published 4.0.0 and 4.1.0 CLI assets do not include this additive source command; use it only from a separately verified new release.",
+      "CLI 4.1.1 adds this command while the API profile remains 4.1.0. Verify the separate immutable CLI release before installing.",
     ],
     pack: [
       "Usage: programmable-launch pack --config <programmable-launch.config.json> [--output launch.json] [--receipt receipt.json]",
@@ -279,7 +279,7 @@ function usage(command) {
     `Historical profile 4.0: ${OPENAPI_URL_V4}`,
     `Stable V1 release: ${RELEASE_URL_V1}`,
     `Public V3 release (immutable): ${RELEASE_URL_V3}`,
-    `Public V4 release: ${RELEASE_URL}`,
+    `CLI ${PACKAGE_VERSION} release (verify publication): ${RELEASE_URL}`,
   ].join("\n");
 }
 

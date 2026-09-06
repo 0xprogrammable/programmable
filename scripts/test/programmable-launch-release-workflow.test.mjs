@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import test from "node:test";
 import { assertProgrammableLaunchTagRuleset } from "../verify-programmable-launch-tag-ruleset.mjs";
 
@@ -105,12 +106,13 @@ function failures(value) {
     "node scripts/programmable-launch-v4-release-binding.mjs verify-release-ready",
     "npm run release:custom-launch:v4:clean-room:test",
     "PROGRAMMABLE_PRODUCTION_VERIFY_PROOF: ${{ runner.temp }}/production-verify-proof/production-verify-proof.json",
-    "PROGRAMMABLE_ROBINHOOD_BACKEND_AUTHORIZATION: ${{ github.workspace }}/release/robinhood-chain-4663/${{ inputs.version == '4.1.0' && 'v4.1/' || '' }}programmable-backend-authorization.json",
+    "PROGRAMMABLE_ROBINHOOD_BACKEND_AUTHORIZATION: ${{ github.workspace }}/release/robinhood-chain-4663/${{ (inputs.version == '4.1.0' || inputs.version == '4.1.1') && 'v4.1/' || '' }}programmable-backend-authorization.json",
     "startsWith(inputs.version, '4.')",
     'finalizer="contracts/scripts/finalize-robinhood-custom-launch-deployment.mjs"',
     'finalizer="contracts/scripts/finalize-robinhood-custom-launch-v41-deployment.mjs"',
     'promotion_evidence="$evidence/v4.1"',
     'node scripts/programmable-launch-v41-release-binding.mjs verify-release-ready',
+    'node scripts/programmable-launch-v411-release-binding.mjs verify-release-ready',
     '*) echo "Unsupported V4 release version" >&2; exit 1 ;;',
 
     "node scripts/programmable-launch-release-assets.mjs build",
@@ -217,7 +219,7 @@ function failures(value) {
   const freshLines = new Set(freshStep.split("\n").map(line => line.trim()));
   for (const requiredInput of [
     "PROGRAMMABLE_PRODUCTION_VERIFY_PROOF: ${{ runner.temp }}/production-verify-proof/production-verify-proof.json",
-    "PROGRAMMABLE_ROBINHOOD_BACKEND_AUTHORIZATION: ${{ github.workspace }}/release/robinhood-chain-4663/${{ inputs.version == '4.1.0' && 'v4.1/' || '' }}programmable-backend-authorization.json",
+    "PROGRAMMABLE_ROBINHOOD_BACKEND_AUTHORIZATION: ${{ github.workspace }}/release/robinhood-chain-4663/${{ (inputs.version == '4.1.0' || inputs.version == '4.1.1') && 'v4.1/' || '' }}programmable-backend-authorization.json",
     'test -f "$PROGRAMMABLE_PRODUCTION_VERIFY_PROOF"',
     'test -f "$PROGRAMMABLE_ROBINHOOD_BACKEND_AUTHORIZATION"',
   ]) {
@@ -228,7 +230,7 @@ function failures(value) {
   const downloadLines = new Set(downloadStep.split("\n").map(line => line.trim()));
   for (const requiredInput of [
     "PROGRAMMABLE_PRODUCTION_VERIFY_PROOF: ${{ runner.temp }}/production-verify-proof/production-verify-proof.json",
-    "PROGRAMMABLE_ROBINHOOD_BACKEND_AUTHORIZATION: ${{ github.workspace }}/release/robinhood-chain-4663/${{ inputs.version == '4.1.0' && 'v4.1/' || '' }}programmable-backend-authorization.json",
+    "PROGRAMMABLE_ROBINHOOD_BACKEND_AUTHORIZATION: ${{ github.workspace }}/release/robinhood-chain-4663/${{ (inputs.version == '4.1.0' || inputs.version == '4.1.1') && 'v4.1/' || '' }}programmable-backend-authorization.json",
   ]) {
     if (!downloadLines.has(requiredInput)) missing.push(`download verification must receive ${requiredInput}`);
   }
@@ -316,6 +318,33 @@ test("CLI release workflow closes source, test, provenance, and immutability gat
   );
 });
 
+test("4.1.1 dispatch selects its client binding and preserves the active 4.1 API gates", () => {
+  const cases = [...source.matchAll(/case "\$EXPECTED_VERSION" in[\s\S]*?\n\s*esac/g)].map(match => match[0]);
+  assert.equal(cases.length, 3);
+  function runSelection(value, version) {
+    return spawnSync("bash", ["-c", [
+      "set -euo pipefail",
+      'node() { printf "node %s\\n" "$*"; }',
+      'npm() { printf "npm %s\\n" "$*"; }',
+      value,
+      'printf "backend=%s\\nfinalizer=%s\\nevidence=%s\\n" "${PROGRAMMABLE_ROBINHOOD_BACKEND_AUTHORIZATION-}" "${finalizer-}" "${promotion_evidence-}"',
+    ].join("\n")], { encoding: "utf8", env: { PATH: process.env.PATH,
+      EXPECTED_VERSION: version, GITHUB_WORKSPACE: "/fixture", evidence: "/fixture/evidence" } });
+  }
+  const selected = cases.map(value => runSelection(value, "4.1.1"));
+  for (const result of selected) assert.equal(result.status, 0, result.stderr);
+  assert.match(selected[0].stdout, /node scripts\/programmable-launch-v411-release-binding\.mjs verify-release-ready/);
+  assert.match(selected[0].stdout, /backend=\/fixture\/release\/robinhood-chain-4663\/v4\.1\/programmable-backend-authorization\.json/);
+  const priorTests = runSelection(cases[1], "4.1.0").stdout.split("\n")[0].split(" ").slice(2);
+  for (const relative of priorTests) assert.ok(selected[1].stdout.split(" ").includes(relative), relative);
+  assert.match(selected[1].stdout, /scripts\/test\/programmable-launch-v411-release-binding\.test\.mjs/);
+  assert.match(selected[2].stdout, /finalizer=contracts\/scripts\/finalize-robinhood-custom-launch-v41-deployment\.mjs/);
+  assert.match(selected[2].stdout, /evidence=\/fixture\/evidence\/v4\.1/);
+  for (const version of ["4.1.2", "4.2.0", "4.1.1-preview"]) {
+    for (const value of cases) assert.notEqual(runSelection(value, version).status, 0, version);
+  }
+});
+
 test("release workflow contract mutations fail closed", () => {
   const freshStart = source.indexOf("      - name: Freshly revalidate exact V4 Phase B immediately before mutation");
   const downloadStart = source.indexOf("      - name: Fresh-download and verify the published release");
@@ -352,11 +381,12 @@ test("release workflow contract mutations fail closed", () => {
     source.replace("npm test", "echo skipped"),
     source.replace('finalizer="contracts/scripts/finalize-robinhood-custom-launch-v41-deployment.mjs"', 'finalizer="untrusted.mjs"'),
     source.replace('node scripts/programmable-launch-v41-release-binding.mjs verify-release-ready', 'echo unbound-successor'),
+    source.replace('node scripts/programmable-launch-v411-release-binding.mjs verify-release-ready', 'echo unbound-client-patch'),
     source.replace('promotion_evidence="$evidence/v4.1"', 'promotion_evidence="$evidence"'),
     source.replace("node scripts/programmable-launch-v4-release-binding.mjs verify-release-ready", "echo unbound"),
     source.replace("npm run release:custom-launch:v4:clean-room:test", "echo skipped-clean-room-contract"),
     source.replaceAll(
-      "PROGRAMMABLE_ROBINHOOD_BACKEND_AUTHORIZATION: ${{ github.workspace }}/release/robinhood-chain-4663/${{ inputs.version == '4.1.0' && 'v4.1/' || '' }}programmable-backend-authorization.json",
+      "PROGRAMMABLE_ROBINHOOD_BACKEND_AUTHORIZATION: ${{ github.workspace }}/release/robinhood-chain-4663/${{ (inputs.version == '4.1.0' || inputs.version == '4.1.1') && 'v4.1/' || '' }}programmable-backend-authorization.json",
       "",
     ),
     source.replace("node scripts/programmable-launch-release-assets.mjs build", "echo fabricated"),

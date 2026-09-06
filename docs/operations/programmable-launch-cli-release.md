@@ -101,8 +101,10 @@ pinned fingerprint; never append a second key as an emergency bypass.
 Prepare one clean `production` candidate in which all of these values agree:
 
 1. `packages/launch/package.json` contains the new exact version.
-2. Package constants, public discovery, install instructions, OpenAPI and the
-   expected tarball SHA-256 identify that same release.
+2. Package constants, install instructions and the expected tarball SHA-256
+   identify that same CLI release. For an API release, discovery and OpenAPI
+   also match it. The additive CLI `4.1.1` instead references the unchanged API
+   `4.1.0` profile and discovery pins through its separate client binding below.
 3. The expected tarball digest was computed with Node `24.14.0`, npm `11.16.0`
    and `npm pack --ignore-scripts` from the exact candidate package tree.
 4. The package tests, machine-contract verification and dry pack pass.
@@ -124,11 +126,13 @@ The public coverage read is independent of the frozen launch profiles. Deploy th
 capabilities, preflight, request and status contracts retain their original bytes and behavior.
 
 Publish the separate `public/openapi/launch-coverage-v1.json`, response schema and developer guidance from the
-reviewed `production` release. The source `coverage` CLI command requires a new package version, an immutable new
-GitHub Release and the same exact-source, checksum and downloaded-asset verification described here. Do not reuse
+reviewed `production` release. The source `coverage` command uses the separate CLI `4.1.1` package and immutable
+`programmable-launch-v4.1.1` release, with the same exact-source, checksum and downloaded-asset verification described
+here. Follow the [4.1.1 client release procedure](releases/custom-launch-v4.1.1/README.md). Do not reuse
 or replace the existing 4.0.0 or 4.1.0 release tags, tarballs, checksums or discovery pins. A source-only merge does not
-make the command available in those installed clients. Update client discovery only after verifying the new release;
-the older CLI commands and their existing request semantics remain compatible.
+make the command available in those installed clients. Preserve the pinned historical API discovery, OpenAPI and
+profile bytes; they retain `4.1.0`. The new client install instructions identify `4.1.1` separately, and the older
+CLI commands and their existing request semantics remain compatible.
 
 Verify the new client against the live unauthenticated report and an older deployment returning 404. The latter
 must produce `LAUNCH_COVERAGE_UNAVAILABLE`, without loading or transmitting a key, inferring support or changing any

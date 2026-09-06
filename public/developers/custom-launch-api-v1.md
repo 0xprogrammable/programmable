@@ -124,9 +124,10 @@ finding. A missing coverage endpoint, timeout or unknown report version does not
 architecture is supported. Retry the public read later without rotating credentials. Still use the original
 preflight, server admission and separate wallet handoff for the exact launch request.
 
-The source command `programmable-launch coverage --chain-id 4663` requires a separately verified new immutable CLI
-release. Existing 4.0.0 and 4.1.0 release assets keep their original commands; do not reinstall them expecting this
-addition. The direct public GET needs no CLI upgrade and does not modify any existing launch contract.
+CLI `4.1.1` adds `programmable-launch coverage --chain-id 4663`; verify its separate immutable release before
+installing. The API profile remains `4.1.0`. Existing 4.0.0 and 4.1.0 release assets keep their original commands.
+Source documentation does not prove publication. The direct public GET needs no CLI upgrade and does not modify
+any existing launch contract.
 
 V4 metadata images are exactly PNG or single-frame GIF, as published by `metadataImage.mediaTypes` and `gifFrames`.
 JPEG, WebP, and animated GIF are rejected by the V4 packer before any network request.

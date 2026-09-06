@@ -43,7 +43,8 @@ describe("separate public launch coverage contract", () => {
     expect(docs).toContain("not a reason to rotate a key");
     const release = read("docs/operations/programmable-launch-cli-release.md");
     expect(release).toContain("Deploy the backend implementation");
-    expect(release).toContain("a new package version, an immutable new");
+    expect(release).toContain("separate CLI `4.1.1` package and immutable");
+    expect(release).toContain("`programmable-launch-v4.1.1` release");
     expect(release).toContain("Do not reuse");
     expect(release).toContain("LAUNCH_COVERAGE_UNAVAILABLE");
     const agentGuide = read("public/developers/custom-launch-api-v1.md");

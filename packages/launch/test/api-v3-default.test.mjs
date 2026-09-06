@@ -37,7 +37,7 @@ test("package 4 retains generic V3 aliases for unchanged default behavior", () =
   assert.equal(AGENT_ATTESTATION_SCHEMA, AGENT_ATTESTATION_SCHEMA_V2);
   assert.equal(CREATE_PATH, CREATE_PATH_V3);
   assert.equal(OPENAPI_URL, OPENAPI_URL_V3);
-  assert.equal(PACKAGE_VERSION, "4.1.0");
+  assert.equal(PACKAGE_VERSION, "4.1.1");
   assert.equal(DIRECT_NATIVE_PROFILE_REVISION, DIRECT_NATIVE_PROFILE_REVISION_V3);
   assert.equal(DIRECT_NATIVE_PROFILE_REVISION, 3);
   assert.equal(

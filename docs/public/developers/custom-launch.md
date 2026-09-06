@@ -112,8 +112,9 @@ support; wider key permissions or uploaded proof claims cannot make that support
 curl --fail --silent --show-error https://api.programmable.market/v4/chains/4663/launch-coverage
 ```
 
-A new, separately verified CLI release may also provide `programmable-launch coverage --chain-id 4663`. Immutable
-CLI 4.0.0 and 4.1.0 releases keep their original commands; this documentation does not publish a replacement asset.
+CLI `4.1.1` adds `programmable-launch coverage --chain-id 4663`; verify its separate immutable release before
+installing. The API profile remains `4.1.0`, and immutable CLI 4.0.0 and 4.1.0 releases keep their original commands.
+Source documentation does not prove publication; the direct public GET needs no CLI upgrade.
 If coverage returns 404, the deployment does not provide this report yet. A missing endpoint, timeout or unknown
 report version is a coverage-discovery problem, not a reason to rotate a key or assume an architecture is supported.
 When the report is available, still run the original authenticated preflight and server admission for exact launch
