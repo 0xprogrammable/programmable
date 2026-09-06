@@ -1,7 +1,12 @@
-import { decodeEventLog, decodeFunctionResult, encodeAbiParameters, encodeFunctionData, keccak256, parseAbiParameters } from 'viem';
+import { decodeEventLog, decodeFunctionResult, encodeAbiParameters, encodeFunctionData, keccak256, parseAbi, parseAbiParameters } from 'viem';
 import { OFFICIAL, address, bytes, canonicalJson, digest, exactKeys, hash, hexQuantity, jsonSafe, need, uint } from './core.mjs';
 import { registryAbi, ZERO_ADDRESS } from './publication-plan.mjs';
 import { publicationValidators } from './publication-shared.mjs';
+const canaryStateAbi = parseAbi([
+  'function creatorRecipients(bytes32 poolId) view returns (address[] wallets,uint16[] sharesBps,uint256 adminRevision)',
+  'function instances(bytes32 launchKey) view returns ((bytes32 instanceId,bytes32 packageId,bytes32 configHash,address factory,bytes32 factoryCodeHash,address module,bytes32 moduleCodeHash,uint32 callbackGas)[])',
+  'function launchBinding(bytes32 launchKey) view returns ((address source,address launchWallet,address token,address poolManager,bytes32 poolId,bytes32 recipeHash,bytes32 programHash))',
+]);
 const REQUEST_DOMAIN = 'programmable.module-mode-publication-owner-request.v1';
 export function operationQuantity(value) { need(typeof value === 'string' && /^0x(?:0|[1-9a-f][0-9a-f]*)$/i.test(value), 'Invalid RPC quantity'); return BigInt(value); }
 const pair = (providers, method, params) => Promise.all(providers.map(provider => provider.rpc(method, params)));
@@ -31,15 +36,55 @@ function bindLaunchRecord(plan, step, result, initial = false) {
   const pins = plan.identity.contracts;
   need(result.token.toLowerCase() === step.target && result.launchWallet.toLowerCase() === plan.owner && result.hook.toLowerCase() === pins.hook.address
     && result.runtime.toLowerCase() === pins.runtime.address && result.poolId === poolId(plan, step.target), 'Canary launch identity differs');
-  hash(result.launchId); hash(result.recipeHash); hash(result.launchKey);
-  if (initial) need(result.initialBuyNative === BigInt(step.expectation.initialBuyNative)
+  hash(result.launchId);
+  need(result.recipeHash === step.expectation.recipeHash && result.launchKey === step.expectation.launchKey, 'Canary recipe or launch key differs from the reviewed configuration');
+  address(result.positionRecipient); need(result.positionTokenId > 0n, 'Canary locked position is missing');
+  if (initial || step.expectation.initialBuyNative !== undefined) need(result.initialBuyNative === BigInt(step.expectation.initialBuyNative)
     && result.initialBuyTokens >= BigInt(step.expectation.minimumTokenOut), 'Canary initial purchase differs');
   return result;
 }
+function transactionView(t) {
+  return { hash: t.hash, from: address(t.from), to: address(t.to), input: bytes(t.input), value: t.value, nonce: t.nonce, chainId: t.chainId,
+    type: t.type, gas: t.gas, maxFeePerGas: t.maxFeePerGas, maxPriorityFeePerGas: t.maxPriorityFeePerGas, blockHash: t.blockHash, blockNumber: t.blockNumber };
+}
+async function assertLaunchReference(plan, providers, block) {
+  if (plan.action.kind === 'launch') return;
+  const expected = plan.action.launch.evidence, txHash = hash(expected.transaction.hash);
+  const observed = await pair(providers, 'eth_getTransactionByHash', [txHash]); need(observed.every(Boolean), 'Referenced launch transaction is not observed by both providers');
+  const tx = same(observed.map(transactionView), 'referenced launch transaction');
+  need(canonicalJson(tx) === canonicalJson(expected.transaction), 'Referenced launch transaction changed or was not genuine');
+  const receipts = await pair(providers, 'eth_getTransactionReceipt', [txHash]); need(receipts.every(Boolean), 'Referenced launch receipt is missing');
+  const receipt = same(receipts.map(r => ({ transactionHash: r.transactionHash, blockHash: r.blockHash, blockNumber: r.blockNumber, status: r.status })), 'referenced launch receipt');
+  need(receipt.transactionHash === txHash && receipt.status === '0x1' && receipt.blockHash === tx.blockHash && receipt.blockNumber === tx.blockNumber
+    && operationQuantity(receipt.blockNumber) <= operationQuantity(block), 'Referenced launch is not a successful earlier inclusion');
+  need((await pair(providers, 'eth_getBlockByNumber', [receipt.blockNumber, false])).every(b => b?.hash === receipt.blockHash && b.transactions.includes(txHash)), 'Referenced launch receipt is not canonical');
+}
 async function assertCanaryToken(plan, step, providers, block) {
-  const api = await publicationValidators();
-  const result = await read(providers, plan.identity.contracts.launcher.address, api.moduleNativeLaunchAbi, 'getLaunch', [step.target], block);
-  bindLaunchRecord(plan, step, result, step.kind === 'launch'); return result;
+  const api = await publicationValidators(), pins = plan.identity.contracts, expected = step.expectation;
+  await assertLaunchReference(plan, providers, block);
+  const result = await read(providers, pins.launcher.address, api.moduleNativeLaunchAbi, 'getLaunch', [step.target], block);
+  bindLaunchRecord(plan, step, result, step.kind === 'launch');
+  const config = await read(providers, pins.hook.address, api.moduleNativeReadAbi, 'poolConfig', [result.poolId], block);
+  need(address(config[0]) === pins.launcher.address && address(config[1]) === plan.owner && address(config[2]) === pins.swapRouter.address
+    && config[3] === pins.swapRouter.runtimeCodeHash && Number(config[4]) === expected.creatorFeeBps && Number(config[5]) === expected.creatorFeeBps
+    && config[6] === expected.recipeHash && config[7] === expected.launchKey, 'Canary pool fees or recipe differ');
+  const binding = await read(providers, pins.runtime.address, canaryStateAbi, 'launchBinding', [expected.launchKey], block);
+  need(address(binding.source) === pins.launcher.address && address(binding.launchWallet) === plan.owner && address(binding.token) === step.target
+    && address(binding.poolManager) === pins.poolManager.address && binding.poolId === expected.poolId && binding.recipeHash === expected.recipeHash
+    && binding.programHash === expected.programHash, 'Canary runtime program binding differs');
+  const instances = await read(providers, pins.runtime.address, canaryStateAbi, 'instances', [expected.launchKey], block);
+  need(instances.length === expected.selections.length && (expected.canaryKind === 'plain' ? instances.length === 0 : instances.length > 0), 'Canary module count differs');
+  for (const [index, instance] of instances.entries()) {
+    const selection = expected.selections[index];
+    need(instance.packageId === selection.packageId && instance.configHash === keccak256(selection.config) && address(instance.factory) === selection.factory
+      && instance.factoryCodeHash === selection.factoryCodeHash && instance.moduleCodeHash === selection.moduleCodeHash && instance.callbackGas === selection.callbackGas,
+    'Canary module selection or configuration differs');
+    hash(instance.instanceId); await code(providers, { address: address(instance.module), runtimeCodeHash: instance.moduleCodeHash }, block);
+  }
+  const creators = await read(providers, pins.rewardLedger.address, canaryStateAbi, 'creatorRecipients', [result.poolId], block);
+  need(canonicalJson(creators[0].map(value => address(value))) === canonicalJson(expected.creatorWallets)
+    && canonicalJson(creators[1].map(Number)) === canonicalJson(expected.creatorSharesBps) && creators[2] === 0n, 'Canary creator recipients changed before lifecycle proof');
+  return result;
 }
 export async function observePublicationOperation(plan, stepIndex, providers) {
   const step = plan.steps[stepIndex]; need(step, 'Unknown operation step'); const block = await blockSnapshot(providers);
@@ -123,8 +168,7 @@ function receiptLogs(logs) {
 export async function observePublicationReceipt(plan, entry, providers) {
   requirePair(providers); assertPublicationRequest(plan, entry); const step = plan.steps[entry.stepIndex], transactionHash = hash(entry.transactionHash);
   const txs = await pair(providers, 'eth_getTransactionByHash', [transactionHash]); need(txs.every(Boolean), 'Transaction is not observed by both providers');
-  const tx = same(txs.map(t => ({ hash: t.hash, from: address(t.from), to: address(t.to), input: bytes(t.input), value: t.value, nonce: t.nonce, chainId: t.chainId,
-    type: t.type, gas: t.gas, maxFeePerGas: t.maxFeePerGas, maxPriorityFeePerGas: t.maxPriorityFeePerGas, blockHash: t.blockHash, blockNumber: t.blockNumber })), 'transaction');
+  const tx = same(txs.map(transactionView), 'transaction');
   for (const key of ['from', 'to', 'value', 'nonce', 'chainId', 'type', 'gas', 'maxFeePerGas', 'maxPriorityFeePerGas']) need(tx[key] === entry.request[key], `Wallet changed ${key}`);
   need(tx.hash === transactionHash && tx.input === entry.request.data, 'Wallet transaction data differs');
   const receipts = await pair(providers, 'eth_getTransactionReceipt', [transactionHash]); if (receipts.some(value => !value)) return { status: 'pending', transactionHash };
@@ -136,6 +180,18 @@ export async function observePublicationReceipt(plan, entry, providers) {
   await Promise.all(pins.map(pin => code(providers, pin, receipt.blockNumber))); await readConditions(providers, step.postReads, receipt.blockNumber);
   let canary = null;
   if (['launch', 'buy', 'approve', 'sell'].includes(step.kind)) canary = jsonSafe(await assertCanaryToken(plan, step, providers, receipt.blockNumber));
+  if (step.kind === 'launch') {
+    const api = await publicationValidators(), events = [];
+    for (const log of receipt.logs.filter(log => log.address === plan.identity.contracts.launcher.address)) {
+      try { events.push(decodeEventLog({ abi: api.moduleNativeLaunchAbi, data: log.data, topics: log.topics, strict: true })); } catch { /* Unrelated launcher events are not configuration evidence. */ }
+    }
+    const one = name => { const found = events.filter(event => event.eventName === name); need(found.length === 1, `Expected exactly one ${name} event`); return found[0].args; };
+    const configuration = one('ModuleNativeConfigurationBound'), program = one('ModuleNativeProgramBound');
+    need(configuration.launchId === canary.launchId && configuration.metadataHash === step.expectation.metadataHash
+      && configuration.creatorConfigurationHash === step.expectation.creatorConfigurationHash, 'Canary metadata or creator allocation event differs');
+    need(program.launchId === canary.launchId && program.launchKey === step.expectation.launchKey && address(program.runtime) === plan.identity.contracts.runtime.address
+      && program.fundingHash === step.expectation.fundingHash && program.totalFunding === BigInt(step.expectation.totalFunding), 'Canary funding event differs');
+  }
   if (['launch', 'buy', 'sell'].includes(step.kind)) {
     const api = await publicationValidators(), events = [];
     need(Array.isArray(receipt.logs) && receipt.logs.length <= 4096, 'Receipt logs are unavailable or exceed bounds');
