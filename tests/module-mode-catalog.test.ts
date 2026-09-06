@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { NATIVE_ENGINE_PROFILE } from "../lib/module-mode/builder";
 import { referenceManagementManifest } from "../lib/module-mode/management-manifest";
@@ -7,7 +8,7 @@ import { bindActiveModuleModeRelease } from "../lib/module-mode/release";
 import {
   bindModuleModeCatalogFile, computeModuleModeHostManifestHash, createModuleModeAvailabilityReader,
   createModuleModeHostManifest, MODULE_MODE_CATALOG_SCHEMA, moduleModePublicationUrl,
-  verifyModuleModePublication, type ModuleModeAvailabilityDependencies, type ModuleModeCatalogDefinition,
+  verifyModuleModePublication, type ModuleModeAvailabilityDependencies, type ModuleModeCatalogDefinition, type ModuleModeHostReleaseIdentity,
 } from "../lib/server/module-mode/catalog";
 import { computeModuleReviewDecisionDigestV1, type ModuleReviewDecisionRecordV1 } from "../lib/server/module-mode/review-decision-wire-v1";
 import { createModuleModeHttpCollector } from "../lib/server/robinhood-index/module-source";
@@ -138,9 +139,57 @@ describe("Module Mode host publication identity", () => {
   });
 });
 
+describe("Reviewed starter publication bytes", () => {
+  // Canonical export integrity checks only; these do not grant review authority or prove finality.
+  it.each([
+    {
+      name: "reward", packageId: "0xc282a1952918d927ab564e62260b9c77c55319d7e1a226cc7490bd25fcd825f2",
+      requestDigest: "0xa2d3b04dfde66dbe373f5aa85acbb0be2a3b28220889e7bf5783f213efd38c64",
+      manifestHash: "0xc605c797a751020dcbcc2e151ec6a9f45270859f46283de36b3c765c4f08d602",
+      reviewDigest: "0x5530bdcbdf4c7a5b2faea19b359fd1c4e9dc087688fe7d85068438d32d6aea46",
+      fileSha256: {
+        source: "db5b14b9933d4e7a5a4cac96624615306267d14b1763147cddf93dfc7b91d9a7",
+        manifest: "02e6f64f567960028c030cec11afc835aadddc2407e0eecb061f7526baae8111",
+        review: "46e4364d2423dfe185507a666ad15d81379a8b21aabe62909c6a887ce252a8b8",
+      },
+    },
+    {
+      name: "cap", packageId: "0xbb60720f5c3a0d49ed1ab63fa5c92a3db36404362827d4c952b99eca04558a08",
+      requestDigest: "0x94cd408d27dc5a091a679883b8a400b2f50d9d7123dcf9e705143a2fa7c90148",
+      manifestHash: "0x76beaf7d8e87d7300480d391826d7f010a9ac3f43765be2bf645ea2ba94a7a68",
+      reviewDigest: "0x20d8bc55893d1592d3210f99bb260556fc9c175b83f92409b2aea2e820d2734b",
+      fileSha256: {
+        source: "f454f0fa9f28b239c42d57b0900623974dd8a5b6b68c5eedec6cfcc64aeb72dc",
+        manifest: "5658fdc32859aecca7fe36af086b1ffadd646009b22dd7bf5dc52c8812902c61",
+        review: "2174478eb6d7d16d047cd089a19a206424e6a38b340fdabbf5a71e787fb60a2a",
+      },
+    },
+  ])("preserves and binds the canonical $name export", expected => {
+    const release = preview as ModuleModeHostReleaseIdentity;
+    const publication = bindModuleModeCatalogFile(catalogFile, release).entries.find(item => item.entry.nativeBinding.packageId === expected.packageId);
+    expect(publication).toBeDefined();
+    if (!publication) throw new Error("Reviewed starter publication is missing.");
+    const responses = Object.fromEntries(Object.entries(expected.fileSha256).map(([kind, digest]) => {
+      const bytes = readFileSync(new URL(`../public/developers/modules/${expected.packageId}/${kind}.json`, import.meta.url));
+      expect(createHash("sha256").update(bytes).digest("hex")).toBe(digest);
+      return [kind, JSON.parse(bytes.toString("utf8"))];
+    }));
+    expect(verifyModuleModePublication({ release, publication,
+      source: responses.source, manifest: responses.manifest, review: responses.review })).toEqual(publication.entry);
+    expect(publication.requestDigest).toBe(expected.requestDigest);
+    expect(publication.entry.version).toBe("0.1.0-development.1");
+    expect(publication.entry.nativeBinding).toMatchObject({ manifestHash: expected.manifestHash, reviewDigest: expected.reviewDigest });
+    expect(computeModuleModeHostManifestHash(responses.manifest)).toBe(expected.manifestHash);
+    expect(responses.review).toMatchObject({ decisionDigest: expected.reviewDigest, registryApproved: false, available: false });
+  });
+});
+
 describe("Read-only Module Mode availability", () => {
-  it("ships an empty publication allowlist and only proposal cards while disabled", async () => {
-    expect(catalogFile).toEqual({ schemaVersion: MODULE_MODE_CATALOG_SCHEMA, sourceReleaseDigest: null, entries: [] });
+  it("keeps the reviewed starter catalogue unavailable while the release is disabled", async () => {
+    expect(catalogFile.schemaVersion).toBe(MODULE_MODE_CATALOG_SCHEMA);
+    expect(catalogFile.sourceReleaseDigest).toBe(preview.releaseDigest);
+    expect(catalogFile.entries).toHaveLength(2);
+    expect(preview).toMatchObject({ enabled: false, status: "preview", lifecycleEvidenceDigest: null });
     const f = fixture(); const read = createModuleModeAvailabilityReader({ ...f.dependencies, releaseProfile: preview, catalogFile });
     const result = await read();
     expect(result.release).toBeNull(); expect(result.reason).toContain("being prepared");
@@ -148,7 +197,8 @@ describe("Read-only Module Mode availability", () => {
     expect(f.authenticateRelease).not.toHaveBeenCalled(); expect(f.fetchPublic).not.toHaveBeenCalled();
   });
   it("allows a verified plain launch before a first reviewed module exists", async () => {
-    const f = fixture(); const read = createModuleModeAvailabilityReader({ ...f.dependencies, catalogFile });
+    const emptyCatalog = { schemaVersion: MODULE_MODE_CATALOG_SCHEMA, sourceReleaseDigest: null, entries: [] };
+    const f = fixture(); const read = createModuleModeAvailabilityReader({ ...f.dependencies, catalogFile: emptyCatalog });
     expect(await read()).toEqual({ schemaVersion: "programmable.module-mode.availability.v1", release: f.release, catalog: [], reason: null });
     expect(f.authenticateRelease).toHaveBeenCalledTimes(1); expect(f.fetchPublic).not.toHaveBeenCalled();
   });
