@@ -129,7 +129,7 @@
 .recordField { min-width: 0; }
 .recordField > .field { margin-bottom: 0; }
 .optionalToggle { align-items: center !important; color: #eee; cursor: pointer; display: inline-flex; font-size: 14px; gap: 12px; min-height: 44px; }
-.optionalToggle > input { accent-color: #e2eadc; flex: 0 0 20px; height: 20px; min-height: 20px; padding: 0; width: 20px; }
+.optionalToggle > input { accent-color: #e2eadc; appearance: auto; cursor: pointer; flex: 0 0 20px; height: 20px; min-height: 20px; padding: 0; width: 20px; }
 .optionalToggle small { color: var(--mm-muted); font-size: 12px; margin-left: 8px; }
 .collection { border: 1px solid #484848; border-radius: 8px; display: grid; gap: 12px; margin: 0; min-width: 0; padding: 16px; }
 .collection > legend { color: #eee; font-size: 14px; padding-inline: 4px; }
