@@ -55,10 +55,14 @@ export async function sealBuild({ root = REPOSITORY_ROOT, output = path.join(roo
       } });
     }
   }
-  const artifacts = {}, sourceHashes = new Map(), standardInputs = {};
+  const artifacts = {}, sourceHashes = new Map(), standardInputs = {}, compilerMetadata = {};
   for (const [role, relative] of Object.entries(ARTIFACTS)) {
     const artifact = JSON.parse(await readFile(path.join(output, relative), 'utf8'));
     const metadata = typeof artifact.metadata === 'string' ? JSON.parse(artifact.metadata) : artifact.metadata;
+    // Foundry's typed metadata drops some NatSpec fields and normalizes remappings.
+    // Keep the compiler's complete JSON separately: existing plan/build commitments remain unchanged.
+    need(typeof artifact.rawMetadata === 'string', `${role}: complete compiler metadata missing`);
+    compilerMetadata[role] = JSON.parse(artifact.rawMetadata);
     need(metadata?.compiler?.version === '0.8.26+commit.8a97fa7a' && metadata.settings.optimizer.enabled === true
       && metadata.settings.optimizer.runs === 1000 && metadata.settings.evmVersion === 'cancun'
       && metadata.settings.metadata.bytecodeHash === 'none' && metadata.settings.metadata.appendCBOR === false
@@ -99,5 +103,5 @@ export async function sealBuild({ root = REPOSITORY_ROOT, output = path.join(roo
   const commitments = { sourceCommit: before.sourceCommit, sourceTree: before.sourceTree, compiler: '0.8.26+commit.8a97fa7a', forge: '1.7.1+4072e48705af9d93e3c0f6e29e93b5e9a40caed8',
     sourcePinsDigest: sha256(sourcePinsText), sources: Object.fromEntries([...sourceHashes].sort()), dependencies: dependencyStates,
     artifacts: Object.fromEntries(Object.entries(artifacts).map(([role, a]) => [role, digest('programmable.module-mode-build-artifact.v1', a)])) };
-  return { ...before, sourceClean: before.sourceClean && !candidate, buildDigest: digest('programmable.module-mode-build.v1', commitments), commitments, artifacts, standardInputs };
+  return { ...before, sourceClean: before.sourceClean && !candidate, buildDigest: digest('programmable.module-mode-build.v1', commitments), commitments, artifacts, standardInputs, compilerMetadata };
 }

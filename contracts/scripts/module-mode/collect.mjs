@@ -12,9 +12,13 @@ import { exactJson } from './source-readback.mjs';
 
 async function main(argv) {
   const command = argv.shift(); const options = {};
-  for (let i = 0; i < argv.length; i += 2) { need(['--plan', '--journal', '--output', '--identity', '--step', '--transaction-hash', '--deployment', '--provider'].includes(argv[i]) && argv[i + 1], 'Unsupported or incomplete collection argument'); options[argv[i].slice(2)] = argv[i + 1]; }
+  for (let i = 0; i < argv.length; i += 2) { need(['--plan', '--journal', '--output', '--identity', '--step', '--transaction-hash', '--deployment', '--provider', '--source-root'].includes(argv[i]) && argv[i + 1], 'Unsupported or incomplete collection argument'); options[argv[i].slice(2)] = argv[i + 1]; }
   need(['observe', 'record', 'deployment', 'source', 'source-requests'].includes(command) && options.plan, 'Use observe, record, deployment, source or source-requests with --plan');
-  const plan = exactJson(await readFile(options.plan), 'Deployment plan'); const build = await sealBuild(); assertPlan(plan, build);
+  need(!options['source-root'] || ['source', 'source-requests'].includes(command), '--source-root is only for read-only source collection');
+  const plan = exactJson(await readFile(options.plan), 'Deployment plan');
+  // A newer collector may read the original clean deployment checkout. Its exact source/build digest still
+  // has to match the old immutable plan; this option grants no wallet or deployment authority.
+  const build = await sealBuild(options['source-root'] ? { root: path.resolve(options['source-root']) } : {}); assertPlan(plan, build);
   if (command === 'observe') {
     const index = Number(options.step); need(options.step !== undefined && Number.isSafeInteger(index), '--step required');
     const observation = await observeStage(plan, index, await reviewedProviders());

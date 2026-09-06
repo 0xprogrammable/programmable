@@ -31,10 +31,44 @@ export async function sourcifyPreflight(fetchImpl = fetch) {
 }
 function equal(actual, expected, label) { need(canonicalJson(actual) === canonicalJson(expected), label); }
 function empty(value, label) { need(value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 0, label); }
-function settings(value) { return Object.fromEntries(Object.entries(value ?? {}).filter(([key]) => key !== 'outputSelection')); }
+function settings(value) {
+  const result = Object.fromEntries(Object.entries(value ?? {}).filter(([key]) => key !== 'outputSelection'));
+  // Explicit false and omitted are the same two documented solc defaults. No other settings are discarded.
+  if (result.viaIR === false) delete result.viaIR;
+  if (result.metadata?.useLiteralContent === false) {
+    result.metadata = { ...result.metadata }; delete result.metadata.useLiteralContent;
+  }
+  return result;
+}
+function abiEntries(value) {
+  need(Array.isArray(value), 'ABI array required');
+  const entries = value.map(canonicalJson).sort();
+  need(new Set(entries).size === entries.length, 'Duplicate ABI entry');
+  return entries;
+}
+export function sourcifyNeedsRecompilation(input, value) {
+  return canonicalJson(settings(value.compilation?.compilerSettings)) !== canonicalJson(settings(input.settings));
+}
+function publicationSettings(input, value, artifact, recompilation, role) {
+  const expected = settings(input.settings), actual = settings(value.compilation?.compilerSettings);
+  equal(settings(value.stdJsonInput?.settings), actual, `${role}: Sourcify input/settings disagree`);
+  if (canonicalJson(actual) !== canonicalJson(expected)) {
+    // Sourcify deduplicates compilations by compiler/version and both bytecode hashes. This can retain
+    // an older list of unused import remappings. Accept it only after an actual local recompilation.
+    const withoutRemappings = settings => Object.fromEntries(Object.entries(settings).filter(([key]) => key !== 'remappings'));
+    equal(withoutRemappings(actual), withoutRemappings(expected), `${role}: Sourcify compiler settings differ`);
+    need(Array.isArray(actual.remappings) && actual.remappings.every(value => typeof value === 'string'), `${role}: invalid remappings`);
+    need(recompilation?.compilerVersion === SOURCIFY_COMPILER
+      && recompilation.inputDigest === keccak256(new TextEncoder().encode(canonicalJson(value.stdJsonInput)))
+      && bytes(recompilation.creationBytecode) === bytes(artifact.bytecode.object)
+      && bytes(recompilation.runtimeBytecode) === bytes(artifact.deployedBytecode.object), `${role}: pinned source recompilation required`);
+    equal(abiEntries(recompilation.abi), abiEntries(artifact.abi), `${role}: recompiled ABI differs`);
+  }
+  equal({ ...value.stdJsonInput, settings: expected }, { ...input, settings: expected }, `${role}: Sourcify standard input differs`);
+}
 
 /** Independent complete-byte comparison. Provider `match` is preserved as such, never relabelled `exact_match`. */
-export function validateSourcifySource({ plan, build, role, constructorArguments, creation }, value) {
+export function validateSourcifySource({ plan, build, role, constructorArguments, creation, recompilation }, value) {
   const artifact = build.artifacts[role], pin = plan.contracts[role], input = build.standardInputs[role];
   need(artifact && pin && input, 'Unknown Sourcify target');
   const [file, name] = Object.entries(artifact.compilationTarget)[0];
@@ -45,16 +79,15 @@ export function validateSourcifySource({ plan, build, role, constructorArguments
   const compilation = value.compilation;
   need(compilation?.language === 'Solidity' && compilation.compiler === 'solc' && compilation.compilerVersion === SOURCIFY_COMPILER
     && compilation.name === name && compilation.fullyQualifiedName === `${file}:${name}`, `${role}: Sourcify compiler/target differs`);
-  // Sourcify documents outputSelection replacement. It selects returned artifacts, not compilation semantics.
-  equal(settings(compilation.compilerSettings), settings(input.settings), `${role}: Sourcify compiler settings differ`);
-  equal({ ...value.stdJsonInput, settings: settings(value.stdJsonInput?.settings) }, { ...input, settings: settings(input.settings) }, `${role}: Sourcify standard input differs`);
+  publicationSettings(input, value, artifact, recompilation, role);
   equal(value.sources, input.sources, `${role}: Sourcify source closure differs`);
-  equal(value.metadata, artifact.metadata, `${role}: Sourcify full compiler metadata differs`);
-  equal(value.abi, artifact.abi, `${role}: Sourcify ABI differs`);
+  equal(value.metadata, build.compilerMetadata?.[role] ?? artifact.metadata, `${role}: Sourcify full compiler metadata differs`);
+  // ABI item order has no semantic meaning; argument, tuple and output order remain exact.
+  equal(abiEntries(value.abi), abiEntries(artifact.abi), `${role}: Sourcify ABI differs`);
   need(value.deployment?.transactionHash === hash(creation.transactionHash)
     && BigInt(value.deployment.blockNumber) === BigInt(creation.blockNumber)
     && BigInt(value.deployment.transactionIndex) === BigInt(creation.transactionIndex)
-    && address(value.deployment.deployer) === address(creation.deployer), `${role}: Sourcify actual creation transaction differs`);
+    && address(value.deployment.deployer) === address(creation.transactionSender), `${role}: Sourcify actual creation transaction differs`);
   const c = value.creationBytecode, r = value.runtimeBytecode;
   need(c && r, `${role}: Sourcify creation/runtime bytes unavailable`);
   const compiledCreation = bytes(artifact.bytecode.object), compiledRuntime = bytes(artifact.deployedBytecode.object);
