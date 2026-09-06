@@ -10,6 +10,14 @@ paths = ['''^config/module-mode/robinhood\.preview\.json$''']
 regexes = ['''^\s*"tokenCreationCodeHash": "0x445809d9f7a34e959de4a96dec1e1beddfb265755bf28c57c42744adea1128ef",\s*$''']
 
 [[allowlists]]
+description = "Module Mode provenance regression repeats the verified public bytecode commitment"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+paths = ['''^tests/module-mode-provenance\.test\.ts$''']
+regexes = ['''^\s*tokenCreationCodeHash: "0x445809d9f7a34e959de4a96dec1e1beddfb265755bf28c57c42744adea1128ef",\s*$''']
+
+[[allowlists]]
 description = "Module launchers assign a public numeric liquidity amount, not a credential"
 targetRules = ["generic-api-key"]
 condition = "AND"
