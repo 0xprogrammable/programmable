@@ -35,6 +35,14 @@ function backendError(
 }
 
 describe("preserved Custom Launch backend public errors", () => {
+  it("preserves unavailable API-key capability with retry guidance and no internal details", async () => {
+    const error = await readPreservedBackendPublicErrorV1(backendError(503, "API_KEY_CAPABILITY_UNAVAILABLE", {
+      retryAfter: "17", details: { internalCatalog: "must-not-cross" },
+    }));
+    expect(error).toMatchObject({ status: 503, code: "API_KEY_CAPABILITY_UNAVAILABLE", retryAfter: "17" });
+    expect(JSON.stringify(error)).not.toContain("must-not-cross");
+  });
+
   it("preserves only the public partner-admin 403 contract", async () => {
     const error = await readPreservedBackendPublicErrorV1(
       backendError(403, "PARTNER_ADMIN_FORBIDDEN", {

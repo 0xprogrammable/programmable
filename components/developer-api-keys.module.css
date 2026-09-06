@@ -230,6 +230,7 @@
 }
 
 .purposeOptions input {
+  appearance: auto;
   accent-color: var(--webde-ink);
   flex: none;
   height: 16px;
@@ -1135,4 +1136,9 @@
   .keyStatus::before {
     forced-color-adjust: none;
   }
+}
+
+.scopeLedger summary strong,
+.scopeLedger code {
+  overflow-wrap: anywhere;
 }
