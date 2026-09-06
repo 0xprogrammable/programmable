@@ -11,10 +11,14 @@ import { pathToFileURL } from "node:url";
 
 import * as v4Binding from "./programmable-launch-v4-release-binding.mjs";
 import * as v41Binding from "./programmable-launch-v41-release-binding.mjs";
+import * as v411Binding from "./programmable-launch-v411-release-binding.mjs";
+import * as v412Binding from "./programmable-launch-v412-release-binding.mjs";
 
 export function releaseBindingTools(version) {
   if (version === "4.0.0") return v4Binding;
   if (version === "4.1.0") return v41Binding;
+  if (version === "4.1.1") return v411Binding;
+  if (version === "4.1.2") return v412Binding;
   if (version.split(".")[0] === "4") throw new Error("Unsupported V4 release version");
   return null;
 }

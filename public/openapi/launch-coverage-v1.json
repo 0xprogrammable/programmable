@@ -1,0 +1,690 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Programmable launch coverage",
+    "version": "1.0.0",
+    "description": "A separate public GET report for Robinhood Chain. No API key, query, body, nonce, permit, wallet signature or broadcast is involved. A ready service is not universal architecture support. Coverage does not change the frozen 4.0 or 4.1 launch contracts. A missing endpoint means coverage discovery is unavailable; it is not evidence of an invalid API key or supported architecture."
+  },
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "servers": [
+    {
+      "url": "https://api.programmable.market"
+    }
+  ],
+  "security": [],
+  "paths": {
+    "/v4/chains/4663/launch-coverage": {
+      "get": {
+        "operationId": "getRobinhoodLaunchCoverageV1",
+        "summary": "Read launch architecture and verifier coverage",
+        "description": "Send no query parameters or request body. Read the server-selected profile, readiness, role and pool topology limits, activated proof adapters and finding obligations. No request has been evaluated. The report cannot clear a finding, authorize a permit or replace request preflight.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Coverage report; readiness may still be unavailable and requestAuthorized is always false.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RobinhoodLaunchCoverageV1"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query, body or path input; retry only after correcting the request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Coverage is not provided by this deployment or chain. No API key is required; do not infer support or replace credentials."
+          },
+          "503": {
+            "description": "Service temporarily unavailable. This is not request authorization.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "RobinhoodLaunchCoverageV1": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schemaVersion",
+          "chainId",
+          "profile",
+          "readiness",
+          "structuralFormat",
+          "verifierCoverage",
+          "requestAuthorization",
+          "findingObligations",
+          "unknownFindingPolicy"
+        ],
+        "properties": {
+          "schemaVersion": {
+            "const": "programmable.robinhood-launch-coverage.v1"
+          },
+          "chainId": {
+            "const": "4663"
+          },
+          "profile": {
+            "enum": [
+              null,
+              {
+                "schemaVersion": "programmable.custom-launch-profile-ref.v4",
+                "structuralProfileId": "programmable.custom-launch.robinhood-mainnet.v1",
+                "businessProfileId": "robinhood-production-launch",
+                "admissionDescriptorDigest": "sha256:99b4ccabdaaf143bad28a8f6af441a1b93e1f113d0179236328b7fa594d1f948",
+                "admissionPolicyDigest": "sha256:31e6b286ca839b31cb1edfe30c05d9f334892f3d84377961dc10b93959c7e216",
+                "admissionBindingDigest": "sha256:f31643e6e9ff6d5409d59a2fc3ac7fb5ac9cfcb3af08e95c9478bc95ddfa66a2",
+                "admissionSchemaDigest": "sha256:a28a6de6208d6ba7b65b4b706174509570955ba9ce9714624bcb2046ab7beae7",
+                "profileRevision": 1,
+                "profileVersion": "4.0.0",
+                "profileDigest": "sha256:484b1dc6e9091804fabc230f2b3a7504940fa00264f8e66e82a66a951e71f1a0"
+              },
+              {
+                "schemaVersion": "programmable.custom-launch-profile-ref.v4",
+                "structuralProfileId": "programmable.custom-launch.robinhood-mainnet.v1",
+                "businessProfileId": "robinhood-production-launch",
+                "admissionDescriptorDigest": "sha256:b09611360e284641873fdb2914b4282e0545e32ea587b278fcd11f4db9a4e7f5",
+                "admissionPolicyDigest": "sha256:47801f57e2365f89eb7397a2df10d697bd1f756ec01536b9b34755e89809da04",
+                "admissionBindingDigest": "sha256:5b2486f35fcd44bd476cafd5bfb5a12decf05a756ba237ca191928f5414c721e",
+                "admissionSchemaDigest": "sha256:6a8194a3b5d8b6432a95ec04da3cd86091ad64c93c0531125caf00ecb919c8cf",
+                "profileRevision": 2,
+                "profileVersion": "4.1.0",
+                "profileDigest": "sha256:b0fca91264a49d358ed1a9eec2a679b59a48d716b71475bef583c2545e1ee502"
+              }
+            ]
+          },
+          "readiness": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "status",
+              "reasonCodes"
+            ],
+            "properties": {
+              "status": {
+                "enum": [
+                  "ready",
+                  "unavailable"
+                ]
+              },
+              "reasonCodes": {
+                "type": "array",
+                "minItems": 0,
+                "maxItems": 128,
+                "items": {
+                  "type": "string",
+                  "pattern": "^[A-Z][A-Z0-9_]{0,127}$",
+                  "minLength": 1,
+                  "maxLength": 128
+                }
+              }
+            }
+          },
+          "structuralFormat": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "graphSchemaVersion",
+              "minimumTargets",
+              "maximumTargets",
+              "declaredHookPermissions",
+              "roleAssignments",
+              "poolTopology",
+              "fundingPlanDeclarations",
+              "representationIsExecutionEvidence",
+              "unknownMechanismIsUnsafe"
+            ],
+            "properties": {
+              "graphSchemaVersion": {
+                "const": "programmable.custom-graph-bundle.v1"
+              },
+              "minimumTargets": {
+                "const": 3
+              },
+              "maximumTargets": {
+                "const": 16
+              },
+              "declaredHookPermissions": {
+                "const": [
+                  "beforeInitialize",
+                  "afterInitialize",
+                  "beforeAddLiquidity",
+                  "afterAddLiquidity",
+                  "beforeRemoveLiquidity",
+                  "afterRemoveLiquidity",
+                  "beforeSwap",
+                  "afterSwap",
+                  "beforeDonate",
+                  "afterDonate",
+                  "beforeSwapReturnDelta",
+                  "afterSwapReturnDelta",
+                  "afterAddLiquidityReturnDelta",
+                  "afterRemoveLiquidityReturnDelta"
+                ]
+              },
+              "roleAssignments": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "model",
+                  "tokenAndHookMayShareAddress",
+                  "sameAddressRequires"
+                ],
+                "properties": {
+                  "model": {
+                    "const": "one-role-per-physical-target"
+                  },
+                  "tokenAndHookMayShareAddress": {
+                    "const": false
+                  },
+                  "sameAddressRequires": {
+                    "const": "versioned-graph-and-router-release"
+                  }
+                }
+              },
+              "poolTopology": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "poolKeyCount",
+                  "pair",
+                  "tokenTargetCount",
+                  "hookTargetCount",
+                  "noPoolRepresentable",
+                  "multiplePoolKeysRepresentable",
+                  "otherTopologiesRequire"
+                ],
+                "properties": {
+                  "poolKeyCount": {
+                    "const": 1
+                  },
+                  "pair": {
+                    "const": "native-ETH-designated-token"
+                  },
+                  "tokenTargetCount": {
+                    "const": 1
+                  },
+                  "hookTargetCount": {
+                    "const": 1
+                  },
+                  "noPoolRepresentable": {
+                    "const": false
+                  },
+                  "multiplePoolKeysRepresentable": {
+                    "const": false
+                  },
+                  "otherTopologiesRequire": {
+                    "const": "transport-extension"
+                  }
+                }
+              },
+              "fundingPlanDeclarations": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "capitalSources",
+                  "pricingModels"
+                ],
+                "properties": {
+                  "capitalSources": {
+                    "const": [
+                      "buyer-funded",
+                      "creator-funded",
+                      "hybrid",
+                      "custom"
+                    ]
+                  },
+                  "pricingModels": {
+                    "const": [
+                      "concentrated-liquidity",
+                      "custom-curve",
+                      "auction",
+                      "custom"
+                    ]
+                  }
+                }
+              },
+              "representationIsExecutionEvidence": {
+                "const": false
+              },
+              "unknownMechanismIsUnsafe": {
+                "const": false
+              }
+            }
+          },
+          "verifierCoverage": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "availabilitySource",
+              "seedV1",
+              "moduleSeedV2",
+              "outsideListedProofs"
+            ],
+            "properties": {
+              "availabilitySource": {
+                "const": "server-activated-adapters-for-selected-profile"
+              },
+              "seedV1": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "proofAdapterId",
+                  "status",
+                  "publicRequestSurface",
+                  "constraints"
+                ],
+                "properties": {
+                  "proofAdapterId": {
+                    "const": "programmable.robinhood-native20-seed-proof.v1"
+                  },
+                  "status": {
+                    "enum": [
+                      "proof-available",
+                      "unavailable"
+                    ]
+                  },
+                  "publicRequestSurface": {
+                    "const": "existing-v4.1"
+                  },
+                  "constraints": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "kernel",
+                      "token",
+                      "initializer",
+                      "module",
+                      "lpFeePips",
+                      "tickSpacing",
+                      "initialSqrtPriceX96",
+                      "liquidity",
+                      "initialBuy",
+                      "customSettlementDeltas"
+                    ],
+                    "properties": {
+                      "kernel": {
+                        "const": "exact-reviewed-native20"
+                      },
+                      "token": {
+                        "const": "exact-reviewed-seed-token"
+                      },
+                      "initializer": {
+                        "const": "exact-reviewed-seed-initializer-v1"
+                      },
+                      "module": {
+                        "const": "none"
+                      },
+                      "lpFeePips": {
+                        "const": 0
+                      },
+                      "tickSpacing": {
+                        "const": 60
+                      },
+                      "initialSqrtPriceX96": {
+                        "const": "1747735933952748037356115466503453"
+                      },
+                      "liquidity": {
+                        "const": "positive-token-side-concentrated-liquidity"
+                      },
+                      "initialBuy": {
+                        "const": "atomic-full-native-input-and-positive-minimum-token-output"
+                      },
+                      "customSettlementDeltas": {
+                        "const": "not-covered"
+                      }
+                    }
+                  }
+                }
+              },
+              "moduleSeedV2": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "proofAdapterId",
+                  "status",
+                  "publicRequestSurface",
+                  "publiclyLaunchable",
+                  "intendedConstraints"
+                ],
+                "properties": {
+                  "proofAdapterId": {
+                    "const": "programmable.robinhood-native20-module-seed-proof.v2"
+                  },
+                  "status": {
+                    "enum": [
+                      "proof-available",
+                      "candidate"
+                    ]
+                  },
+                  "publicRequestSurface": {
+                    "const": "none-versioned-transport-required"
+                  },
+                  "publiclyLaunchable": {
+                    "const": false
+                  },
+                  "intendedConstraints": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "kernel",
+                      "token",
+                      "initializer",
+                      "module",
+                      "lpFeeModes",
+                      "tickSpacing",
+                      "initialSqrtPriceX96",
+                      "applicantFindingsAutomaticallyCleared"
+                    ],
+                    "properties": {
+                      "kernel": {
+                        "const": "exact-reviewed-native20"
+                      },
+                      "token": {
+                        "const": "exact-reviewed-seed-token"
+                      },
+                      "initializer": {
+                        "const": "separately-reviewed-module-seed-initializer-v2"
+                      },
+                      "module": {
+                        "const": "codehash-bound-staticcall-only-zero-custom-deltas"
+                      },
+                      "lpFeeModes": {
+                        "const": [
+                          "static",
+                          "dynamic-with-immutable-cap"
+                        ]
+                      },
+                      "tickSpacing": {
+                        "const": 60
+                      },
+                      "initialSqrtPriceX96": {
+                        "const": "1747735933952748037356115466503453"
+                      },
+                      "applicantFindingsAutomaticallyCleared": {
+                        "const": false
+                      }
+                    }
+                  }
+                }
+              },
+              "outsideListedProofs": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "mechanisms",
+                  "coverage",
+                  "findingDispositionChanged"
+                ],
+                "properties": {
+                  "mechanisms": {
+                    "const": [
+                      "stateful-modules",
+                      "custom-return-delta-settlement",
+                      "arbitrary-token-or-initializer",
+                      "custom-curves-or-auctions",
+                      "arbitrary-unchanged-hooks"
+                    ]
+                  },
+                  "coverage": {
+                    "const": "additional-server-verification-required"
+                  },
+                  "findingDispositionChanged": {
+                    "const": false
+                  }
+                }
+              }
+            }
+          },
+          "requestAuthorization": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "status",
+              "requestAuthorized",
+              "permitIssued",
+              "walletSignatureProduced",
+              "transactionBroadcast",
+              "preflight",
+              "create",
+              "requirements",
+              "coverageReportIsApproval",
+              "genericFeeClaimingAvailable"
+            ],
+            "properties": {
+              "status": {
+                "const": "not-evaluated"
+              },
+              "requestAuthorized": {
+                "const": false
+              },
+              "permitIssued": {
+                "const": false
+              },
+              "walletSignatureProduced": {
+                "const": false
+              },
+              "transactionBroadcast": {
+                "const": false
+              },
+              "preflight": {
+                "const": "/v4/chains/4663/custom-launches/preflight"
+              },
+              "create": {
+                "const": "/v4/chains/4663/custom-launches"
+              },
+              "requirements": {
+                "const": [
+                  "wallet-bound-api-scope-and-chain-grant",
+                  "exact-source-compiler-and-runtime-bindings",
+                  "all-authoritative-findings-resolved",
+                  "activated-fee-and-initial-buy-execution-proof",
+                  "fresh-server-issued-initial-buy-quote",
+                  "funding-plan-with-approved-value-and-gas-budget",
+                  "chain-readiness-and-exact-transaction-simulation",
+                  "separate-controller-wallet-signature"
+                ]
+              },
+              "coverageReportIsApproval": {
+                "const": false
+              },
+              "genericFeeClaimingAvailable": {
+                "const": false
+              }
+            }
+          },
+          "findingObligations": {
+            "type": "array",
+            "minItems": 0,
+            "maxItems": 256,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "code",
+                "recognized",
+                "category",
+                "retryable",
+                "evidenceRequirements",
+                "actions",
+                "findingCleared",
+                "callerSuppliedProofAccepted"
+              ],
+              "properties": {
+                "code": {
+                  "type": "string",
+                  "pattern": "^[A-Z][A-Z0-9_]{0,127}$",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "recognized": {
+                  "type": "boolean"
+                },
+                "category": {
+                  "enum": [
+                    "source-repair",
+                    "verifier-coverage",
+                    "funding-plan",
+                    "quote-refresh",
+                    "transaction-simulation",
+                    "unclassified"
+                  ]
+                },
+                "retryable": {
+                  "type": "boolean"
+                },
+                "evidenceRequirements": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 32,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096,
+                    "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+                  }
+                },
+                "actions": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "kind",
+                      "method",
+                      "path",
+                      "instruction"
+                    ],
+                    "properties": {
+                      "kind": {
+                        "enum": [
+                          "rebuild-and-preflight",
+                          "retry-preflight",
+                          "read-current-quote",
+                          "platform-verifier-extension",
+                          "submit-exact-request"
+                        ]
+                      },
+                      "method": {
+                        "enum": [
+                          "GET",
+                          "POST",
+                          null
+                        ]
+                      },
+                      "path": {
+                        "enum": [
+                          "/v4/chains/4663/custom-launches/preflight",
+                          "/v4/chains/4663/initial-buy-quote",
+                          "/v4/chains/4663/custom-launches",
+                          null
+                        ]
+                      },
+                      "instruction": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 4096,
+                        "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+                      }
+                    }
+                  }
+                },
+                "findingCleared": {
+                  "const": false
+                },
+                "callerSuppliedProofAccepted": {
+                  "const": false
+                }
+              }
+            }
+          },
+          "unknownFindingPolicy": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "classification",
+              "findingCleared",
+              "findingDispositionChanged",
+              "callerSuppliedProofAccepted"
+            ],
+            "properties": {
+              "classification": {
+                "const": "unclassified"
+              },
+              "findingCleared": {
+                "const": false
+              },
+              "findingDispositionChanged": {
+                "const": false
+              },
+              "callerSuppliedProofAccepted": {
+                "const": false
+              }
+            }
+          }
+        }
+      },
+      "ApiError": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message",
+              "requestId",
+              "retryable"
+            ],
+            "properties": {
+              "code": {
+                "type": "string",
+                "pattern": "^[A-Z][A-Z0-9_]{0,63}$"
+              },
+              "message": {
+                "type": "string"
+              },
+              "requestId": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+              },
+              "retryable": {
+                "type": "boolean"
+              },
+              "details": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

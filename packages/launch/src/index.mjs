@@ -158,3 +158,9 @@ export { buildRobinhoodNative20ExampleV41, NATIVE20_INITIAL_SQRT_PRICE_X96 } fro
 
 export { getRobinhoodInitialBuyQuoteV1, assertRobinhoodInitialBuyUsdQuoteV1, assertInitialBuyWithinServerReferenceV1, ROBINHOOD_INITIAL_BUY_QUOTE_URL_V1 } from "./initial-buy-quote-v1.mjs";
 export { assertRobinhoodInitialBuyReviewV1 } from "./initial-buy-review-v1.mjs";
+export {
+  getRobinhoodLaunchCoverageV1,
+  assertRobinhoodLaunchCoverageV1,
+  ROBINHOOD_LAUNCH_COVERAGE_URL_V1,
+  ROBINHOOD_LAUNCH_COVERAGE_SCHEMA_V1,
+} from "./launch-coverage-v1.mjs";

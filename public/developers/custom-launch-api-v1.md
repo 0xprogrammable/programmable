@@ -42,15 +42,21 @@ and `POST /v1/custom-launches` are permanently read only with non-retryable `409
 closed.
 
 The public Ethereum V3 CLI is `@programmable/launch` `3.3.9`. For Robinhood V4, read the live
-[discovery manifest](https://programmable.market/.well-known/programmable.json). Use the exact CLI version advertised there only when both
+[discovery manifest](https://programmable.market/.well-known/programmable.json). Before authenticated preflight or submission, require both
 `customLaunchApi.versions.v4` and `chains[]` for `chainId: 4663` report `publicAuthorization: true`,
 `publicWrites: true` and `releaseReady: true`. If either entry is false, incomplete or missing, stop before
 authenticated preflight or submission. Verify the immutable official GitHub Release, exact source commit, release
-manifest and tarball checksum from `customLaunchApi.versions.v4.cli.release` before installing. A repository source candidate is not an installable release.
+manifest and tarball checksum from `customLaunchApi.versions.v4.cli.release` for the API's original client release.
+A separately published compatible client patch requires its own verified immutable release and binding to that API
+profile. A repository source candidate is not an installable release.
 
 Match the advertised profile and immutable CLI release: historical `4.0.0` and successor `4.1.0` have different
 funding and admission contracts. This guide does not activate either version. Preserve historical request bytes;
 never add successor fields to an old launch or assume a source candidate is the currently accepted version.
+
+API profile `4.1.0` and CLI `4.1.1` are different identities: the latter adds the public coverage command while
+retaining the former's launch contract. Verify each selected client's own release evidence; keep the historical
+4.0.0/4.1.0 assets and API profile pins unchanged. The public HTTP reports need no CLI upgrade.
 
 V2 detail reads are observation-only while an existing request is `prepared` or `simulating`: GET does not advance
 simulation or authorization and cannot expose a new `walletTransaction`. Existing `authorized` and `submitted`
@@ -68,6 +74,13 @@ Readiness: <https://api.programmable.market/readyz>
 
 ## Robinhood Chain V4
 
+Start with the [Robinhood launch workflow](https://programmable.market/developers/robinhood-launch-guide-v1.md)
+before building. Read public `GET /v4/chains/4663/launch-guide` and `GET /v4/chains/4663/launch-coverage` without a key,
+query parameters or body. Their separate guidance and coverage contracts do not modify the frozen launch schemas.
+The guide uses `programmable.robinhood-launch-guide.v1`; its workflow stages, scenario assessments and error
+recovery explain what to do next. A `404` means that deployment does not provide the report; do not rotate a key,
+infer support or automatically fall back to another launch route.
+
 Robinhood Chain Mainnet is `chainId: 4663` and `eip155:4663`. Its public self-serve availability is derived from
 verified release evidence in the live discovery manifest. While `pending-public-discovery-promotion` or any of
 `publicAuthorization: false`, `publicWrites: false` and `releaseReady: false` is reported, stop before submission.
@@ -80,9 +93,15 @@ Create one platform API key at <https://programmable.market/developers/api-keys>
 contract and the grants reported for the key. A grant does not select the chain. The key authorizes API requests; the user separately reviews and signs their onchain launch
 transaction and pays gas.
 
+Public guide, coverage, capabilities, readiness, initial-buy-quote and finalized-feed reads need no API key.
+Authenticated preflight/create needs `custom-launch:create`; list/detail reads need `custom-launch:read`. The
+credential also needs a chain `4663` grant and access to the intended controller/resource lineage. Read-only and
+module-contribution keys do not acquire launch-write permission from this guide.
+
 V4 contract pointers:
 
 - `GET /v4/chains/4663/capabilities`
+- Separate public coverage read: `GET /v4/chains/4663/launch-coverage` (no API key, query parameters or body)
 - `POST /v4/chains/4663/custom-launches/preflight`
 - `POST /v4/chains/4663/custom-launches`
 - `GET /v4/chains/4663/custom-launches/{launchId}`
@@ -104,6 +123,29 @@ and hook targets, 3–16 graph targets and all fourteen hook permissions are str
 claims. `feeBehaviorClaim` is false; generic fee claiming and generic buyback management are not live. External
 indexers may lag or omit chain data, so finalized Router evidence and Programmable indexing state remain distinct.
 Legacy Registry and GitHub intake are closed.
+
+Before choosing an architecture, read the separate
+[launch coverage report](https://api.programmable.market/v4/chains/4663/launch-coverage),
+[coverage OpenAPI](https://programmable.market/openapi/launch-coverage-v1.json) and
+[response schema](https://programmable.market/schemas/custom-launch/coverage/v1.json). `readiness.status: ready`
+describes the service. Check `structuralFormat` and `verifierCoverage` separately: the current format uses one role
+per physical target, explicitly reports `tokenAndHookMayShareAddress: false`, and represents one native ETH/token
+pool. Same-address token/hooks, no-pool designs and multiple pool keys require a versioned transport extension.
+Preserve the intended project architecture; do not split a token/hook just to satisfy the older format.
+
+The report always has `requestAuthorization.requestAuthorized: false`. Listed hook permissions and funding models
+are declarations, not execution evidence. `proof-available` applies only to the named server adapter and its exact
+constraints; candidates and `publicRequestSurface: none-versioned-transport-required` do not create a public route.
+Use `findingObligations` to distinguish source repair, funding, quote refresh, simulation and missing platform
+verification. Keep unknown codes unclassified. Wider API-key scopes or caller-supplied JSON proofs cannot clear a
+finding. A missing coverage endpoint, timeout or unknown report version does not mean the key is invalid or the
+architecture is supported. Retry the public read later without rotating credentials. Still use the original
+preflight, server admission and separate wallet handoff for the exact launch request.
+
+CLI `4.1.1` adds `programmable-launch coverage --chain-id 4663`; verify its separate immutable release before
+installing. The API profile remains `4.1.0`. Existing 4.0.0 and 4.1.0 release assets keep their original commands.
+Source documentation does not prove publication. The direct public GET needs no CLI upgrade and does not modify
+any existing launch contract.
 
 V4 metadata images are exactly PNG or single-frame GIF, as published by `metadataImage.mediaTypes` and `gifFrames`.
 JPEG, WebP, and animated GIF are rejected by the V4 packer before any network request.
@@ -543,10 +585,22 @@ market enrichment or an explorer is unavailable. Provenance is not an audit, liq
 
 ## Errors and support
 
-Fix nonretryable `400`, `401`, `403`, `404`, `409`, `413`, `415` and `422` responses before sending a new request.
-Preserve the exact journal binding for retryable `429`, `503` and ambiguous transport results. A `500` response keeps
-the correlation request ID but does not authorize changing request bytes. For support, send only
-`error.requestId`, HTTP status, UTC time and the public error code. Never send the API key.
+Use the [Robinhood error recovery table](https://programmable.market/developers/robinhood-launch-guide-v1.md#recover-by-error-code)
+and the current machine guide's `errorRecovery` entries for V4. `UNAUTHENTICATED` means verify the configured key;
+`INSUFFICIENT_SCOPE` means check the operation scope; `CHAIN_NOT_ALLOWED` means check the selected credential's chain
+grant. These differ from a source defect or missing platform verifier. Unknown findings stay unclassified.
+
+V4 create returns `202` for a new durable request and `200` for an exact idempotent replay. Neither is authorization.
+For detail `404 NOT_FOUND`, check `launchId`, chain and credential lineage; do not create a replacement just to poll.
+A public guide/coverage `404` means deployment availability, not an invalid key. Preflight `200` can still report
+`needs_evidence` or `unsupported`. When `launchEligibility.deployable` is true, `TX_SIMULATION_PENDING` instructs
+submission of the exact validated request for the remaining server simulation; it does not request a source rewrite.
+
+Preserve the exact journal, bytes and idempotency key for `429`, explicitly retryable V4 `503`, and ambiguous
+transport results. Honor `Retry-After` and keep attempts bounded. For nonretryable errors, correct the named input,
+scope or grant before another attempt. Reconcile an existing request before intentionally creating a different one.
+A `500` response keeps the correlation request ID but does not authorize changing request bytes. For support, send
+only `error.requestId`, HTTP status, UTC time and the public error code. Never send the API key.
 
 Generic fee claiming and buyback management for arbitrary hooks are not live. FADE uses a specifically bound adapter.
 The reserved `fees:claim` and `buybacks:manage` scopes are disabled and promise no future behavior. Public Hookbuilder

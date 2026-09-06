@@ -30,6 +30,8 @@ const customLaunchV4SourceVerificationSchemaUrl =
   robinhoodContract.sourceVerificationSchemaUrl ?? "https://programmable.market/schemas/custom-launch/v4/source-verification-status.json";
 const customLaunchV4CapabilitiesUrl =
   "https://api.programmable.market/v4/chains/4663/capabilities";
+const customLaunchV4CoverageUrl =
+  "https://api.programmable.market/v4/chains/4663/launch-coverage";
 const customLaunchApiGuideUrl =
   "https://programmable.market/developers/custom-launch-api-v1.md";
 const customLaunchHumanGuideUrl =
@@ -80,6 +82,13 @@ export function buildDeveloperDocsMarkdown(): string {
     `Raw Custom Launch API guide: ${customLaunchApiGuideUrl}`,
     `Custom Launch API readiness: ${customLaunchReadyzUrl}`,
     `Custom Launch capabilities: ${customLaunchCapabilitiesUrl}`,
+    ...(robinhoodProfileVersion === "4.1.0" ? [
+      `Robinhood architecture coverage, no API key: ${customLaunchV4CoverageUrl}`,
+      "Coverage OpenAPI: https://programmable.market/openapi/launch-coverage-v1.json",
+      "Coverage response schema: https://programmable.market/schemas/custom-launch/coverage/v1.json",
+      "The separate coverage report distinguishes service readiness, representable architecture and activated verifier coverage. The active graph reports tokenAndHookMayShareAddress: false; requestAuthorization.requestAuthorized is always false. Missing coverage, an unknown report version or an unsupported architecture is not a reason to rotate an API key or expand its scopes. Coverage does not change the existing launch contracts or replace exact-request preflight and server admission.",
+      "CLI 4.1.1 adds the coverage command; verify its separate immutable release before installation. The API profile stays 4.1.0 and its original CLI assets remain unchanged. The direct public GET needs no CLI upgrade.",
+    ] : []),
     `Custom Launch preflight: ${customLaunchPreflightUrl}`,
     `Finalized Custom metadata: ${customLaunchFinalizedMetadataUrl}`,
     `Programmable Launch CLI: ${customLaunchCliReleaseUrl}`,
@@ -451,6 +460,12 @@ export function buildProgrammableLlmsIndex(): string {
     `- Robinhood V4 pack config: ${customLaunchV4PackConfigSchemaUrl}`,
     `- Robinhood V4 source verification: ${customLaunchV4SourceVerificationSchemaUrl}`,
     `- Robinhood V4 capabilities path: GET ${customLaunchV4CapabilitiesUrl}`,
+    ...(robinhoodProfileVersion === "4.1.0" ? [
+      `- Robinhood architecture coverage without credentials: GET ${customLaunchV4CoverageUrl}`,
+      "- Separate coverage OpenAPI: https://programmable.market/openapi/launch-coverage-v1.json",
+      "- Coverage response schema: https://programmable.market/schemas/custom-launch/coverage/v1.json",
+      "- CLI 4.1.1 adds coverage and requires a separate verified immutable client release; the API profile stays 4.1.0.",
+    ] : []),
     `- Create or revoke API keys: ${apiKeysUrl}`,
     `- Custom Launch API guide: ${customLaunchHumanGuideUrl}`,
     `- Custom Launch API readiness: ${customLaunchReadyzUrl}`,

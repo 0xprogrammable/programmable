@@ -50,6 +50,35 @@ describe("active Robinhood agent setup and generated documentation", () => {
     expect(robinhood).not.toContain("/schemas/custom-launch/v4/pack-config.json");
   });
 
+  it("checks architecture before building and separates public reads from credential recovery", () => {
+    const setup = buildProgrammableAgentSetupTextV1("4.1.0");
+    const robinhood = setup.slice(0, setup.indexOf(ethereumHeading));
+    const links = programmableAgentSetupLinksV1("4.1.0");
+    expect(links).toMatchObject({
+      robinhoodCoverage: "https://api.programmable.market/v4/chains/4663/launch-coverage",
+      robinhoodLaunchGuide: "https://api.programmable.market/v4/chains/4663/launch-guide",
+      robinhoodLaunchGuideMarkdown: "https://programmable.market/developers/robinhood-launch-guide-v1.md",
+    });
+    for (const url of [links.robinhoodCoverage, links.robinhoodLaunchGuide, links.robinhoodLaunchGuideMarkdown]) {
+      expect(url).toBeTruthy();
+      expect(robinhood.indexOf(url!)).toBeGreaterThan(0);
+      expect(robinhood.indexOf(url!)).toBeLessThan(robinhood.indexOf("Inspect the exact public source revision"));
+    }
+    for (const instruction of [
+      "These reads need no API key", "do not create or rotate a key",
+      "programmable.robinhood-launch-guide.v1", "another or unavailable profile is not-evaluated",
+      "token/hook such as BLOB", "Unknown mechanisms are not automatically unsafe",
+      "API profile 4.1.0", "CLI 4.1.1", "client's own release",
+      "custom-launch:create", "custom-launch:read", "read-only key cannot preflight or create",
+      "TX_SIMULATION_PENDING", "HTTP 202", "HTTP 200", "resource.launchId", "detail GET 404",
+      "UNAUTHENTICATED", "INSUFFICIENT_SCOPE", "CHAIN_NOT_ALLOWED", "WALLET_BINDING_MISMATCH",
+      "Do not rotate a key for missing verifier coverage",
+    ]) expect(robinhood).toContain(instruction);
+    expect(PROGRAMMABLE_AGENT_SETUP_LINKS_V1).not.toHaveProperty("robinhoodLaunchGuide");
+    expect(setup.slice(setup.indexOf(ethereumHeading)))
+      .toBe(PROGRAMMABLE_AGENT_SETUP_TEXT_V1.slice(PROGRAMMABLE_AGENT_SETUP_TEXT_V1.indexOf(ethereumHeading)));
+  });
+
   it("preserves complete historical Markdown, llms outputs and home output byte for byte", async () => {
     const docs = await activeDocs("4.0.0");
     // Captured from source 1f488b4685e349f09d41cc45dbd5e27ce0d4a996 before this change.
