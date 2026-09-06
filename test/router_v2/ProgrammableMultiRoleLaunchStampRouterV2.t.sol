@@ -100,6 +100,83 @@ contract RouterV2TestInitializer {
     }
 }
 
+/// @dev Passive byte-array validation only. Supplied bytes are never deployed or executed.
+contract RouterV2OpcodeScanHarness is Router {
+    constructor(address authority, IGraph graph, IPoolManager manager) Router(authority, graph, manager) { }
+
+    function validateRuntimeOpcodes(uint256 targetIndex, bytes memory runtimeCode) external pure {
+        _validateRuntimeOpcodes(targetIndex, runtimeCode);
+    }
+}
+
+contract ProgrammableMultiRoleRuntimeOpcodeScanV2Test is Test {
+    RouterV2OpcodeScanHarness private scanner;
+
+    function setUp() public {
+        scanner = new RouterV2OpcodeScanHarness(
+            address(new RouterV2TestAuthority()),
+            IGraph(address(new Graph())),
+            IPoolManager(address(new PoolManager(address(this))))
+        );
+    }
+
+    function test_runtimeScanRejectsEachForbiddenInstructionWithIndexAndPc() public {
+        bytes memory opcodes = hex"fff2f4";
+        for (uint256 index; index < opcodes.length; ++index) {
+            bytes memory runtimeCode = abi.encodePacked(hex"60005b", opcodes[index]);
+            vm.expectRevert(
+                abi.encodeWithSelector(Router.ForbiddenRuntimeOpcode.selector, 15, 3, uint8(opcodes[index]))
+            );
+            scanner.validateRuntimeOpcodes(15, runtimeCode);
+        }
+    }
+
+    function test_runtimeScanAcceptsForbiddenBytesInsideEveryPushWidth() public view {
+        for (uint256 width = 1; width <= 32; ++width) {
+            bytes memory runtimeCode = new bytes(width + 2);
+            runtimeCode[0] = bytes1(uint8(0x5f + width));
+            for (uint256 index = 1; index <= width; ++index) {
+                runtimeCode[index] = index % 3 == 0 ? bytes1(0xff) : index % 3 == 1 ? bytes1(0xf2) : bytes1(0xf4);
+            }
+            runtimeCode[width + 1] = 0x5b;
+            scanner.validateRuntimeOpcodes(0, runtimeCode);
+        }
+    }
+
+    function test_runtimeScanRejectsInstructionImmediatelyAfterEveryPushWidth() public {
+        for (uint256 width = 1; width <= 32; ++width) {
+            bytes memory runtimeCode = new bytes(width + 2);
+            runtimeCode[0] = bytes1(uint8(0x5f + width));
+            runtimeCode[width + 1] = 0xff;
+            vm.expectRevert(
+                abi.encodeWithSelector(Router.ForbiddenRuntimeOpcode.selector, width - 1, width + 1, uint8(0xff))
+            );
+            scanner.validateRuntimeOpcodes(width - 1, runtimeCode);
+        }
+    }
+
+    function test_runtimeScanHandlesPushZeroAndTruncatedPushData() public {
+        scanner.validateRuntimeOpcodes(0, hex"5f607f00");
+        scanner.validateRuntimeOpcodes(0, hex"7ffff2f4");
+        scanner.validateRuntimeOpcodes(0, hex"60");
+        vm.expectRevert(abi.encodeWithSelector(Router.ForbiddenRuntimeOpcode.selector, 0, 1, uint8(0xf4)));
+        scanner.validateRuntimeOpcodes(0, hex"5ff4");
+    }
+
+    function test_runtimeScanDoesNotIgnoreBytesAfterStopOrReturn() public {
+        vm.expectRevert(abi.encodeWithSelector(Router.ForbiddenRuntimeOpcode.selector, 3, 1, uint8(0xf2)));
+        scanner.validateRuntimeOpcodes(3, hex"00f2");
+        vm.expectRevert(abi.encodeWithSelector(Router.ForbiddenRuntimeOpcode.selector, 4, 1, uint8(0xff)));
+        scanner.validateRuntimeOpcodes(4, hex"f3ff");
+    }
+
+    function test_runtimeScanAcceptsOrdinaryRuntimeInstructions() public view {
+        scanner.validateRuntimeOpcodes(0, hex"5f3560005260206000f3");
+        scanner.validateRuntimeOpcodes(0, hex"f0f1fafdfef5");
+        scanner.validateRuntimeOpcodes(0, hex"");
+    }
+}
+
 contract ProgrammableMultiRoleLaunchStampRouterV2Test is Test {
     using PoolIdLibrary for PoolKey;
     using StateLibrary for IPoolManager;

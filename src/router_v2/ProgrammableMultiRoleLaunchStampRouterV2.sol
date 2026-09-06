@@ -122,6 +122,7 @@ contract ProgrammableMultiRoleLaunchStampRouterV2 is
     error ComponentAlreadyStamped(address component, bytes32 launchId);
     error DuplicateOrUnsortedComponent(address previous, address current);
     error FactoryResultMismatch(uint8 field, uint256 index);
+    error ForbiddenRuntimeOpcode(uint256 targetIndex, uint256 programCounter, uint8 opcode);
     error InvalidArrayLength(uint8 field, uint256 actual, uint256 expected);
     error InvalidBinding(uint8 field);
     error InvalidComponent(address component, bytes32 supplied, bytes32 actual);
@@ -446,10 +447,28 @@ contract ProgrammableMultiRoleLaunchStampRouterV2 is
                     || expected.account.code.length == 0 || expected.account.codehash != expected.runtimeCodeHash
             ) revert FactoryResultMismatch(RESULT_DEPLOYMENT, index);
 
+            _validateRuntimeOpcodes(index, execution.runtimeCodes[index]);
+
             ComponentV2 calldata component = _componentByResultIndex(stampRequest.components, uint8(index));
             if (component.account != expected.account || component.runtimeCodeHash != expected.runtimeCodeHash) {
                 revert FactoryResultMismatch(RESULT_COMPONENT, index);
             }
+        }
+    }
+
+    /// @dev Applies to every hash-matched graph target, including auxiliary outputs. PUSH immediates are data.
+    ///      This linear scan rejects destruction and delegated execution in runtime code; it does not prove
+    ///      constructor behavior, external CALL dependencies, initialization safety, or economic properties.
+    ///      Trusted exact constructor/source admission remains required; this is not a post-transaction liveness proof.
+    function _validateRuntimeOpcodes(uint256 targetIndex, bytes memory runtimeCode) internal pure {
+        uint256 length = runtimeCode.length;
+        for (uint256 pc; pc < length;) {
+            uint8 opcode = uint8(runtimeCode[pc]);
+            if (opcode == 0xff || opcode == 0xf2 || opcode == 0xf4) {
+                revert ForbiddenRuntimeOpcode(targetIndex, pc, opcode);
+            }
+            // Truncated PUSH data is still data; the cursor may pass the byte-array end.
+            pc += opcode >= 0x60 && opcode <= 0x7f ? uint256(opcode) - 0x5f + 1 : 1;
         }
     }
 
