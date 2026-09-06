@@ -8,7 +8,7 @@ describe("analytics short link", () => {
 
     expect(response.status).toBe(307);
     expect(response.headers.get("location")).toBe(
-      "https://dune.com/0xprogrammable6098/programmable-analytics",
+      "https://dune.com/programmablehq/analytics",
     );
   });
 });

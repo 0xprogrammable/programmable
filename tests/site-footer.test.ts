@@ -49,7 +49,7 @@ describe("Site footer", () => {
   it("places Dune analytics between DEX Screener and Discord", () => {
     const dexscreener = footerSource.indexOf("https://dexscreener.com/");
     const dune = footerSource.indexOf(
-      "https://dune.com/0xprogrammable6098/programmable-analytics",
+      "https://dune.com/programmablehq/analytics",
     );
     const discord = footerSource.indexOf(
       "https://discord.com/invite/programmable",

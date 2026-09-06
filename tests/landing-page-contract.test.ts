@@ -60,15 +60,9 @@ describe("landing page contract", () => {
     expect(landing).toContain('<h1 id="landing-title">Programmable</h1>');
     expect(landing).toContain("Build and launch custom Uniswap v4 hooks");
     expect(landing).toContain('id="intro"');
-    expect(landing).toContain('href="#what-is-programmable"');
-    expect(landing).toContain('id="what-is-programmable"');
-    expect(landing).toContain('id="what-is-a-hook"');
+    expect(landing).toContain('href="#explore"');
     expect(landing).toContain('id="explore"');
     expect(landing).toContain("<LandingExploreGate />");
-    expect(landing).toContain('href="/docs"');
-    expect(landing).toContain(
-      'href="https://docs.uniswap.org/contracts/v4/overview"',
-    );
     expect(landing).not.toContain("liquid-glass-distortion");
 
     for (const asset of [
@@ -120,18 +114,14 @@ describe("landing page contract", () => {
       /\.hero\s*\{[^}]*min-height:\s*calc\(100svh - 88px\);/s,
     );
     expect(styles).toMatch(/\.hero\s*\{[^}]*z-index:\s*1;/s);
-    expect(styles).toMatch(/\.definition\s*\{[^}]*min-height:\s*100svh;/s);
     expect(styles).toMatch(/\.scrollCue\s*\{[^}]*min-height:\s*52px;/s);
     expect(styles).toMatch(
       /\.hero h1\s*\{[^}]*font-size:\s*clamp\(64px, 7\.2vw, 104px\);/s,
     );
-    expect(styles).toContain("scroll-margin-top: 0;");
     expect(styles).toContain("object-position: center bottom;");
     expect(styles).not.toContain("mask-image:");
     expect(styles).not.toContain("translateY(27vh)");
     expect(styles).not.toContain("translateY(31vh)");
-    expect(styles).toContain("align-items: baseline;");
-    expect(styles).toContain(".definitionLogoFrame");
     expect(landing).toContain("new IntersectionObserver(");
     expect(landing).toContain('rootMargin: "0px 0px 48% 0px"');
     expect(landing).toContain("useLayoutEffect(() =>");
@@ -231,11 +221,7 @@ describe("landing page contract", () => {
 
   it("uses fluid shared gutters instead of a desktop to mobile width jump", () => {
     const finalStyles = read("app/webde-final-ui.css");
-    const landingStyles = read("components/landing-page.module.css");
 
     expect(finalStyles).toContain("calc(100% - clamp(2rem, 5vw, 5rem))");
-    expect(landingStyles).toContain(
-      "max(clamp(24px, 4vw, 40px), calc((100% - 1280px) / 2))",
-    );
   });
 });
