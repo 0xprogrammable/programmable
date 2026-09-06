@@ -35,6 +35,22 @@ reviewer authority. The operator checks a completed protected worker attempt, ex
 package/family/reward identity, the native compiler pins, complete source input, ABI/code hashes and
 the current review revision. It repeats the detail read to reject a concurrent review transition.
 
+Worker provenance follows the existing append-only backend events. `claimed` contains the worker
+identity; `completed` contains the artifact digest and has no worker identity. Completion is stored
+only after the backend matches the live lease, attempt, request, plan and worker-identity hash under a
+row lock. The reader requires one claim and one successful completion for the **current job attempt**,
+matching its request, plan and artifact. It verifies the claim's worker digest using the backend domain
+`programmable.modules.worker-identity.v1` and retains the protected-workflow pin. It rejects competing,
+duplicated, expired, failed or mismatched current-attempt records, inconsistent event times, and rows
+that violate the API's `attempt DESC,event` order. Older attempts may belong to other plans or workers;
+they never substitute for the current pair. The closing authenticated read must return the same event
+history as well as the same job and decisions.
+
+These event and digest semantics are defined in backend commit
+`55cd1e5f99503d3f2e79182eff143201db6ae34e`,
+`services/custom-launch-api-v1/src/module-review/postgres-v1.ts` (`claim`, `complete`, `attempts`).
+The reader does not reconstruct a lease or accept local event JSON as worker or reviewer authority.
+
 Compiler constants in `review.ts` match backend `src/module-review/native-build-v1.ts`,
 `src/verification/types-v4.ts` and `src/verification/protected-hosted-build-producer-v4.ts` from backend
 commit `caff9019`. This is the native profile, not permission to introduce another compiler or mutable

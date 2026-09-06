@@ -2,7 +2,7 @@ import { constants } from "node:fs";
 import { open } from "node:fs/promises";
 import { moduleAddress } from "../../lib/module-mode/release";
 import { nativeCanonicalJson, nativeJson } from "../../lib/module-mode/native-catalog";
-import { isReviewId, parseReviewAttempt, parseReviewJob, reviewDigest, reviewRecord, type ReviewBuildArtifact, type ReviewJob } from "../../lib/module-mode/review-contract";
+import { isReviewId, parseReviewAttempt, parseReviewJob, reviewDigest, reviewRecord, type ReviewAttempt, type ReviewBuildArtifact, type ReviewJob } from "../../lib/module-mode/review-contract";
 import { validateModuleReviewDecisionRecordV1, type ModuleReviewDecisionRecordV1 } from "../../lib/server/module-mode/review-decision-wire-v1";
 import { parseStrictJson } from "../../lib/server/projection-target/canonical-json";
 import { validateModuleSubmissionRequest, type ModuleSubmissionRequest } from "../../packages/classic-modules/src/open-transport.mjs";
@@ -91,6 +91,36 @@ async function body(response: Response, maximum: number): Promise<Uint8Array> {
     return Buffer.concat(chunks);
   } catch (error) { await reader.cancel(); throw error; } finally { reader.releaseLock(); }
 }
+function completedWorker(job: ReviewJob, artifact: ReviewBuildArtifact, history: unknown) {
+  need(Array.isArray(history) && history.length >= 2 && history.length <= 24, "Review worker attempts missing");
+  need(job.attempt > 0 && job.attempt <= 1000, "Current protected worker attempt missing");
+  const attempts = history.map(value => parseReviewAttempt(value, job.subject));
+  let previous: ReviewAttempt | undefined;
+  for (const attempt of attempts) {
+    // The backend returns attempt DESC,event, not chronological append order across attempts.
+    need(attempt.attempt <= job.attempt && (!previous || previous.attempt > attempt.attempt
+      || (previous.attempt === attempt.attempt && previous.event < attempt.event)), "Worker history order or uniqueness differs");
+    previous = attempt;
+  }
+  const current = attempts.filter(attempt => attempt.attempt === job.attempt);
+  const [claimed, completed] = current;
+  need(current.length === 2 && claimed.event === "claimed" && completed.event === "completed", "Current claimed/completed worker pair missing");
+  need(claimed.planDigest === job.planDigest && completed.planDigest === job.planDigest
+    && claimed.artifactDigest === null && claimed.errorCode === null && completed.errorCode === null
+    && completed.artifactDigest === artifact.artifactDigest && completed.workerIdentity === null,
+  "Current worker build binding differs");
+  need(Date.parse(job.createdAt) <= Date.parse(claimed.createdAt) && Date.parse(claimed.createdAt) <= Date.parse(completed.createdAt)
+    && Date.parse(completed.createdAt) <= Date.parse(job.updatedAt), "Current worker event timing differs");
+  // Claim stores identity; completion stores the artifact after the backend validates the same lease,
+  // attempt, request, plan and worker hash under a row lock. Never borrow an older attempt's worker.
+  const worker = claimed.workerIdentity;
+  need(worker, "Protected worker provenance missing");
+  const { identityDigest, ...identityFields } = worker;
+  need(identityDigest === reviewDigest("programmable.modules.worker-identity.v1", identityFields)
+    && worker.workflowRef === "programmablehq/programmable-open-hook-v2-internal/.github/workflows/protected-module-review-v1.yml@refs/heads/main",
+  "Protected worker provenance differs");
+  return worker;
+}
 /** Production uses only this fixed-origin BFF, never local JSON as reviewer authority. */
 export function createAuthenticatedReviewReader(sessionValue: OperatorSession, fetchImpl: typeof fetch = fetch) {
   const session = bindSession(sessionValue);
@@ -110,12 +140,11 @@ export function createAuthenticatedReviewReader(sessionValue: OperatorSession, f
     const job = parseReviewJob(detail.job); need(job.subject.submissionId === submissionId, "Wrong review subject");
     const { source, artifact } = bindSource(job, sourceBytes);
     need(Array.isArray(detail.decisions) && detail.decisions.length <= 64 && detail.decisions.every(record => validateModuleReviewDecisionRecordV1(record) && nativeCanonicalJson(record.subject) === nativeCanonicalJson(job.subject)), "Review decisions differ from their subject");
-    need(Array.isArray(detail.attempts) && detail.attempts.length <= 24, "Review worker attempts missing");
-    const completed = detail.attempts.map(value => parseReviewAttempt(value, job.subject)).filter(attempt => attempt.event === "completed" && attempt.artifactDigest === artifact.artifactDigest && attempt.planDigest === job.planDigest).at(-1);
-    need(completed?.workerIdentity && completed.errorCode === null && completed.workerIdentity.workflowRef === "programmablehq/programmable-open-hook-v2-internal/.github/workflows/protected-module-review-v1.yml@refs/heads/main", "Protected worker provenance missing");
+    const worker = completedWorker(job, artifact, detail.attempts);
     const closing = reviewRecord(exactJson(await request("", 4 * 1024 * 1024), 4 * 1024 * 1024));
     same(closing.job, detail.job, "Concurrent review revision"); same(closing.decisions, detail.decisions, "Concurrent review decision");
-    const snapshot = nativeJson({ job, artifact, source, decisions: detail.decisions, observedAt: Date.now(), worker: completed.workerIdentity });
+    same(closing.attempts, detail.attempts, "Concurrent worker history");
+    const snapshot = nativeJson({ job, artifact, source, decisions: detail.decisions, observedAt: Date.now(), worker });
     const result = Object.freeze({ ...(snapshot as Omit<AuthenticatedReview, "sourceBytes">), sourceBytes: Uint8Array.from(sourceBytes) });
     authenticated.set(result, snapshotDigest(result)); return result;
   } });
