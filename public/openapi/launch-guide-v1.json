@@ -1,0 +1,694 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Programmable Robinhood launch guide",
+    "version": "1.0.0",
+    "description": "Standalone additive guidance. This does not change the immutable V4.1 request, capabilities or launch resource contracts. See responses.create/read in the guide for actual 202 creation, 200 exact replay and 404 missing-or-inaccessible resource semantics."
+  },
+  "servers": [
+    {
+      "url": "https://api.programmable.market"
+    }
+  ],
+  "paths": {
+    "/v4/chains/4663/launch-guide": {
+      "get": {
+        "operationId": "getRobinhoodLaunchGuideV1",
+        "summary": "Read workflow, scenario limits and error recovery before building",
+        "description": "No authentication, query or request body. Available with a missing V4 service using unavailable readiness and not-evaluated scenarios. A 404 means this deployment lacks the endpoint. Readiness and architecture coverage do not authorize a launch.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Current guidance only; no launch, permit, quota reservation or wallet authority.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                }
+              },
+              "Link": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Public help relation, never authorization."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RobinhoodLaunchGuideV1"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Query parameters are not accepted."
+          },
+          "404": {
+            "description": "The deployed runtime does not expose this guide."
+          },
+          "503": {
+            "description": "The instance is draining. Honor Retry-After and preserve any original submission journal."
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "RobinhoodLaunchGuideV1": {
+        "title": "Robinhood launch guide V1",
+        "description": "A read-only guide for profile 4.1.0. No request is evaluated or authorized. Selected profile and readiness are current observations, independent of scenario and verifier coverage.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schemaVersion",
+          "chainId",
+          "profile",
+          "readiness",
+          "scenarioProfileVersion",
+          "authority",
+          "links",
+          "workflow",
+          "scenarios",
+          "responses",
+          "errorRecovery",
+          "findingGuidance",
+          "unknownCode",
+          "support"
+        ],
+        "properties": {
+          "schemaVersion": {
+            "const": "programmable.robinhood-launch-guide.v1"
+          },
+          "chainId": {
+            "const": "4663"
+          },
+          "profile": {
+            "enum": [
+              null,
+              {
+                "schemaVersion": "programmable.custom-launch-profile-ref.v4",
+                "structuralProfileId": "programmable.custom-launch.robinhood-mainnet.v1",
+                "businessProfileId": "robinhood-production-launch",
+                "admissionDescriptorDigest": "sha256:99b4ccabdaaf143bad28a8f6af441a1b93e1f113d0179236328b7fa594d1f948",
+                "admissionPolicyDigest": "sha256:31e6b286ca839b31cb1edfe30c05d9f334892f3d84377961dc10b93959c7e216",
+                "admissionBindingDigest": "sha256:f31643e6e9ff6d5409d59a2fc3ac7fb5ac9cfcb3af08e95c9478bc95ddfa66a2",
+                "admissionSchemaDigest": "sha256:a28a6de6208d6ba7b65b4b706174509570955ba9ce9714624bcb2046ab7beae7",
+                "profileRevision": 1,
+                "profileVersion": "4.0.0",
+                "profileDigest": "sha256:484b1dc6e9091804fabc230f2b3a7504940fa00264f8e66e82a66a951e71f1a0"
+              },
+              {
+                "schemaVersion": "programmable.custom-launch-profile-ref.v4",
+                "structuralProfileId": "programmable.custom-launch.robinhood-mainnet.v1",
+                "businessProfileId": "robinhood-production-launch",
+                "admissionDescriptorDigest": "sha256:b09611360e284641873fdb2914b4282e0545e32ea587b278fcd11f4db9a4e7f5",
+                "admissionPolicyDigest": "sha256:47801f57e2365f89eb7397a2df10d697bd1f756ec01536b9b34755e89809da04",
+                "admissionBindingDigest": "sha256:5b2486f35fcd44bd476cafd5bfb5a12decf05a756ba237ca191928f5414c721e",
+                "admissionSchemaDigest": "sha256:6a8194a3b5d8b6432a95ec04da3cd86091ad64c93c0531125caf00ecb919c8cf",
+                "profileRevision": 2,
+                "profileVersion": "4.1.0",
+                "profileDigest": "sha256:b0fca91264a49d358ed1a9eec2a679b59a48d716b71475bef583c2545e1ee502"
+              }
+            ]
+          },
+          "readiness": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "status",
+              "reasonCodes"
+            ],
+            "properties": {
+              "status": {
+                "enum": [
+                  "ready",
+                  "unavailable"
+                ]
+              },
+              "reasonCodes": {
+                "type": "array",
+                "minItems": 0,
+                "maxItems": 128,
+                "items": {
+                  "type": "string",
+                  "pattern": "^[A-Z][A-Z0-9_]{0,127}$",
+                  "minLength": 1,
+                  "maxLength": 128
+                }
+              }
+            }
+          },
+          "scenarioProfileVersion": {
+            "const": "4.1.0"
+          },
+          "authority": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "requestEvaluated",
+              "requestAuthorized",
+              "permitIssued",
+              "walletSignatureProduced"
+            ],
+            "properties": {
+              "kind": {
+                "const": "guidance-only"
+              },
+              "requestEvaluated": {
+                "const": false
+              },
+              "requestAuthorized": {
+                "const": false
+              },
+              "permitIssued": {
+                "const": false
+              },
+              "walletSignatureProduced": {
+                "const": false
+              }
+            }
+          },
+          "links": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "self",
+              "capabilities",
+              "coverage",
+              "documentation"
+            ],
+            "properties": {
+              "self": {
+                "const": "/v4/chains/4663/launch-guide"
+              },
+              "capabilities": {
+                "const": "/v4/chains/4663/capabilities"
+              },
+              "coverage": {
+                "const": "/v4/chains/4663/launch-coverage"
+              },
+              "documentation": {
+                "const": "https://programmable.market/developers/robinhood-launch-guide-v1.md"
+              }
+            }
+          },
+          "workflow": {
+            "type": "array",
+            "minItems": 7,
+            "maxItems": 7,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "method",
+                "path",
+                "origin",
+                "requiredScope",
+                "instruction"
+              ],
+              "properties": {
+                "id": {
+                  "enum": [
+                    "discover",
+                    "check-concept",
+                    "pack",
+                    "preflight",
+                    "submit",
+                    "read-status",
+                    "wallet-and-finality"
+                  ]
+                },
+                "method": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "GET",
+                        "POST"
+                      ]
+                    },
+                    {
+                      "const": null
+                    }
+                  ]
+                },
+                "path": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "/.well-known/programmable.json",
+                        "/v4/chains/4663/launch-coverage",
+                        "/v4/chains/4663/custom-launches/preflight",
+                        "/v4/chains/4663/custom-launches",
+                        "/v4/chains/4663/custom-launches/{launchId}"
+                      ]
+                    },
+                    {
+                      "const": null
+                    }
+                  ]
+                },
+                "origin": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "https://programmable.market",
+                        "https://api.programmable.market"
+                      ]
+                    },
+                    {
+                      "const": null
+                    }
+                  ]
+                },
+                "requiredScope": {
+                  "anyOf": [
+                    {
+                      "const": null
+                    },
+                    {
+                      "enum": [
+                        "custom-launch:create",
+                        "custom-launch:read"
+                      ]
+                    }
+                  ]
+                },
+                "instruction": {
+                  "enum": [
+                    "Select chain 4663 and the independently published compatible client. Public authorization, writes and release readiness must pass before submission; profile and CLI versions need not be identical.",
+                    "Before building or creating a key, inspect the live profile, readiness, structural format and activated verifier coverage. A missing report or unknown mechanism is not approval or an unsafe finding.",
+                    "Preserve the intended architecture, exact source/compiler/deployment/metadata and controller-approved funding budget. Use programmable-launch pack --config programmable-launch.config.json --output launch.json.",
+                    "Use a key with chain 4663 and the intended controller. Preflight runs authoritative checks without a launch reservation, permit or wallet transaction; request budgets still apply.",
+                    "Only after launchEligibility.deployable is true, submit the same exact request with a saved Idempotency-Key. TX_SIMULATION_PENDING then means create runs the remaining transaction simulation; do not repair source merely to remove that warning.",
+                    "Poll this version and chain with bounded backoff. At action_required read the exact failure and remediation. At wallet_action_required, awaiting_wallet_signature or authorized, continue through the separate controller wallet handoff.",
+                    "The controller verifies chain, sender, Router, value, calldata and spending budget before signing and broadcasting. Continue reading the same launch to finalized. Source verification, indexing, trading and public visibility remain separate outcomes."
+                  ]
+                }
+              }
+            }
+          },
+          "scenarios": {
+            "type": "array",
+            "minItems": 12,
+            "maxItems": 12,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "concept",
+                "assessment",
+                "blockerLayer",
+                "reason",
+                "nextStep",
+                "requestAuthorized"
+              ],
+              "properties": {
+                "id": {
+                  "enum": [
+                    "reviewed-native20-seed",
+                    "combined-token-hook",
+                    "hook-owned-pol-no-initial-buy",
+                    "no-pool",
+                    "multiple-pools",
+                    "non-native-pair",
+                    "custom-token-or-initializer",
+                    "stateful-module",
+                    "return-delta-settlement",
+                    "static-module",
+                    "custom-curve-or-auction",
+                    "unclassified-mechanism"
+                  ]
+                },
+                "concept": {
+                  "enum": [
+                    "Exact reviewed native20 kernel, seed token and seed initializer",
+                    "One physical contract used as both token and hook",
+                    "Single-sided hook-owned liquidity with no native value at launch",
+                    "Application or settlement project without a PoolKey",
+                    "One launch containing multiple official PoolKeys",
+                    "Official pool paired against an ERC-20 instead of native ETH",
+                    "Project-owned token or initializer differing from the seed recipe",
+                    "Module with storage updates or arbitrary application state",
+                    "Hook with custom return deltas, inventory or settlement",
+                    "Codehash-bound stateless module using staticcall",
+                    "Custom curve or auction declared in a funding plan",
+                    "Previously unknown hook or application mechanism"
+                  ]
+                },
+                "assessment": {
+                  "enum": [
+                    "requires-exact-preflight",
+                    "platform-change-required",
+                    "server-evidence-required",
+                    "not-evaluated"
+                  ]
+                },
+                "blockerLayer": {
+                  "enum": [
+                    "verifier",
+                    "transport",
+                    "funding-policy",
+                    "unclassified"
+                  ]
+                },
+                "reason": {
+                  "enum": [
+                    "Only the exact activated proof recipe is covered; constraints and current readiness still apply.",
+                    "The selected graph and Router assign one role per physical target; token and hook cannot share an address.",
+                    "A funded 4.1 launch requires an atomic native initial buy and server-issued USD reference. Declaring funding:none or owning token-side liquidity does not meet that obligation.",
+                    "This launch transport binds one official PoolKey; no-pool projects cannot be represented.",
+                    "The current graph request binds exactly one official PoolKey.",
+                    "The selected official pool pairs native ETH with the designated token; funding declarations do not change that PoolKey contract.",
+                    "Graph representation permits separate custom targets, but the activated seed proof does not prove arbitrary target behavior.",
+                    "The listed Module candidate is staticcall-only; it does not cover stateful modules or activate a public transport.",
+                    "All fourteen permission bits are representable, but declaring return deltas does not prove cashflow, solvency or 20 bps native fee coverage.",
+                    "The coverage report lists a Module proof candidate with publiclyLaunchable:false and no compatible public request surface.",
+                    "The pricing model label is representable; it is not execution evidence for a custom curve or auction.",
+                    "A missing catalog label is neither rejection nor evidence that the architecture is safe or launchable.",
+                    "This scenario assessment is defined for profile 4.1.0; the selected profile is different or unavailable."
+                  ]
+                },
+                "nextStep": {
+                  "enum": [
+                    "Check coverage.verifierCoverage.seedV1 constraints, the live initial-buy quote and approved funding plan, then pack and preflight the exact request.",
+                    "Preserve the project's single-contract intent. A compatible versioned graph, Router and profile must be deployed before this stamped launch can be retried.",
+                    "Do not insert a purchase or split contracts without the controller's intent. This architecture needs compatible funding policy and exact fee, liquidity and settlement verification.",
+                    "Keep the no-pool design. A separate versioned transport and verified settlement path are required; do not add a placeholder pool to satisfy this API.",
+                    "A multi-pool transport, exact per-pool fees and finality/provenance bindings are required. Extra graph targets do not create additional official PoolKeys.",
+                    "Use a compatible future pool/settlement contract with exact fee evidence. Do not silently replace the intended quote asset.",
+                    "Preflight the exact package for target-specific findings. Additional server-owned proof coverage may be required; a generic test report or wider key cannot clear those findings.",
+                    "The platform needs the matching stateful execution verifier and versioned public route before claiming support. Keep state transitions explicit in the source.",
+                    "Supply the exact architecture for platform verifier work. The server must prove each settlement path and its bounds; callback flags or caller JSON are insufficient.",
+                    "Wait for the matching reviewed public transport and activated proof. A compiled candidate or module API key does not authorize a Custom V4 module launch.",
+                    "Keep the exact intended pricing, custody and fee rules. The platform must cover that execution architecture before admission can clear the related findings.",
+                    "Inspect exact source/configuration and use preflight where the request is representable. Extend platform coverage for missing analysis rather than inventing a safety verdict.",
+                    "Read the selected profile's own immutable contract. This guide does not authorize a profile upgrade or a historical-profile launch."
+                  ]
+                },
+                "requestAuthorized": {
+                  "const": false
+                }
+              }
+            }
+          },
+          "responses": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "create",
+              "read",
+              "error"
+            ],
+            "properties": {
+              "create": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "accepted",
+                  "exactReplay",
+                  "resourceHeader",
+                  "instruction"
+                ],
+                "properties": {
+                  "accepted": {
+                    "const": 202
+                  },
+                  "exactReplay": {
+                    "const": 200
+                  },
+                  "resourceHeader": {
+                    "const": "Location"
+                  },
+                  "instruction": {
+                    "const": "Both responses identify the same durable launch for an exact retry. Neither status alone means finalized."
+                  }
+                }
+              },
+              "read": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "found",
+                  "missingOrNotOwned"
+                ],
+                "properties": {
+                  "found": {
+                    "const": 200
+                  },
+                  "missingOrNotOwned": {
+                    "const": 404
+                  }
+                }
+              },
+              "error": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "schemaVersion",
+                  "requiredFields",
+                  "correlationHeader",
+                  "delayHeader"
+                ],
+                "properties": {
+                  "schemaVersion": {
+                    "const": "programmable.api-error.v1"
+                  },
+                  "requiredFields": {
+                    "type": "array",
+                    "minItems": 4,
+                    "maxItems": 4,
+                    "items": {
+                      "enum": [
+                        "code",
+                        "message",
+                        "requestId",
+                        "retryable"
+                      ]
+                    }
+                  },
+                  "correlationHeader": {
+                    "const": "X-Request-Id"
+                  },
+                  "delayHeader": {
+                    "const": "Retry-After"
+                  }
+                }
+              }
+            }
+          },
+          "errorRecovery": {
+            "type": "array",
+            "minItems": 25,
+            "maxItems": 25,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "codes",
+                "httpStatuses",
+                "owner",
+                "retry",
+                "instruction"
+              ],
+              "properties": {
+                "codes": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 6,
+                  "items": {
+                    "enum": [
+                      "UNAUTHENTICATED",
+                      "INSUFFICIENT_SCOPE",
+                      "CHAIN_NOT_ALLOWED",
+                      "WALLET_BINDING_MISMATCH",
+                      "SOURCE_CONTROLLER_MISMATCH",
+                      "INVALID_JSON",
+                      "INVALID_REQUEST",
+                      "NONCANONICAL_REQUEST_BYTES",
+                      "CONTENT_LENGTH_MISMATCH",
+                      "BEHAVIOR_SCENARIO_INPUTS_INVALID",
+                      "INVALID_QUERY",
+                      "INVALID_URL",
+                      "INVALID_PAGINATION",
+                      "CUSTOM_LAUNCH_CHAIN_MISMATCH",
+                      "CHAIN_DEPLOYMENT_DESCRIPTOR_MISMATCH",
+                      "SOURCE_BUNDLE_SUBSTITUTION",
+                      "PROJECT_METADATA_HASH_MISMATCH",
+                      "PROJECT_METADATA_IMAGE_RECEIPT_MISMATCH",
+                      "BEHAVIOR_SCENARIO_INPUTS_HASH_MISMATCH",
+                      "LAUNCH_INTENT_HASH_MISMATCH",
+                      "UNSUPPORTED_MEDIA_TYPE",
+                      "PROJECT_METADATA_IMAGE_FORMAT_UNSUPPORTED",
+                      "PROJECT_METADATA_POLICY_INVALID",
+                      "REQUEST_TOO_LARGE",
+                      "REQUEST_TIMEOUT",
+                      "IDEMPOTENCY_CONFLICT",
+                      "INVALID_IDEMPOTENCY_KEY",
+                      "NOT_FOUND",
+                      "RATE_LIMITED",
+                      "LAUNCH_QUOTA_EXCEEDED",
+                      "CUSTOM_LAUNCH_V4_IMAGE_CAPACITY",
+                      "CUSTOM_LAUNCH_V4_REQUEST_CAPACITY",
+                      "INITIAL_BUY_USD_QUOTE_UNAVAILABLE",
+                      "LAUNCH_UNAVAILABLE",
+                      "CUSTOM_LAUNCH_V4_INTEGRATION_PENDING",
+                      "FEE_KERNEL_PROOF_REQUIRED",
+                      "INITIAL_BUY_REVIEW_REQUIRED",
+                      "CHAIN_PROFILE_CONFLICT",
+                      "CHAIN_PROFILE_RETIRED",
+                      "FUNDING_PLAN_BUILD_ONLY",
+                      "FUNDING_SETTLEMENT_MISMATCH",
+                      "CUSTOM_LAUNCH_V4_PERMIT_WINDOW_INVALID",
+                      "PREPARATION_CLAIM_LOST",
+                      "INTERNAL_ERROR"
+                    ]
+                  }
+                },
+                "httpStatuses": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 1,
+                  "items": {
+                    "enum": [
+                      401,
+                      403,
+                      400,
+                      415,
+                      413,
+                      408,
+                      409,
+                      404,
+                      429,
+                      503,
+                      500
+                    ]
+                  }
+                },
+                "owner": {
+                  "enum": [
+                    "caller",
+                    "wallet-controller",
+                    "platform"
+                  ]
+                },
+                "retry": {
+                  "enum": [
+                    "never-unchanged",
+                    "follow-response",
+                    "same-request-after-delay"
+                  ]
+                },
+                "instruction": {
+                  "enum": [
+                    "Check that PROGRAMMABLE_API_KEY contains the intended current credential and is sent once as Authorization: Bearer. Missing, malformed, expired and revoked credentials intentionally share this response. Do not send the key to support.",
+                    "Read/status needs custom-launch:read; preflight/create needs custom-launch:create. Inspect the saved permissions. The controller can issue a suitably scoped credential; rotation preserves the original permissions and cannot add a scope.",
+                    "The credential must explicitly grant chain 4663. Choose an existing credential with that grant or have its controller issue one. Changing the URL or rotating the same restricted key does not grant another chain.",
+                    "Use the controller wallet bound to the credential. A partner credential may select its permitted controller through the exact request, but never gains wallet signing authority. Do not change an already submitted immutable request.",
+                    "The source descriptor's controller must match the request launchWallet. Check the intended controller and rebuild all source/request bindings consistently; changing a credential does not repair contradictory source metadata.",
+                    "Read the bounded error.message and selected profile schema, fix the named field, and regenerate canonical request bytes with the matching packer. Send the file with --data-binary; do not edit hash-bound JSON by hand.",
+                    "Use the documented route and query contract. Discovery, launch-guide and launch-coverage need no query or body. For lists, pass only the returned opaque cursor and the documented page limit.",
+                    "Keep path, request, CLI --api-version 4 --chain-id 4663, deployment and wallet on the same chain. V4 does not fall back to Ethereum V3.",
+                    "Regenerate the complete source-, profile- and deployment-bound package. Never replace one hash or reuse an idempotency key for changed bytes. Resolve a previous ambiguous submission with its original journal first.",
+                    "Send the request as application/json. The project image is a separate field with its own exact media contract.",
+                    "Use the selected profile's metadata contract. Robinhood V4 accepts PNG or a single-frame GIF; repack the exact image and source manifest after a change.",
+                    "The complete Robinhood V4 HTTP request must fit within 16 MiB, including base64 and metadata. Reduce the source/artifact closure while preserving required dependencies, then rebuild and preflight.",
+                    "The request body did not arrive within the server deadline. Retry only the same method, route, complete bytes and idempotency key; never infer that a timed-out create was not accepted.",
+                    "This principal, route and idempotency key already bind another request. Recover the original journal and result first. Use a new key only for an intentionally new request with new exact bytes.",
+                    "Send exactly one Idempotency-Key header containing 16 to 128 characters from A-Z, a-z, 0-9, dot, underscore, colon or hyphen. Save that key with the exact request bytes before the first create; use the same saved key for retries.",
+                    "Check API version, chain, launchId and credential ownership. Missing and inaccessible private launches are indistinguishable. A 404 on a public guide or coverage route means that deployment lacks that endpoint, not that the API key is broken.",
+                    "Honor Retry-After, cap attempts and back off with jitter. Preserve exact create bytes and idempotency. Rotate neither keys nor principals to evade shared budgets; preflight and polling also consume request budgets.",
+                    "Retry after Retry-After only when the response says retryable:true, while the original request remains valid. Do not create a new idempotency key because the service is busy. An unavailable quote must not be replaced by a caller-provided price.",
+                    "Read the current readiness and coverage reports and the actual retryable flag. Missing platform integration or execution proof cannot be repaired by broader key permissions, a caller-uploaded proof or bypassing the selected profile.",
+                    "For a new launch, refresh discovery/capabilities and repack against the selected immutable profile. An existing launch keeps its original version and request identity; resolve its original status or exact replay before creating a replacement.",
+                    "Build-only permits local packaging and preflight. Obtain the controller's funded-launch budget before regenerating a fund-and-launch request. Do not silently increase spending or change the project's funding model.",
+                    "The funding mode and value must match the graph's deployment values plus initializer value. Repack those values and the funding plan together within the approved launch and gas budgets. A declaration alone does not prove liquidity or available funds.",
+                    "Read the current launch status and permit validity. A new launch requires a newly packed valid window and new request identity; an existing request cannot be repaired by changing its saved permit bytes.",
+                    "Preserve the original submission journal and inspect the same launch. Follow the actual retryable response without allocating a new launch or substituting request bytes.",
+                    "Save requestId, HTTP status, public code and UTC time. Check the original launch or recover the exact submission journal before retrying. Never attach an API key, wallet secret or private bundle to a support message."
+                  ]
+                }
+              }
+            }
+          },
+          "findingGuidance": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "path",
+              "field",
+              "instruction"
+            ],
+            "properties": {
+              "path": {
+                "const": "/v4/chains/4663/launch-coverage"
+              },
+              "field": {
+                "const": "findingObligations"
+              },
+              "instruction": {
+                "const": "Match the exact finding code and its server-authored remediation. This catalog never clears a finding or accepts caller proof."
+              }
+            }
+          },
+          "unknownCode": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "retry",
+              "instruction"
+            ],
+            "properties": {
+              "retry": {
+                "const": "follow-response"
+              },
+              "instruction": {
+                "const": "Preserve the public code and requestId. Inspect the actual retryable flag and current versioned documentation; do not guess a repair from a code prefix or replace the key."
+              }
+            }
+          },
+          "support": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "allowedFields",
+              "excludedFields"
+            ],
+            "properties": {
+              "allowedFields": {
+                "type": "array",
+                "minItems": 4,
+                "maxItems": 4,
+                "items": {
+                  "enum": [
+                    "requestId",
+                    "httpStatus",
+                    "code",
+                    "timestamp"
+                  ]
+                }
+              },
+              "excludedFields": {
+                "type": "array",
+                "minItems": 4,
+                "maxItems": 4,
+                "items": {
+                  "enum": [
+                    "apiKey",
+                    "authorizationHeader",
+                    "walletSecret",
+                    "privateSourceBundle"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
