@@ -1,0 +1,337 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://programmable.market/schemas/custom-launch/graph/v2/bundle.json",
+  "title": "Programmable multi-role custom graph bundle V2",
+  "description": "Standalone structural foundation for a future explicitly bound launch profile and Router. Existing V1 graphs and V4.1 routes do not accept this schema. This schema does not prove runtime, callback, fee, funding, source, deployment or admission safety. A future preparation step must retain init code (49152 bytes), initializer (131072 bytes), aggregate graph (524288 bytes), address locator placeholder, hook address-bit and unique deployment checks.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "sourceBundleSha256",
+    "targets",
+    "pool"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "programmable.custom-graph-bundle.v2"
+    },
+    "sourceBundleSha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-fA-F]{64}$"
+    },
+    "targets": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "items": {
+        "$ref": "#/$defs/target"
+      },
+      "allOf": [
+        {
+          "contains": {
+            "type": "object",
+            "required": [
+              "componentRoles"
+            ],
+            "properties": {
+              "componentRoles": {
+                "enum": [
+                  [
+                    "token"
+                  ],
+                  [
+                    "token",
+                    "hook"
+                  ]
+                ]
+              }
+            }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": [
+              "componentRoles"
+            ],
+            "properties": {
+              "componentRoles": {
+                "enum": [
+                  [
+                    "hook"
+                  ],
+                  [
+                    "token",
+                    "hook"
+                  ]
+                ]
+              }
+            }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        }
+      ],
+      "description": "Unique target IDs, constructor dependency topological order with UTF-8 tie-break, exactly one token role and one hook role; both may resolve to the same target. Initializer references do not introduce constructor dependencies."
+    },
+    "pool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tokenTargetId",
+        "hookTargetId",
+        "fee",
+        "tickSpacing"
+      ],
+      "properties": {
+        "tokenTargetId": {
+          "$ref": "#/$defs/identifier",
+          "description": "Must identify the unique target containing the token role."
+        },
+        "hookTargetId": {
+          "$ref": "#/$defs/identifier",
+          "description": "Must identify the unique target containing the hook role; it may equal tokenTargetId."
+        },
+        "fee": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000
+            },
+            {
+              "const": 8388608
+            }
+          ]
+        },
+        "tickSpacing": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32767
+        }
+      }
+    }
+  },
+  "x-programmable-contract": {
+    "status": "standalone-foundation-not-activated",
+    "unboundHash": "sha256(JCS(normalized graph))",
+    "metadataHashDomain": "programmable.custom-graph-project-metadata.v2",
+    "metadataHashFields": [
+      "graphBundleHash",
+      "projectMetadataHash"
+    ],
+    "topologyHashDomain": "programmable.create2-graph-topology.v2",
+    "targetTopologyHashDomain": "programmable.create2-graph-topology-target.v2",
+    "componentRoleMask": {
+      "token": 1,
+      "hook": 2,
+      "auxiliary": 0
+    },
+    "initializerPlacement": "each target owns initializerCalldata; no separate initializer target required"
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/+\\-]{0,255}$"
+    },
+    "uint256": {
+      "type": "string",
+      "pattern": "^(?:0|[1-9][0-9]*)$",
+      "maxLength": 78,
+      "description": "Canonical uint256 decimal string; the semantic parser rejects values above 2^256 - 1."
+    },
+    "locator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "targetId",
+        "byteOffset",
+        "encoding"
+      ],
+      "properties": {
+        "targetId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "byteOffset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "encoding": {
+          "enum": [
+            "abi-address-word",
+            "packed-address-20"
+          ]
+        }
+      }
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "targetId",
+        "applicantSalt",
+        "creationBytecode",
+        "constructorArguments",
+        "initializerCalldata",
+        "constructorAddressLocators",
+        "initializerAddressLocators",
+        "deploymentValueWei",
+        "initializerValueWei",
+        "expectedRuntimeCodeHash",
+        "componentRoles",
+        "declaredHookPermissions"
+      ],
+      "properties": {
+        "targetId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "applicantSalt": {
+          "type": "string",
+          "pattern": "^0x[0-9a-fA-F]{64}$"
+        },
+        "creationBytecode": {
+          "type": "string",
+          "pattern": "^0x(?:[0-9a-fA-F]{2})+$"
+        },
+        "constructorArguments": {
+          "type": "string",
+          "pattern": "^0x(?:[0-9a-fA-F]{2})*$"
+        },
+        "initializerCalldata": {
+          "type": "string",
+          "pattern": "^0x(?:[0-9a-fA-F]{2})*$"
+        },
+        "constructorAddressLocators": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/locator"
+          }
+        },
+        "initializerAddressLocators": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/locator"
+          }
+        },
+        "deploymentValueWei": {
+          "$ref": "#/$defs/uint256"
+        },
+        "initializerValueWei": {
+          "$ref": "#/$defs/uint256"
+        },
+        "expectedRuntimeCodeHash": {
+          "type": "string",
+          "pattern": "^0x(?!0{64}$)[0-9a-fA-F]{64}$"
+        },
+        "componentRoles": {
+          "enum": [
+            [],
+            [
+              "token"
+            ],
+            [
+              "hook"
+            ],
+            [
+              "token",
+              "hook"
+            ]
+          ],
+          "description": "Canonical role order is token then hook. An empty array is an auxiliary target. A target with both roles is deployed exactly once.",
+          "type": "array"
+        },
+        "declaredHookPermissions": {
+          "oneOf": [
+            {
+              "type": "array",
+              "maxItems": 14,
+              "uniqueItems": true,
+              "items": {
+                "enum": [
+                  "beforeInitialize",
+                  "afterInitialize",
+                  "beforeAddLiquidity",
+                  "afterAddLiquidity",
+                  "beforeRemoveLiquidity",
+                  "afterRemoveLiquidity",
+                  "beforeSwap",
+                  "afterSwap",
+                  "beforeDonate",
+                  "afterDonate",
+                  "beforeSwapReturnDelta",
+                  "afterSwapReturnDelta",
+                  "afterAddLiquidityReturnDelta",
+                  "afterRemoveLiquidityReturnDelta"
+                ]
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "componentRoles": {
+                "enum": [
+                  [
+                    "hook"
+                  ],
+                  [
+                    "token",
+                    "hook"
+                  ]
+                ]
+              }
+            },
+            "required": [
+              "componentRoles"
+            ]
+          },
+          "then": {
+            "properties": {
+              "declaredHookPermissions": {
+                "type": "array",
+                "maxItems": 14,
+                "uniqueItems": true,
+                "items": {
+                  "enum": [
+                    "beforeInitialize",
+                    "afterInitialize",
+                    "beforeAddLiquidity",
+                    "afterAddLiquidity",
+                    "beforeRemoveLiquidity",
+                    "afterRemoveLiquidity",
+                    "beforeSwap",
+                    "afterSwap",
+                    "beforeDonate",
+                    "afterDonate",
+                    "beforeSwapReturnDelta",
+                    "afterSwapReturnDelta",
+                    "afterAddLiquidityReturnDelta",
+                    "afterRemoveLiquidityReturnDelta"
+                  ]
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "declaredHookPermissions": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
