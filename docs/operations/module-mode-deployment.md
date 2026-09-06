@@ -289,6 +289,31 @@ compiler settings, ABI, metadata and actual creation transaction. Only construct
 arguments and compiled immutables may explain byte transformations. Partial source
 flags or metadata-ignore transforms cannot substitute for this comparison.
 
+Provider readback uses the compiler's complete `rawMetadata`, because Foundry's
+typed metadata representation omits some NatSpec fields and normalizes import
+remappings. The build commitment remains unchanged. ABI entries may be reordered;
+each complete entry and the order of its arguments/tuple members stay exact.
+
+Sourcify's `deployment.deployer` is the creation transaction's `from` address,
+including factory-created children. The source collector binds that field to the
+actual recorded sender and retains the internal factory/deployer separately.
+This follows [the provider implementation](https://github.com/argotorg/sourcify/blob/9b4877ebfe483de4774c16c1ea55791546021029/packages/lib-sourcify/src/Verification/Verification.ts#L255-L265).
+
+Sourcify [deduplicates compilation records by compiler/version and bytecode](https://github.com/argotorg/sourcify/blob/9b4877ebfe483de4774c16c1ea55791546021029/services/server/src/server/services/utils/Database.ts#L675-L691).
+An older record can retain different unused remappings. Only explicit `viaIR:false`
+and `metadata.useLiteralContent:false` defaults are normalized. Other semantic
+settings must match. A remapping difference additionally requires an actual local
+recompilation of the exact published sources/settings using solc
+`0.8.26+commit.8a97fa7a`, with filesystem imports disabled, and a complete match of
+creation bytecode, runtime bytecode and ABI. Set `MODULE_MODE_SOLC` to that compiler's
+executable. The source closure and full original raw metadata must still match;
+there is no generic "ignore compiler settings" option.
+
+After a collector-only correction, `source` and `source-requests` may use
+`--source-root /absolute/path/to/original-clean-checkout`. The collector rebuilds
+that source and asserts its exact original plan/build digest. It does not change
+the immutable contract identity or confer wallet/deployment authority.
+
 An explicit `--provider blockscout` path is also available. It requires full
 verification, complete creation/runtime bytes and source closure from that API;
 an HTTP success or `is_verified` flag alone is insufficient.

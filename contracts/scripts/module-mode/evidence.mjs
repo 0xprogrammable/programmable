@@ -1,11 +1,12 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { encodeAbiParameters, keccak256, parseAbiParameters } from 'viem';
-import { bytes, canonicalJson, hash, need } from './core.mjs';
+import { address, bytes, canonicalJson, hash, need } from './core.mjs';
 import { sharedValidators } from './shared.mjs';
 import { journalEntry } from './journal.mjs';
 import { observeReceipt } from './rpc.mjs';
-import { SOURCIFY_BASE, SOURCIFY_COMPILER, boundedPublicJson, exactJson, sourcifyPreflight, validateSourcifySource } from './source-readback.mjs';
+import { SOURCIFY_BASE, SOURCIFY_COMPILER, boundedPublicJson, exactJson, sourcifyNeedsRecompilation, sourcifyPreflight, validateSourcifySource } from './source-readback.mjs';
+import { recompileSourcifyInput } from './source-recompile.mjs';
 
 export const EVIDENCE_FILENAMES = Object.freeze({ deployment: 'deployment.json', sourceVerification: 'source-verification.json', lifecycle: 'lifecycle.json' });
 export function evidenceBytes(value) { return Buffer.from(`${JSON.stringify(value, null, 2)}\n`, 'utf8'); }
@@ -58,8 +59,10 @@ export function sourceCreation(plan, role, deploymentEvidence) {
     && record.transaction.hash === record.receipt.transactionHash, `${role}: deployment code/receipt differs`);
   const deployer = { rewardLedger: plan.contracts.hook.address, runtime: plan.contracts.runtimeFactory.address,
     budgetVault: plan.contracts.runtime.address, swapRouter: plan.contracts.swapRouterFactory.address }[role] ?? plan.official.deterministicDeployer.address;
+  const step = plan.steps.find(step => step.role === parentRole);
+  need(address(record.transaction.from) === address(step.sender), `${role}: creation transaction sender differs`);
   return { transactionHash: hash(record.receipt.transactionHash), blockNumber: record.receipt.blockNumber,
-    transactionIndex: record.receipt.transactionIndex, deployer };
+    transactionIndex: record.receipt.transactionIndex, deployer, transactionSender: address(record.transaction.from) };
 }
 export function sourcifyVerificationRequests(plan, build, deploymentEvidence = null) {
   return Object.fromEntries(Object.entries(plan.contracts).map(([role, pin]) => {
@@ -118,7 +121,9 @@ export async function collectSourceVerificationEvidence(plan, build, deploymentE
     const url = provider === 'sourcify-v2' ? `${SOURCIFY_BASE}/v2/contract/4663/${pin.address}?fields=all`
       : `https://robinhoodchain.blockscout.com/api/v2/smart-contracts/${pin.address}`;
     const { raw, value } = await boundedPublicJson(url, fetchImpl);
-    const verified = provider === 'sourcify-v2' ? validateSourcifySource({ plan, build, role, constructorArguments: constructorArguments(plan, role), creation }, value)
+    const recompilation = provider === 'sourcify-v2' && sourcifyNeedsRecompilation(build.standardInputs[role], value)
+      ? await recompileSourcifyInput(value, build.standardInputs[role]) : undefined;
+    const verified = provider === 'sourcify-v2' ? validateSourcifySource({ plan, build, role, constructorArguments: constructorArguments(plan, role), creation, recompilation }, value)
       : { ...validatePublishedSource(plan, build, role, value), creationTransactionHash: creation.transactionHash };
     records.push({ ...verified, url, responseBytesDigest: evidenceDigest(raw) });
   }
