@@ -1,6 +1,11 @@
 import "server-only";
 
 import { parseStrictJson } from "../projection-target/canonical-json";
+import {
+  discardBodyV1,
+  readBoundedUtf8BodyV1,
+  type BodyReadOptionsV1,
+} from "./bounded-utf8-body-v1";
 
 const MAXIMUM_ERROR_BODY_BYTES = 16_384;
 const PRESERVED_STATUSES = new Set([400, 403, 404, 409, 422, 429, 503]);
@@ -44,12 +49,15 @@ export class PreservedBackendPublicErrorV1 extends Error {
 
 export async function readPreservedBackendPublicErrorV1(
   response: Response,
+  options: BodyReadOptionsV1 = {},
 ): Promise<PreservedBackendPublicErrorV1 | null> {
-  if (!PRESERVED_STATUSES.has(response.status)) return null;
+  if (!PRESERVED_STATUSES.has(response.status)) {
+    discardBodyV1(response);
+    return null;
+  }
 
   try {
-    const text = await readBoundedText(response, MAXIMUM_ERROR_BODY_BYTES);
-    if (text === null) return null;
+    const text = await readBoundedUtf8BodyV1(response, MAXIMUM_ERROR_BODY_BYTES, options);
     const value = parseStrictJson(text, {
       maximumBytes: MAXIMUM_ERROR_BODY_BYTES,
       maximumDepth: 8,
@@ -120,32 +128,4 @@ export async function readPreservedBackendPublicErrorV1(
   } catch {
     return null;
   }
-}
-
-async function readBoundedText(response: Response, maximumBytes: number) {
-  const declaredLength = Number(response.headers.get("content-length") ?? "0");
-  if (Number.isFinite(declaredLength) && declaredLength > maximumBytes) {
-    await response.body?.cancel().catch(() => undefined);
-    return null;
-  }
-  if (response.body === null) return null;
-  const reader = response.body.getReader();
-  const chunks: Buffer[] = [];
-  let totalBytes = 0;
-  try {
-    while (true) {
-      const chunk = await reader.read();
-      if (chunk.done) break;
-      totalBytes += chunk.value.byteLength;
-      if (totalBytes > maximumBytes) {
-        await reader.cancel().catch(() => undefined);
-        return null;
-      }
-      chunks.push(Buffer.from(chunk.value));
-    }
-  } finally {
-    reader.releaseLock();
-  }
-  if (totalBytes === 0) return null;
-  return Buffer.concat(chunks, totalBytes).toString("utf8");
 }

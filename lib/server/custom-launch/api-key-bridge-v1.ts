@@ -20,6 +20,12 @@ import {
   readPreservedBackendPublicErrorV1,
 } from "./backend-public-error-v1";
 import {
+  BoundedBodyErrorV1,
+  discardBodyV1,
+  readBoundedUtf8BodyV1,
+  type BodyReadOptionsV1,
+} from "./bounded-utf8-body-v1";
+import {
   createWalletAdminBffAssertionV2,
   requireWalletAdminBffAssertionKeyV2,
 } from "./wallet-admin-bff-assertion-v2";
@@ -164,7 +170,7 @@ export function createDeveloperApiKeyBridgeV1(input: Readonly<{
     }
     const timeoutSignal = AbortSignal.timeout(timeoutMs);
     const signal = AbortSignal.any([request.signal, timeoutSignal]);
-    return input.fetchBackend(backendUrl, {
+    const response = await input.fetchBackend(backendUrl, {
       method,
       headers,
       body: body === undefined ? undefined : bodyBytes,
@@ -172,6 +178,7 @@ export function createDeveloperApiKeyBridgeV1(input: Readonly<{
       redirect: "error",
       signal,
     });
+    return { response, readOptions: { signal, timeoutMs } };
   };
 
   const mutateV2 = async (request: Request, credentialId?: string) => {
@@ -188,7 +195,7 @@ export function createDeveloperApiKeyBridgeV1(input: Readonly<{
       const idempotencyKey = requireIdempotencyKey(request);
       const principal = await input.authenticator.authenticate(request);
       const walletAddress = requireLinkedWallet(principal, parsed.walletAddress);
-      const backend = await callBackend(
+      const { response: backend, readOptions } = await callBackend(
         request,
         principal,
         walletAddress,
@@ -204,9 +211,9 @@ export function createDeveloperApiKeyBridgeV1(input: Readonly<{
         }),
         idempotencyKey,
       );
-      if (!backend.ok) throw await mappedBackendError(backend);
+      if (!backend.ok) throw await mappedBackendError(backend, readOptions);
       const result = parseApiKeyMutationResult(
-        await readBoundedBackendJson(backend),
+        await readBoundedBackendJson(backend, readOptions),
         backend.status,
         normalizedCredentialId,
         undefined,
@@ -234,10 +241,10 @@ export function createDeveloperApiKeyBridgeV1(input: Readonly<{
         const walletInput = exactWalletQuery(request);
         const principal = await input.authenticator.authenticate(request);
         const walletAddress = requireLinkedWallet(principal, walletInput);
-        const backend = await callBackend(request, principal, walletAddress, "GET",
+        const { response: backend, readOptions } = await callBackend(request, principal, walletAddress, "GET",
           "/v2/wallet-admin/api-keys/capabilities");
-        if (!backend.ok) throw await mappedBackendError(backend);
-        const record = jsonRecord(await readBoundedBackendJson(backend));
+        if (!backend.ok) throw await mappedBackendError(backend, readOptions);
+        const record = jsonRecord(await readBoundedBackendJson(backend, readOptions));
         if (
           record.schemaVersion !== API_KEY_CAPABILITIES_SCHEMA_V2
           || typeof record.restrictedIssuance !== "boolean"
@@ -266,9 +273,9 @@ export function createDeveloperApiKeyBridgeV1(input: Readonly<{
         const walletInput = exactWalletQuery(request);
         const principal = await input.authenticator.authenticate(request);
         const walletAddress = requireLinkedWallet(principal, walletInput);
-        const backend = await callBackend(request, principal, walletAddress, "GET", "/v2/wallet-admin/api-keys");
-        if (!backend.ok) throw await mappedBackendError(backend);
-        const record = jsonRecord(await readBoundedBackendJson(backend));
+        const { response: backend, readOptions } = await callBackend(request, principal, walletAddress, "GET", "/v2/wallet-admin/api-keys");
+        if (!backend.ok) throw await mappedBackendError(backend, readOptions);
+        const record = jsonRecord(await readBoundedBackendJson(backend, readOptions));
         requireBackendSchema(record, CUSTOM_LAUNCH_API_SCHEMA_V2);
         const summaries = parseApiKeyList(record.apiKeys);
         const apiKeys = summaries.map((summary, index) => ({
@@ -294,15 +301,15 @@ export function createDeveloperApiKeyBridgeV1(input: Readonly<{
         const walletInput = exactWalletQuery(request);
         const principal = await input.authenticator.authenticate(request);
         const walletAddress = requireLinkedWallet(principal, walletInput);
-        const backend = await callBackend(
+        const { response: backend, readOptions } = await callBackend(
           request,
           principal,
           walletAddress,
           "GET",
           "/v1/wallet-admin/api-keys",
         );
-        if (!backend.ok) throw await mappedBackendError(backend);
-        const value = await readBoundedBackendJson(backend);
+        if (!backend.ok) throw await mappedBackendError(backend, readOptions);
+        const value = await readBoundedBackendJson(backend, readOptions);
         const record = jsonRecord(value);
         requireBackendSchema(record);
         const apiKeys = parseApiKeyList(record.apiKeys);
@@ -331,7 +338,7 @@ export function createDeveloperApiKeyBridgeV1(input: Readonly<{
         const walletAddress = requireLinkedWallet(principal, parsed.walletAddress);
         // The backend checks fresh admission after exact completed replay.
         // A separate availability read here would suppress committed retries.
-        const backend = await callBackend(
+        const { response: backend, readOptions } = await callBackend(
           request,
           principal,
           walletAddress,
@@ -347,9 +354,9 @@ export function createDeveloperApiKeyBridgeV1(input: Readonly<{
           }),
           idempotencyKey,
         );
-        if (!backend.ok) throw await mappedBackendError(backend);
+        if (!backend.ok) throw await mappedBackendError(backend, readOptions);
         const result = parseApiKeyMutationResult(
-          await readBoundedBackendJson(backend),
+          await readBoundedBackendJson(backend, readOptions),
           backend.status,
           undefined,
           parsed.purpose,
@@ -375,7 +382,7 @@ export function createDeveloperApiKeyBridgeV1(input: Readonly<{
         const idempotencyKey = requireIdempotencyKey(request);
         const principal = await input.authenticator.authenticate(request);
         const walletAddress = requireLinkedWallet(principal, parsed.walletAddress);
-        const backend = await callBackend(
+        const { response: backend, readOptions } = await callBackend(
           request,
           principal,
           walletAddress,
@@ -390,9 +397,9 @@ export function createDeveloperApiKeyBridgeV1(input: Readonly<{
           }),
           idempotencyKey,
         );
-        if (!backend.ok) throw await mappedBackendError(backend);
+        if (!backend.ok) throw await mappedBackendError(backend, readOptions);
         const result = parseApiKeyMutationResult(
-          await readBoundedBackendJson(backend),
+          await readBoundedBackendJson(backend, readOptions),
           backend.status,
           normalizedCredentialId,
         );
@@ -415,7 +422,7 @@ export function createDeveloperApiKeyBridgeV1(input: Readonly<{
         const walletInput = exactWalletQuery(request);
         const principal = await input.authenticator.authenticate(request);
         const walletAddress = requireLinkedWallet(principal, walletInput);
-        const backend = await callBackend(
+        const { response: backend, readOptions } = await callBackend(
           request,
           principal,
           walletAddress,
@@ -424,10 +431,11 @@ export function createDeveloperApiKeyBridgeV1(input: Readonly<{
           Object.freeze({ schemaVersion: CUSTOM_LAUNCH_API_SCHEMA_V1 }),
         );
         if (backend.status === 404) {
+          discardBodyV1(backend);
           return errorResponse(404, "api_key_not_found");
         }
-        if (!backend.ok) throw await mappedBackendError(backend);
-        const value = await readBoundedBackendJson(backend);
+        if (!backend.ok) throw await mappedBackendError(backend, readOptions);
+        const value = await readBoundedBackendJson(backend, readOptions);
         const record = jsonRecord(value);
         requireBackendSchema(record);
         if (
@@ -580,34 +588,32 @@ function requireLinkedWallet(
 }
 
 async function readBrowserJson(request: Request): Promise<JsonValue> {
-  const declaredLength = Number(request.headers.get("content-length") ?? "0");
-  if (Number.isFinite(declaredLength) && declaredLength > MAXIMUM_BROWSER_BODY_BYTES) {
-    throw new BrowserRequestErrorV1(413, "request_too_large");
-  }
-  const text = await request.text();
-  if (!text || Buffer.byteLength(text, "utf8") > MAXIMUM_BROWSER_BODY_BYTES) {
-    throw new BrowserRequestErrorV1(413, "request_too_large");
-  }
   try {
+    const text = await readBoundedUtf8BodyV1(request, MAXIMUM_BROWSER_BODY_BYTES, {
+      signal: request.signal,
+    });
+    if (!text) throw new BrowserRequestErrorV1(413, "request_too_large");
     return parseStrictJson(text, {
       maximumBytes: MAXIMUM_BROWSER_BODY_BYTES,
       maximumDepth: 8,
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof BrowserRequestErrorV1) throw error;
+    if (error instanceof BoundedBodyErrorV1) {
+      if (error.code === "too-large") throw new BrowserRequestErrorV1(413, "request_too_large");
+      if (error.code === "timeout") throw new BrowserRequestErrorV1(408, "request_timeout");
+      if (error.code === "aborted") throw new BrowserRequestErrorV1(400, "request_aborted");
+    }
     throw new BrowserRequestErrorV1(400, "request_schema_invalid");
   }
 }
 
-async function readBoundedBackendJson(response: Response): Promise<JsonValue> {
-  const declaredLength = Number(response.headers.get("content-length") ?? "0");
-  if (Number.isFinite(declaredLength) && declaredLength > MAXIMUM_BACKEND_BODY_BYTES) {
-    throw new BackendContractErrorV1();
-  }
-  const text = await response.text();
-  if (!text || Buffer.byteLength(text, "utf8") > MAXIMUM_BACKEND_BODY_BYTES) {
-    throw new BackendContractErrorV1();
-  }
+async function readBoundedBackendJson(
+  response: Response,
+  options: BodyReadOptionsV1,
+): Promise<JsonValue> {
   try {
+    const text = await readBoundedUtf8BodyV1(response, MAXIMUM_BACKEND_BODY_BYTES, options);
     return parseStrictJson(text, {
       maximumBytes: MAXIMUM_BACKEND_BODY_BYTES,
       maximumDepth: 12,
@@ -865,11 +871,12 @@ function requiredRawEnvironment(name: string) {
   return value;
 }
 
-async function mappedBackendError(response: Response) {
+async function mappedBackendError(response: Response, options: BodyReadOptionsV1) {
   if (response.status === 404) {
+    discardBodyV1(response);
     return new BrowserRequestErrorV1(404, "api_key_not_found");
   }
-  const preserved = await readPreservedBackendPublicErrorV1(response);
+  const preserved = await readPreservedBackendPublicErrorV1(response, options);
   if (preserved) return preserved;
   return new BackendContractErrorV1();
 }
