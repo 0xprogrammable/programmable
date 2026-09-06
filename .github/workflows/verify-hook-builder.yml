@@ -114,8 +114,8 @@ jobs:
           EXPECTED_BASE_COMMIT: ${{ github.event.pull_request.base.sha }}
           EXPECTED_CANDIDATE_COMMIT: ${{ github.event.pull_request.head.sha }}
           EXPECTED_MERGE_COMMIT: ${{ steps.candidate_fetch.outputs.merge_commit }}
-          APPROVED_MAIN_CI_CONTROL_COMMIT: 346c72c8b2328382e993c704278b02c4d10a1707
-          APPROVED_MAIN_CI_CONTROL_TREE: c2e41b19abac40f7849cf343b68ee3f783b53bdd
+          APPROVED_MAIN_CI_CONTROL_COMMIT: 7466a691e5cc3190d6fa24bc9b428ad90548fab3
+          APPROVED_MAIN_CI_CONTROL_TREE: dfa11713925e3463d702e477f5921a073354ce40
         run: |
           set -euo pipefail
 
