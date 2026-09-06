@@ -244,14 +244,20 @@ export function nativeValueBreakdown(state: ModuleModeState, catalog: readonly M
   } catch { return { initialBuy: "—", funding: "—", total: "—" }; }
 }
 
-function encodeProgramConfiguration(arguments_: ProgramArgument[], config: ReturnType<typeof compileOpenConfig>): `0x${string}` {
-  const values = arguments_.map((argument) => {
+export function encodeProgramConfiguration(arguments_: ProgramArgument[], config: ReturnType<typeof compileOpenConfig>): `0x${string}` {
+  function argumentValue(type: string, path: string[]): unknown {
     let value: unknown = config.value;
-    for (const key of argument.path) value = (value as Record<string, unknown>)[key];
-    if (/^uint(?:\d+)?$/.test(argument.type)) return BigInt(String(value));
-    if (argument.type === "address") return configurationAddress(config, argument.path);
+    for (const key of path) value = (value as Record<string, unknown>)?.[key];
+    const array = /^(.*)\[([0-9]*)\]$/.exec(type);
+    if (array) {
+      if (!Array.isArray(value) || (array[2] !== "" && value.length !== Number(array[2]))) throw new Error("The configured list does not match the reviewed ABI array.");
+      return value.map((_, index) => argumentValue(array[1], [...path, String(index)]));
+    }
+    if (/^uint(?:\d+)?$/.test(type)) return BigInt(String(value));
+    if (type === "address") return configurationAddress(config, path);
     return value;
-  });
+  }
+  const values = arguments_.map((argument) => argumentValue(argument.type, argument.path));
   return encodeAbiParameters(arguments_.map((argument) => ({ type: argument.type } as AbiParameter)), values);
 }
 

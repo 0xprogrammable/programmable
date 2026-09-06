@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { decodeFunctionData, encodeAbiParameters, encodeEventTopics, encodeFunctionResult, keccak256, parseAbiParameters, sha256, toHex, type Abi, type Address, type Hex, type TransactionReceipt } from "viem";
+import { decodeAbiParameters, decodeFunctionData, encodeAbiParameters, encodeEventTopics, encodeFunctionResult, keccak256, parseAbiParameters, sha256, toHex, type Abi, type Address, type Hex, type TransactionReceipt } from "viem";
 import { createModuleModeState, PREVIEW_MODULE_CATALOG, setModuleSelected, validateModuleModeDraft, type ModuleModeDraft, type ModuleModeState } from "../lib/module-mode/builder";
 import { bindActiveModuleModeRelease, type ModuleModeDependency } from "../lib/module-mode/release";
 import { MODULE_MODE_AVAILABILITY_SCHEMA, nativeCanonicalJson, type ModuleModeAvailability, type NativeModuleModeCatalogEntry } from "../lib/module-mode/native-catalog";
@@ -190,6 +190,31 @@ describe("native wallet transaction adapter", () => {
     await expect(f.launch(draft)).rejects.toThrow("catalog digest");
     const local = harness(); const imageDraft = redigest({ ...local.draft(), token: { ...local.draft().token, image: { kind: "local", sha256: h(333), bytes: 100, mimeType: "image/webp" } } });
     await expect(local.launch(imageDraft)).rejects.toThrow("Uploaded image source digest");
+  });
+  it("preserves reviewed argument order and nested wallet bindings through actual launch calldata", async () => {
+    const f = harness(true); const base = f.catalog[0];
+    f.catalog[0] = {
+      id: base.id, title: "Recipient lists", summary: "ABI integration fixture", detail: "ABI integration fixture",
+      version: base.version, status: base.status, engine: base.engine, source: base.source, nativeBinding: base.nativeBinding,
+      schema: { type: "record", required: ["recipients", "amounts", "flags"], fields: {
+        recipients: { type: "array", minItems: 1, maxItems: 2, items: { type: "array", minItems: 2, maxItems: 2, items: { type: "account" } } },
+        amounts: { type: "array", minItems: 1, maxItems: 2, items: { type: "uint" } },
+        flags: { type: "array", minItems: 1, maxItems: 2, items: { type: "bool" } },
+      } },
+      defaults: { recipients: [[{ role: "creator" }, { address: a(91) }]], amounts: ["9007199254740993"], flags: [true, false] },
+      programAbi: [{ path: ["recipients"], type: "address[2][]" }, { path: ["amounts"], type: "uint256[]" }, { path: ["flags"], type: "bool[]" }],
+    };
+    const state = setModuleSelected(f.state, f.catalog[0], true);
+    const draft = f.draft(state); const prepared = await f.launch(draft);
+    const decoded = decodeFunctionData({ abi: moduleNativeLaunchAbi, data: prepared.transaction.data });
+    if (decoded.functionName !== "launch") throw new Error("Unexpected function");
+    const config = decoded.args[0].modules[0].config;
+    expect(config).toBe(draft.modules[0].programConfigurationBytes);
+    const values = decodeAbiParameters(parseAbiParameters("address[2][],uint256[],bool[]"), config);
+    expect(values[0].map(row => row.map(address => address.toLowerCase()))).toEqual([[f.f.wallet.toLowerCase(), a(91)]]);
+    expect(values[1]).toEqual([9007199254740993n]); expect(values[2]).toEqual([true, false]);
+    f.catalog[0].programAbi![0].type = "address[1][]";
+    expect(validateModuleModeDraft(state, f.catalog, { roles: { creator: f.f.wallet } }).ok).toBe(false);
   });
   it("simulates all four authenticated router directions and exposes separate PoolManager fees", async () => {
     for (const [isBuy, amountSpecified, limit] of [[true, -10_000n, undefined], [true, 100n, 30_000n], [false, -100n, undefined], [false, 100n, 6000n]] as const) {

@@ -1,13 +1,13 @@
 import {
   createPublicClient, decodeEventLog, decodeFunctionResult, encodeAbiParameters, encodeEventTopics, encodeFunctionData,
   erc20Abi, getCreate2Address, http, keccak256, parseAbiParameters, sha256, toHex,
-  type Abi, type AbiParameter, type Address, type Hex, type PublicClient, type TransactionReceipt,
+  type Abi, type Address, type Hex, type PublicClient, type TransactionReceipt,
 } from "viem";
 import { robinhoodChain } from "@/lib/chains";
 import { MAX_TOKEN_DESCRIPTION_BYTES, MAX_TOKEN_NAME_BYTES } from "@/lib/metadata-policy";
 import { compileOpenConfig, type OpenConfigValue } from "@/packages/classic-modules/src/open-config.mjs";
 import { evaluateOpenConstraints } from "@/packages/classic-modules/src/open-constraints.mjs";
-import { NATIVE_ENGINE_PROFILE, validateTokenImage, type ModuleModeDraft } from "./builder";
+import { encodeProgramConfiguration, NATIVE_ENGINE_PROFILE, validateTokenImage, type ModuleModeDraft } from "./builder";
 import { MODULE_MODE_DEPENDENCIES, bindActiveModuleModeRelease, moduleAddress, moduleBytes, moduleHash, moduleRecord, moduleUint, type ModuleModeRelease } from "./release";
 import { bindNativeCatalogEntry, moduleNativeCatalogDigest, nativeCanonicalJson, nativeJson, parseModuleModeAvailability, type ModuleModeAvailability, type NativeModuleModeCatalogEntry } from "./native-catalog";
 import { MODULE_NATIVE_METADATA_TYPE, MODULE_NATIVE_SELECTION_TYPE, moduleNativeApprovalAbi, moduleNativeLaunchAbi, moduleNativePoolParameters, moduleNativeReadAbi, moduleNativeRouterAbi } from "./native-abi";
@@ -211,8 +211,7 @@ function validateDraft(raw: ModuleModeDraft, availability: ModuleModeAvailabilit
     const compiled = compileOpenConfig(entry.schema, selected.configuration, { roles: { creator: account, launchWallet: account } });
     requireCondition(nativeCanonicalJson(compiled.value) === nativeCanonicalJson(selected.configuration) && nativeCanonicalJson(compiled.bindings) === nativeCanonicalJson(selected.bindings), "Module configuration or account bindings changed.");
     same(compiled.encoded, selected.configurationBytes, "Schema configuration bytes");
-    const values = entry.programAbi?.map(arg => { const value = configValue(compiled, arg.path, arg.type === "address"); return /^uint(?:\d+)?$/.test(arg.type) ? BigInt(String(value)) : value; });
-    const config = entry.programAbi ? encodeAbiParameters(entry.programAbi.map(arg => ({ type: arg.type } as AbiParameter)), values!) : compiled.encoded;
+    const config = entry.programAbi ? encodeProgramConfiguration(entry.programAbi, compiled) : compiled.encoded;
     same(config, selected.programConfigurationBytes, "Native program configuration");
     requireCondition((config.length - 2) / 2 <= 16_384, "Module configuration is too large.");
     const constraints = evaluateOpenConstraints(entry.constraints ?? [], { $self: { schema: entry.schema, value: compiled.value }, base: { schema: baseConstraints(), value: { buyCreatorFeeBps: String(draft.fees.creatorBuyBps), sellCreatorFeeBps: String(draft.fees.creatorSellBps) } } });
