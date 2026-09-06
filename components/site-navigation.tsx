@@ -91,7 +91,7 @@ function HeaderSocialLinks({ mobile = false }: { mobile?: boolean }) {
       </a>
       <a
         className="header-social-link"
-        href="https://dune.com/0xprogrammable6098/programmable-analytics"
+        href="https://dune.com/programmablehq/analytics"
         target="_blank"
         rel="noreferrer"
         aria-label="Programmable analytics on Dune"

@@ -120,8 +120,7 @@
   width: 64px;
 }
 
-.hero h1,
-.definition h2 {
+.hero h1 {
   color: #fff;
   font-weight: 560;
   letter-spacing: -0.04em;
@@ -167,103 +166,6 @@
 .scrollCue span:last-child {
   animation: cue-pulse 2.8s var(--webde-ease) infinite;
   font-size: 20px;
-}
-
-.definition {
-  padding: clamp(88px, 9vh, 112px)
-    max(clamp(24px, 4vw, 40px), calc((100% - 1280px) / 2))
-    clamp(88px, 9vh, 112px);
-  scroll-margin-top: 0;
-}
-
-.definitionHeader {
-  align-items: center;
-  display: flex;
-  flex-direction: column;
-  text-align: center;
-}
-
-.definition h2 {
-  align-items: baseline;
-  display: flex;
-  font-size: clamp(64px, 7vw, 96px);
-  gap: 0.28em;
-  justify-content: center;
-  line-height: 1;
-  white-space: nowrap;
-}
-
-.definitionLogoFrame {
-  align-items: flex-end;
-  align-self: baseline;
-  display: inline-flex;
-  height: 0.9em;
-  justify-content: center;
-  transform: translateY(0.065em);
-  width: 0.69em;
-}
-
-.definitionLogo {
-  filter: grayscale(1) brightness(0) invert(1);
-  height: 100%;
-  object-fit: contain;
-  width: 100%;
-}
-
-.definitionQuestion {
-  display: inline-block;
-}
-
-.docsLink {
-  color: var(--webde-muted);
-  font-size: 18px;
-  line-height: 1.55;
-  margin-top: 24px;
-  text-decoration: underline;
-  text-decoration-color: var(--webde-dim);
-  text-decoration-thickness: 1px;
-  text-underline-offset: 6px;
-  transition:
-    color 180ms var(--webde-ease),
-    text-decoration-color 180ms var(--webde-ease);
-}
-
-.definitionColumns {
-  align-items: start;
-  display: grid;
-  gap: clamp(64px, 9vw, 128px);
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  margin: clamp(72px, 12vh, 116px) auto 0;
-  max-width: 1280px;
-}
-
-.definitionColumns p {
-  color: var(--webde-muted);
-  font-size: clamp(20px, 1.7vw, 24px);
-  line-height: 1.55;
-  margin: 0;
-  max-width: 36rem;
-  text-wrap: pretty;
-}
-
-.definitionColumns .definitionLead {
-  color: var(--webde-ink);
-  font-size: clamp(24px, 2.15vw, 30px);
-  font-weight: 500;
-  letter-spacing: -0.012em;
-  line-height: 1.45;
-}
-
-.definitionDetail p + p {
-  margin-top: 40px;
-}
-
-.inlineLink {
-  color: inherit;
-  text-decoration: underline;
-  text-decoration-color: var(--webde-dim);
-  text-decoration-thickness: 1px;
-  text-underline-offset: 5px;
 }
 
 .exploreChapter {
@@ -404,9 +306,7 @@
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .scrollCue:hover,
-  .docsLink:hover,
-  .inlineLink:hover {
+  .scrollCue:hover {
     color: #fff;
     text-decoration-color: #fff;
   }
@@ -463,22 +363,6 @@
   .heroContent {
     padding-inline: clamp(20px, 4vw, 40px);
   }
-
-  .definition {
-    min-height: 100svh;
-    padding-block: 88px 104px;
-    scroll-margin-top: 0;
-  }
-
-  .definitionColumns {
-    gap: 44px;
-    grid-template-columns: 1fr;
-    margin-top: 64px;
-  }
-
-  .definitionColumns p {
-    max-width: 42rem;
-  }
 }
 
 @media (max-width: 42.5rem) {
@@ -493,8 +377,7 @@
     width: 52px;
   }
 
-  .hero h1,
-  .definition h2 {
+  .hero h1 {
     font-size: clamp(40px, 12.8vw, 64px);
   }
 
@@ -506,18 +389,6 @@
     bottom: 14px;
     font-size: 14px;
     max-width: calc(100% - 32px);
-  }
-
-  .definition h2 {
-    gap: 10px;
-  }
-
-  .definitionColumns p {
-    font-size: 18px;
-  }
-
-  .definitionColumns .definitionLead {
-    font-size: 24px;
   }
 
   .exploreChapter {
@@ -537,16 +408,6 @@
 
   .exploreFallbackHeading h2 {
     font-size: clamp(38px, 11vw, 48px);
-  }
-}
-
-@media (max-width: 23rem) {
-  .definition {
-    padding-inline: 16px;
-  }
-
-  .definition h2 {
-    font-size: 36px;
   }
 }
 

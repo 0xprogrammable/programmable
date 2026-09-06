@@ -231,8 +231,7 @@ describe("interaction accessibility", () => {
     expect(source).toContain('aria-label="Programmable on GitHub"');
     expect(source).toContain('aria-label="Programmable on Discord"');
     expect(source).toContain('aria-label="Programmable on DEX Screener"');
-    expect(landing).toContain('href="#what-is-programmable"');
-    expect(landing).toContain('href="/docs"');
+    expect(landing).toContain('href="#explore"');
     expect(css).toMatch(/\.scrollCue\s*\{[^}]*min-height:\s*52px;/s);
   });
 

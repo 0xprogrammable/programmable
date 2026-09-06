@@ -27,7 +27,7 @@ const resourceLinks = [
     external: true,
   },
   {
-    href: "https://dune.com/0xprogrammable6098/programmable-analytics",
+    href: "https://dune.com/programmablehq/analytics",
     label: "Dune analytics",
     external: true,
   },

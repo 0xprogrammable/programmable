@@ -44,8 +44,6 @@ describe("topbar and Explore hero polish", () => {
 
   it("keeps one ordered navigation with social links and wallet access on every route", () => {
     const navigation = read("components/site-navigation.tsx");
-    const landing = read("components/landing-page.tsx");
-    const landingCss = read("components/landing-page.module.css");
     const navigationCss = read("components/site-navigation.module.css");
 
     expect(navigation).toContain(
@@ -61,7 +59,7 @@ describe("topbar and Explore hero polish", () => {
     expect(navigation).toContain('aria-label="Programmable on DEX Screener"');
     expect(navigation).toContain('aria-label="Programmable analytics on Dune"');
     expect(navigation).toContain(
-      "https://dune.com/0xprogrammable6098/programmable-analytics",
+      "https://dune.com/programmablehq/analytics",
     );
     expect(
       navigation.indexOf('aria-label="Programmable on DEX Screener"'),
@@ -71,8 +69,6 @@ describe("topbar and Explore hero polish", () => {
     expect(
       navigation.indexOf('aria-label="Programmable analytics on Dune"'),
     ).toBeLessThan(navigation.indexOf('aria-label="Programmable on Discord"'));
-    expect(landing).toContain('href="/docs"');
-    expect(landing).toContain("Read the Programmable overview");
     expect(navigation).not.toContain("ThemeToggle");
     expect(navigation).not.toContain('if (pathname === "/") return null;');
     expect(navigation).toContain("<HeaderWalletButton");
@@ -119,7 +115,6 @@ describe("topbar and Explore hero polish", () => {
     expect(navigationCss).toMatch(
       /@media \(max-width: 26rem\)[\s\S]*?\.mobileSheet\s*\{[^}]*width:\s*calc\(100vw - 24px\);/s,
     );
-    expect(landingCss).toMatch(/\.docsLink\s*\{[^}]*font-size:\s*18px;/s);
   });
 
   it("keeps the wallet menu mounted for a smooth accessible exit", () => {
