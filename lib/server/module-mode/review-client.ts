@@ -68,7 +68,8 @@ export function createModuleReviewClient(input: {
         const target = new URL(path, base);
         const bodyBytes = payload === undefined ? Buffer.alloc(0) : Buffer.from(JSON.stringify(payload));
         const assertion = createWalletAdminBffAssertionV2({ method, requestTarget: `${target.pathname}${target.search}`, privyUserId: principal.privyUserId, walletAddress: wallet, issuedAt: (input.now?.() ?? new Date()).toISOString(), nonce: input.nonce?.() ?? randomBytes(16).toString("base64url"), bodyBytes, assertionKey });
-        const result = await input.fetchBackend(target, { method, headers: { Accept: "application/json", Authorization: `Bearer ${input.websiteToken}`, "X-Programmable-Privy-User-Id": principal.privyUserId, "X-Programmable-Wallet-Address": wallet, ...assertion, ...(payload === undefined ? {} : { "Content-Type": "application/json" }) }, body: payload === undefined ? undefined : bodyBytes, cache: "no-store", redirect: "error", signal });
+        // The bounded reader requires unencoded bytes; Node fetch otherwise negotiates compression automatically.
+        const result = await input.fetchBackend(target, { method, headers: { Accept: "application/json", "Accept-Encoding": "identity", Authorization: `Bearer ${input.websiteToken}`, "X-Programmable-Privy-User-Id": principal.privyUserId, "X-Programmable-Wallet-Address": wallet, ...assertion, ...(payload === undefined ? {} : { "Content-Type": "application/json" }) }, body: payload === undefined ? undefined : bodyBytes, cache: "no-store", redirect: "error", signal });
         if (result.redirected) fail(502, "MODULE_REVIEW_RESPONSE_INVALID");
         jsonHeader(result);
         const raw = await bytes(result, result.ok ? maximum : 16_384);

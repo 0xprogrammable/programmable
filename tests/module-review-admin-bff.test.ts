@@ -1,4 +1,6 @@
 import { createHash, createHmac } from "node:crypto";
+import { createServer } from "node:http";
+import { brotliCompressSync } from "node:zlib";
 import { describe, expect, it, vi } from "vitest";
 import { createModuleReviewClient } from "../lib/server/module-mode/review-client";
 import { computeModuleReviewDecisionDigestV1, type ModuleReviewDecisionCommandV1, type ModuleReviewDecisionRecordV1 } from "../lib/server/module-mode/review-decision-wire-v1";
@@ -38,6 +40,38 @@ function setup(options: { wallet?: string; release?: boolean } = {}) {
 }
 
 describe("Module review admin BFF", () => {
+  it("reads the review queue through a transport that compresses negotiated responses", async () => {
+    const f = setup();
+    const receivedEncodings: (string | undefined)[] = [];
+    const server = createServer((request, response) => {
+      receivedEncodings.push(request.headers["accept-encoding"]);
+      const body = Buffer.from(JSON.stringify(f.queue));
+      const compressed = request.headers["accept-encoding"] !== "identity";
+      response.writeHead(200, { "Content-Type": "application/json", ...(compressed ? { "Content-Encoding": "br" } : {}) });
+      response.end(compressed ? brotliCompressSync(body) : body);
+    });
+    await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+    try {
+      const address = server.address();
+      if (!address || typeof address === "string") throw new Error("Test server has no TCP address");
+      const client = createModuleReviewClient({ authenticator: { authenticate: f.authenticate } as WalletPrincipalAuthenticatorV1,
+        backendBaseUrl: `http://127.0.0.1:${address.port}`, websiteToken: WEBSITE_TOKEN,
+        bffAssertionKeyV2: ASSERTION_KEY, fetchBackend: fetch, now: () => new Date(TIME), nonce: () => NONCE });
+      const result = await client.handle(f.read(), "list");
+      expect(result.status).toBe(200);
+      expect(await result.json()).toMatchObject({ schemaVersion: "programmable.modules.website-review-queue.v1", jobs: [{ state: "built" }] });
+      expect(receivedEncodings).toEqual(["identity"]);
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+    }
+  });
+  it("still rejects a backend that returns an encoded response despite identity negotiation", async () => {
+    const f = setup();
+    f.fetchBackend.mockResolvedValue(Response.json(f.queue, { headers: { "Content-Encoding": "br" } }));
+    const result = await f.client.handle(f.read(), "list");
+    expect(result.status).toBe(502);
+    expect(await result.json()).toEqual({ error: { code: "MODULE_REVIEW_RESPONSE_INVALID" } });
+  });
   it("returns the lightweight private queue through a body-and-target-bound v2 assertion", async () => {
     const f = setup(); const request = new Request(`${f.read().url}&cursor=${f.subject.submissionId}`, { headers: f.read().headers });
     const result = await f.client.handle(request, "list"); expect(result.status).toBe(200);
