@@ -76,7 +76,7 @@ describe("separate Robinhood launch workflow documentation", () => {
       expect(command).not.toMatch(/--out(?:\s|$)/);
       const output = execFileSync(process.execPath, [
         "packages/launch/bin/programmable-launch.mjs", ...command.split(" ").slice(1), "--help",
-      ], { cwd: process.cwd(), encoding: "utf8", timeout: 10_000, env: { PATH: process.env.PATH } });
+      ], { cwd: process.cwd(), encoding: "utf8", timeout: 10_000, env: { PATH: process.env.PATH, NODE_ENV: "test" } });
       expect(output).toContain("Usage: programmable-launch");
     }
     const polling = commands.filter(command => command.startsWith("programmable-launch status "));
