@@ -85,17 +85,13 @@ const packageSymlinks = packageTree
   .filter((entry) => entry.stat.isSymbolicLink())
   .map((entry) => `symbolic links are not allowed: ${relative(entry.path)}`);
 if (packageSymlinks.length > 0) {
-  for (const error of [...new Set(packageSymlinks)].sort()) console.error(`- ${error}`);
-  process.exit(1);
+  await failWithErrors(packageSymlinks);
 }
 const transientDirectories = packageTree
   .filter((entry) => entry.stat.isDirectory() && isForbiddenPortableDirectory(relative(entry.path)))
   .map((entry) => relative(entry.path));
 if (transientDirectories.length > 0) {
-  for (const directory of [...new Set(transientDirectories)].sort()) {
-    console.error(`- transient build or staging directory is not portable: ${directory}`);
-  }
-  process.exit(1);
+  await failWithErrors(transientDirectories.map((directory) => `transient build or staging directory is not portable: ${directory}`));
 }
 const packageEntriesByPath = new Map(packageTree.map((entry) => [relative(entry.path), entry]));
 const packageEntries = packageTree.filter((entry) => entry.stat.isFile());

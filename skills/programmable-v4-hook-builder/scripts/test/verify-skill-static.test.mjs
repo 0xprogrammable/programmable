@@ -186,11 +186,11 @@ test("installed-mode portable execution keeps its single CLI test in one nonempt
   assert.equal(result.failure, null);
 });
 
-test("verifier awaits all three terminal error gates", () => {
+test("verifier awaits all five terminal bulk error gates", () => {
   const source = fs.readFileSync(verifier, "utf8");
-  const calls = [...source.matchAll(/^.*\bfailWithErrors\(errors\);.*$/gmu)];
-  assert.equal(calls.length, 3);
-  for (const [call] of calls) assert.match(call, /\bawait failWithErrors\(errors\);/u);
+  const calls = source.split("\n").filter(line => line.includes("failWithErrors(") && !line.includes("function failWithErrors("));
+  assert.equal(calls.length, 5);
+  for (const call of calls) assert.match(call, /\bawait failWithErrors\(/u);
 });
 
 test("verifier flushes complete large error output before exiting without continuing", () => {
@@ -220,6 +220,72 @@ test("verifier flushes complete large error output before exiting without contin
     assert.equal(result.stderr, expected, "retain sorted, deduplicated errors and the final marker");
   }
 });
+
+for (const kind of ["symlink", "transient-directory"]) {
+  test(`passive verifier flushes every bulk ${kind} diagnostic before exiting`, async () => {
+    const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), "programmable-bulk-diagnostics-"));
+    const candidateRoot = path.join(fixtureRoot, "candidate");
+    const executedMarker = path.join(fixtureRoot, "candidate-executed");
+    try {
+      fs.mkdirSync(path.join(candidateRoot, "scripts", "test"), { recursive: true });
+      fs.writeFileSync(path.join(candidateRoot, "scripts", "test", "must-not-run.test.mjs"),
+        `import fs from "node:fs"; fs.writeFileSync(${JSON.stringify(executedMarker)}, "executed");\n`);
+      const messages = [];
+      // More than a pipe's capacity, with bounded paths and output. Reverse
+      // insertion order also checks deterministic sorting by the real CLI.
+      for (let index = 4095; index >= 0; index -= 1) {
+        const stem = `bulk-${String(index).padStart(4, "0")}-${"x".repeat(180)}`;
+        const name = kind === "symlink" ? stem : `.${stem}.stage-123`;
+        if (kind === "symlink") fs.symlinkSync("missing-target", path.join(candidateRoot, name));
+        else fs.mkdirSync(path.join(candidateRoot, name));
+        messages.push(kind === "symlink" ? `symbolic links are not allowed: ${name}`
+          : `transient build or staging directory is not portable: ${name}`);
+      }
+      const expected = `${messages.sort().map(message => `- ${message}`).join("\n")}\n`;
+      assert.ok(Buffer.byteLength(expected) > 512 * 1024);
+      const result = await new Promise((resolve, reject) => {
+        const child = childProcess.spawn(process.execPath,
+          [verifier, "--skill-root", candidateRoot, "--untrusted-data"],
+          { shell: false, stdio: ["ignore", "pipe", "pipe"] });
+        const stdout = [], stderr = [];
+        let totalBytes = 0, resumeTimer;
+        const deadline = setTimeout(() => fail(new Error("bulk diagnostic child exceeded 10 seconds")), 10_000);
+        function fail(error) {
+          clearTimeout(deadline); clearTimeout(resumeTimer);
+          child.kill("SIGKILL"); reject(error);
+        }
+        const collect = (chunks, bytes) => {
+          totalBytes += bytes.length;
+          if (totalBytes > 4 * 1024 * 1024) return fail(new Error("bulk diagnostic output exceeds 4 MiB"));
+          chunks.push(bytes);
+        };
+        child.stdout.on("data", bytes => collect(stdout, bytes));
+        child.stderr.on("data", bytes => {
+          collect(stderr, bytes);
+          if (resumeTimer === undefined) {
+            // A temporarily slow pipe consumer exposes premature exit even on
+            // hosts where an eagerly drained spawnSync pipe hides truncation.
+            child.stderr.pause();
+            resumeTimer = setTimeout(() => child.stderr.resume(), 250);
+          }
+        });
+        child.once("error", fail);
+        child.once("close", (status, signal) => {
+          clearTimeout(deadline); clearTimeout(resumeTimer);
+          resolve({ status, signal, stdout: Buffer.concat(stdout).toString("utf8"), stderr: Buffer.concat(stderr).toString("utf8") });
+        });
+      });
+      assert.equal(result.signal, null);
+      assert.equal(result.status, 1);
+      assert.equal(result.stdout, "", "a terminal error must not reach success output");
+      assert.equal(Buffer.byteLength(result.stderr), Buffer.byteLength(expected), "all diagnostic bytes must reach the pipe");
+      assert.equal(result.stderr, expected, "every sorted diagnostic, including the last entry, is required");
+      assert.equal(fs.existsSync(executedMarker), false, "candidate code must remain passive");
+    } finally {
+      fs.rmSync(fixtureRoot, { recursive: true, force: true });
+    }
+  });
+}
 
 function readDeclaredRequiredInventories() {
   const source = fs.readFileSync(verifier, "utf8");
