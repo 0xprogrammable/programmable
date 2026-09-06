@@ -41,9 +41,7 @@ const MODULE_SCOPES = Object.freeze([
   "modules:submit",
   "modules:read",
 ] as const);
-type DeveloperApiKeyScopeV1 =
-  | (typeof CURRENT_SCOPES)[number]
-  | (typeof MODULE_SCOPES)[number];
+const METADATA_SCOPE_PATTERN = /^[a-z][a-z0-9-]{1,63}:[a-z][a-z0-9-]{1,63}$/u;
 type DeveloperApiKeyPurposeV1 = "custom-launches" | "module-contributions";
 
 const RESPONSE_HEADERS = Object.freeze({
@@ -57,7 +55,7 @@ export type DeveloperApiKeySummaryV1 = Readonly<{
   id: string;
   label: string;
   keyPrefix: string;
-  scopes: readonly DeveloperApiKeyScopeV1[];
+  scopes: readonly string[];
   createdAt: string;
   expiresAt: string | null;
   lastUsedAt: string | null;
@@ -493,7 +491,9 @@ function parseApiKeyList(value: JsonValue | undefined) {
   if (!Array.isArray(value) || value.length > 100) {
     throw new BackendContractErrorV1();
   }
-  return Object.freeze(value.map(parseApiKeySummary));
+  const keys = value.map(parseApiKeySummary);
+  if (new Set(keys.map((key) => key.id)).size !== keys.length) throw new BackendContractErrorV1();
+  return Object.freeze(keys);
 }
 
 function parseApiKeySummary(value: JsonValue | undefined): DeveloperApiKeySummaryV1 {
@@ -517,15 +517,15 @@ function parseApiKeySummary(value: JsonValue | undefined): DeveloperApiKeySummar
   });
 }
 
-function parseScopes(value: JsonValue | undefined): readonly DeveloperApiKeyScopeV1[] {
-  if (!Array.isArray(value) || value.length !== 2 || new Set(value).size !== 2) {
+function parseScopes(value: JsonValue | undefined): readonly string[] {
+  // Persisted metadata can outlive this reader. Unknown names are displayed,
+  // never interpreted as selectable issuance permissions.
+  if (!Array.isArray(value) || value.length < 1 || value.length > 16
+    || new Set(value).size !== value.length
+    || value.some((scope) => typeof scope !== "string" || !METADATA_SCOPE_PATTERN.test(scope))) {
     throw new BackendContractErrorV1();
   }
-  const pair = [CURRENT_SCOPES, MODULE_SCOPES].find((candidate) =>
-    candidate.every((scope) => value.includes(scope)),
-  );
-  if (!pair) throw new BackendContractErrorV1();
-  return Object.freeze(value as DeveloperApiKeyScopeV1[]);
+  return Object.freeze(value as string[]);
 }
 
 function parseApiKeyMutationResult(
@@ -537,6 +537,9 @@ function parseApiKeyMutationResult(
   const record = jsonRecord(value);
   requireBackendSchema(record);
   const apiKey = parseApiKeySummary(record.apiKey);
+  const supportedPair = [CURRENT_SCOPES, MODULE_SCOPES].some((pair) =>
+    apiKey.scopes.length === pair.length && pair.every((scope) => apiKey.scopes.includes(scope)));
+  if (!supportedPair) throw new BackendContractErrorV1();
   if (expectedPurpose !== undefined) {
     const expectedScopes = expectedPurpose === "module-contributions"
       ? MODULE_SCOPES

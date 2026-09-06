@@ -6,6 +6,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   DeveloperApiKeysView,
+  ApiKeyPermissions,
+  parseApiKeyList,
   ApiKeyPurposeChoice,
   PROGRAMMABLE_MODULE_AGENT_SETUP_TEXT_V1,
   applyApiKeyMutationResult,
@@ -205,6 +207,43 @@ function v3Launch(
 }
 
 describe("developer API key interface", () => {
+  it("describes read-only permissions as account-wide history without claiming create access", () => {
+    const html = renderToStaticMarkup(createElement(ApiKeyPermissions, {
+      scopes: ["custom-launch:read"],
+    }));
+
+    expect(html).toContain("Read only");
+    expect(html).toContain("custom-launch:read");
+    expect(html).toContain("Read launch history across API keys and linked wallets in your account.");
+    expect(html).not.toContain("custom-launch:create");
+    expect(html).not.toContain("Prepare launch requests");
+  });
+
+  it("describes current preparation permissions without claiming wallet authority", () => {
+    const html = renderToStaticMarkup(createElement(ApiKeyPermissions, {
+      scopes: ["custom-launch:read", "custom-launch:create"],
+    }));
+
+    expect(html).toContain("Launch + read");
+    expect(html).toContain("custom-launch:create");
+    expect(html).toContain("Your controller wallet must sign each transaction.");
+    expect(html).toContain("Read launch history across API keys and linked wallets in your account.");
+  });
+
+  it("keeps future scope metadata visible without inventing its permissions", () => {
+    const html = renderToStaticMarkup(createElement(ApiKeyPermissions, {
+      scopes: ["custom-launch:read", "fees:read"],
+    }));
+
+    expect(html).toContain("2 scopes");
+    expect(html).toContain("fees:read");
+    expect(html).toContain("Not recognized by this manager.");
+    expect(html).not.toContain("Read only");
+    expect(html).not.toContain("custom-launch:create");
+    expect(html).not.toContain("claim");
+  });
+
+
   it("models one-time and replayed mutations without leaking a replay secret", () => {
     const oldCredentialId = "018f3e2a-7b4c-7d5e-8f90-123456789abc";
     const replacement = apiKey("028f3e2a-7b4c-7d5e-8f90-123456789abc", {
@@ -409,6 +448,22 @@ describe("developer API key interface", () => {
     expect(copySetup).not.toContain("apiKeySecret");
   });
 
+  it("reads narrowed and future metadata alongside historical launch and module keys", () => {
+    const keys = [
+      apiKey("launch"),
+      apiKey("reader", { scopes: ["custom-launch:read"] }),
+      apiKey("module", { scopes: ["modules:submit", "modules:read"] }),
+      apiKey("future", { scopes: ["custom-launch:read", "fees:read"] }),
+    ];
+    const response = { schemaVersion: "programmable.custom-launch-api.v1", apiKeys: keys };
+    expect(parseApiKeyList(response)).toEqual(keys);
+    for (const scopes of [[], ["custom-launch:read", "custom-launch:read"], ["bad"], ["custom-launch:*"]]) {
+      expect(parseApiKeyList({ ...response, apiKeys: [apiKey("invalid", { scopes })] })).toBeNull();
+    }
+    expect(parseApiKeyList({ ...response, apiKeys: [keys[0], keys[0]] })).toBeNull();
+    expect(apiKeyPurposeLabel(["custom-launch:read"])).toBe("Custom launches");
+  });
+
   it("recognizes only the two complete purpose pairs", () => {
     expect(apiKeyPurpose(["custom-launch:create", "custom-launch:read"]))
       .toBe("custom-launches");
@@ -422,7 +477,7 @@ describe("developer API key interface", () => {
       ["modules:submit", "modules:read", "modules:approve"],
     ]) {
       expect(apiKeyPurpose(scopes)).toBeNull();
-      expect(apiKeyPurposeLabel(scopes)).toBe("Unrecognized purpose");
+      expect(apiKeyPurposeLabel(scopes)).toBe("Other permissions");
       expect(parseApiKeyMutationResult({
         schemaVersion: "programmable.custom-launch-api.v1",
         apiKey: apiKey("invalid", { scopes }),

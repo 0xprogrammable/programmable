@@ -163,7 +163,9 @@ export function apiKeyPurposeLabel(scopes: unknown): string {
   const purpose = apiKeyPurpose(scopes);
   if (purpose === "custom-launches") return "Custom launches";
   if (purpose === "module-contributions") return "Module contributions";
-  return "Unrecognized purpose";
+  if (Array.isArray(scopes) && scopes.length === 1
+    && fixedScopes.includes(scopes[0])) return "Custom launches";
+  return "Other permissions";
 }
 
 export function moduleContributionKeysAvailable(value: unknown): boolean {
@@ -172,6 +174,13 @@ export function moduleContributionKeysAvailable(value: unknown): boolean {
   return isRecord(capability)
     && capability.apiKeyIssuance === true
     && capability.submissions === true;
+}
+
+function validMetadataScopes(value: unknown): value is string[] {
+  return Array.isArray(value) && value.length > 0 && value.length <= 16
+    && new Set(value).size === value.length
+    && value.every((scope) => typeof scope === "string"
+      && /^[a-z][a-z0-9-]{1,63}:[a-z][a-z0-9-]{1,63}$/u.test(scope));
 }
 
 function parseApiKeySummary(value: unknown): ApiKeySummary | null {
@@ -184,8 +193,7 @@ function parseApiKeySummary(value: unknown): ApiKeySummary | null {
     typeof value.id !== "string" ||
     typeof value.label !== "string" ||
     typeof value.keyPrefix !== "string" ||
-    !Array.isArray(value.scopes) ||
-    apiKeyPurpose(value.scopes) === null ||
+    !validMetadataScopes(value.scopes) ||
     typeof value.createdAt !== "string" ||
     expiresAt === undefined ||
     lastUsedAt === undefined ||
@@ -206,18 +214,18 @@ function parseApiKeySummary(value: unknown): ApiKeySummary | null {
   };
 }
 
-function parseApiKeyList(value: unknown): ApiKeySummary[] | null {
+export function parseApiKeyList(value: unknown): ApiKeySummary[] | null {
   if (
     !isRecord(value) ||
     value.schemaVersion !== schemaVersion ||
-    !Array.isArray(value.apiKeys)
+    !Array.isArray(value.apiKeys) || value.apiKeys.length > 100
   ) {
     return null;
   }
   const apiKeys: ApiKeySummary[] = [];
   for (const candidate of value.apiKeys) {
     const parsed = parseApiKeySummary(candidate);
-    if (!parsed) return null;
+    if (!parsed || apiKeys.some((key) => key.id === parsed.id)) return null;
     apiKeys.push(parsed);
   }
   return apiKeys;
@@ -244,6 +252,7 @@ export function parseApiKeyMutationResult(
   );
   if (
     !apiKey
+    || apiKeyPurpose(apiKey.scopes) === null
     || (expectedPurpose !== undefined && apiKeyPurpose(apiKey.scopes) !== expectedPurpose)
     || (secretState !== "delivered-once" && secretState !== "already-delivered")
     || (secretState === "delivered-once" && status !== 201)
@@ -271,6 +280,32 @@ export function parseApiKeyMutationResult(
     apiKeySecret: value.apiKeySecret,
     ...rotation,
   };
+}
+
+export function ApiKeyPermissions({ scopes }: Readonly<{ scopes: readonly string[] }>) {
+  const purpose = apiKeyPurpose(scopes);
+  const summary = purpose === "custom-launches" ? "Launch + read"
+    : purpose === "module-contributions" ? "Submit + read"
+      : scopes.length === 1 && scopes[0] === "custom-launch:read" ? "Read only"
+        : scopes.length === 1 && scopes[0] === "custom-launch:create" ? "Launch only"
+          : `${scopes.length} ${scopes.length === 1 ? "scope" : "scopes"}`;
+  const descriptions: Readonly<Record<string, string>> = {
+    "custom-launch:create": "Prepare launch requests. Your controller wallet must sign each transaction.",
+    "custom-launch:read": "Read launch history across API keys and linked wallets in your account.",
+    "modules:submit": "Submit module source packages for review. This does not approve or deploy a module.",
+    "modules:read": "Read module submission status.",
+  };
+  return (
+    <details className={styles.scopeLedger}>
+      <summary><span>Permissions</span><strong>{summary}</strong></summary>
+      <ul>{scopes.map((scope) => (
+        <li key={scope}>
+          <code>{scope}</code>
+          <p>{descriptions[scope] ?? "Not recognized by this manager."}</p>
+        </li>
+      ))}</ul>
+    </details>
+  );
 }
 
 export function ApiKeyPurposeChoice({
@@ -1593,19 +1628,7 @@ export function DeveloperApiKeysView({
                     </button>
                   </div>
 
-                  <details className={styles.scopeLedger}>
-                    <summary>
-                      <span>Permissions</span>
-                      <strong>{purpose === "module-contributions" ? "2 module scopes" : "2 launch scopes"}</strong>
-                    </summary>
-                    <ul>
-                      {(purpose === "module-contributions" ? moduleScopes : fixedScopes).map((scope) => (
-                        <li key={scope}>
-                          <code>{scope}</code>
-                        </li>
-                      ))}
-                    </ul>
-                  </details>
+                  <ApiKeyPermissions scopes={purpose === "module-contributions" ? moduleScopes : fixedScopes} />
 
                   <p className={styles.securityNote}>
                     API keys cannot sign or broadcast wallet transactions.
@@ -1767,6 +1790,10 @@ export function DeveloperApiKeysView({
                               </span>
                             </div>
                             <code>{displayPrefix(apiKey.keyPrefix)}</code>
+                            <ApiKeyPermissions scopes={apiKey.scopes} />
+                            {status === "Active" && !apiKeyPurpose(apiKey.scopes) ? (
+                              <p className={styles.securityNote}>Rotation is unavailable for this key&apos;s permissions.</p>
+                            ) : null}
                           </div>
 
                           <dl className={styles.keyMetadata}>
@@ -1884,7 +1911,7 @@ export function DeveloperApiKeysView({
                             <div className={styles.keyActions}>
                               <button
                                 className={styles.secondaryButton}
-                                disabled={mutationBusy}
+                                disabled={mutationBusy || apiKeyPurpose(apiKey.scopes) === null}
                                 type="button"
                                 onClick={(event) =>
                                   beginRotate(apiKey.id, event.currentTarget)

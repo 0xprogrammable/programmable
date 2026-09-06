@@ -442,6 +442,7 @@
 .scopeLedger ul {
   display: grid;
   gap: 8px;
+  padding-top: 8px;
   padding-bottom: 12px;
 }
 

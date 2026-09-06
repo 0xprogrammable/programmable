@@ -298,20 +298,12 @@ describe("developer API key same-origin bridge", () => {
     });
   });
 
-  it.each([
-    [],
-    ["modules:submit"],
-    ["modules:submit", "modules:submit"],
-    ["modules:submit", "custom-launch:read"],
-    ["modules:submit", "modules:read", "custom-launch:create"],
-    ["modules:submit", "modules:approve"],
-  ].map((scopes) => ({ scopes })))("rejects malformed, mixed or broader scope sets ($scopes)", async ({ scopes }) => {
-    fetchBackend.mockResolvedValueOnce(backendJson({ apiKeys: [summary({ scopes })] }));
+  it("rejects duplicate credential IDs in metadata", async () => {
+    fetchBackend.mockResolvedValueOnce(backendJson({ apiKeys: [summary(), summary({ scopes: ["custom-launch:read"] })] }));
     const response = await bridge().list(new Request(
       `https://programmable.market/api/developer/api-keys?walletAddress=${WALLET}`,
     ));
     expect(response.status).toBe(503);
-    expect((await response.json()).error.code).toBe("api_key_service_unavailable");
   });
 
   it.each(["custom-launches", "module-contributions"])(
@@ -374,6 +366,127 @@ describe("developer API key same-origin bridge", () => {
     const [, init] = fetchBackend.mock.calls[0] as [URL, RequestInit];
     expect(JSON.parse(String(init.body))).not.toHaveProperty("scopes");
     expect(JSON.parse(String(init.body))).not.toHaveProperty("purpose");
+  });
+
+  it.each([
+    ["read-only", ["custom-launch:read"]],
+    ["create-only", ["custom-launch:create"]],
+    ["additive future", ["custom-launch:create", "custom-launch:read", "fees:read"]],
+    ["future-only", ["future-namespace:future-operation"]],
+    ["maximum bounded", Array.from({ length: 16 }, (_, index) => `future:scope-${index}`)],
+    ["maximum scope length", [`${"a".repeat(64)}:${"b".repeat(64)}`]],
+  ])("preserves %s metadata without breaking other keys in the list", async (_, scopes) => {
+    const restricted = summary({
+      id: "028f3e2a-7b4c-7d5e-8f90-123456789abc",
+      scopes,
+    });
+    fetchBackend.mockResolvedValueOnce(backendJson({
+      apiKeys: [summary(), { ...restricted, apiKeySecret: "must-not-cross-the-bff" }],
+    }));
+
+    const response = await bridge().list(new Request(
+      `https://programmable.market/api/developer/api-keys?walletAddress=${WALLET}`,
+    ));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      schemaVersion: CUSTOM_LAUNCH_API_SCHEMA_V1,
+      apiKeys: [summary(), restricted],
+    });
+    const [, init] = fetchBackend.mock.calls[0] as [URL, RequestInit];
+    expect(init.method).toBe("GET");
+    expect(init.body).toBeUndefined();
+  });
+
+  it.each([
+    { scopes: null },
+    { scopes: [] },
+    { scopes: ["custom-launch:read", "custom-launch:read"] },
+    { scopes: ["custom-launch:*"] },
+    { scopes: ["custom-launch:Read"] },
+    { scopes: ["custom-launch:read "] },
+    { scopes: ["custom-launch"] },
+    { scopes: ["x:read"] },
+    { scopes: [17] },
+    { scopes: [`${"a".repeat(65)}:read`] },
+    { scopes: [`future:${"b".repeat(65)}`] },
+    { scopes: Array.from({ length: 17 }, (_, index) => `future:scope-${index}`) },
+    { id: "invalid-credential-id" },
+    { keyPrefix: `pm_live_${"*".repeat(22)}` },
+    { createdAt: "not-a-timestamp" },
+    { expiresAt: "not-a-timestamp" },
+    { lastUsedAt: "not-a-timestamp" },
+    { revokedAt: "not-a-timestamp" },
+  ])("retains validation of restricted metadata: %j", async (invalid) => {
+    fetchBackend.mockResolvedValueOnce(backendJson({
+      apiKeys: [summary({ scopes: ["custom-launch:read"], ...invalid })],
+    }));
+
+    const response = await bridge().list(new Request(
+      `https://programmable.market/api/developer/api-keys?walletAddress=${WALLET}`,
+    ));
+
+    expect(response.status).toBe(503);
+    expect((await correlatedError(response)).body.error.code).toBe(
+      "api_key_service_unavailable",
+    );
+  });
+
+  it.each(["create", "rotate"] as const)(
+    "does not accept scope selection in the existing %s contract",
+    async (operation) => {
+      const request = new Request("https://programmable.market/api/developer/api-keys", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": IDEMPOTENCY_ID,
+        },
+        body: JSON.stringify({
+          schemaVersion: CUSTOM_LAUNCH_API_SCHEMA_V1,
+          walletAddress: WALLET,
+          label: "Restricted key",
+          scopes: ["custom-launch:read"],
+        }),
+      });
+      const response = operation === "create"
+        ? await bridge().create(request)
+        : await bridge().rotate(request, CREDENTIAL_ID);
+
+      expect(response.status).toBe(400);
+      expect(authenticate).not.toHaveBeenCalled();
+      expect(fetchBackend).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    ["custom-launch:read"],
+    ["custom-launch:create", "custom-launch:read", "fees:read"],
+  ])("does not reinterpret a V1 mutation response as new issuance permissions: %j", async (...scopes) => {
+    fetchBackend.mockResolvedValueOnce(backendJson({
+      apiKey: summary({ scopes }),
+      secretState: "delivered-once",
+      apiKeySecret: API_KEY_SECRET,
+    }, 201));
+    const response = await bridge().create(new Request(
+      "https://programmable.market/api/developer/api-keys",
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": IDEMPOTENCY_ID,
+        },
+        body: JSON.stringify({
+          schemaVersion: CUSTOM_LAUNCH_API_SCHEMA_V1,
+          walletAddress: WALLET,
+          label: "Launch agent",
+        }),
+      },
+    ));
+
+    expect(response.status).toBe(503);
+    expect((await correlatedError(response)).body.error.code).toBe(
+      "api_key_service_unavailable",
+    );
   });
 
   it("accepts an idempotent issue replay without inventing or leaking a secret", async () => {
