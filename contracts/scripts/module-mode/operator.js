@@ -16,15 +16,22 @@ async function walletMatches() {
   if (!accounts[0] || accounts[0].toLowerCase() !== state.owner) throw new Error('Select the exact reviewed deployer in MetaMask.');
   return accounts[0];
 }
-function recovery(transactionHash) { freezeRequest(); $('connect').hidden = true; $('prepare').hidden = true; $('recovery').hidden = false; if (transactionHash) { $('txhash').value = transactionHash; $('known-hash').textContent = transactionHash; } }
+function recovery(transactionHash) {
+  freezeRequest(); const canRetry = state.canRetry && !transactionHash;
+  $('connect').hidden = !canRetry; $('prepare').hidden = true; $('retry').hidden = !canRetry; $('recovery').hidden = false;
+  $('next-title').textContent = canRetry ? 'Review the exact retry' : 'Check the wallet outcome';
+  $('next-copy').textContent = canRetry ? 'The owner requested another attempt. Its nonce, addresses, value, data and fee limits must match the stored request.' : 'Check MetaMask activity and record the transaction hash if one is available.';
+  $('recovery-copy').textContent = canRetry ? 'The original request stays in the journal. Fresh source and provider checks are required before this separate retry.' : 'A wallet handoff is recorded. This tool will not automatically send it again.';
+  if (transactionHash) { $('txhash').value = transactionHash; $('known-hash').textContent = transactionHash; }
+}
 async function load() {
   state = await api('/state'); $('stage').textContent = `Deployment ${state.stepIndex + 1} of ${state.totalSteps}`; $('title').textContent = names[state.role] || state.role;
-  for (const [id, value] of Object.entries({ target: state.target, recipient: state.transactionRecipient, commit: state.sourceCommit, digest: state.planDigest, initcode: state.initcodeHash, runtime: state.runtime.runtimeCodeHash })) $(id).textContent = value;
+  for (const [id, value] of Object.entries({ target: state.target, recipient: state.transactionRecipient, commit: state.sourceCommit, digest: state.planDigest, 'operator-commit': state.uiCheck ? 'Local preview; source authority not asserted' : state.operatorSourceCommit, initcode: state.initcodeHash, runtime: state.runtime.runtimeCodeHash })) $(id).textContent = value;
   $('minimum').textContent = `${eth(state.parameters.minimumInitialBuyNative)} gross, plus gas`;
   for (const [label, wallet] of [['Deployer · pays gas', state.owner], ['Review authority', state.parameters.reviewAuthority], ['Treasury', state.economics.treasury], ['CTO fee admin', state.economics.rewardAdmin]]) row($('wallets'), label, wallet);
   const dl = document.createElement('dl'); dl.className = 'facts'; state.constructorInputs.forEach((input, i) => row(dl, `${input.name} (${input.type})`, JSON.stringify(state.constructorValues[i]))); if (!state.constructorInputs.length) row(dl, 'Constructor', 'No arguments'); $('constructor').append(dl);
   if (state.uiCheck) { $('mode').textContent = 'UI check only. Wallet requests, RPC calls and journal writes are disabled.'; $('connect').hidden = true; $('prepare').textContent = 'Review deployment details'; $('next-copy').textContent = 'Inspect the actual prepared constructor and source commitments. This preview cannot send a transaction.'; }
-  else { $('mode').textContent = `Exact production source and hosted Verify run ${state.authority.runId} bound. Wallet confirmation remains yours.`; if (state.journalState !== 'not-requested') recovery(state.transactionHash); }
+  else { $('mode').textContent = `Exact production operator source and hosted Verify run ${state.authority.runId} bound. Wallet confirmation remains yours.`; if (state.journalState !== 'not-requested') recovery(state.transactionHash); }
 }
 $('connect').onclick = async () => { try {
   if (state.uiCheck) throw new Error('Wallet access is disabled in UI check mode.');
@@ -35,18 +42,42 @@ $('connect').onclick = async () => { try {
   provider.on?.('chainChanged', () => { freezeRequest(); status('Network changed. Review this step again.'); });
   $('wallet-status').textContent = `Connected: ${state.owner}`; status('Reviewed deployer connected to Robinhood.');
 } catch (e) { error(e); } };
-$('prepare').onclick = async () => { if (state.uiCheck) { $('technical').open = true; $('technical').querySelector('summary').focus(); status('These are unsigned preparation details. No wallet was accessed.'); return; }
-  $('prepare').disabled = true; freezeRequest(); try { await walletMatches(); status('Checking source, both providers, nonce, gas and balance…'); prepared = await api('/prepare');
+async function prepare(retry = false) {
+  if (state.uiCheck) { $('technical').open = true; $('technical').querySelector('summary').focus(); status('These are unsigned preparation details. No wallet was accessed.'); return; }
+  const button = $(retry ? 'retry' : 'prepare'); button.disabled = true; freezeRequest(); try { await walletMatches(); status('Checking source, both providers, nonce, gas and balance…'); prepared = await api(retry ? '/prepare-retry' : '/prepare');
     $('maximum').textContent = `${eth(BigInt(prepared.request.gas) * BigInt(prepared.request.maxFeePerGas))} maximum`;
-    $('request').textContent = JSON.stringify(prepared.request, null, 2); $('request-details').hidden = false; $('confirmation').hidden = false; status('Simulation passed. Review the exact wallet request and maximum cost.');
-  } catch (e) { error(e); } finally { $('prepare').disabled = false; } };
+    $('request').textContent = JSON.stringify(prepared.request, null, 2); $('request-details').hidden = false; $('confirmation').hidden = false;
+    status(retry ? 'Simulation passed. The wallet payload matches the original request exactly. Review its maximum cost again.' : 'Simulation passed. Review the exact wallet request and maximum cost.');
+  } catch (e) { error(e); } finally { button.disabled = false; }
+}
+$('prepare').onclick = () => prepare();
+$('retry').onclick = () => prepare(true);
 $('reviewed').onchange = () => { $('send').disabled = !prepared || !$('reviewed').checked; };
-$('send').onclick = async () => { $('send').disabled = true; let armed = false; try {
+$('send').onclick = async () => { $('send').disabled = true; let armAttempted = false; try {
   if (state.uiCheck || !prepared || !$('reviewed').checked) throw new Error('Review a fresh request first.');
-  await walletMatches(); status('Rechecking before wallet handoff…'); armed = true; const response = await api('/arm', { requestDigest: prepared.requestDigest });
-  await walletMatches(); status('Confirm the exact deployment in MetaMask.'); const txHash = await provider.request({ method: 'eth_sendTransaction', params: [response.request] });
+  const reviewed = prepared; await walletMatches();
+  if (prepared !== reviewed || !$('reviewed').checked) throw new Error('The wallet changed. Review a fresh request first.');
+  status('Rechecking before wallet handoff…'); armAttempted = true;
+  const response = await api(reviewed.retryAttempt ? '/arm-retry' : '/arm', { requestDigest: reviewed.requestDigest });
+  await walletMatches();
+  if (prepared !== reviewed || !$('reviewed').checked) throw new Error('The wallet changed after recording the handoff. Check its outcome before retrying.');
+  state.canRetry = false; recovery(); status('Confirm the exact deployment in MetaMask.');
+  const txHash = await provider.request({ method: 'eth_sendTransaction', params: [response.request] });
   recovery(txHash); status('Wallet returned a transaction hash. Recording it now…'); await api('/record', { transactionHash: txHash }); status('Transaction recorded. Check its receipt and deployed code.');
-} catch (e) { if (armed) { recovery(); error(new Error('The handoff may have been recorded. Reopen this operator to check its journal, then check MetaMask activity and record any transaction hash. This step will not be sent again automatically.')); } else error(e); } };
+} catch (e) {
+  if (!armAttempted) { freezeRequest(); error(e); return; }
+  state.canRetry = false; recovery();
+  try {
+    state = await api('/state');
+    if (state.journalState === 'not-requested' && !state.actionInProgress) {
+      $('recovery').hidden = true; $('connect').hidden = false; $('prepare').hidden = false;
+      status('No wallet handoff was recorded. Resolve the error, then simulate again.'); error(e); return;
+    }
+    recovery(state.transactionHash);
+  } catch { /* An unavailable journal leaves the handoff frozen. */ }
+  const reason = e.code === 4001 ? 'MetaMask did not return a transaction hash.' : String(e.message || e).slice(0, 500);
+  error(new Error(`${reason} Check MetaMask activity and record any transaction hash. The stored request will not be sent again automatically.`));
+} };
 $('record').onclick = async () => { try { const value = await api('/record', { transactionHash: $('txhash').value.trim() }); $('known-hash').textContent = value.transactionHash; status('Transaction hash recorded.'); } catch (e) { error(e); } };
 $('receipt').onclick = async () => { $('receipt').disabled = true; try { status('Checking transaction inclusion and exact deployed code with both providers…'); const value = await api('/receipt'); status(value.status === 'pending' ? 'Transaction is still pending.' : 'Receipt and complete runtime code verified. Ethereum finality and source publication remain separate.'); } catch (e) { error(e); } finally { $('receipt').disabled = false; } };
 load().catch(error);

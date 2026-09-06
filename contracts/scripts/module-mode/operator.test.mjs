@@ -1,12 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, chmod, rm } from 'node:fs/promises';
+import { mkdtemp, chmod, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
+import { runInNewContext } from 'node:vm';
 import { keccak256, toHex } from 'viem';
-import { buildPlan, assertPlan, HOOK_MASK, HOOK_FLAGS, materializeRuntime } from './core.mjs';
+import { buildPlan, assertPlan, digest, HOOK_MASK, HOOK_FLAGS, materializeRuntime } from './core.mjs';
 import { walletRequest, revalidateWalletRequest, rpcClient, observeReceipt } from './rpc.mjs';
-import { armJournal, journalEntry, recordTransaction, journalDirectory } from './journal.mjs';
+import { armJournal, armRetryJournal, retryJournalEntry, journalEntry, recordTransaction, journalDirectory } from './journal.mjs';
+import { assertContinuationPlan, assertOriginalRequest, walletRetryRequest } from './recovery.mjs';
 import { sameOrigin, startOperator } from './operator.mjs';
 import { evidenceBytes, evidenceDigest, writeEvidence, sourceVerificationRequests, validatePublishedSource } from './evidence.mjs';
 
@@ -53,6 +55,80 @@ test('EIP1559 request is exact, fully funded and bounded', () => {
 });
 test('expiry stops the handoff before any RPC or wallet access', async () => {
   await assert.rejects(revalidateWalletRequest(plan, { planDigest: plan.planDigest, issuedAt: 0, expiresAt: 1 }, [], ceilings), /expired/);
+});
+function originalRequest() {
+  const request = { planDigest: plan.planDigest, stepIndex: 0, request: walletRequest(plan, observation, ceilings), observation, issuedAt: 1000, expiresAt: 301000 };
+  return { ...request, requestDigest: digest('programmable.module-mode-owner-request.v1', request) };
+}
+test('a reviewed operator successor preserves every deployment byte and the original journal identity', () => {
+  const successor = buildPlan({ ...build, sourceCommit: 'c'.repeat(40), sourceTree: 'd'.repeat(40), buildDigest: keccak256(toHex('successor-build')) }, params);
+  assert.notEqual(successor.planDigest, plan.planDigest);
+  assert.equal(assertContinuationPlan(plan, successor), plan);
+  const mutations = [
+    p => { p.steps[7].data += '00'; }, p => { p.steps[0].target = addr(99); },
+    p => { p.contracts.hook.runtime = '0x12'; }, p => { p.contracts.hook.runtimeCodeHash = keccak256(toHex('changed')); },
+    p => { p.steps[7].expectedRoles = ['hook']; }, p => { p.parameters.owner = addr(99); },
+    p => { p.parameters.minimumInitialBuyNative = '1'; }, p => { p.economics.protocolFeeBps = 21; },
+    p => { p.official.poolManager.address = addr(99); }, p => { p.sourceClean = false; },
+    p => { p.identityCandidate.sourceCommit = plan.sourceCommit; },
+  ];
+  for (const mutate of mutations) {
+    const changed = structuredClone(successor); mutate(changed); const body = { ...changed }; delete body.planDigest;
+    changed.planDigest = digest(changed.schemaVersion, body);
+    assert.throws(() => assertContinuationPlan(plan, changed), /Continuation|continuation/);
+  }
+  const damaged = structuredClone(plan); damaged.steps[0].data += '00';
+  assert.throws(() => assertContinuationPlan(damaged, successor), /intact/);
+});
+test('an explicitly reviewed retry preserves the entire expired original request, including gas and nonce', () => {
+  const original = originalRequest();
+  const actual = walletRetryRequest(plan, original, { ...observation, gasLimit: '2000000' }, ceilings, original.requestDigest);
+  assert.deepEqual(actual, original.request); assert.notEqual(actual, original.request);
+  assert.equal(actual.nonce, '0x3'); assert.equal(actual.gas, '0x2dc6c0');
+  assert.throws(() => assertOriginalRequest(plan, { ...original, transactionHash: keccak256(toHex('already-sent')) }, original.requestDigest), /Reconcile/);
+  assert.throws(() => assertOriginalRequest(plan, original, keccak256(toHex('wrong-review'))), /reviewed/);
+  assert.throws(() => assertOriginalRequest(plan, { ...original, issuedAt: 1001 }, original.requestDigest), /digest differs/);
+  assert.throws(() => assertOriginalRequest(plan, { ...original, planDigest: keccak256(toHex('other-plan')) }, original.requestDigest), /another plan/);
+});
+test('retry rejects consumed or pending nonces, occupied targets, changed gas, fee caps and insufficient funding', () => {
+  const original = originalRequest(); const check = (observed, limits = ceilings) => walletRetryRequest(plan, original, observed, limits, original.requestDigest);
+  assert.throws(() => check({ ...observation, nonce: '4' }), /nonce has changed/);
+  assert.throws(() => check({ ...observation, state: 'already-deployed-receipt-required' }), /vacant/);
+  assert.throws(() => check({ ...observation, stepIndex: 1 }), /another step/);
+  assert.throws(() => check({ ...observation, gasLimit: '3000001' }), /exceeds the original/);
+  assert.throws(() => check({ ...observation, gasLimit: '2000000' }, { ...ceilings, maxGas: '2500000' }), /reviewed gas ceiling/);
+  assert.throws(() => check({ ...observation, gasLimit: '2000000', minimumBalance: '250000000' }), /no longer fully funded/);
+  assert.throws(() => check(observation, { ...ceilings, maxFeePerGas: '101' }), /original wallet payload/);
+  assert.throws(() => check(observation, { ...ceilings, maxPriorityFeePerGas: '2' }), /original wallet payload/);
+  for (const [key, value] of [['data', '0x1234'], ['from', addr(99)], ['to', addr(99)], ['chainId', '0x1'], ['value', '0x1'], ['accessList', [{ address: addr(1), storageKeys: [] }]]]) {
+    const changed = originalRequest(); changed.request[key] = value; const body = { ...changed }; delete body.requestDigest;
+    changed.requestDigest = digest('programmable.module-mode-owner-request.v1', body);
+    assert.throws(() => walletRetryRequest(plan, changed, observation, ceilings, changed.requestDigest), /original wallet payload/);
+  }
+});
+test('a retry is append-only, has an exclusive attempt number and still records against the original request', async () => {
+  const directory = await mkdtemp(path.join(os.homedir(), '.module-owner-retry-test-')); await chmod(directory, 0o700);
+  const original = originalRequest();
+  const { requestDigest: originalDigest, ...originalBody } = original;
+  const retryBody = { ...originalBody, originalRequestDigest: originalDigest, retryAttempt: 1 };
+  const retry = { ...retryBody, requestDigest: digest('programmable.module-mode-owner-retry.v1', retryBody) };
+  const originalFile = path.join(directory, `${plan.planDigest}-0.request.json`);
+  try {
+    await assert.rejects(armRetryJournal(directory, retry, {}), /Reconcile/);
+    await armJournal(directory, original, { fixture: true }); const before = await readFile(originalFile);
+    await assert.rejects(armRetryJournal(directory, { ...retry, request: { ...retry.request, nonce: '0x4' } }, {}), /exact original/);
+    await assert.rejects(armRetryJournal(directory, { ...retry, expiresAt: retry.expiresAt + 1 }, {}), /digest differs/);
+    const writes = await Promise.allSettled([armRetryJournal(directory, retry, {}), armRetryJournal(directory, retry, {})]);
+    assert.equal(writes.filter(result => result.status === 'fulfilled').length, 1);
+    assert.equal(writes.find(result => result.status === 'rejected').reason.code, 'EEXIST');
+    assert.deepEqual(await readFile(originalFile), before);
+    assert.deepEqual((await retryJournalEntry(directory, plan.planDigest, 0, 1)).request, original.request);
+    assert.equal(await retryJournalEntry(directory, plan.planDigest, 0, 2), null);
+    await assert.rejects(armRetryJournal(directory, retry, {}), { code: 'EEXIST' });
+    const tx = keccak256(toHex('retry-included')); await recordTransaction(directory, plan.planDigest, 0, tx);
+    assert.equal((await journalEntry(directory, plan.planDigest, 0)).transactionHash, tx);
+    await assert.rejects(armRetryJournal(directory, { ...retry, retryAttempt: 2 }, {}), /Reconcile/);
+  } finally { await rm(directory, { recursive: true, force: true }); }
 });
 function receiptFixture(stepIndex = 0) {
   const step = plan.steps[stepIndex], transactionHash = keccak256(toHex('included-transaction-fixture'));
@@ -133,7 +209,7 @@ test('UI-check server rejects every mutation and keeps the real prepare path dis
   try {
     const page = await fetch(url); const html = await page.text(); const token = html.match(/name="operator-token" content="([a-f0-9]+)"/)[1];
     assert.match(page.headers.get('content-security-policy'), /frame-ancestors 'none'/);
-    for (const route of ['/arm', '/prepare', '/record', '/receipt']) {
+    for (const route of ['/arm', '/prepare', '/prepare-retry', '/arm-retry', '/record', '/receipt']) {
       const r = await fetch(`${url}${route}`, { method: 'POST', headers: { origin: url, 'x-module-operator-token': token, 'content-type': 'application/json' }, body: '{}' });
       assert.equal(r.status, 400); assert.match((await r.json()).error, /UI-check/);
     }
@@ -143,6 +219,61 @@ test('UI-check server rejects every mutation and keeps the real prepare path dis
     const duplicate = await fetch(`${url}/state`, { method: 'POST', headers: { origin: url, 'x-module-operator-token': token }, body: '{"x":1,"x":2}' });
     assert.equal(duplicate.status, 400); assert.match((await duplicate.json()).error, /Duplicate/);
   } finally { await new Promise(resolve => server.close(resolve)); }
+});
+async function browserFixture({ canRetry = false, armError = false } = {}) {
+  const elements = new Map();
+  const element = () => ({ hidden: false, disabled: false, checked: false, textContent: '', value: '', append() {}, focus() {}, querySelector() { return element(); } });
+  const get = id => { if (!elements.has(id)) elements.set(id, element()); return elements.get(id); };
+  const state = { uiCheck: false, ...plan, stepIndex: 0, totalSteps: plan.steps.length, ...plan.steps[0], owner: params.owner,
+    transactionRecipient: plan.steps[0].to, operatorSourceCommit: plan.sourceCommit, runtime: plan.contracts.tokenFactory, authority: { runId: 1 },
+    canRetry, journalState: canRetry ? 'outcome-unknown' : 'not-requested', transactionHash: null, actionInProgress: false };
+  const request = { ...originalRequest(), ...(canRetry ? { retryAttempt: 1 } : {}) };
+  const calls = [], events = {}; let accountChange = false;
+  const provider = { isMetaMask: true, on: (event, handler) => { events[event] = handler; }, request: async ({ method, params: values }) => {
+    calls.push({ method, params: values });
+    if (method === 'eth_chainId') return '0x1237';
+    if (method === 'eth_accounts' || method === 'eth_requestAccounts') { if (accountChange) { accountChange = false; events.accountsChanged([addr(99)]); } return [params.owner]; }
+    if (method === 'eth_sendTransaction') throw Object.assign(new Error('Owner rejected'), { code: 4001 });
+    throw new Error(`Unexpected wallet method ${method}`);
+  } };
+  const fetch = async (route, options) => {
+    calls.push({ route, input: JSON.parse(options.body) });
+    let value;
+    if (route === '/state') value = structuredClone(state);
+    else if (route === '/prepare' || route === '/prepare-retry') value = request;
+    else if (route === '/arm' || route === '/arm-retry') {
+      if (armError) return { ok: false, json: async () => ({ error: 'Owner request expired or belongs to another plan' }) };
+      state.canRetry = false; state.journalState = 'outcome-unknown'; value = { request: request.request };
+    } else throw new Error(`Unexpected route ${route}`);
+    return { ok: true, json: async () => value };
+  };
+  const source = await readFile(new URL('./operator.js', import.meta.url), 'utf8');
+  runInNewContext(source, { document: { getElementById: get, querySelector: () => ({ content: 'fixture-token' }), createElement: element }, window: { ethereum: provider }, fetch });
+  await new Promise(resolve => setImmediate(resolve));
+  await get('connect').onclick(); await get(canRetry ? 'retry' : 'prepare').onclick();
+  get('reviewed').checked = true; get('reviewed').onchange();
+  return { get, calls, request, changeAccountDuringHandoff: () => { accountChange = true; } };
+}
+test('wallet account changes invalidate the reviewed request before the journal or wallet handoff', async () => {
+  const ui = await browserFixture(); ui.changeAccountDuringHandoff(); await ui.get('send').onclick();
+  assert.match(ui.get('error').textContent, /wallet changed/i);
+  assert.equal(ui.calls.some(call => call.route === '/arm' || call.method === 'eth_sendTransaction'), false);
+  assert.equal(ui.get('reviewed').checked, false);
+});
+test('a failed server preflight retains its actual error and allows a fresh simulation only with an empty idle journal', async () => {
+  const ui = await browserFixture({ armError: true }); await ui.get('send').onclick();
+  assert.match(ui.get('error').textContent, /expired/); assert.match(ui.get('status').textContent, /No wallet handoff was recorded/);
+  assert.equal(ui.get('prepare').hidden, false); assert.equal(ui.get('recovery').hidden, true);
+  assert.equal(ui.calls.some(call => call.method === 'eth_sendTransaction'), false);
+});
+test('the explicit retry uses its own arm route, hands off the exact payload once and freezes on wallet rejection', async () => {
+  const ui = await browserFixture({ canRetry: true }); await ui.get('send').onclick();
+  assert.equal(ui.calls.filter(call => call.route === '/arm-retry').length, 1);
+  assert.equal(ui.calls.some(call => call.route === '/arm'), false);
+  const sends = ui.calls.filter(call => call.method === 'eth_sendTransaction'); assert.equal(sends.length, 1);
+  assert.deepEqual(sends[0].params[0], ui.request.request);
+  assert.equal(ui.get('retry').hidden, true); assert.equal(ui.get('prepare').hidden, true);
+  assert.equal(ui.get('send').disabled, true); assert.match(ui.get('error').textContent, /did not return a transaction hash/);
 });
 test('evidence hashes exact bytes including whitespace and cannot cross release identity', async () => {
   const value = { schemaVersion: 'fixture', chainId: 4663, releaseDigest: plan.planDigest };

@@ -6,10 +6,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { assertPlan, hash, need } from './core.mjs';
 import { exactJson } from './source-readback.mjs';
-import { REPOSITORY_ROOT, sealBuild } from './build.mjs';
+import { REPOSITORY_ROOT, sealBuild, git } from './build.mjs';
 import { assertSourceAuthority } from './authority.mjs';
 import { reviewedProviders, prepareWalletRequest, revalidateWalletRequest, observeReceipt } from './rpc.mjs';
-import { armJournal, journalDirectory, journalEntry, recordTransaction, recordReceipt } from './journal.mjs';
+import { armJournal, armRetryJournal, retryJournalEntry, journalDirectory, journalEntry, recordTransaction, recordReceipt } from './journal.mjs';
+import { assertContinuationPlan, assertOriginalRequest, prepareWalletRetry } from './recovery.mjs';
 
 const directory = path.dirname(fileURLToPath(import.meta.url));
 export function sameOrigin(req, origin, token) {
@@ -23,11 +24,24 @@ function secureHeaders(nonce) { return { 'cache-control': 'no-store', 'x-content
   'cross-origin-opener-policy': 'same-origin', 'cross-origin-resource-policy': 'same-origin' }; }
 export async function startOperator(options) {
   const { plan, stepIndex, uiCheck = false } = options; const step = plan.steps[stepIndex]; need(step, 'Unknown deployment step');
+  const authorityPlan = options.continuationPlan ?? plan;
+  const authorityDigest = options.continuationPlan ? options.reviewedContinuationPlanDigest : options.reviewedPlanDigest;
+  const refreshAuthority = () => assertSourceAuthority(authorityPlan, authorityDigest, options.runId, options.runAttempt);
+  if (options.retryAttempt !== undefined) {
+    need(Number.isSafeInteger(options.retryAttempt) && options.retryAttempt > 0, 'Explicit positive retry attempt required');
+    hash(options.reviewedRequestDigest, 'reviewed original request digest');
+  } else need(options.reviewedRequestDigest === undefined, 'Retry digest requires an explicit retry attempt');
   let providers, authority;
   if (!uiCheck) {
-    const freshBuild = await sealBuild(); assertPlan(plan, freshBuild);
+    const freshBuild = await sealBuild(); assertPlan(authorityPlan, freshBuild);
+    if (options.continuationPlan) {
+      need(plan.planDigest === options.reviewedPlanDigest, 'Original reviewed plan digest differs');
+      assertContinuationPlan(plan, authorityPlan);
+      try { await git(REPOSITORY_ROOT, ['merge-base', '--is-ancestor', plan.sourceCommit, authorityPlan.sourceCommit]); }
+      catch { throw new Error('Original contract source must be an ancestor of the reviewed operator source'); }
+    }
     await journalDirectory(options.journal); providers = await reviewedProviders();
-    authority = await assertSourceAuthority(plan, options.reviewedPlanDigest, options.runId, options.runAttempt);
+    authority = await refreshAuthority();
   }
   const token = randomBytes(24).toString('hex'), nonce = randomBytes(18).toString('base64'); let prepared = null, busy = false;
   const origin = `http://127.0.0.1:${options.port}`;
@@ -49,7 +63,10 @@ export async function startOperator(options) {
       need(req.method === 'POST', 'Unsupported method'); sameOrigin(req, origin, token); const input = await body(req);
       if (req.url === '/state') {
         const entry = uiCheck ? null : await journalEntry(options.journal, plan.planDigest, stepIndex);
+        const retry = !uiCheck && options.retryAttempt ? await retryJournalEntry(options.journal, plan.planDigest, stepIndex, options.retryAttempt) : null;
         reply(200, { uiCheck, chainId: 4663, planDigest: plan.planDigest, sourceCommit: plan.sourceCommit, stepIndex, totalSteps: plan.steps.length,
+          operatorSourceCommit: authorityPlan.sourceCommit, operatorPlanDigest: authorityPlan.planDigest, actionInProgress: busy,
+          canRetry: !uiCheck && Boolean(options.retryAttempt && entry && !entry.transactionHash && !retry && entry.requestDigest === options.reviewedRequestDigest), retryAttempt: options.retryAttempt ?? null,
           role: step.role, target: step.target, transactionRecipient: step.to, owner: step.sender, value: step.value, parameters: plan.parameters, economics: plan.economics,
           constructorInputs: step.constructorInputs, constructorValues: step.constructorValues, initcodeHash: step.initcodeHash,
           initcodeBytes: step.initcodeBytes, runtime: { ...plan.contracts[step.role], runtime: undefined },
@@ -59,14 +76,31 @@ export async function startOperator(options) {
       try {
         if (req.url === '/prepare') {
           need(!await journalEntry(options.journal, plan.planDigest, stepIndex), 'This step was already handed to a wallet; reconcile its outcome instead of retrying');
-          authority = await assertSourceAuthority(plan, options.reviewedPlanDigest, options.runId, options.runAttempt);
+          authority = await refreshAuthority();
           prepared = await prepareWalletRequest(plan, stepIndex, providers, options.ceilings);
           reply(200, prepared); return;
         }
         if (req.url === '/arm') {
-          need(prepared && input.requestDigest === prepared.requestDigest, 'Prepared request digest differs');
-          authority = await assertSourceAuthority(plan, options.reviewedPlanDigest, options.runId, options.runAttempt);
+          need(prepared && !prepared.retryAttempt && input.requestDigest === prepared.requestDigest, 'Prepared request digest differs');
+          authority = await refreshAuthority();
           await revalidateWalletRequest(plan, prepared, providers, options.ceilings); await armJournal(options.journal, prepared, authority);
+          reply(200, { request: prepared.request, requestDigest: prepared.requestDigest }); prepared = null; return;
+        }
+        if (req.url === '/prepare-retry') {
+          need(options.retryAttempt, 'An explicitly reviewed retry attempt is required');
+          need(!await retryJournalEntry(options.journal, plan.planDigest, stepIndex, options.retryAttempt), 'This retry was already handed off; reconcile its outcome');
+          const entry = await journalEntry(options.journal, plan.planDigest, stepIndex);
+          authority = await refreshAuthority();
+          prepared = await prepareWalletRetry(plan, entry, providers, options.ceilings, options.reviewedRequestDigest, options.retryAttempt);
+          reply(200, prepared); return;
+        }
+        if (req.url === '/arm-retry') {
+          need(prepared?.retryAttempt === options.retryAttempt && options.retryAttempt && input.requestDigest === prepared.requestDigest, 'Prepared retry digest differs');
+          const entry = await journalEntry(options.journal, plan.planDigest, stepIndex);
+          assertOriginalRequest(plan, entry, options.reviewedRequestDigest);
+          authority = await refreshAuthority();
+          await revalidateWalletRequest(plan, prepared, providers, options.ceilings);
+          await armRetryJournal(options.journal, prepared, authority);
           reply(200, { request: prepared.request, requestDigest: prepared.requestDigest }); prepared = null; return;
         }
         if (req.url === '/record') {
@@ -87,21 +121,26 @@ export async function startOperator(options) {
   return { server, url: origin, uiCheck };
 }
 async function main(argv) {
-  const options = { port: 8787, stepIndex: 0, uiCheck: false, ceilings: {} }; let planFile;
-  const valued = { '--step': 'stepIndex', '--port': 'port', '--journal': 'journal', '--reviewed-plan-digest': 'reviewedPlanDigest', '--verify-run-id': 'runId', '--verify-run-attempt': 'runAttempt' };
+  const options = { port: 8787, stepIndex: 0, uiCheck: false, ceilings: {} }; let planFile, continuationFile;
+  const valued = { '--step': 'stepIndex', '--port': 'port', '--journal': 'journal', '--reviewed-plan-digest': 'reviewedPlanDigest', '--verify-run-id': 'runId', '--verify-run-attempt': 'runAttempt',
+    '--reviewed-continuation-plan-digest': 'reviewedContinuationPlanDigest', '--retry-attempt': 'retryAttempt', '--reviewed-request-digest': 'reviewedRequestDigest' };
   for (let i = 0; i < argv.length; i++) {
     const key = argv[i];
     if (key === '--ui-check') options.uiCheck = true;
     else if (key === '--plan') planFile = argv[++i];
+    else if (key === '--continuation-plan') continuationFile = argv[++i];
     else if (key === '--max-gas') options.ceilings.maxGas = argv[++i];
     else if (key === '--max-fee-per-gas-wei') options.ceilings.maxFeePerGas = argv[++i];
     else if (key === '--priority-fee-per-gas-wei') options.ceilings.maxPriorityFeePerGas = argv[++i];
     else if (valued[key]) options[valued[key]] = argv[++i];
     else throw new Error(`Unsupported option: ${key.split('=')[0]}`);
   }
-  for (const key of ['stepIndex', 'port', 'runId', 'runAttempt']) if (options[key] !== undefined) options[key] = Number(options[key]);
+  for (const key of ['stepIndex', 'port', 'runId', 'runAttempt', 'retryAttempt']) if (options[key] !== undefined) options[key] = Number(options[key]);
   need(planFile && Number.isSafeInteger(options.port) && options.port > 1024 && options.port < 65536 && Number.isSafeInteger(options.stepIndex), 'Valid plan, step and local port required');
-  options.plan = exactJson(await readFile(planFile), 'Deployment plan'); const result = await startOperator(options);
+  need(Boolean(continuationFile) === Boolean(options.reviewedContinuationPlanDigest), 'Continuation plan and its explicitly reviewed digest are both required');
+  options.plan = exactJson(await readFile(planFile), 'Deployment plan');
+  if (continuationFile) options.continuationPlan = exactJson(await readFile(continuationFile), 'Reviewed operator continuation plan');
+  const result = await startOperator(options);
   console.log(`${result.url} (${options.uiCheck ? 'UI check: wallet and RPC disabled' : 'owner-controlled wallet handoff'})`);
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main(process.argv.slice(2)).catch(error => { console.error(error.message); process.exitCode = 1; });

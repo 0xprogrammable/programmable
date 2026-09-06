@@ -174,10 +174,67 @@ nothing: both providers must agree on the original sender, recipient, calldata,
 zero value, chain, type, nonce, gas and fee caps; successful canonical inclusion;
 and all expected child code at that receipt's block. Pending receipts remain
 pending. Changed payloads, replaced blocks and reverted transactions fail closed.
-An explicit rejection without a hash or a confirmed revert requires operator
-reconciliation before any new plan/handoff; this version deliberately has no
-journal-delete or automatic retry command. Never clear the journal to hide an
-unknown outcome.
+A rejection without a hash requires operator reconciliation before another
+handoff. Never clear the journal to hide an unknown outcome. A recorded hash,
+confirmed revert, consumed nonce or pending transaction must be reconciled;
+the retry path below does not replace those transactions.
+
+### Retry the identical wallet request
+
+When the owner explicitly requests another attempt and no transaction hash is
+recorded, restart the same step with the same plan, journal and fee ceilings,
+adding both of these arguments:
+
+```sh
+--retry-attempt 1 \
+--reviewed-request-digest "$MODULE_ORIGINAL_REQUEST_DIGEST"
+```
+
+Read the original request digest from the protected journal and review its
+payload. The operator independently recomputes that digest. It rechecks source
+authority, both providers, target vacancy, latest and pending nonce, gas and
+funding. Every wallet field must match the original request, including the nonce,
+gas limit and both fee caps. An estimate may decrease; the reviewed gas limit
+still stays unchanged. A changed or pending nonce blocks the retry. The request
+gets a fresh five-minute review window, followed by another check before handoff.
+
+The UI exposes **Prepare exact retry** only for that explicitly selected attempt.
+Before returning its payload, the server exclusively appends
+`<plan-digest>-<step>.retry-1.request.json`. It never replaces the original request,
+transaction or receipt. Reopening an already handed-off attempt cannot send it
+again. A further attempt requires another explicit owner request, reconciliation
+and an unused attempt number. The original and retry use the same EOA nonce, so a
+late original submission cannot become a second transaction at a new nonce.
+Record the actual transaction hash against the original journal entry and verify
+its receipt as usual. The owner still confirms in MetaMask.
+
+### Continue after an operator-only source update
+
+If the recovery tool itself needed a source fix, first merge and verify the new
+production source normally. Generate a fresh clean-source plan from that reviewed
+checkout using the **unchanged** release parameters. Run the new operator with
+the original `--plan`, original `--reviewed-plan-digest` and original journal,
+and add:
+
+```sh
+--continuation-plan "$MODULE_CURRENT_OPERATOR_PLAN" \
+--reviewed-continuation-plan-digest "$MODULE_CURRENT_OPERATOR_PLAN_DIGEST"
+```
+
+Use the successful hosted Verify run and attempt for the **current operator
+source**. The operator freshly rebuilds and seals that source, validates both plan
+digests, and requires the original source to be a Git ancestor. Apart from source
+and build provenance, the plans must be identical: all deployment calldata,
+constructor values, runtime bytes, addresses, roles, official pins and economics.
+Any contract or deployment change blocks continuation. The page identifies the
+original contract source and current operator source separately.
+
+This keeps the original contract plan and all actual receipts intact. Continue
+subsequent steps with the same pair of plans, omitting retry arguments for steps
+that were never handed off. Collect deployment and source-publication evidence
+from a clean checkout of the **original contract source**, using the original
+plan and journal. A continuation does not rewrite the immutable release identity
+to claim that earlier transactions deployed a newer source revision.
 
 ## Collect deployment and published source
 
