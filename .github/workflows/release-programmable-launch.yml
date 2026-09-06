@@ -220,6 +220,10 @@ jobs:
               export PROGRAMMABLE_ROBINHOOD_BACKEND_AUTHORIZATION="$GITHUB_WORKSPACE/release/robinhood-chain-4663/v4.1/programmable-backend-authorization.json"
               node scripts/programmable-launch-v411-release-binding.mjs verify-release-ready --repository-root "$GITHUB_WORKSPACE"
               ;;
+            4.1.2)
+              export PROGRAMMABLE_ROBINHOOD_BACKEND_AUTHORIZATION="$GITHUB_WORKSPACE/release/robinhood-chain-4663/v4.1/programmable-backend-authorization.json"
+              node scripts/programmable-launch-v412-release-binding.mjs verify-release-ready --repository-root "$GITHUB_WORKSPACE"
+              ;;
             *) echo "Unsupported V4 release version" >&2; exit 1 ;;
           esac
 
@@ -233,6 +237,7 @@ jobs:
             4.0.0) npm run release:custom-launch:v4:clean-room:test ;;
             4.1.0) node --test scripts/test/programmable-launch-v41-clean-room.test.mjs scripts/test/programmable-launch-v41-clean-room-workflow.test.mjs scripts/test/programmable-v41-api-activation.test.mjs scripts/test/programmable-launch-v41-release-binding.test.mjs contracts/scripts/test/robinhood-custom-launch-v41-promotion.test.mjs scripts/test/robinhood-custom-launch-v41-promotion-workflow.test.mjs ;;
             4.1.1) node --test scripts/test/programmable-launch-v41-clean-room.test.mjs scripts/test/programmable-launch-v41-clean-room-workflow.test.mjs scripts/test/programmable-v41-api-activation.test.mjs scripts/test/programmable-launch-v41-release-binding.test.mjs contracts/scripts/test/robinhood-custom-launch-v41-promotion.test.mjs scripts/test/robinhood-custom-launch-v41-promotion-workflow.test.mjs scripts/test/programmable-launch-v411-release-binding.test.mjs ;;
+            4.1.2) node --test scripts/test/programmable-launch-v41-clean-room.test.mjs scripts/test/programmable-launch-v41-clean-room-workflow.test.mjs scripts/test/programmable-v41-api-activation.test.mjs scripts/test/programmable-launch-v41-release-binding.test.mjs contracts/scripts/test/robinhood-custom-launch-v41-promotion.test.mjs scripts/test/robinhood-custom-launch-v41-promotion-workflow.test.mjs scripts/test/programmable-launch-v411-release-binding.test.mjs scripts/test/programmable-launch-v412-release-binding.test.mjs ;;
             *) echo "Unsupported V4 release version" >&2; exit 1 ;;
           esac
 
@@ -289,7 +294,7 @@ jobs:
           EXPECTED_VERSION: ${{ inputs.version }}
           GH_TOKEN: ${{ github.token }}
           PROGRAMMABLE_PRODUCTION_VERIFY_PROOF: ${{ runner.temp }}/production-verify-proof/production-verify-proof.json
-          PROGRAMMABLE_ROBINHOOD_BACKEND_AUTHORIZATION: ${{ github.workspace }}/release/robinhood-chain-4663/${{ (inputs.version == '4.1.0' || inputs.version == '4.1.1') && 'v4.1/' || '' }}programmable-backend-authorization.json
+          PROGRAMMABLE_ROBINHOOD_BACKEND_AUTHORIZATION: ${{ github.workspace }}/release/robinhood-chain-4663/${{ (inputs.version == '4.1.0' || inputs.version == '4.1.1' || inputs.version == '4.1.2') && 'v4.1/' || '' }}programmable-backend-authorization.json
         run: |
           set -euo pipefail
           node scripts/programmable-launch-release-assets.mjs build \
@@ -359,7 +364,7 @@ jobs:
         env:
           PROGRAMMABLE_PRODUCTION_VERIFY_PROOF: ${{ runner.temp }}/production-verify-proof/production-verify-proof.json
           EXPECTED_VERSION: ${{ inputs.version }}
-          PROGRAMMABLE_ROBINHOOD_BACKEND_AUTHORIZATION: ${{ github.workspace }}/release/robinhood-chain-4663/${{ (inputs.version == '4.1.0' || inputs.version == '4.1.1') && 'v4.1/' || '' }}programmable-backend-authorization.json
+          PROGRAMMABLE_ROBINHOOD_BACKEND_AUTHORIZATION: ${{ github.workspace }}/release/robinhood-chain-4663/${{ (inputs.version == '4.1.0' || inputs.version == '4.1.1' || inputs.version == '4.1.2') && 'v4.1/' || '' }}programmable-backend-authorization.json
           ETHEREUM_MAINNET_RPC_URL_PRIMARY: ${{ secrets.ETHEREUM_MAINNET_RPC_URL_PRIMARY }}
           ETHEREUM_MAINNET_RPC_URL_SECONDARY: ${{ secrets.ETHEREUM_MAINNET_RPC_URL_SECONDARY }}
           FLY_API_TOKEN: ${{ secrets.PROGRAMMABLE_CUSTOM_LAUNCH_API_FLY_READ_TOKEN }}
@@ -380,7 +385,7 @@ jobs:
               promotion_evidence="$evidence"
               finalizer="contracts/scripts/finalize-robinhood-custom-launch-deployment.mjs"
               ;;
-            4.1.0|4.1.1)
+            4.1.0|4.1.1|4.1.2)
               promotion_evidence="$evidence/v4.1"
               finalizer="contracts/scripts/finalize-robinhood-custom-launch-v41-deployment.mjs"
               ;;
@@ -526,7 +531,7 @@ jobs:
       - name: Fresh-download and verify the published release
         env:
           PROGRAMMABLE_PRODUCTION_VERIFY_PROOF: ${{ runner.temp }}/production-verify-proof/production-verify-proof.json
-          PROGRAMMABLE_ROBINHOOD_BACKEND_AUTHORIZATION: ${{ github.workspace }}/release/robinhood-chain-4663/${{ (inputs.version == '4.1.0' || inputs.version == '4.1.1') && 'v4.1/' || '' }}programmable-backend-authorization.json
+          PROGRAMMABLE_ROBINHOOD_BACKEND_AUTHORIZATION: ${{ github.workspace }}/release/robinhood-chain-4663/${{ (inputs.version == '4.1.0' || inputs.version == '4.1.1' || inputs.version == '4.1.2') && 'v4.1/' || '' }}programmable-backend-authorization.json
           EXPECTED_VERSION: ${{ inputs.version }}
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.identity.outputs.tag }}

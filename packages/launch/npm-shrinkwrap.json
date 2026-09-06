@@ -1,12 +1,12 @@
 {
   "name": "@programmable/launch",
-  "version": "4.1.1",
+  "version": "4.1.2",
   "lockfileVersion": 3,
   "requires": true,
   "packages": {
     "": {
       "name": "@programmable/launch",
-      "version": "4.1.1",
+      "version": "4.1.2",
       "license": "MIT",
       "dependencies": {
         "viem": "2.55.5"

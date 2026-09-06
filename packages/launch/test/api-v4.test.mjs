@@ -143,7 +143,7 @@ test("V4 remote validation fetches unauthenticated chain capabilities before the
   assert.equal(JSON.stringify(result).includes(V4_API_KEY), false);
 });
 
-test("V4 submit journals exact bytes and uses a domain-separated idempotency key across retryable 503", async () => {
+test("V4 submit journals exact bytes and uses a domain-separated idempotency key across 429 and retryable 503", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "programmable-v4-submit-"));
   try {
     const request = requestWithWalletContract();
@@ -154,7 +154,7 @@ test("V4 submit journals exact bytes and uses a domain-separated idempotency key
       launchPath: path.join(root, "launch.json"),
       configPath: path.join(root, "config.json"),
       stateDirectory: path.join(root, "state"),
-      maxAttempts: 2,
+      maxAttempts: 3,
       readLaunchBytesImpl: async () => requestBytes,
       validateLaunchFileImpl: v4Validation(request, requestBytes),
       loadApiKeyImpl: async () => V4_API_KEY,
@@ -167,6 +167,11 @@ test("V4 submit journals exact bytes and uses a domain-separated idempotency key
           idempotencyKey: options.headers["idempotency-key"],
         });
         if (submitCalls.length === 1) {
+          return jsonResponse({ error: { code: "RATE_LIMITED" } }, {
+            status: 429, headers: { "retry-after": "1" },
+          });
+        }
+        if (submitCalls.length === 2) {
           return jsonResponse({
             error: { code: "UPSTREAM_BUSY", retryable: true },
           }, { status: 503, headers: { "retry-after": "7" } });
@@ -179,14 +184,16 @@ test("V4 submit journals exact bytes and uses a domain-separated idempotency key
     assert.equal(result.idempotencyKey, expectedKey);
     assert.equal(result.apiVersion, "v4");
     assert.equal(result.chainId, "4663");
-    assert.equal(submitCalls.length, 2);
+    assert.equal(submitCalls.length, 3);
     assert.deepEqual(submitCalls[0].body, requestBytes);
     assert.deepEqual(submitCalls[1].body, requestBytes);
+    assert.deepEqual(submitCalls[2].body, requestBytes);
     assert.deepEqual(submitCalls.map(({ idempotencyKey }) => idempotencyKey), [
       expectedKey,
       expectedKey,
+      expectedKey,
     ]);
-    assert.deepEqual(sleeps, [7_000]);
+    assert.deepEqual(sleeps, [1_000, 7_000]);
 
     const journalSource = await readFile(result.journalPath, "utf8");
     const journal = JSON.parse(journalSource);
@@ -215,6 +222,46 @@ test("V4 submit journals exact bytes and uses a domain-separated idempotency key
     await rm(root, { recursive: true, force: true });
   }
 });
+
+for (const status of [202, 429, 503]) {
+  test(`V4 malformed HTTP ${status} after upload stops after one exact POST and preserves the bound journal`, async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "programmable-v4-malformed-submit-"));
+    try {
+      const request = requestWithWalletContract();
+      const requestBytes = v4RequestBytes(request);
+      const expectedKey = `programmable-v4-${sha256Hex(requestBytes)}`;
+      const uploads = [];
+      const stateDirectory = path.join(root, "state");
+      await assert.rejects(submitLaunch({
+        launchPath: path.join(root, "launch.json"), configPath: path.join(root, "config.json"),
+        stateDirectory, maxAttempts: 5,
+        readLaunchBytesImpl: async () => requestBytes,
+        validateLaunchFileImpl: v4Validation(request, requestBytes),
+        loadApiKeyImpl: async () => V4_API_KEY,
+        sleepImpl: async () => assert.fail("malformed upload response must not retry"),
+        fetchImpl: async (url, options) => {
+          if (url === CAPABILITIES_URL) return jsonResponse(validV4Capabilities());
+          assert.equal(url, CREATE_URL);
+          uploads.push({ body: Buffer.from(options.body), key: options.headers["idempotency-key"] });
+          return new Response('{"error":{"code":"FIRST","code":"SECOND","retryable":true}}', { status });
+        },
+      }), error => {
+        assert.equal(error.details.code, "API_RESPONSE_INVALID_JSON");
+        assert.equal(error.details.httpStatus, status);
+        return true;
+      });
+      assert.equal(uploads.length, 1);
+      assert.deepEqual(uploads[0], { body: requestBytes, key: expectedKey });
+      const journal = JSON.parse(await readFile(path.join(stateDirectory, "submissions",
+        `${sha256Hex(Buffer.from(expectedKey))}.json`), "utf8"));
+      assert.equal(journal.idempotencyKey, expectedKey);
+      assert.equal(journal.rawRequestSha256, sha256Digest(requestBytes));
+      assert.deepEqual(Buffer.from(journal.exactRequestBytesBase64, "base64"), requestBytes);
+      assert.equal(journal.lastResponse, null);
+      assert.equal(journal.launchId, null);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+}
 
 test("V4 retries only transport, 429, or explicitly retryable 503 responses", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "programmable-v4-retry-"));

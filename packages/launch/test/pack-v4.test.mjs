@@ -51,7 +51,7 @@ test("V4 pack builds and revalidates an exact 3-target Robinhood request without
     assert.equal(validation.exactSourceIncluded, true);
     assert.equal(validation.predictions.length, 3);
     assert.equal(first.receipt.apiVersion, "v4");
-    assert.equal(first.receipt.package.version, "4.1.1");
+    assert.equal(first.receipt.package.version, "4.1.2");
     assert.equal(first.receipt.openapi,
       "https://programmable.market/openapi/custom-launch-v4.json");
     const outputKeys = deepObjectKeys(first);

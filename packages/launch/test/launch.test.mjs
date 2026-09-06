@@ -394,7 +394,7 @@ test("status honors Retry-After and stops at the wallet handoff", async () => {
   assert.ok(sleeps[1] >= 58_000 && sleeps[1] <= 60_000);
 });
 
-test("API retry covers stalled bodies and malformed transient gateway responses", async () => {
+test("API retry covers stalled stream bodies and valid transient gateway responses", async () => {
   const sleeps = [];
   let calls = 0;
   const result = await statusLaunch({
@@ -405,21 +405,14 @@ test("API retry covers stalled bodies and malformed transient gateway responses"
     fetchImpl: async (_url, options) => {
       calls += 1;
       if (calls === 1) {
-        return {
-          ok: true,
-          status: 200,
-          headers: new Headers(),
-          arrayBuffer: () => new Promise((resolve, reject) => {
-            options.signal.addEventListener("abort", () => reject(options.signal.reason), {
-              once: true,
-            });
-          }),
-        };
+        return new Response(new ReadableStream({
+          pull() { return new Promise(() => {}); },
+        }));
       }
       if (calls === 2) {
-        return new Response("<html>temporary gateway</html>", {
+        return new Response(JSON.stringify({ error: { code: "UPSTREAM_BUSY" } }), {
           status: 503,
-          headers: { "retry-after": "0", "content-type": "text/html" },
+          headers: { "retry-after": "0", "content-type": "application/json" },
         });
       }
       return new Response(JSON.stringify({
@@ -446,7 +439,7 @@ test("API retry covers stalled bodies and malformed transient gateway responses"
     loadApiKeyImpl: async () => "pm_live_publictest_secretvalue",
   }), (error) => {
     assert.equal(error.details.httpStatus, 503);
-    assert.equal(error.details.requestId, null);
+    assert.equal(error.details.code, "API_RESPONSE_INVALID_JSON");
     assert.equal(error.details.retryAfter, "7");
     return true;
   });
