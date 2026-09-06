@@ -1,0 +1,355 @@
+[
+  {
+    "name": "combined-self-initializer",
+    "input": {
+      "schemaVersion": "programmable.custom-graph-bundle.v2",
+      "sourceBundleSha256": "sha256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "targets": [
+        {
+          "targetId": "combined",
+          "applicantSalt": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "creationBytecode": "0x60AA",
+          "constructorArguments": "0x",
+          "initializerCalldata": "0x123456780000000000000000000000000000000000000000000000000000000000000000",
+          "constructorAddressLocators": [],
+          "initializerAddressLocators": [
+            {
+              "targetId": "combined",
+              "byteOffset": 4,
+              "encoding": "abi-address-word"
+            }
+          ],
+          "deploymentValueWei": "0",
+          "initializerValueWei": "0",
+          "expectedRuntimeCodeHash": "0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+          "componentRoles": [
+            "token",
+            "hook"
+          ],
+          "declaredHookPermissions": [
+            "afterSwap",
+            "beforeInitialize",
+            "beforeSwap"
+          ]
+        }
+      ],
+      "pool": {
+        "tokenTargetId": "combined",
+        "hookTargetId": "combined",
+        "fee": 3000,
+        "tickSpacing": 60
+      }
+    },
+    "projectMetadataHash": "sha256:CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "normalized": {
+      "schemaVersion": "programmable.custom-graph-bundle.v2",
+      "sourceBundleSha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "targets": [
+        {
+          "targetId": "combined",
+          "applicantSalt": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "creationBytecode": "0x60aa",
+          "constructorArguments": "0x",
+          "initializerCalldata": "0x123456780000000000000000000000000000000000000000000000000000000000000000",
+          "constructorAddressLocators": [],
+          "initializerAddressLocators": [
+            {
+              "targetId": "combined",
+              "byteOffset": 4,
+              "encoding": "abi-address-word"
+            }
+          ],
+          "deploymentValueWei": "0",
+          "initializerValueWei": "0",
+          "expectedRuntimeCodeHash": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "componentRoles": [
+            "token",
+            "hook"
+          ],
+          "declaredHookPermissions": [
+            "beforeInitialize",
+            "beforeSwap",
+            "afterSwap"
+          ]
+        }
+      ],
+      "pool": {
+        "tokenTargetId": "combined",
+        "hookTargetId": "combined",
+        "fee": 3000,
+        "tickSpacing": 60
+      }
+    },
+    "expected": {
+      "graphBundleHash": "sha256:c71c7e2c8251df986e35b4c4d3c3734fae798ae342f262aa06700550c15aed66",
+      "unboundGraphBundleHash": "sha256:8209b1196f0a2c5655241a70914f9d7602fddabd76a628bd1df057eb032f9184",
+      "topologyHash": "0x5cd9e45002838d03caf8d809b41dccd80d60ebf3408a3bf8666af640fc3ee63c"
+    }
+  },
+  {
+    "name": "combined-and-auxiliary",
+    "input": {
+      "schemaVersion": "programmable.custom-graph-bundle.v2",
+      "sourceBundleSha256": "sha256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "targets": [
+        {
+          "targetId": "combined",
+          "applicantSalt": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "creationBytecode": "0x60AA",
+          "constructorArguments": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "initializerCalldata": "0x123456780000000000000000000000000000000000000000000000000000000000000000",
+          "constructorAddressLocators": [
+            {
+              "targetId": "vault",
+              "byteOffset": 0,
+              "encoding": "abi-address-word"
+            }
+          ],
+          "initializerAddressLocators": [
+            {
+              "targetId": "combined",
+              "byteOffset": 4,
+              "encoding": "abi-address-word"
+            }
+          ],
+          "deploymentValueWei": "0",
+          "initializerValueWei": "0",
+          "expectedRuntimeCodeHash": "0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+          "componentRoles": [
+            "token",
+            "hook"
+          ],
+          "declaredHookPermissions": [
+            "afterSwap",
+            "beforeInitialize",
+            "beforeSwap"
+          ]
+        },
+        {
+          "targetId": "vault",
+          "applicantSalt": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "creationBytecode": "0x60AA",
+          "constructorArguments": "0x",
+          "initializerCalldata": "0xabcdef1200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "constructorAddressLocators": [],
+          "initializerAddressLocators": [
+            {
+              "targetId": "combined",
+              "byteOffset": 36,
+              "encoding": "packed-address-20"
+            },
+            {
+              "targetId": "vault",
+              "byteOffset": 4,
+              "encoding": "abi-address-word"
+            }
+          ],
+          "deploymentValueWei": "0",
+          "initializerValueWei": "0",
+          "expectedRuntimeCodeHash": "0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+          "componentRoles": [],
+          "declaredHookPermissions": null
+        }
+      ],
+      "pool": {
+        "tokenTargetId": "combined",
+        "hookTargetId": "combined",
+        "fee": 3000,
+        "tickSpacing": 60
+      }
+    },
+    "projectMetadataHash": "sha256:CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "normalized": {
+      "schemaVersion": "programmable.custom-graph-bundle.v2",
+      "sourceBundleSha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "targets": [
+        {
+          "targetId": "vault",
+          "applicantSalt": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "creationBytecode": "0x60aa",
+          "constructorArguments": "0x",
+          "initializerCalldata": "0xabcdef1200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "constructorAddressLocators": [],
+          "initializerAddressLocators": [
+            {
+              "targetId": "vault",
+              "byteOffset": 4,
+              "encoding": "abi-address-word"
+            },
+            {
+              "targetId": "combined",
+              "byteOffset": 36,
+              "encoding": "packed-address-20"
+            }
+          ],
+          "deploymentValueWei": "0",
+          "initializerValueWei": "0",
+          "expectedRuntimeCodeHash": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "componentRoles": [],
+          "declaredHookPermissions": null
+        },
+        {
+          "targetId": "combined",
+          "applicantSalt": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "creationBytecode": "0x60aa",
+          "constructorArguments": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "initializerCalldata": "0x123456780000000000000000000000000000000000000000000000000000000000000000",
+          "constructorAddressLocators": [
+            {
+              "targetId": "vault",
+              "byteOffset": 0,
+              "encoding": "abi-address-word"
+            }
+          ],
+          "initializerAddressLocators": [
+            {
+              "targetId": "combined",
+              "byteOffset": 4,
+              "encoding": "abi-address-word"
+            }
+          ],
+          "deploymentValueWei": "0",
+          "initializerValueWei": "0",
+          "expectedRuntimeCodeHash": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "componentRoles": [
+            "token",
+            "hook"
+          ],
+          "declaredHookPermissions": [
+            "beforeInitialize",
+            "beforeSwap",
+            "afterSwap"
+          ]
+        }
+      ],
+      "pool": {
+        "tokenTargetId": "combined",
+        "hookTargetId": "combined",
+        "fee": 3000,
+        "tickSpacing": 60
+      }
+    },
+    "expected": {
+      "graphBundleHash": "sha256:541b7ee3443441cfcd1bae3d24142e6497dee51ae692b2424b666ddbbb3fe959",
+      "unboundGraphBundleHash": "sha256:1d0b30b78661f49812e674f6e15595e4b9f98ddcc02d21b31b0835255846d790",
+      "topologyHash": "0x3a79639be282a00d23a86f524645969970a7542d574fc3cc07a31b6b79d0ef65"
+    }
+  },
+  {
+    "name": "distinct-token-hook",
+    "input": {
+      "schemaVersion": "programmable.custom-graph-bundle.v2",
+      "sourceBundleSha256": "sha256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "targets": [
+        {
+          "targetId": "hook",
+          "applicantSalt": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "creationBytecode": "0x60AA",
+          "constructorArguments": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "initializerCalldata": "0x",
+          "constructorAddressLocators": [
+            {
+              "targetId": "token",
+              "byteOffset": 0,
+              "encoding": "abi-address-word"
+            }
+          ],
+          "initializerAddressLocators": [],
+          "deploymentValueWei": "0",
+          "initializerValueWei": "0",
+          "expectedRuntimeCodeHash": "0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+          "componentRoles": [
+            "hook"
+          ],
+          "declaredHookPermissions": [
+            "afterSwap",
+            "beforeInitialize",
+            "beforeSwap"
+          ]
+        },
+        {
+          "targetId": "token",
+          "applicantSalt": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "creationBytecode": "0x60AA",
+          "constructorArguments": "0x",
+          "initializerCalldata": "0x",
+          "constructorAddressLocators": [],
+          "initializerAddressLocators": [],
+          "deploymentValueWei": "0",
+          "initializerValueWei": "0",
+          "expectedRuntimeCodeHash": "0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+          "componentRoles": [
+            "token"
+          ],
+          "declaredHookPermissions": null
+        }
+      ],
+      "pool": {
+        "tokenTargetId": "token",
+        "hookTargetId": "hook",
+        "fee": 3000,
+        "tickSpacing": 60
+      }
+    },
+    "projectMetadataHash": "sha256:CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "normalized": {
+      "schemaVersion": "programmable.custom-graph-bundle.v2",
+      "sourceBundleSha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "targets": [
+        {
+          "targetId": "token",
+          "applicantSalt": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "creationBytecode": "0x60aa",
+          "constructorArguments": "0x",
+          "initializerCalldata": "0x",
+          "constructorAddressLocators": [],
+          "initializerAddressLocators": [],
+          "deploymentValueWei": "0",
+          "initializerValueWei": "0",
+          "expectedRuntimeCodeHash": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "componentRoles": [
+            "token"
+          ],
+          "declaredHookPermissions": null
+        },
+        {
+          "targetId": "hook",
+          "applicantSalt": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "creationBytecode": "0x60aa",
+          "constructorArguments": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "initializerCalldata": "0x",
+          "constructorAddressLocators": [
+            {
+              "targetId": "token",
+              "byteOffset": 0,
+              "encoding": "abi-address-word"
+            }
+          ],
+          "initializerAddressLocators": [],
+          "deploymentValueWei": "0",
+          "initializerValueWei": "0",
+          "expectedRuntimeCodeHash": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "componentRoles": [
+            "hook"
+          ],
+          "declaredHookPermissions": [
+            "beforeInitialize",
+            "beforeSwap",
+            "afterSwap"
+          ]
+        }
+      ],
+      "pool": {
+        "tokenTargetId": "token",
+        "hookTargetId": "hook",
+        "fee": 3000,
+        "tickSpacing": 60
+      }
+    },
+    "expected": {
+      "graphBundleHash": "sha256:5fb8b83ae43ce1a6e03077c0b2a595380f4a124a6ac6eceae083d51de162f5db",
+      "unboundGraphBundleHash": "sha256:919fbd1fd267c267724c392fd2f6d9f2b96f97c49fcea7c8c60b0fce5dd6c344",
+      "topologyHash": "0x220a51ae2c2c6e2ccf1c82f66fc73f4c49e1cbcaa9645c1dbca5a13d986ad82d"
+    }
+  }
+]
