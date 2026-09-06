@@ -1,0 +1,34 @@
+[profile.default]
+src = "src/router_v2"
+test = "test/router_v2"
+script = "script/router_v2"
+out = "out/router-v2"
+cache_path = "cache/router-v2"
+libs = ["lib"]
+allow_paths = ["."]
+auto_detect_remappings = false
+remappings = [
+  "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
+  "@uniswap/v4-core/=lib/v4-core/",
+  "forge-std/=lib/forge-std/src/",
+  "solmate/=lib/solmate/"
+]
+solc_version = "0.8.26"
+evm_version = "cancun"
+optimizer = true
+optimizer_runs = 1_000
+bytecode_hash = "none"
+cbor_metadata = false
+ffi = false
+
+[profile.default.fuzz]
+runs = 1_000
+
+[fmt]
+line_length = 120
+tab_width = 4
+bracket_spacing = true
+int_types = "long"
+quote_style = "double"
+number_underscore = "thousands"
+wrap_comments = true
