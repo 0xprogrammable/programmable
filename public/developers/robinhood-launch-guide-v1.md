@@ -75,6 +75,7 @@ the complete profile tuple, deployment descriptor, trust roots and finality poli
 | API profile `4.1.0` | The exact server-selected funding, admission and request contract. A client patch does not change this tuple. |
 | CLI `4.1.0` | The historical immutable client selected by the API release record. Its assets retain their original commands. |
 | CLI `4.1.1` | A separate compatible client patch adding `coverage --chain-id 4663`. Verify its own immutable release, source, manifest, checksum and client binding to API profile 4.1.0. |
+| CLI `4.1.2` | A separate compatible patch with bounded strict response decoding and the corrected `--output` example. Verify its own immutable assets and client binding; it retains API profile 4.1.0 and does not activate a new launch architecture. |
 
 A source candidate or version string is not publication evidence. Use a client only after its actual release has been
 verified; a missing release is not a reason to use an unverified package. The direct public reads above work without

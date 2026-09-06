@@ -51,4 +51,32 @@ describe("versioned public Robinhood launch guide contract", () => {
     oversized.scenarios[0].nextStep = "x".repeat(100_000);
     expect(validate(oversized)).toBe(false);
   });
+
+  it("rejects known values attached to the wrong workflow, scenario or recovery row", () => {
+    const workflow = structuredClone(example);
+    workflow.workflow.find((step: { id: string }) => step.id === "check-concept").requiredScope = "custom-launch:create";
+    expect(validate(workflow)).toBe(false);
+    const scenario = structuredClone(example);
+    const combined = scenario.scenarios.find((row: { id: string }) => row.id === "combined-token-hook");
+    combined.assessment = example.scenarios[0].assessment;
+    combined.reason = example.scenarios[0].reason;
+    combined.nextStep = example.scenarios[0].nextStep;
+    expect(validate(scenario)).toBe(false);
+    const recovery = structuredClone(example);
+    recovery.errorRecovery[0].instruction = example.errorRecovery[1].instruction;
+    expect(validate(recovery)).toBe(false);
+    const duplicates = structuredClone(example);
+    duplicates.scenarios[1] = structuredClone(duplicates.scenarios[0]);
+    expect(validate(duplicates)).toBe(false);
+  });
+
+  it("binds every scenario assessment to the selected profile", () => {
+    for (const profile of schema.properties.profile.enum.filter((value: { profileVersion?: string } | null) => value?.profileVersion !== "4.1.0")) {
+      const changed = structuredClone(example);
+      changed.profile = profile;
+      expect(validate(changed)).toBe(false);
+      changed.scenarios = structuredClone(schema.allOf[0].else.properties.scenarios.const);
+      expect(validate(changed), JSON.stringify(validate.errors)).toBe(true);
+    }
+  });
 });
