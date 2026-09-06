@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
+import configuredRelease from "../config/module-mode/robinhood.preview.json";
+import { bindActiveModuleModeRelease } from "../lib/module-mode/release";
 import type { RobinhoodLaunch } from "../lib/robinhood-launches";
 import { launchList, parseSnapshot, profileLaunchList, type RobinhoodSnapshot } from "../lib/server/robinhood-index/model";
 import type { IndexStore } from "../lib/server/robinhood-index/store";
@@ -95,9 +97,29 @@ describe("Module Mode joins the canonical Robinhood index",()=>{
     await expect(syncModuleModeIndex({...source,releaseDigest:h(998)},saved.store,options)).rejects.toThrow("index migration required");
     expect(saved.read().moduleMode?.releaseDigest).toBe(fixture.release.releaseDigest);
   });
-  it("keeps the unbound checked-in preview disabled without calling a collector",async()=>{
-    const c=collector(); expect(await configuredModuleModeSource(c)).toBeNull();
-    expect(c.authenticateRelease).not.toHaveBeenCalled();
+  it("authenticates the checked-in active release before exposing its index source",async()=>{
+    const release=bindActiveModuleModeRelease(configuredRelease); const c=collector([]);
+    const boundary=point(BigInt(release.startBlock)+199n);
+    c.finalizedBoundary=vi.fn(async()=>({chainId:4663 as const,sourceReleaseDigest:release.releaseDigest,
+      blockNumber:boundary.number,blockHash:boundary.hash,verificationDigest:h(920)}));
+    expect(await configuredModuleModeSource(c)).toMatchObject({sourceKind:"module-native-v1",
+      sourceAddress:release.contracts.launcher.address,releaseDigest:release.releaseDigest,
+      startBlock:BigInt(release.startBlock),finalized:boundary});
+    expect(c.authenticateRelease).toHaveBeenCalledExactlyOnceWith(release);
+    expect(c.collectRange).not.toHaveBeenCalled();
+  });
+  it("keeps an unbound preview disabled without calling a collector",async()=>{
+    vi.resetModules();
+    vi.doMock("../config/module-mode/robinhood.preview.json",()=>({default:{...configuredRelease,
+      enabled:false,status:"preview",lifecycleEvidenceDigest:null}}));
+    try {
+      const {configuredModuleModeSource:previewSource}=await import("../lib/server/robinhood-index/module-source");
+      const c=collector(); expect(await previewSource(c)).toBeNull();
+      expect(c.authenticateRelease).not.toHaveBeenCalled();
+    } finally {
+      vi.doUnmock("../config/module-mode/robinhood.preview.json");
+      vi.resetModules();
+    }
   });
   it("rejects an unauthenticated release and does not fabricate a fresh Custom snapshot",async()=>{
     const c=collector();c.authenticateRelease=async()=>{throw new Error("Invalid release authority");};
