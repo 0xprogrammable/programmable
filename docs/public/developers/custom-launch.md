@@ -11,14 +11,18 @@ subkeys on Ethereum Mainnet. V2 and V1 history and schemas remain available, whi
 Registry and GitHub submission intake is closed.
 
 The public Ethereum V3 CLI is `@programmable/launch` `3.3.9`. For Robinhood V4, read the live
-[discovery manifest](https://programmable.market/.well-known/programmable.json). Use the exact advertised CLI version only when both
+[discovery manifest](https://programmable.market/.well-known/programmable.json). Before authenticated preflight or submission, require both
 `customLaunchApi.versions.v4` and `chains[]` for `chainId: 4663` report `publicAuthorization: true`,
 `publicWrites: true` and `releaseReady: true`. If either entry is false, incomplete or missing, stop before
 authenticated preflight or submission. Verify the immutable official GitHub Release, exact source commit, release
-manifest and tarball checksum from `customLaunchApi.versions.v4.cli.release` before installing. A repository source candidate is not an installable release.
+manifest and tarball checksum from `customLaunchApi.versions.v4.cli.release` for the original client release. A
+compatible client patch has its own immutable release evidence and binding to the selected API profile.
+A repository source candidate is not an installable release.
 
-Historical `4.0.0` resources retain their original contract. When discovery selects `4.1.0`, use that immutable CLI
-and its advertised schemas for new launches; this guide is not activation evidence for either version.
+Historical `4.0.0` resources retain their original contract. When discovery selects API profile `4.1.0`, preserve its
+exact schemas and use a verified compatible client. CLI `4.1.1` adds public coverage while keeping the API profile
+at `4.1.0`; verify that separate client release instead of relabeling historical assets or changing API pins.
+This guide is not activation evidence for either version, and public HTTP reports need no CLI upgrade.
 
 V2 detail reads are observation-only while an existing request is `prepared` or `simulating`: GET does not advance
 simulation or authorization and cannot expose a new `walletTransaction`. Existing `authorized` and `submitted`
@@ -35,6 +39,12 @@ executable by a cold external agent.
 
 ## Robinhood Chain V4
 
+Follow the [Robinhood launch workflow](https://programmable.market/developers/robinhood-launch-guide-v1.md) before
+building. It connects architecture coverage, credentials, preflight, request recovery and the separate wallet step.
+Read public `GET /v4/chains/4663/launch-guide` with schema `programmable.robinhood-launch-guide.v1` and
+`GET /v4/chains/4663/launch-coverage`; neither needs a key, query parameters or body. A missing or unknown report is
+not proof of support and never triggers an automatic fallback to another chain, profile or launch route.
+
 Robinhood Chain Mainnet is `chainId: 4663` and `eip155:4663`. Its public self-serve availability is derived from
 verified release evidence in the live discovery manifest. While `pending-public-discovery-promotion` or any of
 `publicAuthorization: false`, `publicWrites: false` and `releaseReady: false` is reported, stop before submission.
@@ -46,6 +56,11 @@ Create one platform API key at <https://programmable.market/developers/api-keys>
 `PROGRAMMABLE_API_KEY`. Select Ethereum V3 or Robinhood V4 using that chain's discovery contract and the grants
 reported for the key. The key authorizes API requests; the user separately reviews and signs their onchain launch
 transaction and pays gas.
+
+Public guide, coverage, capabilities, readiness, initial-buy-quote and finalized-feed reads need no key.
+Authenticated preflight/create requires `custom-launch:create`; list/detail requires `custom-launch:read`.
+Check the key's chain `4663` grant and controller/resource lineage separately. A read-only or module-contribution
+key does not grant launch-write access.
 
 The V4 contract uses
 `/v4/chains/4663/capabilities`, `/v4/chains/4663/custom-launches/preflight`,
@@ -89,6 +104,12 @@ outside indexers may lag or omit Robinhood data even after a launch is finalized
 stay closed.
 
 ### Check architecture coverage before building
+
+The separate [scenario and recovery guide](https://programmable.market/developers/robinhood-launch-guide-v1.md)
+covers the native20 seed recipe, same-address token/hooks, no-pool and multiple-pool projects, funding policy,
+arbitrary targets, stateful modules and custom settlement. Its assessments are guidance, not launch eligibility.
+Unknown mechanisms are not automatically unsafe; a missing verifier and a demonstrated source defect require
+different next steps.
 
 Read `GET https://api.programmable.market/v4/chains/4663/launch-coverage` without an API key, query parameters or body.
 The separate [coverage OpenAPI](https://programmable.market/openapi/launch-coverage-v1.json) and
@@ -652,6 +673,13 @@ Programmable does not publish a universal check-ID catalog, fetch or assess that
 approval or safety claim.
 
 ## Submit safely
+
+For V4, use the [route and error recovery guide](https://programmable.market/developers/robinhood-launch-guide-v1.md#recover-by-error-code).
+Create returns `202` for a new durable request or `200` for an exact idempotent replay. Detail `404 NOT_FOUND` means
+check the returned `launchId`, chain and credential lineage; a public guide/coverage `404` means the deployment
+does not provide that report. None of these statuses authorizes a wallet action. When preflight reports
+`launchEligibility.deployable: true` with `TX_SIMULATION_PENDING`, submit the exact bytes to run the remaining server
+simulation. A favorable checkpoint is not execution of the launch, swaps or fees.
 
 `submit` proves that `launch.json` is byte identical to a fresh pack and writes its mode `0600` journal before network
 access. Raw HTTP clients send `Authorization: Bearer $PROGRAMMABLE_API_KEY` only to
