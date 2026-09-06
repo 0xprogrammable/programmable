@@ -61,6 +61,13 @@ function bindSource(job: ReviewJob, sourceBytes: Uint8Array): { source: ModuleSu
     && artifact.configurationSchemaHash === reviewDigest("programmable.modules.configuration-schema.v1", source.descriptor.configuration), "Build source manifest differs");
   const sources: Record<string, { content: string }> = Object.create(null);
   for (const file of source.files) if (file.path.endsWith(".sol")) sources[file.path] = { content: new TextDecoder("utf-8", { fatal: true }).decode(Buffer.from(file.bytes, "base64")) };
+  // Must match the protected builder's fixed alias inventory; package build scripts/config are inert.
+  const prefix = "dependencies/openzeppelin-contracts/contracts/";
+  for (const [path, content] of Object.entries(sources)) if (path.startsWith(prefix)) {
+    const alias = `@openzeppelin/contracts/${path.slice(prefix.length)}`;
+    need(!Object.hasOwn(sources, alias), "Compiler source alias collision");
+    sources[alias] = content;
+  }
   same(artifact.compiler, { ...NATIVE_COMPILER,
     settingsHash: reviewDigest("programmable.modules.compiler-settings.v1", NATIVE_SETTINGS),
     completeInputHash: reviewDigest("programmable.modules.compiler-input.v1", { language: "Solidity", sources, settings: NATIVE_SETTINGS }), reproducible: true }, "Pinned compiler/input");

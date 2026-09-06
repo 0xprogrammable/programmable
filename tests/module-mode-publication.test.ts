@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { decodeFunctionData, encodeAbiParameters, encodeEventTopics, encodeFunctionResult, keccak256, parseAbiParameters, type Hex } from "viem";
 import { moduleReviewAdminFixture } from "./fixtures/module-review-admin";
@@ -5,7 +7,8 @@ import { a, h } from "./fixtures/module-mode-evidence";
 import { computeModuleModeReleaseDigest } from "../lib/module-mode/release";
 import { reviewDigest } from "../lib/module-mode/review-contract";
 import { computeModuleReviewDecisionDigestV1, type ModuleReviewDecisionRecordV1 } from "../lib/server/module-mode/review-decision-wire-v1";
-import { validateModuleSubmissionRequest } from "../packages/classic-modules/src/open-transport.mjs";
+import { moduleSubmissionFromPack, validateModuleSubmissionRequest, type ModuleSubmissionRequest } from "../packages/classic-modules/src/open-transport.mjs";
+import { loadOpenSourcePackage } from "../packages/classic-modules/src/open-package-io.mjs";
 import { createAuthenticatedReviewReader, NATIVE_COMPILER, NATIVE_SETTINGS, requireAuthenticatedReview, acceptedDecision } from "../ops/module-mode-publication/review";
 import { CREATE2_DEPLOYER, REGISTRY_ABI, createHostPreparation, prepareModulePublication } from "../ops/module-mode-publication/core";
 import { observePublicationReadback, publicationRpc, readPublicationOwner, type PublicationProvider } from "../ops/module-mode-publication/rpc";
@@ -56,6 +59,47 @@ async function fixture() {
   };
   return { ...f, source, subject, artifact, detail, release, codes, reader, fetchImpl, built, host, accept, digestArtifact };
 }
+
+// Real SDK source inventory with synthetic review/build evidence, never protected-worker authority.
+async function starterFixture(changeSource?: (source: ModuleSubmissionRequest) => void) {
+  const f = await fixture();
+  const source = moduleSubmissionFromPack(await loadOpenSourcePackage(fileURLToPath(new URL("../packages/classic-modules/examples/native-program/", import.meta.url)), "module.json"));
+  expect(source.files).toHaveLength(28);
+  changeSource?.(source);
+  const checked = validateModuleSubmissionRequest(source); if (!checked.ok) throw new Error("starter source fixture");
+  const subject = { ...f.subject, author: source.descriptor.author.toLowerCase(), requestDigest: checked.requestDigest };
+  const programAbi = [
+    { path: ["everyN"], type: "uint32" }, { path: ["minimumGrossNative"], type: "uint128" }, { path: ["rewardNative"], type: "uint128" },
+    { path: ["endsAt"], type: "uint64" }, { path: ["includeInitialBuy"], type: "bool" }, { path: ["refundWallet"], type: "address" },
+  ];
+  const parameters = JSON.parse(Buffer.from(source.files.find(file => file.path === "configuration.fixture.json")!.bytes, "base64").toString("utf8"));
+  const plan = { ...f.detail.job.plan!, requestDigest: checked.requestDigest, programComponentId: "reward", programAbi,
+    cases: [{ ...f.detail.job.plan!.cases[0], parameters }] };
+  const planDigest = reviewDigest("programmable.modules.native-build-plan.v1", plan);
+  const configBytes = encodeAbiParameters(parseAbiParameters("uint32,uint128,uint128,uint64,bool,address"), [3, 10_000_000_000_000_000n, 1_000_000_000_000_000n, 2_000_000_000n, false, parameters.refundWallet]);
+  const configHash = keccak256(configBytes);
+  const artifact = { ...f.artifact, subject, packageId: checked.packageId, familyId: checked.familyId, rewardWallet: source.descriptor.rewardWallet.toLowerCase(), planDigest, programAbi,
+    sourceManifestHash: reviewDigest("programmable.modules.source-manifest.v1", source.descriptor),
+    configurationSchemaHash: reviewDigest("programmable.modules.configuration-schema.v1", source.descriptor.configuration),
+    // Independent backend 9944a2df standard-input hash: 11 submitted Solidity files + 4 fixed aliases.
+    compiler: { ...f.artifact.compiler, completeInputHash: "0x58037801a75a5acf6c20a0ae0b8448af06fab1dcc5a25eac0c58a69757fb86e4" as Hex },
+    cases: [{ ...plan.cases[0], configBytes, configHash, abiParameters: programAbi.map(({ type }) => ({ type })) }],
+    tests: { ...f.artifact.tests, requestDigest: checked.requestDigest, planDigest, cases: [{ ...f.artifact.tests.cases[0], configHash }] } };
+  for (const role of ["factory", "program"] as const) {
+    const component = source.descriptor.components.find(c => c.id === plan[`${role}ComponentId`])!;
+    artifact[role] = { ...artifact[role], componentId: component.id, sourcePath: component.sourcePath, contractName: component.entrypoint };
+  }
+  f.detail.job = { ...f.detail.job, subject, plan, planDigest, artifact };
+  const digestArtifact = () => {
+    const contents = Object.fromEntries(Object.entries(artifact).filter(([key]) => key !== "artifactDigest"));
+    artifact.artifactDigest = reviewDigest("programmable.modules.native-build.v1", contents);
+    Object.assign(f.detail.attempts[0], { requestDigest: checked.requestDigest, planDigest, artifactDigest: artifact.artifactDigest });
+  };
+  digestArtifact();
+  f.fetchImpl.mockImplementation(async url => Response.json(String(url).includes("/source?") ? source : f.detail));
+  return { source, subject, artifact, reader: f.reader, digestArtifact };
+}
+
 function providers(f: Awaited<ReturnType<typeof fixture>>, plan: ReturnType<typeof prepareModulePublication>) {
   const transactions = { factory: h(70), family: h(71), revision: h(72) };
   const block = { number: "0x100", hash: h(50), timestamp: `0x${Math.floor(Date.now() / 1000).toString(16)}`, transactions: Object.values(transactions) };
@@ -88,6 +132,27 @@ function providers(f: Awaited<ReturnType<typeof fixture>>, plan: ReturnType<type
 }
 
 describe("Generic module publication authority and binding", () => {
+  it("accepts the unchanged 28-file starter using the protected compiler's exact fixed import aliases", async () => {
+    const f = await starterFixture();
+    const built = await f.reader.read(f.subject.submissionId);
+    expect(built.source.descriptor.components.find(c => c.id === "reward")?.runtime).toBe("programmable.module-native-runtime@1");
+    expect(built.artifact.compiler.completeInputHash).toBe(f.artifact.compiler.completeInputHash);
+    f.artifact.compiler.completeInputHash = "0x2a19797ce754dfa9dcdde7fc7491acb7cc807fc4dfbe34abfac3df39e2ac8dfd";
+    f.digestArtifact();
+    await expect(f.reader.read(f.subject.submissionId)).rejects.toThrow("Pinned compiler/input");
+  });
+  it("binds aliased dependency bytes and never takes remapping instructions from submitted Foundry config", async () => {
+    const changed = async (path: string, text: string) => starterFixture(source => {
+      const file = source.files.find(file => file.path === path)!;
+      const bytes = Buffer.from(text);
+      file.bytes = bytes.toString("base64"); file.sha256 = createHash("sha256").update(bytes).digest("hex");
+      source.descriptor.source.files.find(pin => pin.path === path)!.sha256 = file.sha256;
+    });
+    const dependency = await changed("dependencies/openzeppelin-contracts/contracts/utils/Errors.sol", "// Altered dependency\nlibrary Errors {}\n");
+    await expect(dependency.reader.read(dependency.subject.submissionId)).rejects.toThrow("Pinned compiler/input");
+    const config = await changed("foundry.toml", 'remappings = ["@openzeppelin/contracts/=https://untrusted.invalid/"]\n');
+    await expect(config.reader.read(config.subject.submissionId)).resolves.toHaveProperty("artifact.compiler.completeInputHash", config.artifact.compiler.completeInputHash);
+  });
   it("constructs an exact CREATE2 host manifest before review without fake approval", async () => {
     const f = await fixture(); expect(f.host.status).toBe("review-required"); expect(f.host.manifest.manifest.runtimeBinding.factory).toMatch(/^0x[0-9a-f]{40}$/u);
     expect(() => prepareModulePublication(f.built, f.release, f.definition, f.reviewer)).toThrow("Current accepted");
