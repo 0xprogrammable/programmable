@@ -25,6 +25,7 @@ import {
   mergeApiKeySummaries,
   moduleContributionKeysAvailable,
   parseApiKeyMutationResult,
+  parseApiKeyMutationResultForAttempt,
   prepareApiKeyMutationAttempt,
   shouldRetainApiKeyMutationAttempt,
   type ApiKeySummary,
@@ -308,7 +309,8 @@ describe("developer API key interface", () => {
       }),
     ]);
 
-    const input = { version: "v1" as const, kind: "issue" as const, credentialId: null, body: "{}" };
+    const input = { version: "v1" as const, kind: "issue" as const, credentialId: null, body: "{}",
+      expectedScopes: ["custom-launch:create", "custom-launch:read"] };
     const attempt = prepareApiKeyMutationAttempt(
       null,
       input,
@@ -516,7 +518,7 @@ describe("developer API key interface", () => {
 
   it("binds retry version, exact body and selected scopes and validates V2 response rights", () => {
     const input = { kind: "issue" as const, credentialId: null, version: "v2" as const,
-      body: JSON.stringify({ scopes: ["custom-launch:read"] }) };
+      body: JSON.stringify({ scopes: ["custom-launch:read"] }), expectedScopes: ["custom-launch:read"] };
     const attempt = prepareApiKeyMutationAttempt(null, input, () => "fixture-exact-read-only-operation");
     expect(prepareApiKeyMutationAttempt(attempt, input, () => "not-used")).toBe(attempt);
     expect(apiKeyMutationPath(attempt)).toBe("/api/developer/api-keys/v2");
@@ -528,6 +530,50 @@ describe("developer API key interface", () => {
     expect(parseApiKeyMutationResult(value, 200, undefined, undefined, expected)).not.toBeNull();
     expect(parseApiKeyMutationResult({ ...value, apiKey: apiKey("reader") }, 200, undefined, undefined, expected)).toBeNull();
     expect(parseApiKeyMutationResult({ ...value, schemaVersion: "programmable.custom-launch-api.v1" }, 200, undefined, undefined, expected)).toBeNull();
+  });
+
+  it.each([
+    { version: "v1" as const, originalScopes: ["modules:submit", "modules:read"], currentScopes: ["custom-launch:create", "custom-launch:read"] },
+    { version: "v2" as const, originalScopes: ["custom-launch:read"], currentScopes: ["custom-launch:create", "custom-launch:read"] },
+  ])("keeps the original $version rotation response expectation after a lost response and changed-source refresh", ({ version, originalScopes, currentScopes }) => {
+    const mutableScopes = [...originalScopes];
+    const source = apiKey("rotation-source", { scopes: mutableScopes });
+    const input = { kind: "rotate" as const, credentialId: source.id, version,
+      body: JSON.stringify({ schemaVersion: `programmable.custom-launch-api.${version}`, label: source.label,
+        expiresInDays: 90, walletAddress: "0x1111111111111111111111111111111111111111" }),
+      expectedScopes: source.scopes };
+    const attempt = prepareApiKeyMutationAttempt(null, input, () => "original-rotation-operation");
+    expect(Object.isFrozen(attempt.expectedScopes)).toBe(true);
+    expect(attempt.expectedScopes).not.toBe(mutableScopes);
+    mutableScopes.splice(0, mutableScopes.length, ...currentScopes);
+    expect(attempt.expectedScopes).toEqual(originalScopes);
+    expect(shouldRetainApiKeyMutationAttempt(503, null)).toBe(true);
+
+    const refreshed = parseApiKeyList({ schemaVersion: "programmable.custom-launch-api.v1",
+      apiKeys: [apiKey(source.id, { scopes: currentScopes })] })!;
+    const refreshedSource = mergeApiKeySummaries([source], refreshed)[0];
+    const retry = prepareApiKeyMutationAttempt(attempt, { ...input, expectedScopes: refreshedSource.scopes }, () => "must-not-be-used");
+    expect(retry).toBe(attempt);
+    expect(apiKeyMutationPath(retry)).toBe(`/api/developer/api-keys${version === "v2" ? "/v2" : ""}/${source.id}/rotate`);
+    expect(retry.body).toBe(input.body);
+    expect(retry.idempotencyKey).toBe("original-rotation-operation");
+
+    const replay = { schemaVersion: `programmable.custom-launch-api.${version}`, secretState: "already-delivered",
+      apiKey: apiKey("replacement", { scopes: originalScopes }), rotatedCredentialId: source.id };
+    expect(parseApiKeyMutationResultForAttempt(replay, 200, retry)).toMatchObject({
+      apiKey: { scopes: originalScopes }, secretState: "already-delivered", rotatedCredentialId: source.id,
+    });
+    const changedReply = { ...replay, apiKey: apiKey("replacement", { scopes: currentScopes }) };
+    expect(parseApiKeyMutationResultForAttempt(changedReply, 200, retry)).toBeNull();
+    for (const changed of [{ ...input, credentialId: "different-source" },
+      { ...input, body: input.body.replace("0x1111111111111111111111111111111111111111", "0x2222222222222222222222222222222222222222") }]) {
+      expect(() => prepareApiKeyMutationAttempt(attempt, changed, () => "must-not-be-used")).toThrow();
+    }
+
+    const fresh = prepareApiKeyMutationAttempt(null, { ...input, expectedScopes: refreshedSource.scopes }, () => "new-rotation-operation");
+    expect(fresh.expectedScopes).toEqual(currentScopes);
+    expect(parseApiKeyMutationResultForAttempt(replay, 200, fresh)).toBeNull();
+    expect(parseApiKeyMutationResultForAttempt(changedReply, 200, fresh)).not.toBeNull();
   });
 
   it("retains module availability in V2 and gives read-only agents read instructions", () => {
@@ -653,7 +699,7 @@ describe("developer API key interface", () => {
     expect(PROGRAMMABLE_MODULE_AGENT_SETUP_TEXT_V1).toContain("not an approval");
     expect(PROGRAMMABLE_MODULE_AGENT_SETUP_TEXT_V1).not.toContain("custom-launch:create");
     expect(PROGRAMMABLE_MODULE_AGENT_SETUP_TEXT_V1).not.toMatch(/pm_live_[A-Za-z0-9_-]{22}_[A-Za-z0-9_-]{43}/u);
-    expect(apiKeysSource).toContain("setPurpose(originalPurpose)");
+    expect(apiKeysSource).toContain('setPurpose(apiKeyPurpose(parsed.apiKey.scopes) ?? "custom-launches")');
   });
 
   it("preserves wallet authority and one-time secret handling", () => {

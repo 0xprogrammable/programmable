@@ -87,6 +87,7 @@ export type ApiKeyMutationAttempt = Readonly<{
   version: "v1" | "v2";
   idempotencyKey: string;
   body: string;
+  expectedScopes: readonly string[];
 }>;
 
 type ApiKeyMutationState =
@@ -363,6 +364,20 @@ export function parseApiKeyMutationResult(
   };
 }
 
+export function parseApiKeyMutationResultForAttempt(
+  value: unknown,
+  status: number,
+  attempt: ApiKeyMutationAttempt,
+) {
+  return parseApiKeyMutationResult(
+    value,
+    status,
+    attempt.kind === "rotate" ? attempt.credentialId! : undefined,
+    apiKeyPurpose(attempt.expectedScopes) ?? undefined,
+    { version: attempt.version, scopes: attempt.expectedScopes },
+  );
+}
+
 export function ApiKeyPermissions({ scopes }: Readonly<{ scopes: readonly string[] }>) {
   const purpose = apiKeyPurpose(scopes);
   const summary = purpose === "custom-launches" ? "Launch + read"
@@ -501,6 +516,7 @@ export function prepareApiKeyMutationAttempt(
     credentialId: string | null;
     version: "v1" | "v2";
     body: string;
+    expectedScopes: readonly string[];
   }>,
   createIdempotencyKey: () => string,
 ) {
@@ -517,7 +533,7 @@ export function prepareApiKeyMutationAttempt(
   if (!idempotencyKeyPattern.test(idempotencyKey)) {
     throw new TypeError("API key mutation idempotency key is invalid");
   }
-  return Object.freeze({ ...input, idempotencyKey });
+  return Object.freeze({ ...input, expectedScopes: Object.freeze([...input.expectedScopes]), idempotencyKey });
 }
 
 export function apiKeyLifetimeDays(apiKey: ApiKeySummary) {
@@ -1215,7 +1231,7 @@ export function DeveloperApiKeysView({
     try {
       attempt = prepareApiKeyMutationAttempt(
         pendingMutationAttempt,
-        { kind: "issue", credentialId: null, version, body },
+        { kind: "issue", credentialId: null, version, body, expectedScopes: selectedScopes },
         () => crypto.randomUUID(),
       );
     } catch {
@@ -1246,9 +1262,7 @@ export function DeveloperApiKeysView({
           "Unable to create the API key.",
         ));
       }
-      const parsed = parseApiKeyMutationResult(responseBody, response.status, undefined,
-        purpose === "module-contributions" ? purpose : undefined,
-        { version: attempt.version, scopes: selectedScopes });
+      const parsed = parseApiKeyMutationResultForAttempt(responseBody, response.status, attempt);
       if (!parsed) {
         throw new Error(
           "The key may have been created, but the response could not be verified. Refresh your keys before trying again.",
@@ -1407,7 +1421,6 @@ export function DeveloperApiKeysView({
       || mutationInFlightRef.current
       || revokingId !== null
     ) return;
-    const originalPurpose = apiKeyPurpose(apiKey.scopes) ?? "custom-launches";
     const version = pendingMutationAttempt?.kind === "rotate" && pendingMutationAttempt.credentialId === apiKey.id
       ? pendingMutationAttempt.version : apiKeyRotationVersion(apiKey.scopes, capabilities);
     if (!version) {
@@ -1424,7 +1437,7 @@ export function DeveloperApiKeysView({
     try {
       attempt = prepareApiKeyMutationAttempt(
         pendingMutationAttempt,
-        { kind: "rotate", credentialId: apiKey.id, version, body },
+        { kind: "rotate", credentialId: apiKey.id, version, body, expectedScopes: apiKey.scopes },
         () => crypto.randomUUID(),
       );
     } catch {
@@ -1455,13 +1468,7 @@ export function DeveloperApiKeysView({
           "Unable to rotate the API key.",
         ));
       }
-      const parsed = parseApiKeyMutationResult(
-        responseBody,
-        response.status,
-        apiKey.id,
-        undefined,
-        { version: attempt.version, scopes: apiKey.scopes },
-      );
+      const parsed = parseApiKeyMutationResultForAttempt(responseBody, response.status, attempt);
       if (!parsed) {
         throw new Error(
           "The key may have been rotated, but the response could not be verified. Refresh your keys before trying again.",
@@ -1476,7 +1483,7 @@ export function DeveloperApiKeysView({
       ));
       setListState("ready");
       setMutationResult({ operation: "rotate", result: parsed });
-      setPurpose(originalPurpose);
+      setPurpose(apiKeyPurpose(parsed.apiKey.scopes) ?? "custom-launches");
       setAccess(hasReadOnlyScopes(parsed.apiKey.scopes) ? "read-only" : "prepare-and-read");
       setKeyPage(1);
       setConfirmingRotateId(null);
