@@ -798,7 +798,18 @@ jobs:
 
   production-proof:
     name: Bind production Verify proof
+    # Scoped workers may be skipped transitively; attest only after every
+    # protected aggregate has explicitly succeeded in this same run.
     if: >-
+      always() && !cancelled() &&
+      needs.scope.result == 'success' &&
+      needs.secret-scan.result == 'success' &&
+      needs.indexer.result == 'success' &&
+      needs.database-pglite.result == 'success' &&
+      needs.interface.result == 'success' &&
+      needs.contracts.result == 'success' &&
+      needs.custom-v2.result == 'success' &&
+      needs.aggregate.result == 'success' &&
       github.ref == 'refs/heads/production' &&
       (github.event_name == 'push' ||
       (github.event_name == 'workflow_dispatch' &&
@@ -811,6 +822,7 @@ jobs:
       - interface
       - contracts
       - custom-v2
+      - aggregate
     permissions:
       contents: read
       id-token: write

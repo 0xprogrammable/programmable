@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { runInNewContext } from "node:vm";
 import yaml from "js-yaml";
 
 const workflow = yaml.load(readFileSync(
@@ -194,6 +195,61 @@ test("the stable Interface result remains an always-run dependency of release pr
   "${{ needs.scope.outputs.interface == 'true' && needs.interface.result || 'skipped' }}");
   assert.equal(step(jobs.aggregate, "Require every protected verification lane to complete")
     .env.INTERFACE_RESULT, "${{ needs.interface.result }}");
+});
+
+test("production proof survives scoped worker skips only after every protected aggregate succeeds", () => {
+  const proof = jobs["production-proof"];
+  const required = ["scope", "secret-scan", "indexer", "database-pglite",
+    "interface", "contracts", "custom-v2", "aggregate"];
+  const upstream = new Set();
+  function collect(id) {
+    for (const dependency of [jobs[id].needs ?? []].flat()) {
+      if (upstream.has(dependency)) continue;
+      upstream.add(dependency);
+      collect(dependency);
+    }
+  }
+  collect("production-proof");
+  const results = Object.fromEntries([...upstream].map((id) => [id, "success"]));
+  // Reproduce the Custom V2-only run: both protected aggregates pass while
+  // all seven Interface/Contracts workers are intentionally untouched.
+  const workers = [...jobs.interface.needs, ...jobs.contracts.needs]
+    .filter((id) => id !== "scope");
+  assert.equal(workers.length, 7);
+  for (const id of workers) results[id] = "skipped";
+
+  const condition = proof.if.replaceAll(
+    /needs\.([a-z0-9-]+)\.result/gu, 'needs["$1"].result',
+  );
+  // Actions adds implicit success() when the condition has no status function.
+  const expression = /\b(?:always|cancelled|failure|success)\s*\(/u.test(condition)
+    ? condition : `success() && (${condition})`;
+  function shouldRun({ overrides = {}, cancelled = false,
+    ref = "refs/heads/production", event = "workflow_dispatch",
+    mode = "custom-v2-release" } = {}) {
+    const observed = { ...results, ...overrides };
+    return runInNewContext(expression, {
+      always: () => true,
+      cancelled: () => cancelled,
+      success: () => [...upstream].every((id) => observed[id] === "success"),
+      github: { ref, event_name: event },
+      inputs: { verification_mode: mode },
+      needs: Object.fromEntries(required.map((id) => [id, { result: observed[id] }])),
+    }, { timeout: 100 });
+  }
+  assert.equal(shouldRun(), true);
+  assert.deepEqual(proof.needs, required);
+  assert.equal(shouldRun({ event: "push", mode: "change" }), true);
+  assert.equal(shouldRun({ cancelled: true }), false);
+  assert.equal(shouldRun({ ref: "refs/heads/main" }), false);
+  assert.equal(shouldRun({ event: "pull_request" }), false);
+  assert.equal(shouldRun({ mode: "change" }), false);
+  for (const id of required) {
+    for (const result of ["failure", "cancelled", "skipped", "queued", "unknown", "", undefined]) {
+      assert.equal(shouldRun({ overrides: { [id]: result } }), false,
+        `${id}=${result} must not produce an attested proof`);
+    }
+  }
 });
 
 function aggregateResult(overrides = {}) {
