@@ -33,4 +33,28 @@ describe("API keys session restoration", () => {
       expect(getAccessToken).not.toHaveBeenCalled();
     },
   );
+
+  it("keeps module issuance pending until the authenticated key list confirms availability", () => {
+    const getAccessToken = vi.fn(async () => null);
+    const getIdentityToken = vi.fn(async () => null);
+    vi.mocked(useWallet).mockReturnValue({
+      authReady: true,
+      sessionReady: true,
+      connecting: false,
+      openingWallet: false,
+      wallet: { account: "0x1111111111111111111111111111111111111111" },
+      getAccessToken,
+      getIdentityToken,
+      openWallet: vi.fn(),
+    } as unknown as ReturnType<typeof useWallet>);
+
+    const html = renderToStaticMarkup(<DeveloperApiKeys />);
+    expect(html).toContain("Custom launches");
+    expect(html).toContain("Module contributions");
+    expect(html).toContain("Checking module availability.");
+    expect(html).toMatch(/<input[^>]*disabled=""[^>]*value="module-contributions"/u);
+    expect(html).toMatch(/<input[^>]*checked=""[^>]*value="custom-launches"/u);
+    expect(getAccessToken).not.toHaveBeenCalled();
+    expect(getIdentityToken).not.toHaveBeenCalled();
+  });
 });

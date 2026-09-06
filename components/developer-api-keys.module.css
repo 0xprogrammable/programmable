@@ -197,6 +197,64 @@
   margin-top: 16px;
 }
 
+.purposeField {
+  border: 0;
+  margin: 0 0 16px;
+  min-width: 0;
+  padding: 0;
+}
+
+.purposeField legend {
+  color: var(--webde-muted);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+  padding: 0;
+}
+
+.purposeOptions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 24px;
+}
+
+.purposeOptions label {
+  align-items: center;
+  color: var(--webde-ink);
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 14px;
+  gap: 8px;
+  line-height: 20px;
+  min-height: 44px;
+}
+
+.purposeOptions input {
+  accent-color: var(--webde-ink);
+  flex: none;
+  height: 16px;
+  margin: 0;
+  width: 16px;
+}
+
+.purposeOptions label:has(input:disabled) {
+  color: var(--webde-muted);
+  cursor: not-allowed;
+}
+
+.purposeOptions small,
+.purposeHint {
+  color: var(--webde-muted);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.purposeHint {
+  margin: 0;
+  min-height: 16px;
+  text-wrap: pretty;
+}
+
 .formFields {
   align-items: start;
   display: grid;
@@ -558,7 +616,7 @@
 .keyMetadata {
   display: grid;
   gap: 12px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   margin: 0;
 }
 
@@ -933,6 +991,10 @@
     gap: 12px;
   }
 
+  .keyMetadata {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .secretRow {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -1008,6 +1070,7 @@
 .scopeLedger summary:focus-visible,
 .agentSetup summary:focus-visible,
 .field input:focus-visible,
+.purposeOptions input:focus-visible,
 .expiryTrigger:focus-visible,
 .expiryOption:focus-visible,
 .backLink:focus-visible,

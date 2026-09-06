@@ -1,0 +1,93 @@
+{
+  "format": "programmable.module-mode.source-pins.v1",
+  "files": [
+    {
+      "path": "src/module-mode/ModuleRuntimeTypesV1.sol",
+      "repository": "https://github.com/programmablehq/PROGRAMMABLE",
+      "revision": "6262e8ef8c0866c9224d2925b7604bbdb9991435",
+      "sourcePath": "contracts/src/module-mode/ModuleRuntimeTypesV1.sol",
+      "sha256": "6775bb6b2da9d1ecdfc66d9e0c77e798503b94842c29acc2696260e8f2b7047e",
+      "purpose": "pinned host interface or portable test dependency"
+    },
+    {
+      "path": "src/module-mode/IModuleProgramV1.sol",
+      "repository": "https://github.com/programmablehq/PROGRAMMABLE",
+      "revision": "6262e8ef8c0866c9224d2925b7604bbdb9991435",
+      "sourcePath": "contracts/src/module-mode/IModuleProgramV1.sol",
+      "sha256": "826cb1b05929ce5066a77016d421e83e52c7323be1a14ceba641104267eebafa",
+      "purpose": "pinned host interface or portable test dependency"
+    },
+    {
+      "path": "src/module-mode/ModuleProgramBaseV1.sol",
+      "repository": "https://github.com/programmablehq/PROGRAMMABLE",
+      "revision": "6262e8ef8c0866c9224d2925b7604bbdb9991435",
+      "sourcePath": "contracts/src/module-mode/ModuleProgramBaseV1.sol",
+      "sha256": "1932cf9d6811169961c91dda815166f3552089abc1621e8f22921614d62e3330",
+      "purpose": "pinned host interface or portable test dependency"
+    },
+    {
+      "path": "src/module-mode/ModuleNativeRuntimeV1.sol",
+      "repository": "https://github.com/programmablehq/PROGRAMMABLE",
+      "revision": "6262e8ef8c0866c9224d2925b7604bbdb9991435",
+      "sourcePath": "contracts/src/module-mode/ModuleNativeRuntimeV1.sol",
+      "sha256": "3bfabbc7314ef848d70cea05c0c75338313f9f5b552c4cc8ac482ee00127d535",
+      "purpose": "pinned host interface or portable test dependency"
+    },
+    {
+      "path": "src/module-mode/ModuleNativeBudgetVaultV1.sol",
+      "repository": "https://github.com/programmablehq/PROGRAMMABLE",
+      "revision": "6262e8ef8c0866c9224d2925b7604bbdb9991435",
+      "sourcePath": "contracts/src/module-mode/ModuleNativeBudgetVaultV1.sol",
+      "sha256": "d223b0a0f77ca790e039c48e9169f0569ff35908534ed54088fa3b83f9d2eefd",
+      "purpose": "pinned host interface or portable test dependency"
+    },
+    {
+      "path": "src/module-mode/modules/EveryNthBuyRewardV1.sol",
+      "repository": "https://github.com/programmablehq/PROGRAMMABLE",
+      "revision": "6262e8ef8c0866c9224d2925b7604bbdb9991435",
+      "sourcePath": "contracts/src/module-mode/modules/EveryNthBuyRewardV1.sol",
+      "sha256": "0390c47404c11c9f15a2e6c87c8b8dc8e183623c7134e2903f9103168f6dfc0c",
+      "purpose": "program"
+    },
+    {
+      "path": "dependencies/openzeppelin-contracts/contracts/utils/Address.sol",
+      "repository": "https://github.com/OpenZeppelin/openzeppelin-contracts",
+      "revision": "21c8312b022f495ebe3621d5daeed20552b43ff9",
+      "sourcePath": "contracts/utils/Address.sol",
+      "sha256": "2395099726e6c215641a5857a74f663987f37a3ad8a2932a9f3d8ee27fb11dd4",
+      "purpose": "unchanged portable test dependency"
+    },
+    {
+      "path": "dependencies/openzeppelin-contracts/contracts/utils/Errors.sol",
+      "repository": "https://github.com/OpenZeppelin/openzeppelin-contracts",
+      "revision": "21c8312b022f495ebe3621d5daeed20552b43ff9",
+      "sourcePath": "contracts/utils/Errors.sol",
+      "sha256": "0704b9d6c032cca8512a3bc3f30f49f86f1f03102d2896a3d23e794b82efea66",
+      "purpose": "unchanged portable test dependency"
+    },
+    {
+      "path": "dependencies/openzeppelin-contracts/contracts/utils/ReentrancyGuardTransient.sol",
+      "repository": "https://github.com/OpenZeppelin/openzeppelin-contracts",
+      "revision": "21c8312b022f495ebe3621d5daeed20552b43ff9",
+      "sourcePath": "contracts/utils/ReentrancyGuardTransient.sol",
+      "sha256": "1797ed87f28982bf3226d3a77e9de83f49feb7a6f75e88d25540c57f8f26f98c",
+      "purpose": "unchanged portable test dependency"
+    },
+    {
+      "path": "dependencies/openzeppelin-contracts/contracts/utils/TransientSlot.sol",
+      "repository": "https://github.com/OpenZeppelin/openzeppelin-contracts",
+      "revision": "21c8312b022f495ebe3621d5daeed20552b43ff9",
+      "sourcePath": "contracts/utils/TransientSlot.sol",
+      "sha256": "ea92f361d697ba8b1fbd322b4d84b989998862c21fbebfa4b45289dc94a9eea2",
+      "purpose": "unchanged portable test dependency"
+    },
+    {
+      "path": "dependencies/openzeppelin-contracts/LICENSE",
+      "repository": "https://github.com/OpenZeppelin/openzeppelin-contracts",
+      "revision": "21c8312b022f495ebe3621d5daeed20552b43ff9",
+      "sourcePath": "LICENSE",
+      "sha256": "13cd784a6c31361f0e0c6aa3b410a1cb9a079868b7314c13e3eb8a75351746b9",
+      "purpose": "unchanged portable test dependency"
+    }
+  ]
+}

@@ -1,0 +1,147 @@
+{
+  "schemaVersion": "1.0",
+  "chainId": "31337",
+  "registry": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+  "entries": [
+    {
+      "manifest": {
+        "schemaVersion": "1.0",
+        "name": "FallingCreatorFeeV1 offline fixture",
+        "description": "Local reference fixture. Synthetic implementation address and codehash are not a deployment or review proof.",
+        "familyId": "0xd57a0bbcf7fe6b0543604488ec8ba3bd02f046f373195790433c1f17698b938a",
+        "familySalt": "0x0101010101010101010101010101010101010101010101010101010101010101",
+        "version": 1,
+        "versionId": "0xc6413dc6744db79b200698b78ccec4178a8d98b969e231788547c9f093727314",
+        "interfaceVersion": 1,
+        "kind": 1,
+        "author": "0x1111111111111111111111111111111111111111",
+        "rewardWallet": "0x1111111111111111111111111111111111111111",
+        "chainId": "31337",
+        "implementation": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+        "runtimeCodeHash": "0x1c325b876f81a240caa3edf349881ff622d045c1e9d1d73e22d8ac3a81ce7872",
+        "source": {
+          "repository": "https://github.com/programmablehq/PROGRAMMABLE",
+          "commit": "8530f033a7787eba2705618638e424642446bb59",
+          "artifactPath": "source-artifact.json",
+          "artifactSha256": "d99697077c369651a77ca1f055ff4ade1591b3b46de35677c15118e7f5ac8df2",
+          "compiler": "0.8.26"
+        },
+        "configuration": {
+          "schemaUri": "config.schema.json",
+          "schemaSha256": "4cebef95cdec8924b7f784ce12ef5cd8ac6cb2aad041dd1c5e363eb862fa090f",
+          "profile": "falling-creator-fee-v1",
+          "fields": [
+            {
+              "name": "buyEnd",
+              "type": "uint256"
+            },
+            {
+              "name": "sellEnd",
+              "type": "uint256"
+            },
+            {
+              "name": "duration",
+              "type": "uint256"
+            }
+          ]
+        },
+        "reviewStatus": "requested"
+      },
+      "manifestHash": "0x777a006aeaa16ecd941314af1502a2ccc4ec56d04d32a95c63448df8d8003d7a",
+      "status": "approved",
+      "configSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "title": "FallingCreatorFeeV1 parameters",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "buyEnd",
+          "sellEnd",
+          "duration"
+        ],
+        "properties": {
+          "buyEnd": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000
+          },
+          "sellEnd": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000
+          },
+          "duration": {
+            "type": "integer",
+            "minimum": 60,
+            "maximum": 2592000
+          }
+        }
+      }
+    },
+    {
+      "manifest": {
+        "schemaVersion": "1.0",
+        "name": "QuoteTradeLimitV1 offline fixture",
+        "description": "Local reference fixture. Synthetic implementation address and codehash are not a deployment or review proof.",
+        "familyId": "0x4db943621a67fa98df0f4c859e782a55a8bb58e9d890299db34d9802abf8ce21",
+        "familySalt": "0x0202020202020202020202020202020202020202020202020202020202020202",
+        "version": 1,
+        "versionId": "0xb3600c35c76782be158f8d2c4367bb64f86c181c501450c98e1301a27f1cf988",
+        "interfaceVersion": 1,
+        "kind": 2,
+        "author": "0x2222222222222222222222222222222222222222",
+        "rewardWallet": "0x2222222222222222222222222222222222222222",
+        "chainId": "31337",
+        "implementation": "0xa2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2",
+        "runtimeCodeHash": "0x7385857ee013157695880179b9abfb302ee9abee89c94b68bc23d31e70802a28",
+        "source": {
+          "repository": "https://github.com/programmablehq/PROGRAMMABLE",
+          "commit": "8530f033a7787eba2705618638e424642446bb59",
+          "artifactPath": "source-artifact.json",
+          "artifactSha256": "52c8a271f2063153d6c2d65a4ee198b07e87e3c3d83e2f4404ca44f6cc645696",
+          "compiler": "0.8.26"
+        },
+        "configuration": {
+          "schemaUri": "config.schema.json",
+          "schemaSha256": "a73ba682f4c318d9435b6420b4f18d706c7f8288343429b17acdfd45521d33d8",
+          "profile": "quote-trade-limit-v1",
+          "fields": [
+            {
+              "name": "buyLimit",
+              "type": "uint256"
+            },
+            {
+              "name": "sellLimit",
+              "type": "uint256"
+            }
+          ]
+        },
+        "reviewStatus": "requested"
+      },
+      "manifestHash": "0xcbeb7139f3de1af89cc8f9a7c288c4f59f39830fd30441a47aed7f30fd238501",
+      "status": "approved",
+      "configSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "title": "QuoteTradeLimitV1 parameters",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "buyLimit",
+          "sellLimit"
+        ],
+        "properties": {
+          "buyLimit": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 39
+          },
+          "sellLimit": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 39
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+[profile.default]
+src = "src"
+test = "test"
+out = "out"
+libs = []
+solc_version = "0.8.26"
+evm_version = "cancun"
+optimizer = true
+optimizer_runs = 1000
+bytecode_hash = "none"
+cbor_metadata = false
+ffi = false
+auto_detect_remappings = false
+remappings = ["@openzeppelin/contracts/=dependencies/openzeppelin-contracts/contracts/"]
+
+[profile.default.fuzz]
+runs = 1000
+max_test_rejects = 65536
+
+[fmt]
+line_length = 120
+tab_width = 4
+bracket_spacing = true
+int_types = "long"
+quote_style = "double"
+number_underscore = "thousands"
+wrap_comments = true

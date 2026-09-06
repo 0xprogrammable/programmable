@@ -1,0 +1,30 @@
+{
+  "language": "Solidity",
+  "sources": {
+    "ClassicModuleTypes.sol": {
+      "content": "// SPDX-License-Identifier: MIT\npragma solidity 0.8.26;\n\n/// @notice Versioned wire types shared by the Classic engine, contributors and SDK.\nlibrary ClassicModuleTypes {\n    uint8 internal constant FEE_POLICY = 1;\n    uint8 internal constant TRADE_LIMIT = 2;\n    uint256 internal constant MAX_MODULES = 8;\n    uint256 internal constant MAX_CONFIG_BYTES = 256;\n    uint256 internal constant MODULE_CALL_GAS = 100_000;\n    bytes32 internal constant RECIPE_DOMAIN = keccak256(\"programmable.classic.recipe.v1\");\n\n    struct ModuleSelection {\n        bytes32 versionId;\n        bytes config;\n    }\n\n    struct ModuleSnapshot {\n        bytes32 versionId;\n        bytes32 familyId;\n        address implementation;\n        bytes32 codeHash;\n        uint8 kind;\n        bytes config;\n    }\n\n    struct PoolRegistration {\n        address launchWallet;\n        uint16 buyCreatorFeeBps;\n        uint16 sellCreatorFeeBps;\n        address[] creatorWallets;\n        uint16[] creatorSharesBps;\n        ModuleSelection[] modules;\n    }\n\n    struct Context {\n        bytes32 poolId;\n        uint64 elapsed;\n        uint16 baseBuyFeeBps;\n        uint16 baseSellFeeBps;\n    }\n\n    /// @dev Fee policies populate only fees; limit modules populate only limits. Zero limit means unbounded.\n    struct Effect {\n        uint16 buyCreatorFeeBps;\n        uint16 sellCreatorFeeBps;\n        uint256 buyQuoteLimit;\n        uint256 sellQuoteLimit;\n    }\n}\n"
+    },
+    "IClassicModuleV1.sol": {
+      "content": "// SPDX-License-Identifier: MIT\npragma solidity 0.8.26;\n\nimport { ClassicModuleTypes as T } from \"./ClassicModuleTypes.sol\";\n\n/// @notice Modules are reviewed, immutable, stateless effect providers. No custody or delegatecall is granted.\ninterface IClassicModuleV1 {\n    function moduleKind() external pure returns (uint8);\n    function validateConfig(bytes calldata config, uint16 baseBuyFeeBps, uint16 baseSellFeeBps)\n        external\n        view\n        returns (bool);\n    function evaluate(T.Context calldata context, bytes calldata config) external view returns (T.Effect memory);\n}\n"
+    },
+    "modules/FallingCreatorFeeV1.sol": {
+      "content": "// SPDX-License-Identifier: MIT\npragma solidity 0.8.26;\n\nimport { IClassicModuleV1 } from \"../IClassicModuleV1.sol\";\nimport { ClassicModuleTypes as T } from \"../ClassicModuleTypes.sol\";\n\n/// @notice Linearly reduces disclosed creator fees to immutable targets; the 20 bps protocol fee is unaffected.\ncontract FallingCreatorFeeV1 is IClassicModuleV1 {\n    function moduleKind() external pure returns (uint8) {\n        return T.FEE_POLICY;\n    }\n\n    function validateConfig(bytes calldata config, uint16 baseBuyFeeBps, uint16 baseSellFeeBps)\n        external\n        pure\n        returns (bool)\n    {\n        if (config.length != 96) return false;\n        (uint256 buyEnd, uint256 sellEnd, uint256 duration) = abi.decode(config, (uint256, uint256, uint256));\n        return duration >= 60 && duration <= 30 days && buyEnd <= baseBuyFeeBps && sellEnd <= baseSellFeeBps\n            && (buyEnd < baseBuyFeeBps || sellEnd < baseSellFeeBps);\n    }\n\n    function evaluate(T.Context calldata context, bytes calldata config)\n        external\n        pure\n        returns (T.Effect memory effect)\n    {\n        (uint256 buyEnd, uint256 sellEnd, uint256 duration) = abi.decode(config, (uint256, uint256, uint256));\n        uint256 elapsed = context.elapsed > duration ? duration : context.elapsed;\n        effect.buyCreatorFeeBps = uint16(buyEnd + (context.baseBuyFeeBps - buyEnd) * (duration - elapsed) / duration);\n        effect.sellCreatorFeeBps =\n            uint16(sellEnd + (context.baseSellFeeBps - sellEnd) * (duration - elapsed) / duration);\n    }\n}\n"
+    }
+  },
+  "settings": {
+    "optimizer": {
+      "enabled": true,
+      "runs": 200
+    },
+    "evmVersion": "cancun",
+    "outputSelection": {
+      "*": {
+        "*": [
+          "abi",
+          "evm.bytecode",
+          "evm.deployedBytecode"
+        ]
+      }
+    }
+  }
+}

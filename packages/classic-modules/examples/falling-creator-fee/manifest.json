@@ -1,0 +1,43 @@
+{
+  "schemaVersion": "1.0",
+  "name": "FallingCreatorFeeV1 offline fixture",
+  "description": "Local reference fixture. Synthetic implementation address and codehash are not a deployment or review proof.",
+  "familyId": "0xd57a0bbcf7fe6b0543604488ec8ba3bd02f046f373195790433c1f17698b938a",
+  "familySalt": "0x0101010101010101010101010101010101010101010101010101010101010101",
+  "version": 1,
+  "versionId": "0xc6413dc6744db79b200698b78ccec4178a8d98b969e231788547c9f093727314",
+  "interfaceVersion": 1,
+  "kind": 1,
+  "author": "0x1111111111111111111111111111111111111111",
+  "rewardWallet": "0x1111111111111111111111111111111111111111",
+  "chainId": "31337",
+  "implementation": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+  "runtimeCodeHash": "0x1c325b876f81a240caa3edf349881ff622d045c1e9d1d73e22d8ac3a81ce7872",
+  "source": {
+    "repository": "https://github.com/programmablehq/PROGRAMMABLE",
+    "commit": "8530f033a7787eba2705618638e424642446bb59",
+    "artifactPath": "source-artifact.json",
+    "artifactSha256": "d99697077c369651a77ca1f055ff4ade1591b3b46de35677c15118e7f5ac8df2",
+    "compiler": "0.8.26"
+  },
+  "configuration": {
+    "schemaUri": "config.schema.json",
+    "schemaSha256": "4cebef95cdec8924b7f784ce12ef5cd8ac6cb2aad041dd1c5e363eb862fa090f",
+    "profile": "falling-creator-fee-v1",
+    "fields": [
+      {
+        "name": "buyEnd",
+        "type": "uint256"
+      },
+      {
+        "name": "sellEnd",
+        "type": "uint256"
+      },
+      {
+        "name": "duration",
+        "type": "uint256"
+      }
+    ]
+  },
+  "reviewStatus": "requested"
+}

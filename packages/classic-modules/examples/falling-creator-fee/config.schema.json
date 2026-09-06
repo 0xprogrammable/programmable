@@ -1,0 +1,28 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "FallingCreatorFeeV1 parameters",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "buyEnd",
+    "sellEnd",
+    "duration"
+  ],
+  "properties": {
+    "buyEnd": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1000
+    },
+    "sellEnd": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1000
+    },
+    "duration": {
+      "type": "integer",
+      "minimum": 60,
+      "maximum": 2592000
+    }
+  }
+}

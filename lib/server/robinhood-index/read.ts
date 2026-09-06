@@ -4,7 +4,7 @@ import { DEFAULT_EXPLORE_FILTERS, type RobinhoodExploreFilters } from "@/lib/rob
 import { isVisibleRobinhoodToken } from "@/lib/robinhood-explore-policy";
 import { readRobinhoodMarkets, readRobinhoodPresentations } from "@/lib/server/robinhood-presentation";
 import type { RobinhoodCoinMarket, RobinhoodCoinPresentation } from "@/lib/robinhood-presentation";
-import { launchList, profileLaunchList } from "./model";
+import { launchList, profileLaunchList, snapshotLaunches } from "./model";
 import { indexStore } from "./store";
 
 // A page reads the saved list only. Failures never fall through to an RPC.
@@ -14,7 +14,7 @@ const readSnapshot = unstable_cache(async () => (await indexStore().read())?.sna
 export async function readRobinhoodLaunches(page = 1, query = "", filters: RobinhoodExploreFilters = DEFAULT_EXPLORE_FILTERS) {
   try {
     const snapshot = await readSnapshot();
-    const visible = (snapshot?.items ?? []).filter((token) => isVisibleRobinhoodToken(token.tokenAddress));
+    const visible = snapshotLaunches(snapshot).filter((token) => isVisibleRobinhoodToken(token.tokenAddress));
     const markets = await readRobinhoodMarkets(visible).catch(() => new Map<string, RobinhoodCoinMarket>());
     const caps = new Map(Array.from(markets).flatMap(([address, market]) => market.marketCapUsd === null ? [] : [[address, market.marketCapUsd] as const]));
     const list = launchList(snapshot, page, query, Date.now(), filters, caps);
@@ -26,10 +26,11 @@ export async function readRobinhoodLaunches(page = 1, query = "", filters: Robin
 export async function readRobinhoodToken(address: string) {
   try {
     const snapshot = await readSnapshot();
+    const list = launchList(snapshot);
     return {
-      status: launchList(snapshot).status,
-      updatedAt: snapshot?.updatedAt ?? null,
-      token: snapshot?.items.find((row) => row.tokenAddress.toLowerCase() === address.toLowerCase()) ?? null,
+      status: list.status,
+      updatedAt: list.updatedAt,
+      token: snapshotLaunches(snapshot).find((row) => row.tokenAddress.toLowerCase() === address.toLowerCase()) ?? null,
     };
   } catch { return { status: "unavailable" as const, updatedAt: null, token: null }; }
 }

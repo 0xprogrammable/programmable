@@ -1,0 +1,60 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://programmable.market/schemas/classic-module-manifest-v1.json",
+  "title": "Classic Module V1 review request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "name", "description", "familyId", "familySalt", "version", "versionId", "interfaceVersion", "kind", "author", "rewardWallet", "chainId", "implementation", "runtimeCodeHash", "source", "configuration", "reviewStatus"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "description": { "type": "string", "minLength": 1, "maxLength": 2000 },
+    "familyId": { "$ref": "#/definitions/bytes32" },
+    "familySalt": { "$ref": "#/definitions/bytes32" },
+    "version": { "type": "integer", "minimum": 1, "maximum": 4294967295 },
+    "versionId": { "$ref": "#/definitions/bytes32" },
+    "interfaceVersion": { "const": 1 },
+    "kind": { "enum": [1, 2] },
+    "author": { "$ref": "#/definitions/address" },
+    "rewardWallet": { "$ref": "#/definitions/address" },
+    "chainId": { "type": "string", "pattern": "^[1-9][0-9]{0,77}$" },
+    "implementation": { "$ref": "#/definitions/address" },
+    "runtimeCodeHash": { "$ref": "#/definitions/bytes32" },
+    "reviewStatus": { "const": "requested" },
+    "source": {
+      "type": "object", "additionalProperties": false,
+      "required": ["repository", "commit", "artifactPath", "artifactSha256", "compiler"],
+      "properties": {
+        "repository": { "type": "string", "minLength": 9, "maxLength": 500, "pattern": "^https://[^\\s]+$" },
+        "commit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "artifactPath": { "$ref": "#/definitions/relativePath" },
+        "artifactSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "compiler": { "const": "0.8.26" }
+      }
+    },
+    "configuration": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schemaUri", "schemaSha256", "profile", "fields"],
+      "properties": {
+        "schemaUri": { "$ref": "#/definitions/relativePath" },
+        "schemaSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "profile": { "enum": ["static-abi-v1", "falling-creator-fee-v1", "quote-trade-limit-v1"] },
+        "fields": {
+          "type": "array", "minItems": 0, "maxItems": 8,
+          "items": {
+            "type": "object", "additionalProperties": false, "required": ["name", "type"],
+            "properties": {
+              "name": { "type": "string", "pattern": "^[a-zA-Z][a-zA-Z0-9_]{0,63}$" },
+              "type": { "enum": ["uint256", "uint128", "uint64", "uint32", "uint16", "uint8", "bool", "address", "bytes32"] }
+            }
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "bytes32": { "type": "string", "pattern": "^0x[0-9a-fA-F]{64}$" },
+    "address": { "type": "string", "pattern": "^0x[0-9a-fA-F]{40}$" },
+    "relativePath": { "type": "string", "minLength": 1, "maxLength": 240, "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]*$" }
+  }
+}

@@ -2,6 +2,17 @@
 useDefault = true
 
 [[allowlists]]
+description = "Module launchers assign a public numeric liquidity amount, not a credential"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+paths = [
+  '''^contracts/src/module-mode/engine/ModuleNativeLaunchV1\.sol$''',
+  '''^contracts/src/classic-modules/ClassicModuleLaunchV1\.sol$''',
+]
+regexes = ['''^\s*liquidity\.tokenLiquidityAmount = liquidity\.position\.amount1;\s*$''']
+
+[[allowlists]]
 description = "Committed Envio evidence contains public Ethereum addresses under creator fields"
 paths = [
   '''docs/data-pipeline/envio-candidate-7f24e63-audit-20260801T042059Z\.json''',

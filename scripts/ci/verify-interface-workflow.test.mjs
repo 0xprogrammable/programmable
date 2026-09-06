@@ -34,13 +34,17 @@ test("isolated Interface jobs retain every original command and a complete local
   assert.deepEqual(interfaceStages("verify:interface:ci"), [
     "npm run test:ci-scope",
     "npm run lint",
+    "npm run modules:sdk:test",
+    "npm run modules:cli:check",
+    "npm run modules:cli:test",
     "npm run test:interface:ci",
     "npm run test:browser:wallet-lock",
     "npm run test:browser:late-migration",
     "npm run build",
   ]);
   assert.equal(scripts["verify:interface:quality:ci"],
-    "npm run test:ci-scope && npm run lint && npm run test:interface:ci");
+    "npm run test:ci-scope && npm run lint && npm run modules:sdk:test && npm run modules:cli:check && npm run modules:cli:test && npm run test:interface:ci");
+  assert.equal(scripts["modules:sdk:test"], "node --test packages/classic-modules/test/*.test.mjs");
   assert.equal(scripts["verify:interface:browser-build:ci"],
     "npm run test:browser:wallet-lock && npm run test:browser:late-migration && npm run build");
   assert.equal(scripts["test:ci-scope"],

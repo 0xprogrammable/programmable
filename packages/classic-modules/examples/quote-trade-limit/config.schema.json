@@ -1,0 +1,22 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "QuoteTradeLimitV1 parameters",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "buyLimit",
+    "sellLimit"
+  ],
+  "properties": {
+    "buyLimit": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 39
+    },
+    "sellLimit": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 39
+    }
+  }
+}

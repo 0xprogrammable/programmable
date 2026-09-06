@@ -1,0 +1,21 @@
+{
+  "name": "@programmable/classic-modules",
+  "version": "1.0.0-development.2",
+  "private": true,
+  "description": "Local contributor validation and deterministic recipes for Classic Modules V1",
+  "type": "module",
+  "bin": { "programmable-classic-modules": "bin/programmable-classic-modules.mjs" },
+  "types": "./src/index.d.mts",
+  "exports": {
+    ".": { "types": "./src/index.d.mts", "default": "./src/index.mjs" },
+    "./io": { "types": "./src/io.d.mts", "default": "./src/io.mjs" },
+    "./open": { "types": "./src/open-packages.d.mts", "default": "./src/open-packages.mjs" },
+    "./open-io": { "types": "./src/open-package-io.d.mts", "default": "./src/open-package-io.mjs" },
+    "./open-transport": { "types": "./src/open-transport.d.mts", "default": "./src/open-transport.mjs" },
+    "./open-client": { "types": "./src/open-client.d.mts", "default": "./src/open-client.mjs" }
+  },
+  "scripts": { "test": "node --test test/*.test.mjs" },
+  "engines": { "node": ">=24.14.0 <25" },
+  "dependencies": { "ajv": "8.20.0", "viem": "2.55.5" },
+  "license": "MIT"
+}

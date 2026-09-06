@@ -1,13 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, ArrowUpRight, BookOpen, Check, Copy, Globe, Link2, Send } from "lucide-react";
+import { ArrowLeft, ArrowRight, ArrowUpRight, BookOpen, Check, Copy, Globe, Link2, Send } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { AnimatedMarketCap } from "@/components/animated-market-cap";
 import { DiscordBrandIcon, GitHubBrandIcon, XBrandIcon } from "@/components/brand-icons";
 import { RobinhoodCoinArtwork } from "@/components/robinhood-coin-artwork";
 import { useRobinhoodPresentation } from "@/components/use-robinhood-presentation";
-import type { RobinhoodLaunch } from "@/lib/robinhood-launches";
+import { isRobinhoodModuleLaunch, robinhoodModuleManageHref, type RobinhoodLaunch } from "@/lib/robinhood-launches";
 import { coinDollars, coinTicker } from "@/lib/robinhood-presentation";
 import styles from "./robinhood-token-view.module.css";
 
@@ -23,6 +23,8 @@ export function RobinhoodTokenView({ address, token, status }: {
   const market = details?.market;
   const name = token?.name?.trim() || "Unnamed token";
   const change = market?.change24hPercent;
+  const moduleLaunch = isRobinhoodModuleLaunch(token) ? token : null;
+  const manageHref = moduleLaunch ? robinhoodModuleManageHref(moduleLaunch) : null;
   const [copyResult, setCopyResult] = useState<{ address: string; state: "copied" | "failed" } | null>(null);
   const copyState = copyResult?.address === address ? copyResult.state : "idle";
 
@@ -72,6 +74,24 @@ export function RobinhoodTokenView({ address, token, status }: {
         </header>
         <p className="sr-only" role="status">{copyState === "copied" ? "Token address copied" : ""}</p>
         {copyState === "failed" ? <p className={styles.notice} role="status">Could not copy. <a href={`${EXPLORER}/token/${address}`} target="_blank" rel="noreferrer">View the address on Explorer.</a></p> : null}
+
+        {moduleLaunch && manageHref ? <section className={styles.launchContext} aria-label="Programmable launch">
+          <div>
+            <p className={styles.origin}>Programmable · Module Mode</p>
+            <p className={styles.launchDetails}>
+              <span>{moduleLaunch.modulePackageIds.length === 0 ? "Base coin" : `${moduleLaunch.modulePackageIds.length} ${moduleLaunch.modulePackageIds.length === 1 ? "module" : "modules"}`}</span>
+              <Link href={`/profile?account=${moduleLaunch.creator}`} prefetch={false}>Launch wallet</Link>
+              <a href={`${EXPLORER}/tx/${moduleLaunch.transactionHash}`} target="_blank" rel="noreferrer">Launch transaction<span className="sr-only"> (opens in a new tab)</span></a>
+            </p>
+          </div>
+          <div className={styles.launchActions}>
+            <Link className={`${styles.secondaryButton} ${styles.tradeButton}`} href={`${manageHref}#trade`} prefetch={false} aria-label="Trade coin">Trade</Link>
+            <Link className={styles.secondaryButton} href={manageHref} prefetch={false} aria-label="Manage coin">Manage <ArrowRight aria-hidden="true" size={16} /></Link>
+          </div>
+        </section> : null}
+        {token && status !== "ready" ? <p className={styles.notice} role="status">{status === "syncing"
+          ? "New launches are still being checked. This coin comes from the verified launch index."
+          : "Showing the last verified launch record. Index updates are temporarily unavailable."}</p> : null}
 
             <dl className={styles.metrics}>
               <Metric label="Price" value={coinDollars(market?.priceUsd, true)} />

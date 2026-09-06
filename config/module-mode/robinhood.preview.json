@@ -1,0 +1,78 @@
+{
+  "schemaVersion": "programmable.module-mode-source.v1",
+  "sourceVersion": "module-native-v1",
+  "chainId": 4663,
+  "enabled": false,
+  "status": "preview",
+  "releaseDigest": null,
+  "sourceCommit": null,
+  "deploymentEvidenceDigest": null,
+  "sourceVerificationDigest": null,
+  "lifecycleEvidenceDigest": null,
+  "startBlock": null,
+  "minimumInitialBuyNative": null,
+  "tokenCreationCodeHash": null,
+  "finalityPolicy": "robinhood-ethereum-finalized-v1",
+  "contracts": {
+    "launcher": {
+      "address": null,
+      "runtimeCodeHash": null
+    },
+    "hook": {
+      "address": null,
+      "runtimeCodeHash": null
+    },
+    "runtime": {
+      "address": null,
+      "runtimeCodeHash": null
+    },
+    "registry": {
+      "address": null,
+      "runtimeCodeHash": null
+    },
+    "poolManager": {
+      "address": null,
+      "runtimeCodeHash": null
+    },
+    "tokenFactory": {
+      "address": null,
+      "runtimeCodeHash": null
+    },
+    "swapRouter": {
+      "address": null,
+      "runtimeCodeHash": null
+    },
+    "positionManager": {
+      "address": null,
+      "runtimeCodeHash": null
+    },
+    "positionPlanner": {
+      "address": null,
+      "runtimeCodeHash": null
+    },
+    "launchPolicy": {
+      "address": null,
+      "runtimeCodeHash": null
+    },
+    "positionForwarderFactory": {
+      "address": null,
+      "runtimeCodeHash": null
+    },
+    "rewardLedger": {
+      "address": null,
+      "runtimeCodeHash": null
+    },
+    "runtimeFactory": {
+      "address": null,
+      "runtimeCodeHash": null
+    },
+    "budgetVault": {
+      "address": null,
+      "runtimeCodeHash": null
+    },
+    "swapRouterFactory": {
+      "address": null,
+      "runtimeCodeHash": null
+    }
+  }
+}

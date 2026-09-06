@@ -110,6 +110,7 @@ function parseMetadata(launch: unknown): MetadataBinding | null {
 }
 
 function metadataMatches(binding: MetadataBinding, token: RobinhoodLaunch): boolean {
+  if (token.sourceKind === "module-native-v1") return false;
   const launch = binding.launch;
   const onchain = launch.onchain as JsonObject;
   const l2 = onchain.l2Inclusion as JsonObject;

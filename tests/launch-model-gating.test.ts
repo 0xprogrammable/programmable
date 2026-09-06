@@ -238,14 +238,18 @@ describe("unreleased launch model gating", () => {
     expect(html).not.toContain("Liquidity Growth");
   });
 
-  it("offers only Custom on Robinhood and opens the shared API-key page", () => {
+  it("offers Module Mode preview and the Custom API entry on Robinhood", () => {
     const html = renderToStaticMarkup(
       createElement(LaunchModelPicker, {
         chainId: 4663,
         onChoose: () => undefined,
       }),
     );
-    expect(html.match(/data-launch-model-option=/g)).toHaveLength(1);
+    expect(html.match(/data-launch-model-option=/g)).toHaveLength(2);
+    const modulesCard = html.match(/<a[^>]*data-launch-model-option="modules"[^>]*>/u)?.[0];
+    expect(modulesCard).toContain('href="/launch/modules"');
+    expect(modulesCard).toContain('data-launch-model-launchable="false"');
+    expect(html).toContain('id="launch-model-modules-status">Preview</small>');
     expect(html).not.toContain('data-launch-model-option="classic"');
     expect(html).toMatch(/name="launch-chain"[^>]*checked=""[^>]*value="4663"/);
     expect(html).not.toContain('data-launch-model-option="prediction"');

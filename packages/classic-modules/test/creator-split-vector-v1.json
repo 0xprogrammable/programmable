@@ -1,0 +1,55 @@
+{
+  "domain": "0x78a6648c5ce29a0ef83e9d6be26c4fed3f70e5f86e3881a2968c9913a1e6232d",
+  "input": [
+    {
+      "wallet": "0x3333333333333333333333333333333333333333",
+      "shareBps": "5000"
+    },
+    {
+      "wallet": "0x1111111111111111111111111111111111111111",
+      "shareBps": "2000"
+    },
+    {
+      "wallet": "0x2222222222222222222222222222222222222222",
+      "shareBps": "3000"
+    }
+  ],
+  "expected": {
+    "format": "programmable.classic.creator-split.v1",
+    "root": "0xa029c704c340ede99fcfb05f026675438f4546abed551eb9e0feea8f5c1ff122",
+    "recipientCount": 3,
+    "allocations": "0x111111111111111111111111111111111111111107d022222222222222222222222222222222222222220bb833333333333333333333333333333333333333331388",
+    "recipients": [
+      {
+        "index": "0",
+        "wallet": "0x1111111111111111111111111111111111111111",
+        "shareBps": "2000",
+        "leaf": "0xe5f06be1e8ba600992e297f039c8cd0ea9f57d7f9e87a5e1abcb806ba9154465",
+        "proof": [
+          "0xb8a36691d4e1449a349cc566b710910a57237d0b7f7765bf76b20d9a69951456",
+          "0xd565157cdea4cabec4fcb539a5fb27f7ca777b7b197f98f7c251dba80ac1ee47"
+        ]
+      },
+      {
+        "index": "1",
+        "wallet": "0x2222222222222222222222222222222222222222",
+        "shareBps": "3000",
+        "leaf": "0xb8a36691d4e1449a349cc566b710910a57237d0b7f7765bf76b20d9a69951456",
+        "proof": [
+          "0xe5f06be1e8ba600992e297f039c8cd0ea9f57d7f9e87a5e1abcb806ba9154465",
+          "0xd565157cdea4cabec4fcb539a5fb27f7ca777b7b197f98f7c251dba80ac1ee47"
+        ]
+      },
+      {
+        "index": "2",
+        "wallet": "0x3333333333333333333333333333333333333333",
+        "shareBps": "5000",
+        "leaf": "0x17a100901221d2e3ee295186642cfa6111fb03410ad8af50ed7549bffed61a62",
+        "proof": [
+          "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "0x86ffbcb2711adf0911286ee54edd1fb6cb7d752911e286b4d8a7fba239f6aa9c"
+        ]
+      }
+    ]
+  }
+}

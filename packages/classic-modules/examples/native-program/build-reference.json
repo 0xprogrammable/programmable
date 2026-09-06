@@ -1,0 +1,25 @@
+{
+  "format": "programmable.module-mode.local-build-reference.v1",
+  "compiler": "0.8.26+commit.8a97fa7a",
+  "settings": {
+    "evmVersion": "cancun",
+    "optimizer": true,
+    "optimizerRuns": 1000,
+    "bytecodeHash": "none",
+    "appendCBOR": false
+  },
+  "contracts": {
+    "EveryNthBuyRewardV1": {
+      "creationCodeHash": "0x4cf6b04057b17ae650c6d3ff02ca08edd8ac7bcaaa5e24c317ad74b1c2bbcb23",
+      "runtimeCodeHash": "0x4566bfbec7b65c58d142e9df81aa1aa2ce7c0b798787f25b1e681c0052a8b78e",
+      "runtimeBytes": 2764
+    },
+    "EveryNthBuyRewardFactoryV1": {
+      "creationCodeHash": "0x17d2c2a1680187c778c45befe5278fa3cc5665bc94dbe13b272338a437e2bdab",
+      "runtimeCodeHash": "0x64e2638c7a626073db9d472348519a6ede9534e8dc18b9230d4919bc410821bd",
+      "runtimeBytes": 7311
+    }
+  },
+  "deploymentEvidence": false,
+  "sourceVerificationEvidence": false
+}

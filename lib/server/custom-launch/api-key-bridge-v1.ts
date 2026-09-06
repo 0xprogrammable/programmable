@@ -37,6 +37,14 @@ const CURRENT_SCOPES = Object.freeze([
   "custom-launch:create",
   "custom-launch:read",
 ] as const);
+const MODULE_SCOPES = Object.freeze([
+  "modules:submit",
+  "modules:read",
+] as const);
+type DeveloperApiKeyScopeV1 =
+  | (typeof CURRENT_SCOPES)[number]
+  | (typeof MODULE_SCOPES)[number];
+type DeveloperApiKeyPurposeV1 = "custom-launches" | "module-contributions";
 
 const RESPONSE_HEADERS = Object.freeze({
   "Cache-Control": "no-store",
@@ -49,7 +57,7 @@ export type DeveloperApiKeySummaryV1 = Readonly<{
   id: string;
   label: string;
   keyPrefix: string;
-  scopes: readonly (typeof CURRENT_SCOPES)[number][];
+  scopes: readonly DeveloperApiKeyScopeV1[];
   createdAt: string;
   expiresAt: string | null;
   lastUsedAt: string | null;
@@ -182,6 +190,9 @@ export function createDeveloperApiKeyBridgeV1(input: Readonly<{
         return jsonResponse(200, {
           schemaVersion: CUSTOM_LAUNCH_API_SCHEMA_V1,
           apiKeys,
+          ...(record.moduleContributions === undefined ? {} : {
+            moduleContributions: parseModuleContributions(record.moduleContributions),
+          }),
         });
       } catch (error) {
         return mappedError(error);
@@ -195,10 +206,32 @@ export function createDeveloperApiKeyBridgeV1(input: Readonly<{
       try {
         requireJsonRequest(request);
         const body = await readBrowserJson(request);
-        const parsed = parseCreateBody(body);
+        const parsed = parseCreateBody(body, true);
         const idempotencyKey = requireIdempotencyKey(request);
         const principal = await input.authenticator.authenticate(request);
         const walletAddress = requireLinkedWallet(principal, parsed.walletAddress);
+        if (parsed.purpose === "module-contributions") {
+          // A stale browser capability cannot authorize a new module key.
+          const capabilities = await callBackend(
+            request,
+            principal,
+            walletAddress,
+            "GET",
+            "/v1/wallet-admin/api-keys",
+          );
+          if (!capabilities.ok) throw await mappedBackendError(capabilities);
+          const record = jsonRecord(await readBoundedBackendJson(capabilities));
+          requireBackendSchema(record);
+          const available = parseModuleContributions(record.moduleContributions);
+          if (!available.apiKeyIssuance || !available.submissions) {
+            return errorResponse(
+              503,
+              "MODULE_SUBMISSIONS_UNAVAILABLE",
+              undefined,
+              "Module contributions are not available right now. Try again later.",
+            );
+          }
+        }
         const backend = await callBackend(
           request,
           principal,
@@ -209,6 +242,9 @@ export function createDeveloperApiKeyBridgeV1(input: Readonly<{
             schemaVersion: CUSTOM_LAUNCH_API_SCHEMA_V1,
             label: parsed.label,
             expiresInDays: parsed.expiresInDays,
+            ...(parsed.purpose === "module-contributions"
+              ? { scopes: [...MODULE_SCOPES] }
+              : {}),
           }),
           idempotencyKey,
         );
@@ -216,6 +252,8 @@ export function createDeveloperApiKeyBridgeV1(input: Readonly<{
         const result = parseApiKeyMutationResult(
           await readBoundedBackendJson(backend),
           backend.status,
+          undefined,
+          parsed.purpose,
         );
         return jsonResponse(backend.status, {
           schemaVersion: CUSTOM_LAUNCH_API_SCHEMA_V1,
@@ -328,12 +366,13 @@ export function getProductionDeveloperApiKeyBridgeV1() {
   return productionBridge;
 }
 
-function parseCreateBody(value: JsonValue) {
+function parseCreateBody(value: JsonValue, allowPurpose = false) {
   const record = exactBrowserRecord(value, [
     "schemaVersion",
     "walletAddress",
     "label",
     "expiresInDays",
+    ...(allowPurpose ? ["purpose"] : []),
   ], ["schemaVersion", "walletAddress", "label"]);
   if (record.schemaVersion !== CUSTOM_LAUNCH_API_SCHEMA_V1) {
     throw new BrowserRequestErrorV1(400, "request_schema_invalid");
@@ -359,7 +398,23 @@ function parseCreateBody(value: JsonValue) {
     || (expiresInDays as number) < 1
     || (expiresInDays as number) > MAXIMUM_EXPIRY_DAYS
   ) throw new BrowserRequestErrorV1(400, "request_schema_invalid");
-  return Object.freeze({ walletAddress, label, expiresInDays });
+  const purpose = record.purpose === undefined
+    ? "custom-launches"
+    : record.purpose;
+  if (purpose !== "custom-launches" && purpose !== "module-contributions") {
+    throw new BrowserRequestErrorV1(400, "request_schema_invalid");
+  }
+  return Object.freeze({ walletAddress, label, expiresInDays, purpose });
+}
+
+function parseModuleContributions(value: JsonValue | undefined) {
+  const record = value !== null && typeof value === "object" && !Array.isArray(value)
+    ? value
+    : {};
+  return Object.freeze({
+    apiKeyIssuance: record.apiKeyIssuance === true,
+    submissions: record.submissions === true,
+  });
 }
 
 function requireIdempotencyKey(request: Request) {
@@ -449,19 +504,7 @@ function parseApiKeySummary(value: JsonValue | undefined): DeveloperApiKeySummar
   if (!/^pm_live_[A-Za-z0-9_-]{22}$/u.test(keyPrefix)) {
     throw new BackendContractErrorV1();
   }
-  if (!Array.isArray(record.scopes) || record.scopes.length !== CURRENT_SCOPES.length) {
-    throw new BackendContractErrorV1();
-  }
-  const scopes = record.scopes.map((scope) => {
-    if (!CURRENT_SCOPES.includes(scope as (typeof CURRENT_SCOPES)[number])) {
-      throw new BackendContractErrorV1();
-    }
-    return scope as (typeof CURRENT_SCOPES)[number];
-  });
-  if (
-    new Set(scopes).size !== scopes.length
-    || !CURRENT_SCOPES.every((scope) => scopes.includes(scope))
-  ) throw new BackendContractErrorV1();
+  const scopes = parseScopes(record.scopes);
   return Object.freeze({
     id,
     label,
@@ -474,14 +517,34 @@ function parseApiKeySummary(value: JsonValue | undefined): DeveloperApiKeySummar
   });
 }
 
+function parseScopes(value: JsonValue | undefined): readonly DeveloperApiKeyScopeV1[] {
+  if (!Array.isArray(value) || value.length !== 2 || new Set(value).size !== 2) {
+    throw new BackendContractErrorV1();
+  }
+  const pair = [CURRENT_SCOPES, MODULE_SCOPES].find((candidate) =>
+    candidate.every((scope) => value.includes(scope)),
+  );
+  if (!pair) throw new BackendContractErrorV1();
+  return Object.freeze(value as DeveloperApiKeyScopeV1[]);
+}
+
 function parseApiKeyMutationResult(
   value: JsonValue,
   status: number,
   rotatedCredentialId?: string,
+  expectedPurpose?: DeveloperApiKeyPurposeV1,
 ): DeveloperApiKeyMutationResultV1 {
   const record = jsonRecord(value);
   requireBackendSchema(record);
   const apiKey = parseApiKeySummary(record.apiKey);
+  if (expectedPurpose !== undefined) {
+    const expectedScopes = expectedPurpose === "module-contributions"
+      ? MODULE_SCOPES
+      : CURRENT_SCOPES;
+    if (!expectedScopes.every((scope) => apiKey.scopes.includes(scope))) {
+      throw new BackendContractErrorV1();
+    }
+  }
   const secretState = record.secretState;
   const hasSecret = Object.prototype.hasOwnProperty.call(record, "apiKeySecret");
   const hasRotatedCredentialId = Object.prototype.hasOwnProperty.call(

@@ -13,4 +13,5 @@ liquidity-launcher/=lib/liquidity-launcher/
 permit2/=lib/permit2/
 solady/=lib/solady/src/
 solmate/=lib/solmate/
+test/module-mode/=test/module-mode/
 v4-periphery/=lib/v4-periphery/

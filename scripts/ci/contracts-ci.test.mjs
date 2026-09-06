@@ -17,6 +17,13 @@ test("build, release, and analysis retain all existing contract checks without a
     ["npm", "run", "contracts:bootstrap"], ["npm", "run", "contracts:slither"],
   ]);
   const commands = CONTRACT_CI_RELEASE.map((command) => command.join(" "));
+  assert.ok(commands.includes("npm run modules:starter:test"));
+  assert.ok(commands.includes("node --test contracts/scripts/module-mode/operator.test.mjs contracts/scripts/module-mode/source-readback.test.mjs"));
+  const starterBuild = "forge build --root ../packages/classic-modules/examples/native-program";
+  assert.equal(commands.filter((command) => command === starterBuild).length, 1);
+  assert.ok(commands.indexOf(starterBuild) < commands.indexOf("npm run modules:starter:test"));
+  assert.match(readFileSync(new URL("../../contracts/test/module-mode/starter/run-tests.sh", import.meta.url), "utf8"),
+    /forge test --offline/u);
   assert.ok(commands.includes("npm run contracts:custom-registry-v2:test"));
   assert.ok(commands.includes("npm run contracts:custom-registry-v2:artifacts"));
   assert.ok(commands.includes("npm run contracts:test:forks"));

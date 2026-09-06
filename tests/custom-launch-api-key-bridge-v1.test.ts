@@ -17,6 +17,8 @@ const BFF_ASSERTION_KEY = "b".repeat(43);
 const ASSERTION_ISSUED_AT = "2026-08-27T08:00:00.000Z";
 const ASSERTION_NONCE = "AAAAAAAAAAAAAAAAAAAAAA";
 const IDEMPOTENCY_ID = "018f3e2a-7b4c-7d5e-8f90-123456789abc";
+const MODULE_SCOPES = ["modules:submit", "modules:read"];
+const MODULE_AVAILABLE = { apiKeyIssuance: true, submissions: true };
 const REQUEST_ID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 
@@ -49,6 +51,23 @@ function backendJson(body: Readonly<Record<string, unknown>>, status = 200) {
   }), {
     status,
     headers: { "content-type": "application/json" },
+  });
+}
+
+function createRequest(extra: Readonly<Record<string, unknown>> = {}) {
+  return new Request("https://programmable.market/api/developer/api-keys", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "idempotency-key": IDEMPOTENCY_ID,
+      authorization: "Bearer browser-privy-token",
+    },
+    body: JSON.stringify({
+      schemaVersion: CUSTOM_LAUNCH_API_SCHEMA_V1,
+      walletAddress: WALLET,
+      label: "Contribution agent",
+      ...extra,
+    }),
   });
 }
 
@@ -180,6 +199,181 @@ describe("developer API key same-origin bridge", () => {
     expect(headers.get("x-programmable-bff-assertion-signature")).toBe(
       "hmac-sha256:c966ed9d880c5e2c19fae08b7c4d0130f37a6c880b236a177160a5fdc4559e06",
     );
+  });
+
+  it("lists launch and module keys without granting module availability from their presence", async () => {
+    fetchBackend.mockResolvedValueOnce(backendJson({
+      apiKeys: [summary(), summary({
+        id: "028f3e2a-7b4c-7d5e-8f90-123456789abc",
+        scopes: MODULE_SCOPES,
+      })],
+    }));
+    const response = await bridge().list(new Request(
+      `https://programmable.market/api/developer/api-keys?walletAddress=${WALLET}`,
+    ));
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.apiKeys.map((key: { scopes: string[] }) => key.scopes))
+      .toEqual([["custom-launch:create", "custom-launch:read"], MODULE_SCOPES]);
+    expect(body).not.toHaveProperty("moduleContributions");
+  });
+
+  it("projects only explicit module capability booleans", async () => {
+    fetchBackend.mockResolvedValueOnce(backendJson({
+      apiKeys: [],
+      moduleContributions: {
+        apiKeyIssuance: true,
+        submissions: "true",
+        internalSecret: "must-not-cross-the-bff",
+      },
+    }));
+    const response = await bridge().list(new Request(
+      `https://programmable.market/api/developer/api-keys?walletAddress=${WALLET}`,
+    ));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      schemaVersion: CUSTOM_LAUNCH_API_SCHEMA_V1,
+      apiKeys: [],
+      moduleContributions: { apiKeyIssuance: true, submissions: false },
+    });
+  });
+
+  it("checks current module availability and sends only the module scope pair", async () => {
+    fetchBackend.mockResolvedValueOnce(backendJson({
+      apiKeys: [], moduleContributions: MODULE_AVAILABLE,
+    })).mockResolvedValueOnce(backendJson({
+      apiKey: summary({ scopes: MODULE_SCOPES }),
+      secretState: "delivered-once",
+      apiKeySecret: API_KEY_SECRET,
+    }, 201));
+    const response = await bridge().create(createRequest({ purpose: "module-contributions" }));
+    expect(response.status).toBe(201);
+    const body = await response.json();
+    expect(body.apiKey.scopes).toEqual(MODULE_SCOPES);
+    expect(authenticate).toHaveBeenCalledTimes(1);
+    expect(fetchBackend).toHaveBeenCalledTimes(2);
+    const [capabilityUrl, capabilityInit] = fetchBackend.mock.calls[0] as [URL, RequestInit];
+    expect(capabilityUrl.pathname).toBe("/v1/wallet-admin/api-keys");
+    expect(capabilityInit.method).toBe("GET");
+    expect(capabilityInit.body).toBeUndefined();
+    const [, issueInit] = fetchBackend.mock.calls[1] as [URL, RequestInit];
+    expect(issueInit.method).toBe("POST");
+    expect(JSON.parse(String(issueInit.body))).toEqual({
+      schemaVersion: CUSTOM_LAUNCH_API_SCHEMA_V1,
+      label: "Contribution agent",
+      expiresInDays: 90,
+      scopes: MODULE_SCOPES,
+    });
+    expect(new Headers(issueInit.headers).get("idempotency-key")).toBe(IDEMPOTENCY_ID);
+    expect(new Headers(issueInit.headers).get("x-programmable-wallet-address")).toBe(WALLET);
+  });
+
+  it.each([
+    undefined,
+    null,
+    {},
+    { apiKeyIssuance: false, submissions: true },
+    { apiKeyIssuance: true, submissions: false },
+    { apiKeyIssuance: "true", submissions: true },
+  ])("never issues a module key without both live capabilities (%j)", async (moduleContributions) => {
+    fetchBackend.mockResolvedValueOnce(backendJson({ apiKeys: [], moduleContributions }));
+    const response = await bridge().create(createRequest({ purpose: "module-contributions" }));
+    expect(response.status).toBe(503);
+    expect((await response.json()).error.code).toBe("MODULE_SUBMISSIONS_UNAVAILABLE");
+    expect(fetchBackend).toHaveBeenCalledTimes(1);
+    expect(fetchBackend.mock.calls[0]?.[1].method).toBe("GET");
+  });
+
+  it("keeps an explicit launch purpose on the existing backend request contract", async () => {
+    fetchBackend.mockResolvedValueOnce(backendJson({
+      apiKey: summary(), secretState: "already-delivered",
+    }));
+    const response = await bridge().create(createRequest({ purpose: "custom-launches" }));
+    expect(response.status).toBe(200);
+    expect(fetchBackend).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(String(fetchBackend.mock.calls[0]?.[1].body))).toEqual({
+      schemaVersion: CUSTOM_LAUNCH_API_SCHEMA_V1,
+      label: "Contribution agent",
+      expiresInDays: 90,
+    });
+  });
+
+  it.each([
+    [],
+    ["modules:submit"],
+    ["modules:submit", "modules:submit"],
+    ["modules:submit", "custom-launch:read"],
+    ["modules:submit", "modules:read", "custom-launch:create"],
+    ["modules:submit", "modules:approve"],
+  ].map((scopes) => ({ scopes })))("rejects malformed, mixed or broader scope sets ($scopes)", async ({ scopes }) => {
+    fetchBackend.mockResolvedValueOnce(backendJson({ apiKeys: [summary({ scopes })] }));
+    const response = await bridge().list(new Request(
+      `https://programmable.market/api/developer/api-keys?walletAddress=${WALLET}`,
+    ));
+    expect(response.status).toBe(503);
+    expect((await response.json()).error.code).toBe("api_key_service_unavailable");
+  });
+
+  it.each(["custom-launches", "module-contributions"])(
+    "does not reveal a key issued for a different purpose than %s",
+    async (purpose) => {
+      if (purpose === "module-contributions") {
+        fetchBackend.mockResolvedValueOnce(backendJson({
+          apiKeys: [], moduleContributions: MODULE_AVAILABLE,
+        }));
+      }
+      fetchBackend.mockResolvedValueOnce(backendJson({
+        apiKey: summary({ scopes: purpose === "custom-launches"
+          ? MODULE_SCOPES : ["custom-launch:create", "custom-launch:read"] }),
+        secretState: "delivered-once",
+        apiKeySecret: API_KEY_SECRET,
+      }, 201));
+      const response = await bridge().create(createRequest({ purpose }));
+      expect(response.status).toBe(503);
+      expect(await response.text()).not.toContain(API_KEY_SECRET);
+    },
+  );
+
+  it("does not query capabilities for a module key owned by an unlinked wallet", async () => {
+    const response = await bridge().create(createRequest({
+      purpose: "module-contributions", walletAddress: OTHER_WALLET,
+    }));
+    expect(response.status).toBe(403);
+    expect(fetchBackend).not.toHaveBeenCalled();
+  });
+
+  it("rejects purpose overrides on rotation and arbitrary browser scope grants", async () => {
+    for (const extra of [
+      { purpose: "admin" },
+      { purpose: null },
+      { scopes: MODULE_SCOPES },
+      { purpose: "module-contributions", scopes: MODULE_SCOPES },
+    ]) {
+      expect((await bridge().create(createRequest(extra))).status).toBe(400);
+    }
+    for (const extra of [
+      { purpose: "module-contributions" },
+      { purpose: "custom-launches" },
+      { scopes: MODULE_SCOPES },
+    ]) {
+      expect((await bridge().rotate(createRequest(extra), CREDENTIAL_ID)).status).toBe(400);
+    }
+    expect(authenticate).not.toHaveBeenCalled();
+    expect(fetchBackend).not.toHaveBeenCalled();
+  });
+
+  it("passes through a module rotation without sending any scope or purpose change", async () => {
+    fetchBackend.mockResolvedValueOnce(backendJson({
+      apiKey: summary({ id: "028f3e2a-7b4c-7d5e-8f90-123456789abc", scopes: MODULE_SCOPES }),
+      secretState: "already-delivered",
+      rotatedCredentialId: CREDENTIAL_ID,
+    }));
+    const response = await bridge().rotate(createRequest(), CREDENTIAL_ID);
+    expect(response.status).toBe(200);
+    expect((await response.json()).apiKey.scopes).toEqual(MODULE_SCOPES);
+    const [, init] = fetchBackend.mock.calls[0] as [URL, RequestInit];
+    expect(JSON.parse(String(init.body))).not.toHaveProperty("scopes");
+    expect(JSON.parse(String(init.body))).not.toHaveProperty("purpose");
   });
 
   it("accepts an idempotent issue replay without inventing or leaking a secret", async () => {

@@ -86,6 +86,7 @@ import {
 import {
   getPredictionV2PreparedTransactionReviewV2,
 } from "@/lib/prediction-v2/prepared-transaction-v2";
+import type { PreparedModuleNativeTransaction } from "@/lib/module-mode/native-client";
 import {
   buildEip1193TransactionRequest,
   buildPrivyTransactionRequest,
@@ -101,7 +102,7 @@ import {
   WalletLoginPendingError,
   type BrowserWalletLoginLease,
 } from "../lib/wallet-login-lock";
-import { runWithBrowserWalletRequestLock } from "../lib/wallet-request-lock";
+import { errorIsExplicitWalletRejection, runWithBrowserWalletRequestLock, WalletRequestNotSubmittedError } from "../lib/wallet-request-lock";
 import type {
   PrivyPolicyOwnerOperation,
   PrivyPolicyOwnerReview,
@@ -237,6 +238,7 @@ type WalletContextValue = {
   sendPredictionV2Transaction: (
     transaction: ParsedPredictionV2PreparedTransactionV2,
   ) => Promise<Hex>;
+  sendModuleModeTransaction: (transaction: PreparedModuleNativeTransaction) => Promise<Hex>;
   readNativeBalance: () => Promise<WalletNativeBalance>;
   readConnectedAccountCode: () => Promise<Hex>;
   readTradeBalances: (token: `0x${string}`) => Promise<WalletTradeBalances>;
@@ -267,6 +269,7 @@ export function shouldEagerLoadWalletRuntime(pathname: string) {
     "/token",
     "/developers/api-keys",
     "/admin/partners",
+    "/admin/modules",
     "/ops/privy-policy-owner",
   ].some(
     (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
@@ -1101,6 +1104,9 @@ function DeferredWalletProvider({
         throw new Error("Wallet sign-in is still loading");
       },
       sendPredictionV2Transaction: async () => {
+        throw new Error("Wallet sign-in is still loading");
+      },
+      sendModuleModeTransaction: async () => {
         throw new Error("Wallet sign-in is still loading");
       },
       readNativeBalance: async () => {
@@ -2203,6 +2209,93 @@ function PrivyWalletBridge({
     [connectedWallet, sendPrivyTransaction, user?.id, wallet],
   );
 
+  const sendModuleModeTransaction = useCallback(
+    async (prepared: PreparedModuleNativeTransaction): Promise<Hex> => {
+      if (!connectedWallet || !wallet) throw Object.assign(new Error("Connect your wallet before continuing"), {
+        walletRequestAttempted: false, walletRequestRejected: false,
+      });
+      const sessionSubject = user?.id ?? null;
+      if (sessionSubject === null) throw Object.assign(new Error("Your wallet session expired. Reconnect and try again"), {
+        walletRequestAttempted: false, walletRequestRejected: false,
+      });
+      const boundWallet = connectedWallet;
+      const account = wallet.account;
+      let walletRequestAttempted = false;
+      const isEmbeddedWallet = boundWallet.walletClientType === "privy" || boundWallet.walletClientType === "privy-v2";
+      const assertCurrentSession = () => {
+        const current = walletRequestSessionRef.current;
+        if (!current.authenticated || current.privyUserId !== sessionSubject
+          || current.account?.toLowerCase() !== account.toLowerCase()
+          || current.walletCapability !== boundWallet) {
+          throw new Error("The selected wallet changed. Review the transaction again");
+        }
+      };
+      try {
+        return await runWithBrowserWalletRequestLock({
+          sessionSubject, account, chainId: String(robinhoodChain.id),
+          requestSubject: "module-mode-native-wallet-submit-v1", assertCurrentSession,
+          execute: async () => {
+            try {
+              assertCurrentSession();
+              const provider = await boundWallet.getEthereumProvider();
+              const assertAuthority = async () => {
+                assertCurrentSession();
+                await assertExternalWalletAuthorityCurrent({
+                  expectedAccount: account, expectedChainId: robinhoodChainHex,
+                  networkName: robinhoodChain.name,
+                  request: async (method) => {
+                    assertCurrentSession();
+                    const result = await provider.request({ method });
+                    assertCurrentSession();
+                    return result;
+                  },
+                });
+                assertCurrentSession();
+              };
+              await assertAuthority();
+              const { revalidateModuleNativeTransaction } = await import("@/lib/module-mode/native-client");
+              const transaction = await revalidateModuleNativeTransaction(prepared, account);
+              if (transaction.chainId !== robinhoodChain.id || transaction.from.toLowerCase() !== account.toLowerCase()) {
+                throw new Error("The Module Mode transaction is bound to a different wallet or network");
+              }
+              await assertAuthority();
+              // Revalidation holds the reviewed target, calldata, value and expiry. No raw request is accepted here.
+              if (isEmbeddedWallet) {
+                walletRequestAttempted = true;
+                const result = await sendPrivyTransaction({
+                  to: transaction.to, data: transaction.data, value: BigInt(transaction.value),
+                  chainId: robinhoodChain.id,
+                  ...(transaction.gas === undefined ? {} : { gas: BigInt(transaction.gas) }),
+                }, {
+                  address: account,
+                  uiOptions: { description: transaction.description, buttonText: "Confirm transaction", successHeader: "Transaction submitted" },
+                });
+                return parseSubmittedTransactionHash(result.hash);
+              }
+              walletRequestAttempted = true;
+              const hash = await provider.request({
+                method: "eth_sendTransaction",
+                params: [{ from: account, to: transaction.to, data: transaction.data, value: transaction.value,
+                  ...(transaction.gas === undefined ? {} : { gas: transaction.gas }) }],
+              });
+              return parseSubmittedTransactionHash(hash);
+            } catch (caught) {
+              if (!walletRequestAttempted) throw new WalletRequestNotSubmittedError(getWalletTransactionErrorMessage(caught));
+              throw caught;
+            }
+          },
+        });
+      } catch (caught) {
+        const rejected = walletRequestAttempted && errorIsExplicitWalletRejection(caught);
+        throw Object.assign(new Error(getWalletTransactionErrorMessage(caught)), {
+          walletRequestAttempted, walletRequestRejected: rejected,
+          ...(rejected ? { code: 4001 } : {}),
+        });
+      }
+    },
+    [connectedWallet, sendPrivyTransaction, user?.id, wallet],
+  );
+
   const signPredictionPermit = useCallback(async (input: Readonly<{
     deadline: bigint;
     factoryAddress: Address;
@@ -2851,6 +2944,7 @@ function PrivyWalletBridge({
       signCustomLaunchFundingAuthorization,
       sendTransaction,
       sendPredictionV2Transaction,
+      sendModuleModeTransaction,
       readNativeBalance,
       readConnectedAccountCode,
       readTradeBalances,
@@ -2884,6 +2978,7 @@ function PrivyWalletBridge({
       sendCustomLaunchWalletActionV4,
       signCustomLaunchFundingAuthorization,
       sendPredictionV2Transaction,
+      sendModuleModeTransaction,
       sendTransaction,
       signLaunchMessage,
       reviewPrivyPolicyOwnerRequest,
@@ -3014,6 +3109,9 @@ function UnconfiguredWalletProvider({ children }: { children: ReactNode }) {
         throw new Error("Wallet sign-in is unavailable");
       },
       sendPredictionV2Transaction: async () => {
+        throw new Error("Wallet sign-in is unavailable");
+      },
+      sendModuleModeTransaction: async () => {
         throw new Error("Wallet sign-in is unavailable");
       },
       readNativeBalance: async () => {
@@ -3361,6 +3459,8 @@ export function WalletButton({ compact = false }: { compact?: boolean }) {
   const [menuError, setMenuError] = useState("");
   const [partnerAdminAccount, setPartnerAdminAccount] =
     useState<string | null>(null);
+  const [moduleReviewerAccount, setModuleReviewerAccount] =
+    useState<string | null>(null);
   const hydrationPending = connecting && !openingWallet;
 
   useEffect(() => {
@@ -3413,17 +3513,22 @@ export function WalletButton({ compact = false }: { compact?: boolean }) {
           page: "1",
           pageSize: "1",
         });
-        const response = await fetch(`/api/admin/partners?${query}`, {
-          cache: "no-store",
-          headers,
-          signal: controller.signal,
-        });
-        if (response.ok && !controller.signal.aborted) {
-          setPartnerAdminAccount(account);
-        }
+        const moduleQuery = new URLSearchParams({ walletAddress: account });
+        const [partner, modules] = await Promise.allSettled([
+          fetch(`/api/admin/partners?${query}`, {
+            cache: "no-store", headers, signal: controller.signal, redirect: "error",
+          }),
+          fetch(`/api/admin/modules?${moduleQuery}`, {
+            cache: "no-store", headers, signal: controller.signal, redirect: "error",
+          }),
+        ]);
+        if (controller.signal.aborted) return;
+        setPartnerAdminAccount(partner.status === "fulfilled" && partner.value.ok ? account : null);
+        setModuleReviewerAccount(modules.status === "fulfilled" && modules.value.ok ? account : null);
       } catch (error) {
         if (!(error instanceof DOMException && error.name === "AbortError")) {
           setPartnerAdminAccount(null);
+          setModuleReviewerAccount(null);
         }
       }
     })();
@@ -3474,6 +3579,7 @@ export function WalletButton({ compact = false }: { compact?: boolean }) {
         if (wallet) {
           setMenuError("");
           setPartnerAdminAccount(null);
+          setModuleReviewerAccount(null);
           setMenuOpen((current) => !current);
         } else {
           openWallet();
@@ -3576,6 +3682,16 @@ export function WalletButton({ compact = false }: { compact?: boolean }) {
             onClick={() => setMenuOpen(false)}
           >
             Partner admin
+          </Link>
+        ) : null}
+        {moduleReviewerAccount?.toLowerCase() === wallet.account.toLowerCase() ? (
+          <Link
+            href="/admin/modules"
+            prefetch={false}
+            tabIndex={menuOpen ? undefined : -1}
+            onClick={() => setMenuOpen(false)}
+          >
+            Module reviews
           </Link>
         ) : null}
         <button

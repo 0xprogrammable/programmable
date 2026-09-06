@@ -1,0 +1,12 @@
+{
+  "type": "record",
+  "fields": {
+    "everyN": { "type": "uint", "bits": 32, "min": "1", "label": "Reward every Nth eligible buy" },
+    "minimumGrossNative": { "type": "uint", "bits": 128, "min": "1", "unit": "wei", "label": "Minimum eligible buy", "help": "Gross native amount measured by the authenticated engine, before native platform and Creator fees." },
+    "rewardNative": { "type": "uint", "bits": 128, "min": "1", "unit": "wei", "label": "Reward per winner" },
+    "endsAt": { "type": "uint", "bits": 64, "min": "1", "unit": "unix-seconds", "label": "Rewards end at", "help": "Must be strictly after the block timestamp when the instance is constructed." },
+    "includeInitialBuy": { "type": "bool", "label": "Count the launcher's initial buy" },
+    "refundWallet": { "type": "address", "label": "Unused budget wallet", "help": "Required nonzero wallet. Fixed for the instance; only this wallet can reclaim unused funds at or after the end time." }
+  },
+  "required": ["everyN", "minimumGrossNative", "rewardNative", "endsAt", "includeInitialBuy", "refundWallet"]
+}

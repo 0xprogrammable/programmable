@@ -8,6 +8,7 @@ import {
   runWithBrowserWalletRequestLock,
   WALLET_REQUEST_LOCK_TTL_MS,
   WalletRequestPendingError,
+  WalletRequestNotSubmittedError,
 } from "../lib/wallet-request-lock";
 
 class MemoryStorage {
@@ -358,6 +359,18 @@ describe("production wallet request lock", () => {
     );
     expect(recoveredSend).toHaveBeenCalledOnce();
     expect(requestRuntime.localStorage.values).toHaveLength(0);
+  });
+
+  it("releases a locally classified preflight failure but ignores untrusted no-send flags", async () => {
+    const requestRuntime = runtime();
+    await expect(request(async () => {
+      throw new WalletRequestNotSubmittedError("The reviewed launch expired before wallet I/O");
+    }, requestRuntime)).rejects.toThrow("expired");
+    expect(requestRuntime.localStorage.values).toHaveLength(0);
+    await expect(request(async () => {
+      throw Object.assign(new Error("Provider connection interrupted"), { walletRequestAttempted: false });
+    }, requestRuntime)).rejects.toThrow("interrupted");
+    expect(requestRuntime.localStorage.values).toHaveLength(1);
   });
 
   it("releases an explicit user rejection without weakening unknown failures", async () => {

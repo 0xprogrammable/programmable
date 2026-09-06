@@ -1,0 +1,49 @@
+{
+  "format": "programmable.module-mode.management-reference.v1",
+  "status": "inert reference for a reviewed host renderer; not executable remote UI",
+  "title": "Buyer rewards",
+  "summary": "Every Nth eligible buy earns a fixed ETH reward while its pre-funded budget lasts.",
+  "configurationFields": [
+    { "field": "everyN", "control": "integer", "label": "Reward every Nth buy" },
+    { "field": "minimumGrossNative", "control": "native-amount", "label": "Minimum buy", "storageUnit": "wei" },
+    { "field": "rewardNative", "control": "native-amount", "label": "Reward per winner", "storageUnit": "wei" },
+    { "field": "endsAt", "control": "datetime", "label": "End time", "storageUnit": "unix-seconds", "timezoneDisplay": "local plus UTC" },
+    { "field": "includeInitialBuy", "control": "checkbox", "label": "Count the launcher's initial buy" },
+    { "field": "refundWallet", "control": "wallet-address", "label": "Unused budget wallet" }
+  ],
+  "reads": [
+    { "id": "qualified-buys", "label": "Eligible buys", "source": "program.qualifiedBuys()" },
+    { "id": "rewarded-buys", "label": "Rewards earned", "source": "program.rewardedBuys()" },
+    { "id": "available", "label": "Budget remaining", "source": "vault.available(instanceId)", "unit": "wei" },
+    { "id": "claimable", "label": "Your available claim", "source": "vault.claimable(instanceId,connectedWallet)", "unit": "wei" },
+    { "id": "claimed", "label": "Your claimed rewards", "source": "vault.claimed(instanceId,connectedWallet)", "unit": "wei" },
+    { "id": "total-reclaimed", "label": "Unused budget returned to claims", "source": "program.totalReclaimed()", "unit": "wei" },
+    { "id": "refund-wallet", "label": "Unused budget wallet", "source": "program.refundWallet()" },
+    { "id": "end-time", "label": "Rewards end at", "source": "program.endsAt()" }
+  ],
+  "actions": [
+    { "id": "fund", "label": "Add reward budget", "scope": "common-host", "role": "any-wallet", "input": "native amount", "confirmation": "You fund this instance under its fixed rules. Unused funds go to its displayed refund wallet after expiry." },
+    { "id": "claim", "label": "Claim ETH", "scope": "common-host", "role": "any-wallet-can-pay-fixed-beneficiary", "input": "none", "confirmation": "ETH is paid to the displayed beneficiary, regardless of who sends the transaction." },
+    { "id": "claim-to", "label": "Claim to another wallet", "scope": "common-host", "role": "claim-beneficiary", "input": "recipient address", "confirmation": "Only your own existing claim is sent to this address." },
+    { "id": "reclaim-unused", "label": "Reclaim unused budget", "scope": "program-action", "role": "refund-wallet", "input": "none", "confirmation": "Unused budget becomes your ETH claim. Existing buyer claims remain available." }
+  ],
+  "states": {
+    "disconnected": "Show reads and fixed roles; request wallet connection before transactions.",
+    "wrong-chain": "Keep transaction controls disabled until the released host chain is selected.",
+    "unverified-binding": "Show unavailable; do not build transactions from submitted target addresses.",
+    "empty-budget": "No reward can be earned until this instance receives sufficient funding.",
+    "expired": "No further buys qualify. The fixed refund wallet can reclaim unused budget.",
+    "wrong-role": "Show the required refund wallet and why this account cannot reclaim.",
+    "pending": "Disable duplicate actions, retain decoded transaction details and transaction hash.",
+    "stale-nonce": "Refresh nonce, budget and deadline; require a fresh wallet transaction.",
+    "reverted": "Preserve last confirmed state and display the concrete failure.",
+    "confirmed": "Refresh chain reads before reporting updated balances. Indexer receipt alone is insufficient."
+  },
+  "presentation": {
+    "customJavaScript": false,
+    "assets": [],
+    "unknownCapabilities": "unavailable until reviewed and implemented by the host",
+    "amounts": "Exact decimal strings; display ETH while retaining wei for calls.",
+    "orderingDisclosure": "Predictable Nth-buy ordering can be strategically targeted; wallet counts are not proof of distinct people."
+  }
+}

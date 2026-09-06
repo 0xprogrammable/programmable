@@ -1,0 +1,39 @@
+{
+  "schemaVersion": "1.0",
+  "name": "QuoteTradeLimitV1 offline fixture",
+  "description": "Local reference fixture. Synthetic implementation address and codehash are not a deployment or review proof.",
+  "familyId": "0x4db943621a67fa98df0f4c859e782a55a8bb58e9d890299db34d9802abf8ce21",
+  "familySalt": "0x0202020202020202020202020202020202020202020202020202020202020202",
+  "version": 1,
+  "versionId": "0xb3600c35c76782be158f8d2c4367bb64f86c181c501450c98e1301a27f1cf988",
+  "interfaceVersion": 1,
+  "kind": 2,
+  "author": "0x2222222222222222222222222222222222222222",
+  "rewardWallet": "0x2222222222222222222222222222222222222222",
+  "chainId": "31337",
+  "implementation": "0xa2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2",
+  "runtimeCodeHash": "0x7385857ee013157695880179b9abfb302ee9abee89c94b68bc23d31e70802a28",
+  "source": {
+    "repository": "https://github.com/programmablehq/PROGRAMMABLE",
+    "commit": "8530f033a7787eba2705618638e424642446bb59",
+    "artifactPath": "source-artifact.json",
+    "artifactSha256": "52c8a271f2063153d6c2d65a4ee198b07e87e3c3d83e2f4404ca44f6cc645696",
+    "compiler": "0.8.26"
+  },
+  "configuration": {
+    "schemaUri": "config.schema.json",
+    "schemaSha256": "a73ba682f4c318d9435b6420b4f18d706c7f8288343429b17acdfd45521d33d8",
+    "profile": "quote-trade-limit-v1",
+    "fields": [
+      {
+        "name": "buyLimit",
+        "type": "uint256"
+      },
+      {
+        "name": "sellLimit",
+        "type": "uint256"
+      }
+    ]
+  },
+  "reviewStatus": "requested"
+}

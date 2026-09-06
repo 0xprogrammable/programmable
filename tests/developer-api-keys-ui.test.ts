@@ -6,9 +6,14 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   DeveloperApiKeysView,
+  ApiKeyPurposeChoice,
+  PROGRAMMABLE_MODULE_AGENT_SETUP_TEXT_V1,
   applyApiKeyMutationResult,
+  apiKeyPurpose,
+  apiKeyPurposeLabel,
   apiKeyLifetimeDays,
   mergeApiKeySummaries,
+  moduleContributionKeysAvailable,
   parseApiKeyMutationResult,
   prepareApiKeyMutationAttempt,
   shouldRetainApiKeyMutationAttempt,
@@ -397,9 +402,105 @@ describe("developer API key interface", () => {
     const copyKey = apiKeysSource.slice(copyKeyStart, copySetupStart);
     const copySetup = apiKeysSource.slice(copySetupStart, dismissStart);
     expect(copyKey).toContain('secretState !== "delivered-once"');
-    expect(copySetup).toContain("copyToClipboard(agentSetupText)");
+    expect(copySetup).toContain('purpose === "module-contributions"');
+    expect(copySetup).toContain("? moduleAgentSetupText");
+    expect(copySetup).toContain(": agentSetupText");
     expect(copySetup).not.toContain("mutationResult");
     expect(copySetup).not.toContain("apiKeySecret");
+  });
+
+  it("recognizes only the two complete purpose pairs", () => {
+    expect(apiKeyPurpose(["custom-launch:create", "custom-launch:read"]))
+      .toBe("custom-launches");
+    expect(apiKeyPurpose(["modules:read", "modules:submit"]))
+      .toBe("module-contributions");
+    expect(apiKeyPurposeLabel(["modules:submit", "modules:read"]))
+      .toBe("Module contributions");
+    for (const scopes of [
+      [], ["modules:submit"], ["modules:submit", "modules:submit"],
+      ["modules:read", "custom-launch:create"],
+      ["modules:submit", "modules:read", "modules:approve"],
+    ]) {
+      expect(apiKeyPurpose(scopes)).toBeNull();
+      expect(apiKeyPurposeLabel(scopes)).toBe("Unrecognized purpose");
+      expect(parseApiKeyMutationResult({
+        schemaVersion: "programmable.custom-launch-api.v1",
+        apiKey: apiKey("invalid", { scopes }),
+        secretState: "already-delivered",
+      }, 200)).toBeNull();
+    }
+  });
+
+  it("verifies the requested purpose before accepting an issue or rotation result", () => {
+    const moduleKey = apiKey("replacement", { scopes: ["modules:submit", "modules:read"] });
+    const result = {
+      schemaVersion: "programmable.custom-launch-api.v1",
+      apiKey: moduleKey,
+      secretState: "already-delivered",
+    };
+    expect(parseApiKeyMutationResult(result, 200, undefined, "module-contributions"))
+      .toMatchObject({ apiKey: moduleKey });
+    expect(parseApiKeyMutationResult(result, 200, undefined, "custom-launches")).toBeNull();
+    const rotated = { ...result, rotatedCredentialId: "old" };
+    expect(parseApiKeyMutationResult(rotated, 200, "old", "module-contributions"))
+      .toMatchObject({ apiKey: moduleKey });
+    expect(parseApiKeyMutationResult(rotated, 200, "old", "custom-launches")).toBeNull();
+  });
+
+  it("requires explicit issuance and submission availability without guessing from existing keys", () => {
+    const base = { schemaVersion: "programmable.custom-launch-api.v1", apiKeys: [] };
+    expect(moduleContributionKeysAvailable({
+      ...base, moduleContributions: { apiKeyIssuance: true, submissions: true },
+    })).toBe(true);
+    for (const moduleContributions of [
+      undefined, null, {},
+      { apiKeyIssuance: false, submissions: true },
+      { apiKeyIssuance: true, submissions: false },
+      { apiKeyIssuance: "true", submissions: true },
+    ]) {
+      expect(moduleContributionKeysAvailable({ ...base, moduleContributions })).toBe(false);
+    }
+    expect(moduleContributionKeysAvailable({
+      ...base, apiKeys: [apiKey("module", { scopes: ["modules:submit", "modules:read"] })],
+    })).toBe(false);
+    expect(moduleContributionKeysAvailable({
+      moduleContributions: { apiKeyIssuance: true, submissions: true },
+    })).toBe(false);
+  });
+
+  it("renders a native purpose choice with the module option pending until available", () => {
+    const onChange = vi.fn();
+    const pending = renderToStaticMarkup(createElement(ApiKeyPurposeChoice, {
+      value: "custom-launches", onChange, moduleContributionsAvailable: false,
+      checking: false, disabled: false,
+    }));
+    expect(pending).toContain("<legend>Purpose</legend>");
+    expect(pending).toMatch(/<input[^>]*type="radio"[^>]*checked=""[^>]*value="custom-launches"/u);
+    expect(pending).toMatch(/<input[^>]*type="radio"[^>]*disabled=""[^>]*value="module-contributions"/u);
+    expect(pending).toContain('aria-describedby="module-key-availability"');
+    expect(pending).toContain("Module contributions are not available right now.");
+    expect(pending).toContain("Pending");
+    const available = renderToStaticMarkup(createElement(ApiKeyPurposeChoice, {
+      value: "module-contributions", onChange, moduleContributionsAvailable: true,
+      checking: false, disabled: false,
+    }));
+    expect(available).not.toContain('disabled=""');
+    expect(available).toMatch(/<input[^>]*checked=""[^>]*value="module-contributions"/u);
+    expect(available).toContain("Submit module packages and read their review status.");
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("gives module agents a source-intake setup without launch instructions or secrets", () => {
+    expect(PROGRAMMABLE_MODULE_AGENT_SETUP_TEXT_V1).toContain("$PROGRAMMABLE_MODULES_API_KEY");
+    expect(PROGRAMMABLE_MODULE_AGENT_SETUP_TEXT_V1).toContain("modules:submit and modules:read");
+    expect(PROGRAMMABLE_MODULE_AGENT_SETUP_TEXT_V1).toContain("GET https://api.programmable.market/v1/modules/capabilities");
+    expect(PROGRAMMABLE_MODULE_AGENT_SETUP_TEXT_V1).toContain("POST /v1/modules/submissions");
+    expect(PROGRAMMABLE_MODULE_AGENT_SETUP_TEXT_V1).toContain("GET /v1/modules/submissions/:id");
+    expect(PROGRAMMABLE_MODULE_AGENT_SETUP_TEXT_V1).toContain("draft_received");
+    expect(PROGRAMMABLE_MODULE_AGENT_SETUP_TEXT_V1).toContain("not an approval");
+    expect(PROGRAMMABLE_MODULE_AGENT_SETUP_TEXT_V1).not.toContain("custom-launch:create");
+    expect(PROGRAMMABLE_MODULE_AGENT_SETUP_TEXT_V1).not.toMatch(/pm_live_[A-Za-z0-9_-]{22}_[A-Za-z0-9_-]{43}/u);
+    expect(apiKeysSource).toContain("setPurpose(originalPurpose)");
   });
 
   it("preserves wallet authority and one-time secret handling", () => {

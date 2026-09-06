@@ -1,0 +1,59 @@
+{
+  "format": "programmable.classic.source-package.v0.1",
+  "name": "Every Nth buy reward — contributor reference",
+  "version": "0.1.0-development.1",
+  "author": "REPLACE_WITH_AUTHOR_WALLET",
+  "rewardWallet": "REPLACE_WITH_AUTHOR_REWARD_WALLET",
+  "familySalt": "REPLACE_WITH_FRESH_BYTES32",
+  "source": { "files": [] },
+  "components": [
+    { "id": "reward", "runtime": "programmable.module-native-runtime@1", "sourcePath": "src/module-mode/modules/EveryNthBuyRewardV1.sol", "entrypoint": "EveryNthBuyRewardV1" },
+    { "id": "factory", "runtime": "evm-solidity-0.8.26@1", "sourcePath": "src/module-mode/modules/EveryNthBuyRewardV1.sol", "entrypoint": "EveryNthBuyRewardFactoryV1" },
+    { "id": "runtime", "runtime": "programmable.module-native-runtime@1", "sourcePath": "src/module-mode/ModuleNativeRuntimeV1.sol", "entrypoint": "ModuleNativeRuntimeV1" },
+    { "id": "vault", "runtime": "programmable.module-native-budget@1", "sourcePath": "src/module-mode/ModuleNativeBudgetVaultV1.sol", "entrypoint": "ModuleNativeBudgetVaultV1" }
+  ],
+  "configuration": {
+    "type": "record",
+    "fields": {},
+    "required": []
+  },
+  "ports": {
+    "inputs": { "trades": "programmable.module-native-trade@1", "budget": "programmable.module-native-budget@1" },
+    "outputs": { "claims": "programmable.module-native-claims@1" }
+  },
+  "constraints": [],
+  "management": {
+    "summary": "View eligible buys and native rewards, fund the isolated budget, claim ETH, and reclaim unused budget after expiry from the fixed refund wallet.",
+    "reads": [
+      { "id": "qualified-buys", "label": "Eligible buys", "component": "reward", "entrypoint": "qualifiedBuys()", "description": "Counts qualifying buy callbacks, including skipped rewards when funding is insufficient." },
+      { "id": "rewarded-buys", "label": "Rewards earned", "component": "reward", "entrypoint": "rewardedBuys()", "description": "Number of buyers credited from available funding." },
+      { "id": "available", "label": "Budget remaining", "component": "vault", "entrypoint": "available(bytes32)", "description": "Read with the verified instanceId, never a caller-provided arbitrary bucket." },
+      { "id": "claimable", "label": "Your ETH claim", "component": "vault", "entrypoint": "claimable(bytes32,address)", "description": "Read with verified instanceId and connected wallet." },
+      { "id": "claimed", "label": "Your claimed ETH", "component": "vault", "entrypoint": "claimed(bytes32,address)", "description": "Cumulative paid amount for verified instanceId and connected wallet." },
+      { "id": "refund-wallet", "label": "Unused budget wallet", "component": "reward", "entrypoint": "refundWallet()", "description": "Fixed launch configuration; this is separate from the contributor royalty wallet." },
+      { "id": "ends-at", "label": "Rewards end at", "component": "reward", "entrypoint": "endsAt()", "description": "Unix seconds. At this exact time buys stop qualifying and unused-budget reclaim becomes available." },
+      { "id": "total-reclaimed", "label": "Unused budget returned to claims", "component": "reward", "entrypoint": "totalReclaimed()", "description": "Total unused funds credited to the fixed refund wallet; not the amount already withdrawn." }
+    ],
+    "actions": [
+      { "id": "reclaim-unused", "label": "Reclaim unused budget", "component": "reward", "entrypoint": "onAction((bytes32,bytes32,bytes32,address,uint64,bytes32),bytes)", "description": "Dispatch only via runtime.executeAction as declared in runtime-binding.json. At or after endsAt, move available budget into a backed refundWallet claim; preserve winner claims. Inputs are exactly zero bytes.", "role": "refund-wallet", "inputs": { "type": "record", "fields": {}, "required": [] } }
+    ]
+  },
+  "requiresHost": [
+    "programmable.module-native-runtime@1",
+    "programmable.module-native-budget@1",
+    "programmable.module-config-abi@1",
+    "programmable.module-management@1"
+  ],
+  "documentation": "README.md",
+  "extensions": {
+    "programmable.module-native-reference@1": {
+      "binding": "runtime-binding.json",
+      "management": "ui/management.json",
+      "review": "REVIEW.md",
+      "sourcePins": "SOURCE-PINS.json",
+      "buildReference": "build-reference.json",
+      "admissionRequired": true,
+      "builtinActivationClaim": false
+    }
+  }
+}

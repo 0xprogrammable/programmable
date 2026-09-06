@@ -1,0 +1,17 @@
+# Prompt for an AI contributor
+
+Use this directory as a complete reference for a new Programmable Module Mode program. First read README.md, REVIEW.md, runtime-binding.json, ui/management.json and the source interfaces. Implement my idea as a new ordinary per-launch program and factory compatible with ModuleNativeRuntimeV1. Preserve the host interfaces. The factory must create only for binding.runtime, the program must authenticate every callback's caller/launch/instance, and configuration must be fixed after construction.
+
+My idea: **REPLACE_WITH_THE_ACTUAL_IDEA_AND_BENEFIT**.
+
+Make the behavior real and useful. Do not add an inert package merely to collect a share of contributor fees. Treat a funded native budget, a completed native trade callback and explicit user actions as the existing capabilities. Request any additional host capability explicitly; do not fake it through arbitrary delegatecall, proxy upgrades, forged actor input, unverified external targets, access to Creator/platform fees or liquidity, or unbacked promises. New quote assets and engines need separately reviewed host support.
+
+Keep the public setup and management simple. Describe every launch input and its exact ABI order/types/units/ranges, immutable parameter, state read, role, action selector, input encoding, value, nonce/deadline, funding source, claim destination and failure mode. Provide sensible empty, depleted, expired, wrong-wallet, stale, pending and error states. Use the existing host for common funding/claim actions. Unknown UI capabilities must remain unavailable pending review; do not deliver privileged remote JavaScript.
+
+Update program/factory source, config.schema.json, module.template.json, runtime-binding.json, ui/management.json, REVIEW.md and meaningful tests together. Update package-files.json for new files. Include the complete source dependency closure with exact version, hash and license; no install script or secret may be required to read a package. Preserve untouched dependency hashes. Explain changed dependencies in the review notes.
+
+Run the offline Solidity tests against the real included runtime and vault. Exercise useful behavior, forged callbacks and identities, cross-launch isolation, budget exhaustion, receiver failures, claim integrity, nonce/deadline rules and immutable configuration. Add property tests for financial conservation where relevant. Clearly distinguish a callback harness from real PoolManager settlement and a deployed host.
+
+Ask me only for the author wallet, contributor reward wallet, fresh family salt, any material product ambiguity, and any external authority you cannot infer. Never invent ownership of fixture addresses. Never request a private key. Replace the placeholder identity using tools/prepare.mjs; let the verified official CLI validate and prepare the API request. Confirm that source hashes, factory/program code hashes, tests, management support and the complete permitted configuration envelope are reviewable.
+
+The API author-bound key is supplied through PROGRAMMABLE_MODULES_API_KEY in the process secret environment. Do not place it in files or output. Preparing a request is local; submitting it is an external action that requires my instruction. Check current capabilities before any authorized submission. Do not claim deployed, audited, approved or available from local tests. Deliver the exact package path, source digest, validation results, useful behavior and remaining admission requirements.

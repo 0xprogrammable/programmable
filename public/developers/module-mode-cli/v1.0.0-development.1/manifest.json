@@ -1,0 +1,741 @@
+{
+  "artifact": {
+    "bytes": 224048,
+    "file": "programmable-module-mode-1.0.0-development.1.mjs",
+    "mediaType": "text/javascript",
+    "path": "/developers/module-mode-cli/v1.0.0-development.1/programmable-module-mode-1.0.0-development.1.mjs",
+    "sha256": "1f5b1a3d182bbc1c8187723b2a959b68a2d7b57e9cd59a64195b73237efd4ce9"
+  },
+  "assurance": {
+    "contentHashesOnly": true,
+    "moduleApproval": false,
+    "onchainApproval": false,
+    "signed": false
+  },
+  "dependencies": [
+    {
+      "integrity": "sha512-jCs9ldd7NwzpgXDIf6P3+NrHh9/sD6CQdxHyjQI+h/6rDNo88ypBxxz45UDuZHz9r3tNz7N/VInSVoVdtXEI4A==",
+      "licenses": [
+        "node_modules/@noble/hashes/LICENSE"
+      ],
+      "lockPath": "node_modules/@noble/hashes",
+      "name": "@noble/hashes",
+      "version": "1.8.0"
+    },
+    {
+      "integrity": "sha512-Thbli+OlOj+iMPYFBVBfJ3OmCAnaSyNn4M1vz9T6Gka5Jt9ba/HIR56joy65tY6kx/FCF5VXNB819Y7/GUrBGA==",
+      "licenses": [
+        "node_modules/ajv/LICENSE"
+      ],
+      "lockPath": "node_modules/ajv",
+      "name": "ajv",
+      "version": "8.20.0"
+    },
+    {
+      "integrity": "sha512-f3qQ9oQy9j2AhBe/H9VC91wLmKBCCU/gDOnKNAYG5hswO7BLKj09Hc5HYNz9cGI++xlpDCIgDaitVs03ATR84Q==",
+      "licenses": [
+        "node_modules/fast-deep-equal/LICENSE"
+      ],
+      "lockPath": "node_modules/fast-deep-equal",
+      "name": "fast-deep-equal",
+      "version": "3.1.3"
+    },
+    {
+      "integrity": "sha512-gHwA1O9LDIcKunMKhObS/HimwtehO1nPUECKAu5TpKgaO19fcWEl4bliWe1jWxVFvIXztJjjQ4L8XQ1EU9f7Jw==",
+      "licenses": [
+        "node_modules/fast-uri/LICENSE"
+      ],
+      "lockPath": "node_modules/fast-uri",
+      "name": "fast-uri",
+      "version": "3.1.5"
+    },
+    {
+      "integrity": "sha512-NM8/P9n3XjXhIZn1lLhkFaACTOURQXjWhV4BA/RnOv8xvgqtqpAX9IO4mRQxSx1Rlo4tqzeqb0sOlruaOy3dug==",
+      "licenses": [
+        "node_modules/json-schema-traverse/LICENSE"
+      ],
+      "lockPath": "node_modules/json-schema-traverse",
+      "name": "json-schema-traverse",
+      "version": "1.0.0"
+    },
+    {
+      "integrity": "sha512-2GaTBslLhbP1xUbFoSkFbzKye5W76ixPlaqPg96HFyc40R76t95dqITYoXXr/xP9bhmDLYKxLODTLoiWWjpViQ==",
+      "licenses": [
+        "node_modules/viem/LICENSE"
+      ],
+      "lockPath": "node_modules/viem",
+      "name": "viem",
+      "version": "2.55.5"
+    }
+  ],
+  "licenses": {
+    "bytes": 7419,
+    "file": "LICENSES.txt",
+    "path": "/developers/module-mode-cli/v1.0.0-development.1/LICENSES.txt",
+    "sha256": "587a61f2cdfe65f7019f59cb599c9e51e68d1f572a33426ca787ef574075a8bf"
+  },
+  "name": "programmable-module-mode",
+  "runtime": {
+    "externalModules": [
+      "node:buffer",
+      "node:crypto",
+      "node:fs",
+      "node:fs/promises",
+      "node:module",
+      "node:path"
+    ],
+    "node": ">=24.14.0 <25",
+    "requiresNpmInstall": false
+  },
+  "schemaVersion": "programmable.module-cli-distribution.v1",
+  "source": {
+    "builder": {
+      "esbuild": "0.28.1",
+      "options": {
+        "bundle": true,
+        "charset": "ascii",
+        "format": "esm",
+        "legalComments": "inline",
+        "minify": true,
+        "platform": "node",
+        "preserveSymlinks": true,
+        "sourcemap": false,
+        "target": "node24",
+        "treeShaking": true
+      }
+    },
+    "digest": "3f5150adcb5a47480d80d6714b05a730e503ef90b830535d4d820ad08e3b003a",
+    "entryPoint": "packages/classic-modules/bin/programmable-classic-modules.mjs",
+    "files": [
+      {
+        "bytes": 1109,
+        "path": "node_modules/@noble/hashes/LICENSE",
+        "sha256": "4f221aee6e072336700c408c68ab3b96a3fc09f6aebe6f48f1bd99e5ef13faec"
+      },
+      {
+        "bytes": 6192,
+        "path": "node_modules/@noble/hashes/esm/_md.js",
+        "sha256": "cefb1557e7715cb2117c83f82ef3e3175c7e0391c80bd5795b2d4effc45fc582"
+      },
+      {
+        "bytes": 3081,
+        "path": "node_modules/@noble/hashes/esm/_u64.js",
+        "sha256": "e48c0cfc10810439a4807b46db136ce603a3fa09b62584f513ef2f3ca496af54"
+      },
+      {
+        "bytes": 16832,
+        "path": "node_modules/@noble/hashes/esm/sha2.js",
+        "sha256": "e729088b82e5450bff54c3a0013582aa42e1fe8f58dd31f5967f6ebe34c52299"
+      },
+      {
+        "bytes": 871,
+        "path": "node_modules/@noble/hashes/esm/sha256.js",
+        "sha256": "895f164acd980084bd5026c4363d7523ea4564f634dd0cc183111d42dbbc4ead"
+      },
+      {
+        "bytes": 8770,
+        "path": "node_modules/@noble/hashes/esm/sha3.js",
+        "sha256": "0260b46f92a3a94c7179958600d7f92469ef2c8f5d2e966bd9a838ff815713e9"
+      },
+      {
+        "bytes": 10538,
+        "path": "node_modules/@noble/hashes/esm/utils.js",
+        "sha256": "4cf4c1e05affedcb4fd584a43d76ae1a3711e34a36e2251b90c27e33ecc74fad"
+      },
+      {
+        "bytes": 6734,
+        "path": "node_modules/@noble/hashes/package.json",
+        "sha256": "7c4657c5e616c22cefa2691cc30670824a639dc71d97bf83925be2d239dc60e3"
+      },
+      {
+        "bytes": 1090,
+        "path": "node_modules/ajv/LICENSE",
+        "sha256": "a05350a88e318e4f5f2c2a1ff1e2e88daa4dd38e6e78b71cccae422bdc762cc3"
+      },
+      {
+        "bytes": 2841,
+        "path": "node_modules/ajv/dist/ajv.js",
+        "sha256": "edaed56fc546f5551b0d6dc2ff2a9cc25c2d6c83318a086eaa8c3ad0b2479297"
+      },
+      {
+        "bytes": 4676,
+        "path": "node_modules/ajv/dist/compile/codegen/code.js",
+        "sha256": "1287153722f1fc3c5342647de7ae1d7b6fb68bdb3378a0776a937d273fc97e0d"
+      },
+      {
+        "bytes": 23127,
+        "path": "node_modules/ajv/dist/compile/codegen/index.js",
+        "sha256": "f03b2b72597ef86878d1d4030580c2d0964046efad4867f3d05aa91065ba034c"
+      },
+      {
+        "bytes": 5198,
+        "path": "node_modules/ajv/dist/compile/codegen/scope.js",
+        "sha256": "d2a0a97af2faa2cad88702314fe421e235ab17f11e0d62883d58d8d4dc734286"
+      },
+      {
+        "bytes": 5771,
+        "path": "node_modules/ajv/dist/compile/errors.js",
+        "sha256": "53990f8f2cc05922bba410ae68231d3f869de4f8343277ede5b4834fa564c6c2"
+      },
+      {
+        "bytes": 10046,
+        "path": "node_modules/ajv/dist/compile/index.js",
+        "sha256": "05b34da22814f3787bfa3ac68dad59c9047f56e55a607e0a20719ebf5afe69ac"
+      },
+      {
+        "bytes": 1440,
+        "path": "node_modules/ajv/dist/compile/names.js",
+        "sha256": "3cab37a2240b996b9bed92fe7a041d91689cfe3ad2e9ae4c0ab99e4146408493"
+      },
+      {
+        "bytes": 543,
+        "path": "node_modules/ajv/dist/compile/ref_error.js",
+        "sha256": "81c98fdf34c3037c91bfcc02277ec32156c71e34048f36cfe4e084416e916cb7"
+      },
+      {
+        "bytes": 5006,
+        "path": "node_modules/ajv/dist/compile/resolve.js",
+        "sha256": "df75af0e0cf03fa1c6452e8dc61019f5aec645a8a5f6f494dc4e13cb5502d2d9"
+      },
+      {
+        "bytes": 918,
+        "path": "node_modules/ajv/dist/compile/rules.js",
+        "sha256": "ec1d86500f497aa8e20f9f0c1695951159d9a909669d00a261ce1bb22b3cf0a9"
+      },
+      {
+        "bytes": 7103,
+        "path": "node_modules/ajv/dist/compile/util.js",
+        "sha256": "fa911f5631f29d4d6420adfe086cb693b94b08de2719475c78c54bcb82f831a5"
+      },
+      {
+        "bytes": 853,
+        "path": "node_modules/ajv/dist/compile/validate/applicability.js",
+        "sha256": "50c5cba5894a7fb9874b3432355b46ec71b73c9368dafb1323ded8567cca8fc0"
+      },
+      {
+        "bytes": 1531,
+        "path": "node_modules/ajv/dist/compile/validate/boolSchema.js",
+        "sha256": "c08abdbdbd3d8b1dcc0552a20fbc7d837ed44f4ca6abb2e464985590ac94377f"
+      },
+      {
+        "bytes": 8409,
+        "path": "node_modules/ajv/dist/compile/validate/dataType.js",
+        "sha256": "697bd7005361ec7066a23c18830a10b0ef28aec1a33138b4e3098bf78c4fae52"
+      },
+      {
+        "bytes": 1448,
+        "path": "node_modules/ajv/dist/compile/validate/defaults.js",
+        "sha256": "05721971df94faa57b09c8cfd60c2eef81b6d14910a7dea5f539d693a029c428"
+      },
+      {
+        "bytes": 20552,
+        "path": "node_modules/ajv/dist/compile/validate/index.js",
+        "sha256": "cb2103e5f890e04592c10d24b45857dad91155bae9f9460138a2459bdaaea2cd"
+      },
+      {
+        "bytes": 5695,
+        "path": "node_modules/ajv/dist/compile/validate/keyword.js",
+        "sha256": "ab8f070c75c25eee9be5c837f364748909b58f5db66149a2beccbd2f66afeb76"
+      },
+      {
+        "bytes": 3858,
+        "path": "node_modules/ajv/dist/compile/validate/subschema.js",
+        "sha256": "ca783d6052af91e65ebb59a5b48b47fb459a2241d37ca6a042f767d4ce451bdc"
+      },
+      {
+        "bytes": 25202,
+        "path": "node_modules/ajv/dist/core.js",
+        "sha256": "51be29c7ed7288622f755c0f1bebd3da4a9907d77aa2c33b0f2a0a5b6b339603"
+      },
+      {
+        "bytes": 409,
+        "path": "node_modules/ajv/dist/refs/data.json",
+        "sha256": "d24ab8a97c18b3f5afdde7d7024a0e0ac1df0614a16a41cb88f81379edcc2db3"
+      },
+      {
+        "bytes": 3811,
+        "path": "node_modules/ajv/dist/refs/json-schema-draft-07.json",
+        "sha256": "f7e8b13cad4fecff9771f3626fef33e20e59027b90938a28fd9d2f6c17cd0773"
+      },
+      {
+        "bytes": 286,
+        "path": "node_modules/ajv/dist/runtime/equal.js",
+        "sha256": "c94467da09ee94e5d194483a7ab821b9bb3bf1c04397270f2ab53dea9de59274"
+      },
+      {
+        "bytes": 808,
+        "path": "node_modules/ajv/dist/runtime/ucs2length.js",
+        "sha256": "1df012dd3d23fced07255a7204798004509687cb1f431ae0ab976db436bbd890"
+      },
+      {
+        "bytes": 218,
+        "path": "node_modules/ajv/dist/runtime/uri.js",
+        "sha256": "d1d61baf97ed87d7310df847a78ed73d19c8cc003207bf5aaec977500bdb1578"
+      },
+      {
+        "bytes": 337,
+        "path": "node_modules/ajv/dist/runtime/validation_error.js",
+        "sha256": "11bf5b4affc8114e5e7cdf65b93006c2d997ab60ada1152c22e136f9b828b815"
+      },
+      {
+        "bytes": 1931,
+        "path": "node_modules/ajv/dist/vocabularies/applicator/additionalItems.js",
+        "sha256": "7beb0fbda5e349907067c8398bb8cc3260a6267b6e5dff9793a5ab2171934099"
+      },
+      {
+        "bytes": 4309,
+        "path": "node_modules/ajv/dist/vocabularies/applicator/additionalProperties.js",
+        "sha256": "e237cb180cd2e3f2e676feb714d7dcc6a42116640f9db2ad830cd20d9dfc540a"
+      },
+      {
+        "bytes": 756,
+        "path": "node_modules/ajv/dist/vocabularies/applicator/allOf.js",
+        "sha256": "98f46a6434ebe5f851b406480e18b776dd7f1bcc275e28c16a13bfef3cc067c7"
+      },
+      {
+        "bytes": 343,
+        "path": "node_modules/ajv/dist/vocabularies/applicator/anyOf.js",
+        "sha256": "8d7368d4aebad0514b713191b934993b4f0bf570e1bab93b07dc69712db2cec5"
+      },
+      {
+        "bytes": 3680,
+        "path": "node_modules/ajv/dist/vocabularies/applicator/contains.js",
+        "sha256": "56165dc93cd8b0b4611db50a97f1e7d7f9af6c5ffe95a7a5b054d6eeaa7f6a8c"
+      },
+      {
+        "bytes": 3198,
+        "path": "node_modules/ajv/dist/vocabularies/applicator/dependencies.js",
+        "sha256": "c1a83bf484b6fde4d268935f079ddba5e74a2f589dfc6d15ca2e20ba4d06ee5b"
+      },
+      {
+        "bytes": 2438,
+        "path": "node_modules/ajv/dist/vocabularies/applicator/if.js",
+        "sha256": "42374ee5dc681433579cc689b0c4ae5343f5bf78d4d6a561722b9277c5335ec4"
+      },
+      {
+        "bytes": 1529,
+        "path": "node_modules/ajv/dist/vocabularies/applicator/index.js",
+        "sha256": "5a61978f6d81bbabfa8b9ccb71d7de816ed6dd1fd7de5c72657439a76c2a7cb3"
+      },
+      {
+        "bytes": 1993,
+        "path": "node_modules/ajv/dist/vocabularies/applicator/items.js",
+        "sha256": "fa87f74adc3aac1f1b5e3e7dddf73294e6850e1dd49ed131fca4352e9645c54e"
+      },
+      {
+        "bytes": 1037,
+        "path": "node_modules/ajv/dist/vocabularies/applicator/items2020.js",
+        "sha256": "c449ef64aec16263c7935293ed450cfc2da3ba66f6df5f99c3198c05f169838f"
+      },
+      {
+        "bytes": 773,
+        "path": "node_modules/ajv/dist/vocabularies/applicator/not.js",
+        "sha256": "ab2f2758d4ea97ac8763fe5540dd0f4d877859676fe5d6c750a18deca387f718"
+      },
+      {
+        "bytes": 2257,
+        "path": "node_modules/ajv/dist/vocabularies/applicator/oneOf.js",
+        "sha256": "e2aeb6c22d49fd5f348bedcf7f5c4d7b31f5a05dd7ff1a0c531374c6968792a2"
+      },
+      {
+        "bytes": 3236,
+        "path": "node_modules/ajv/dist/vocabularies/applicator/patternProperties.js",
+        "sha256": "0d43da49a82452c439ba990de7372ad5cedb663717918a5f6dae07025abff655"
+      },
+      {
+        "bytes": 354,
+        "path": "node_modules/ajv/dist/vocabularies/applicator/prefixItems.js",
+        "sha256": "16264f7b3233a6dcb98b48700643efbd3ebc4d11e27b3eacffc83ccb5f44fb23"
+      },
+      {
+        "bytes": 2153,
+        "path": "node_modules/ajv/dist/vocabularies/applicator/properties.js",
+        "sha256": "c896873ae7251093a2c8880545b69b6e8cb55c44817a53ec830a49818d74104f"
+      },
+      {
+        "bytes": 1221,
+        "path": "node_modules/ajv/dist/vocabularies/applicator/propertyNames.js",
+        "sha256": "b3411cfeaff8efd5e6de12971bb5dc339e64b61fbe62d3b950794c077315c2e7"
+      },
+      {
+        "bytes": 446,
+        "path": "node_modules/ajv/dist/vocabularies/applicator/thenElse.js",
+        "sha256": "9bc42eb8699d57188a7ec2a710d3f38052f92bd78c5d4d0442cf98cf2ebbe22d"
+      },
+      {
+        "bytes": 6216,
+        "path": "node_modules/ajv/dist/vocabularies/code.js",
+        "sha256": "9212ddf8bd0a4c3b1c4b44cdadd141183b2b36f561b91d13df53c83911e3bf63"
+      },
+      {
+        "bytes": 267,
+        "path": "node_modules/ajv/dist/vocabularies/core/id.js",
+        "sha256": "49c8eff694ce4371450c1f9986e934fcbf4bd143311caef5332113f29175bc11"
+      },
+      {
+        "bytes": 357,
+        "path": "node_modules/ajv/dist/vocabularies/core/index.js",
+        "sha256": "f420e1011b95e27b54c58323a7ed4ffbd0a88cdb4496f771bb6782c2aa22d23e"
+      },
+      {
+        "bytes": 5234,
+        "path": "node_modules/ajv/dist/vocabularies/core/ref.js",
+        "sha256": "1422c1454b3621d890066042048f37746fe1cf213088307099816199889bbfd1"
+      },
+      {
+        "bytes": 4845,
+        "path": "node_modules/ajv/dist/vocabularies/discriminator/index.js",
+        "sha256": "b58b58025d2dbe5a6967376faec9295b860a338664c47037e9a1035c1e8fb88e"
+      },
+      {
+        "bytes": 308,
+        "path": "node_modules/ajv/dist/vocabularies/discriminator/types.js",
+        "sha256": "2365341d1f30dc72cece7703e908e47aacb8f904b9f66ec4019fe889ae1e57fa"
+      },
+      {
+        "bytes": 557,
+        "path": "node_modules/ajv/dist/vocabularies/draft7.js",
+        "sha256": "8c62022c6c3aa302c3ea6f6709a697fc9eb6385d243fa7c2156dbe9f02228170"
+      },
+      {
+        "bytes": 4317,
+        "path": "node_modules/ajv/dist/vocabularies/format/format.js",
+        "sha256": "6fae0d5124fd821b1a9959492f7d6d7b528bee8830d49a7a4759fc9a9ab81d5f"
+      },
+      {
+        "bytes": 209,
+        "path": "node_modules/ajv/dist/vocabularies/format/index.js",
+        "sha256": "d5dad5f95c9c5f48f8ca956cdbb927aafc7b56baabfca8c0b0403d92c5ebeb67"
+      },
+      {
+        "bytes": 427,
+        "path": "node_modules/ajv/dist/vocabularies/metadata.js",
+        "sha256": "45c178744a7ec57e20c85ceeaea8d9f36b5663636ab7e495ea2c3c1bf4a58609"
+      },
+      {
+        "bytes": 852,
+        "path": "node_modules/ajv/dist/vocabularies/validation/const.js",
+        "sha256": "ace994e9ab97a70899a9484794794f4be5ee03bfb3cf32242d3f091d77f0329a"
+      },
+      {
+        "bytes": 1901,
+        "path": "node_modules/ajv/dist/vocabularies/validation/enum.js",
+        "sha256": "61062b318a40eb52fc5a8283e7f4781db98349841744961ef4fe04a4722ebf22"
+      },
+      {
+        "bytes": 1036,
+        "path": "node_modules/ajv/dist/vocabularies/validation/index.js",
+        "sha256": "4a1839832de5f10ff423c1c0c6cb232b5b6e1b34980a28862cf56b2763136de4"
+      },
+      {
+        "bytes": 852,
+        "path": "node_modules/ajv/dist/vocabularies/validation/limitItems.js",
+        "sha256": "49f0427d29b38aef2fa8aead26e68bda12deb9a2da22f7a7804ba0fed44e1fec"
+      },
+      {
+        "bytes": 1130,
+        "path": "node_modules/ajv/dist/vocabularies/validation/limitLength.js",
+        "sha256": "379c28317faaf7784680b6049c3562692d3df6d65cce33f48e6c6c723beeeec2"
+      },
+      {
+        "bytes": 1036,
+        "path": "node_modules/ajv/dist/vocabularies/validation/limitNumber.js",
+        "sha256": "3dd4bd41dbfc76c522078ff54b6479683485c4e97faa04cfcfaf2d8cb0fb8e65"
+      },
+      {
+        "bytes": 896,
+        "path": "node_modules/ajv/dist/vocabularies/validation/limitProperties.js",
+        "sha256": "8523a3f7b36c34882ca32b0ec71a2157d7930907cb86b778a97c1514fa6258ac"
+      },
+      {
+        "bytes": 1023,
+        "path": "node_modules/ajv/dist/vocabularies/validation/multipleOf.js",
+        "sha256": "df128c2a6ca74ae57c65fbfe3aea8a101447a3ae8c41fd53cfc5693fa23cc8bd"
+      },
+      {
+        "bytes": 1323,
+        "path": "node_modules/ajv/dist/vocabularies/validation/pattern.js",
+        "sha256": "86e84206bfc6a66ef18bf1fe43fbc56ebe7f7f4d57841197b6d044c529e0c195"
+      },
+      {
+        "bytes": 3188,
+        "path": "node_modules/ajv/dist/vocabularies/validation/required.js",
+        "sha256": "b953bc18d94274bd73374dd5b4282d7a21159cec8c0e7a357e1eaf3f326b9054"
+      },
+      {
+        "bytes": 3037,
+        "path": "node_modules/ajv/dist/vocabularies/validation/uniqueItems.js",
+        "sha256": "666d1a2aa25c0dfe3cf41312d0f9d40e9f99eb2c19be7469134ad89005aadd52"
+      },
+      {
+        "bytes": 4405,
+        "path": "node_modules/ajv/package.json",
+        "sha256": "1f9033ee5a6515e7d76938b7072941862d1ed228a6879cc7fe10cdeb75107989"
+      },
+      {
+        "bytes": 1074,
+        "path": "node_modules/fast-deep-equal/LICENSE",
+        "sha256": "7bf9b2de73a6b356761c948d0e9eeb4be6c1270bd04c79cd489c1e400ffdfc1a"
+      },
+      {
+        "bytes": 1177,
+        "path": "node_modules/fast-deep-equal/index.js",
+        "sha256": "eb469e206280321a3878f2335ec98aa2104a155079d8ed83a23029098dccd215"
+      },
+      {
+        "bytes": 1496,
+        "path": "node_modules/fast-deep-equal/package.json",
+        "sha256": "a5c63940db0260739be9e2ac67f3aac268df4db5770420ee4e34e493152f97d2"
+      },
+      {
+        "bytes": 1813,
+        "path": "node_modules/fast-uri/LICENSE",
+        "sha256": "b010b0dfdfdb23d7396e03b82cd4621fc9bb8f95d6b0aea70b9c24e12074c786"
+      },
+      {
+        "bytes": 15326,
+        "path": "node_modules/fast-uri/index.js",
+        "sha256": "79945eb0b513058251bd1c3b518b86c5c549bb73b8c37c77d717133d66277a97"
+      },
+      {
+        "bytes": 7122,
+        "path": "node_modules/fast-uri/lib/schemes.js",
+        "sha256": "0f9497f8e43c9b002d79c8a916709daa4ae8a6462735b1b5dc6ad587a28a5064"
+      },
+      {
+        "bytes": 10762,
+        "path": "node_modules/fast-uri/lib/utils.js",
+        "sha256": "3394986f9670b821493943faafe5d83ccc15109aba908f1b5dd017e27b0d0ea7"
+      },
+      {
+        "bytes": 1983,
+        "path": "node_modules/fast-uri/package.json",
+        "sha256": "3b01e17f5de289a0905ad894187235c8a8bb284a1fd285b40227b1d862f86b4d"
+      },
+      {
+        "bytes": 1074,
+        "path": "node_modules/json-schema-traverse/LICENSE",
+        "sha256": "7bf9b2de73a6b356761c948d0e9eeb4be6c1270bd04c79cd489c1e400ffdfc1a"
+      },
+      {
+        "bytes": 2428,
+        "path": "node_modules/json-schema-traverse/index.js",
+        "sha256": "024191b747afac01b28ff11d744e9f82720bbad5f716163ba5c962eb62aa2350"
+      },
+      {
+        "bytes": 1004,
+        "path": "node_modules/json-schema-traverse/package.json",
+        "sha256": "156fb24af02845c190701360d06dfda35ef04282e34a734289ea9535ad9819ae"
+      },
+      {
+        "bytes": 1074,
+        "path": "node_modules/viem/LICENSE",
+        "sha256": "091d17ae5f625ffeb381e7109daaf6c492dd32502d612d8ecd24e2ddf6d16b74"
+      },
+      {
+        "bytes": 12032,
+        "path": "node_modules/viem/_esm/errors/abi.js",
+        "sha256": "7de67d56675c7cf4d92b67aea1d42bfcbff25288e08e54102336a1c70bfafd20"
+      },
+      {
+        "bytes": 462,
+        "path": "node_modules/viem/_esm/errors/address.js",
+        "sha256": "15fbee8a0ff7da80403c224139ed54a26782949b6844d02a550799fda5d96c9c"
+      },
+      {
+        "bytes": 3033,
+        "path": "node_modules/viem/_esm/errors/base.js",
+        "sha256": "956b5bc5e76dc9e00bba8eef5d2b9574fbf48781e4ad44e4ecb2bf6cf18d3663"
+      },
+      {
+        "bytes": 1002,
+        "path": "node_modules/viem/_esm/errors/data.js",
+        "sha256": "84f699da9d0e04ccdb1ff68d2d2eac1e65eb7e5b87b11bda54900d200296fd91"
+      },
+      {
+        "bytes": 2116,
+        "path": "node_modules/viem/_esm/errors/encoding.js",
+        "sha256": "54fa2408543f89d8b49897187f8cf9ebb8ae6121bf2bca98c1a77427055e0acc"
+      },
+      {
+        "bytes": 68,
+        "path": "node_modules/viem/_esm/errors/version.js",
+        "sha256": "5de6b948506c158cc597e5416558bf4ade9f6c7cc90ac4a31a50f94816994e04"
+      },
+      {
+        "bytes": 16449,
+        "path": "node_modules/viem/_esm/index.js",
+        "sha256": "22476331c727284ba23b62a1c3cfa8084f29701203e7de8c2110b69ed6d4ecbe"
+      },
+      {
+        "bytes": 10096,
+        "path": "node_modules/viem/_esm/utils/abi/encodeAbiParameters.js",
+        "sha256": "a716027b45ce239f75b46e1dbafc92d4a181edec6d828361dcd3a90c7d8fe4e9"
+      },
+      {
+        "bytes": 2263,
+        "path": "node_modules/viem/_esm/utils/address/getAddress.js",
+        "sha256": "e17499a48cfa1a8a5f9557060559fca9c09dd46883761ee1e75e618af260b434"
+      },
+      {
+        "bytes": 804,
+        "path": "node_modules/viem/_esm/utils/address/isAddress.js",
+        "sha256": "20726d625eee442dd81c6d08493ab141535b7bb279eb20f4e072c65bf1a827db"
+      },
+      {
+        "bytes": 599,
+        "path": "node_modules/viem/_esm/utils/data/concat.js",
+        "sha256": "90b2d33df5224056ea23b789a4c6693269a1d662ac83a3eb4b2e63f2cd95f5d4"
+      },
+      {
+        "bytes": 262,
+        "path": "node_modules/viem/_esm/utils/data/isHex.js",
+        "sha256": "517d4d66877ab4bcd1e62d449fe66c25104d99fdbbef6aae3596b1c4e506609c"
+      },
+      {
+        "bytes": 1251,
+        "path": "node_modules/viem/_esm/utils/data/pad.js",
+        "sha256": "9e92b5b552c364d30bfb9df355a32efac32eec2763f26adda3dc3e17cbb7fa0b"
+      },
+      {
+        "bytes": 404,
+        "path": "node_modules/viem/_esm/utils/data/size.js",
+        "sha256": "d8a6ac44b4897d63dd71c598e3161fcbb30a748175fe81610f6571eaa8b26d42"
+      },
+      {
+        "bytes": 2207,
+        "path": "node_modules/viem/_esm/utils/data/slice.js",
+        "sha256": "836e7cdaeb10f81b8a61762fd5ae1e5a6a21319e03bde13c6cfdaad20b7181aa"
+      },
+      {
+        "bytes": 5038,
+        "path": "node_modules/viem/_esm/utils/encoding/fromHex.js",
+        "sha256": "faa38cd6bd285ef4add923d7dfc57565992b8c9347c86d6785b2d120ff5090c8"
+      },
+      {
+        "bytes": 5637,
+        "path": "node_modules/viem/_esm/utils/encoding/toBytes.js",
+        "sha256": "c67c68428c516b67b27ea3094c79632771efbf9a2df9c65b412f8f9220d7741d"
+      },
+      {
+        "bytes": 5260,
+        "path": "node_modules/viem/_esm/utils/encoding/toHex.js",
+        "sha256": "53fcd5ab40bcaf191735355e4d107092818a5006cf2ca75580d581e568966629"
+      },
+      {
+        "bytes": 454,
+        "path": "node_modules/viem/_esm/utils/hash/keccak256.js",
+        "sha256": "3e3b256aa1b5537440955848234b84aa4de248225cb038c82317420279e77c14"
+      },
+      {
+        "bytes": 464,
+        "path": "node_modules/viem/_esm/utils/hash/sha256.js",
+        "sha256": "cf5c7bea2de41d95233611e740079eadddb04cb0f93c2a50ad5155a0302725ee"
+      },
+      {
+        "bytes": 977,
+        "path": "node_modules/viem/_esm/utils/lru.js",
+        "sha256": "a69d2518dd312fa7ff2a523f05fa3fe90a86089efa47a367bff3f8b6f13def8a"
+      },
+      {
+        "bytes": 498,
+        "path": "node_modules/viem/_esm/utils/regex.js",
+        "sha256": "22764f9a3d8c8bdeddd68bbdb9c114a8dd3564bb69c7bd83565e7f5d5cf07ec2"
+      },
+      {
+        "bytes": 7339,
+        "path": "node_modules/viem/package.json",
+        "sha256": "ac376f75370c01769d5158c14c6600f9cb04255114bf91bf5199b287caab32d3"
+      },
+      {
+        "bytes": 646799,
+        "path": "package-lock.json",
+        "sha256": "ebce6d480ba01a37ef7d18711654465bc509be4f2fda2a69280c189449b9e590"
+      },
+      {
+        "bytes": 117,
+        "path": "packages/classic-modules/bin/programmable-classic-modules.mjs",
+        "sha256": "c2ccf60dc3ba96bb9fad85d06c4bd085718a854591fce8684cde7becd3b05059"
+      },
+      {
+        "bytes": 1071,
+        "path": "packages/classic-modules/package.json",
+        "sha256": "f313ac47934ac69ac1d1034465b0467ecbd31f8984c8f31de08d1a93c9613079"
+      },
+      {
+        "bytes": 3084,
+        "path": "packages/classic-modules/schemas/module-manifest-v1.json",
+        "sha256": "0db5c7eefb0ce4752942b76639b91d369f914cf609e95de4cc497fd2e5931fe2"
+      },
+      {
+        "bytes": 1217,
+        "path": "packages/classic-modules/schemas/recipe-v1.json",
+        "sha256": "2371d1be98f85667af259cdac46928d794a2437986fa06a0c94e68c627f680be"
+      },
+      {
+        "bytes": 1695,
+        "path": "packages/classic-modules/src/canonical-json.mjs",
+        "sha256": "0fd8d091b6130d2759a5299416aaf2ef404e355f225e9f962f24ffad10500b89"
+      },
+      {
+        "bytes": 10693,
+        "path": "packages/classic-modules/src/cli.mjs",
+        "sha256": "dbddd70a0a160da9242f10bd4c77afbeaa64e69895089885b71b881f932ca62f"
+      },
+      {
+        "bytes": 6870,
+        "path": "packages/classic-modules/src/creator-recipients.mjs",
+        "sha256": "35382fbcf448308e966ae8ce755f577af7e734fd147f9353c109900b95d32c5f"
+      },
+      {
+        "bytes": 19594,
+        "path": "packages/classic-modules/src/index.mjs",
+        "sha256": "e39e0db6e797ed95bb117324d2d903dc8bf665bd130b1276856a0488de73b592"
+      },
+      {
+        "bytes": 11908,
+        "path": "packages/classic-modules/src/io.mjs",
+        "sha256": "52a8d3011bb1dfd95da3a60374be899b72f95b73f9621c4a29edbf2efa54c92c"
+      },
+      {
+        "bytes": 15589,
+        "path": "packages/classic-modules/src/open-client.mjs",
+        "sha256": "196f2345ef1cc1f0e606c9a586103f0ed90ae5b9f98904af5caac344f710f5c9"
+      },
+      {
+        "bytes": 24611,
+        "path": "packages/classic-modules/src/open-config.mjs",
+        "sha256": "46d5080163942f37293dd2e0785b0945599d55d2a7720105acbd3f404c546a14"
+      },
+      {
+        "bytes": 18027,
+        "path": "packages/classic-modules/src/open-constraints.mjs",
+        "sha256": "8bd718f346ce79d386ba490e167fe88716e19b061a02ec48d0339fb71212305b"
+      },
+      {
+        "bytes": 3502,
+        "path": "packages/classic-modules/src/open-package-io.mjs",
+        "sha256": "122584acbec6e5eff328a4caece2a98774cbf2ab36de22c1ac89930222f5519a"
+      },
+      {
+        "bytes": 19602,
+        "path": "packages/classic-modules/src/open-packages.mjs",
+        "sha256": "555f175efcc5f7c4c0cd731ccb2e97670012e27e2369734888a03245dda2bc5a"
+      },
+      {
+        "bytes": 8345,
+        "path": "packages/classic-modules/src/open-transport.mjs",
+        "sha256": "b6f6414286fb26fee538aadd4ac80bb10543efca6ce268c5041866b2753c146c"
+      },
+      {
+        "bytes": 14629,
+        "path": "scripts/build-module-cli.mjs",
+        "sha256": "cfe58b8d8322c2473767e8303e773c7f0d36655d13622f8732407cf419db7be2"
+      }
+    ],
+    "format": "programmable.module-cli-source.v1",
+    "packageVersion": "1.0.0-development.1",
+    "repository": "https://github.com/programmablehq/PROGRAMMABLE"
+  },
+  "version": "1.0.0-development.1"
+}

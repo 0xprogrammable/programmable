@@ -1,0 +1,8 @@
+{
+  "everyN": "3",
+  "minimumGrossNative": "10000000000000000",
+  "rewardNative": "1000000000000000",
+  "endsAt": "2000000000",
+  "includeInitialBuy": false,
+  "refundWallet": "0x3333333333333333333333333333333333333333"
+}

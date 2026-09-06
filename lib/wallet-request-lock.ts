@@ -49,6 +49,14 @@ export class WalletRequestPendingError extends Error {
   }
 }
 
+/** Only local preflight code may use this before invoking any wallet send method. */
+export class WalletRequestNotSubmittedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "WalletRequestNotSubmittedError";
+  }
+}
+
 function normalizedAccount(account: string): string {
   const normalized = account.toLowerCase();
   if (!ACCOUNT.test(normalized)) {
@@ -168,7 +176,7 @@ function browserRuntime(): WalletRequestLockRuntime {
   });
 }
 
-function errorIsExplicitWalletRejection(error: unknown): boolean {
+export function errorIsExplicitWalletRejection(error: unknown): boolean {
   const code =
     error !== null && typeof error === "object" && "code" in error
       ? (error as Readonly<{ code?: unknown }>).code
@@ -344,7 +352,7 @@ export async function runWithBrowserWalletRequestLock<Result>(
         return result;
       } catch (error) {
         releaseLease =
-          !executionStarted || errorIsExplicitWalletRejection(error);
+          !executionStarted || error instanceof WalletRequestNotSubmittedError || errorIsExplicitWalletRejection(error);
         throw error;
       } finally {
         if (releaseLease) removeExactLease(runtime, key, raw);

@@ -216,6 +216,59 @@ async function collectFiles(path) {
   return nested.flat();
 }
 
+// Source-map mappings encode numeric deltas as Base64 VLQs. Their letters can
+// coincidentally spell a candidate name. Keep scanning every semantic field,
+// including dependency sources and names, while removing only valid mapping
+// data from emitted Source Map v3 objects. Unknown/malformed maps fail closed.
+function validMappingData(mappings) {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  for (const line of mappings.split(";")) {
+    if (line === "") continue;
+    for (const segment of line.split(",")) {
+      let fields = 0;
+      let continuing = false;
+      for (const character of segment) {
+        const value = alphabet.indexOf(character);
+        if (value === -1) return false;
+        continuing = (value & 32) !== 0;
+        if (!continuing) fields += 1;
+      }
+      if (continuing || ![1, 4, 5].includes(fields)) return false;
+    }
+  }
+  return true;
+}
+
+function sourceMapScanProjection(map) {
+  if (!map || Array.isArray(map) || typeof map !== "object" || map.version !== 3) {
+    throw new Error("Invalid emitted Source Map v3 object");
+  }
+  if (Array.isArray(map.sections)) {
+    // Turbopack emits an empty sources list on its indexed maps.
+    if ("mappings" in map || "sourcesContent" in map || "names" in map
+      || ("sources" in map && (!Array.isArray(map.sources) || map.sources.length !== 0))) {
+      throw new Error("Mixed indexed and ordinary source map");
+    }
+    return { ...map, sections: map.sections.map((section) => {
+      if (!section || typeof section !== "object" || Array.isArray(section)
+        || !section.offset || !Number.isInteger(section.offset.line) || section.offset.line < 0
+        || !Number.isInteger(section.offset.column) || section.offset.column < 0 || "url" in section) {
+        throw new Error("Invalid emitted source map section");
+      }
+      return { ...section, map: sourceMapScanProjection(section.map) };
+    }) };
+  }
+  if (!Array.isArray(map.sources) || map.sources.some((value) => typeof value !== "string")
+    || !Array.isArray(map.names) || map.names.some((value) => typeof value !== "string")
+    || typeof map.mappings !== "string" || !validMappingData(map.mappings)
+    || ("sourcesContent" in map && (!Array.isArray(map.sourcesContent)
+      || map.sourcesContent.length !== map.sources.length
+      || map.sourcesContent.some((value) => value !== null && typeof value !== "string")))) {
+    throw new Error("Invalid emitted source map fields or mapping data");
+  }
+  return { ...map, mappings: "" };
+}
+
 const discovered = (
   await Promise.all([
     ...SOURCE_ROOTS.map((path) => collectFiles(resolve(repositoryRoot, path))),
@@ -237,7 +290,16 @@ for (const absolutePath of discovered) {
   if (!TEXT_EXTENSIONS.has(extname(repositoryPath)) && !PACKAGE_FILES.includes(repositoryPath)) {
     continue;
   }
-  const source = await readFile(absolutePath, "utf8");
+  let source = await readFile(absolutePath, "utf8");
+  if (extname(repositoryPath) === ".map"
+    && BUILD_ROOTS.some((path) => repositoryPath.startsWith(`${path}/`))) {
+    try {
+      source = JSON.stringify(sourceMapScanProjection(JSON.parse(source)));
+    } catch {
+      failures.push(`${repositoryPath}: invalid emitted source map`);
+      continue;
+    }
+  }
   const disallowedPattern = forbiddenContent
     .filter((pattern) => pattern.test(source))
     .find((pattern) =>

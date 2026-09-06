@@ -1,0 +1,55 @@
+{
+  "schemaVersion": "programmable.module-mode-public-preparation-observation.v1",
+  "observedAt": "2026-09-05T22:39:58.737Z",
+  "chainId": 4663,
+  "provider": "https://rpc.mainnet.chain.robinhood.com",
+  "blockNumber": "55484560",
+  "blockHash": "0xb2ec69b92b37677e3ceabb3d33deddb47483961cdc7acadf898c677af1e8a8c1",
+  "status": "single-public-provider-preparation-only",
+  "officialDeploymentSource": {
+    "repository": "https://github.com/Uniswap/contracts",
+    "commit": "4cfc406c8e34da3ce04e60657a7825075b64fd22",
+    "path": "deployments/json/4663.json",
+    "sha256": "21964cefbfc24b0ee89e7427acf74d223ce5a50aeb4216a9bac361a6148dea15",
+    "url": "https://raw.githubusercontent.com/Uniswap/contracts/4cfc406c8e34da3ce04e60657a7825075b64fd22/deployments/json/4663.json"
+  },
+  "contracts": {
+    "poolManager": {
+      "address": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
+      "runtimeCodeHash": "0xbd3881180b547f5fe817545743cfb4343e96b1bc6640dcd70c106b0066e95626",
+      "runtimeBytes": 24009
+    },
+    "positionManager": {
+      "address": "0x58daec3116aae6d93017baaea7749052e8a04fa7",
+      "runtimeCodeHash": "0xc873e135dc9aaec88489cfbad146b4cb49d6a32e0d80326377784b7ba17670b2",
+      "runtimeBytes": 23877
+    },
+    "deterministicDeployer": {
+      "address": "0x4e59b44847b379578588920ca78fbf26c0b4956c",
+      "runtimeCodeHash": "0x2fa86add0aed31f33a762c9d88e807c475bd51d0f52bd0955754b2608f7e4989",
+      "runtimeBytes": 69
+    }
+  },
+  "positionManagerPoolManager": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
+  "wallets": {
+    "treasury": {
+      "address": "0xd88539d3c4c460136a733a3fd60cf6bf269079da",
+      "nativeBalanceWei": "0",
+      "transactionCount": "0",
+      "code": "0x"
+    },
+    "deployer": {
+      "address": "0x79879fe6f00c0986ca521ea6f5b276b5e28b1b9c",
+      "nativeBalanceWei": "0",
+      "transactionCount": "0",
+      "code": "0x"
+    }
+  },
+  "privateProviderEnvironment": {
+    "primaryPresent": false,
+    "secondaryPresent": false
+  },
+  "walletConnection": "not-requested-or-proven",
+  "liveTransactionsSent": 0,
+  "finality": "not-proven"
+}

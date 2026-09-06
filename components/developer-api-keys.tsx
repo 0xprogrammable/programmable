@@ -30,7 +30,7 @@ import {
   type CustomLaunchWalletActionInputV4,
   type CustomLaunchWalletActionResultV4,
 } from "@/components/wallet-provider";
-import { PROGRAMMABLE_AGENT_SETUP_TEXT_V1 } from
+import { PROGRAMMABLE_AGENT_SETUP_LINKS_V1, PROGRAMMABLE_AGENT_SETUP_TEXT_V1 } from
   "@/lib/custom-launch/agent-setup-v1";
 import type { CustomLaunchWalletActionV1 } from
   "@/lib/custom-launch/wallet-handoff-v1";
@@ -84,6 +84,7 @@ type ApiKeyLoadMode = "initial" | "refresh" | "mutation";
 type DeveloperApiKeysProps = Readonly<{
   initialSection?: ActiveSection;
   agentSetupText?: string;
+  moduleAgentSetupText?: string;
 }>;
 type DeveloperApiKeysViewProps = Readonly<{
   account: `0x${string}` | null;
@@ -93,6 +94,7 @@ type DeveloperApiKeysViewProps = Readonly<{
   getIdentityToken: () => Promise<string | null>;
   initialSection: ActiveSection;
   agentSetupText?: string;
+  moduleAgentSetupText?: string;
   openWallet: () => void;
   sendCustomLaunchWalletAction: (
     input: CustomLaunchWalletActionV1,
@@ -114,6 +116,8 @@ const expiryOptions = [
 type ExpiryDays = (typeof expiryOptions)[number]["value"];
 
 const fixedScopes = ["custom-launch:create", "custom-launch:read"] as const;
+const moduleScopes = ["modules:submit", "modules:read"] as const;
+export type ApiKeyPurpose = "custom-launches" | "module-contributions";
 const schemaVersion = "programmable.custom-launch-api.v1";
 const launchRequestIdPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
@@ -121,6 +125,16 @@ const apiKeySecretPattern =
   /^pm_live_[A-Za-z0-9_-]{22}_[A-Za-z0-9_-]{43}$/u;
 const idempotencyKeyPattern = /^[A-Za-z0-9._:-]{16,128}$/u;
 const API_KEY_PAGE_SIZE = 3;
+const moduleApiOrigin = new URL(PROGRAMMABLE_AGENT_SETUP_LINKS_V1.capabilities).origin;
+export const PROGRAMMABLE_MODULE_AGENT_SETUP_TEXT_V1 = [
+  "Prepare a Programmable Module Mode contribution as a source package.",
+  "Use a separate API key with exactly modules:submit and modules:read. Read it from $PROGRAMMABLE_MODULES_API_KEY in the environment or secret store; never paste, print or copy the secret into chat, source code, logs or command history.",
+  `Use the existing Programmable API origin ${moduleApiOrigin}. First read GET ${moduleApiOrigin}/v1/modules/capabilities. Continue only when that live response explicitly allows submissions; an absent route or unavailable capability is not permission to submit.`,
+  "Use the package schema and limits reported by those capabilities. Build and test your own module locally, then prepare its source package, configuration, declared permissions and documentation. Include the nonzero EVM author wallet bound to your API key and your chosen nonzero EVM reward wallet. Upload all pinned source files; a GitHub repository or pull request is not required. The intake accepts source without executing it. Do not invent missing package fields.",
+  "When available, submit the source package through POST /v1/modules/submissions and read its status through GET /v1/modules/submissions/:id using the returned submission ID and the same API origin. Follow the endpoint's current authentication and idempotency contract.",
+  "A draft_received result only records receipt. It is not an approval, audit, deployment, catalog listing or permission to bind the module to a live launch. Keep review and runtime integration as separate steps.",
+  "A module contribution key cannot create launches, approve modules, sign or broadcast wallet transactions. Do not call Custom launch routes with it.",
+].join("\n\n");
 
 const dateFormatter = new Intl.DateTimeFormat("en", {
   dateStyle: "medium",
@@ -136,6 +150,30 @@ function nullableString(value: unknown): string | null | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
+export function apiKeyPurpose(scopes: unknown): ApiKeyPurpose | null {
+  if (!Array.isArray(scopes) || scopes.length !== 2 || new Set(scopes).size !== 2) {
+    return null;
+  }
+  if (fixedScopes.every((scope) => scopes.includes(scope))) return "custom-launches";
+  if (moduleScopes.every((scope) => scopes.includes(scope))) return "module-contributions";
+  return null;
+}
+
+export function apiKeyPurposeLabel(scopes: unknown): string {
+  const purpose = apiKeyPurpose(scopes);
+  if (purpose === "custom-launches") return "Custom launches";
+  if (purpose === "module-contributions") return "Module contributions";
+  return "Unrecognized purpose";
+}
+
+export function moduleContributionKeysAvailable(value: unknown): boolean {
+  if (!isRecord(value) || value.schemaVersion !== schemaVersion) return false;
+  const capability = value.moduleContributions;
+  return isRecord(capability)
+    && capability.apiKeyIssuance === true
+    && capability.submissions === true;
+}
+
 function parseApiKeySummary(value: unknown): ApiKeySummary | null {
   if (!isRecord(value)) return null;
 
@@ -147,7 +185,7 @@ function parseApiKeySummary(value: unknown): ApiKeySummary | null {
     typeof value.label !== "string" ||
     typeof value.keyPrefix !== "string" ||
     !Array.isArray(value.scopes) ||
-    !value.scopes.every((scope) => typeof scope === "string") ||
+    apiKeyPurpose(value.scopes) === null ||
     typeof value.createdAt !== "string" ||
     expiresAt === undefined ||
     lastUsedAt === undefined ||
@@ -189,6 +227,7 @@ export function parseApiKeyMutationResult(
   value: unknown,
   status: number,
   expectedRotatedCredentialId?: string,
+  expectedPurpose?: ApiKeyPurpose,
 ): ApiKeyMutationResult | null {
   if (
     !isRecord(value) ||
@@ -205,6 +244,7 @@ export function parseApiKeyMutationResult(
   );
   if (
     !apiKey
+    || (expectedPurpose !== undefined && apiKeyPurpose(apiKey.scopes) !== expectedPurpose)
     || (secretState !== "delivered-once" && secretState !== "already-delivered")
     || (secretState === "delivered-once" && status !== 201)
     || (secretState === "already-delivered" && status !== 200)
@@ -231,6 +271,60 @@ export function parseApiKeyMutationResult(
     apiKeySecret: value.apiKeySecret,
     ...rotation,
   };
+}
+
+export function ApiKeyPurposeChoice({
+  value,
+  onChange,
+  moduleContributionsAvailable,
+  checking,
+  disabled,
+}: Readonly<{
+  value: ApiKeyPurpose;
+  onChange: (value: ApiKeyPurpose) => void;
+  moduleContributionsAvailable: boolean;
+  checking: boolean;
+  disabled: boolean;
+}>) {
+  return (
+    <fieldset className={styles.purposeField} disabled={disabled}>
+      <legend>Purpose</legend>
+      <div className={styles.purposeOptions}>
+        <label>
+          <input
+            type="radio"
+            name="purpose"
+            value="custom-launches"
+            checked={value === "custom-launches"}
+            onChange={() => onChange("custom-launches")}
+          />
+          <span>Custom launches</span>
+        </label>
+        <label>
+          <input
+            type="radio"
+            name="purpose"
+            value="module-contributions"
+            checked={value === "module-contributions"}
+            disabled={!moduleContributionsAvailable}
+            aria-describedby="module-key-availability"
+            onChange={() => onChange("module-contributions")}
+          />
+          <span>Module contributions</span>
+          {!moduleContributionsAvailable ? <small>Pending</small> : null}
+        </label>
+      </div>
+      <p id="module-key-availability" className={styles.purposeHint} role="status">
+        {checking
+          ? "Checking module availability."
+          : !moduleContributionsAvailable
+            ? "Module contributions are not available right now."
+            : value === "module-contributions"
+              ? "Submit module packages and read their review status."
+              : "Prepare launches and read their status."}
+      </p>
+    </fieldset>
+  );
 }
 
 export function prepareApiKeyMutationAttempt(
@@ -590,6 +684,7 @@ function ExpirySelect({
 export function DeveloperApiKeys({
   initialSection = "keys",
   agentSetupText = PROGRAMMABLE_AGENT_SETUP_TEXT_V1,
+  moduleAgentSetupText = PROGRAMMABLE_MODULE_AGENT_SETUP_TEXT_V1,
 }: DeveloperApiKeysProps) {
   const {
     sessionReady: authReady,
@@ -615,6 +710,7 @@ export function DeveloperApiKeys({
       getIdentityToken={getIdentityToken}
       initialSection={initialSection}
       agentSetupText={agentSetupText}
+      moduleAgentSetupText={moduleAgentSetupText}
       openWallet={openWallet}
       sendCustomLaunchWalletAction={sendCustomLaunchWalletAction}
       sendCustomLaunchWalletActionV4={sendCustomLaunchWalletActionV4}
@@ -633,6 +729,7 @@ export function DeveloperApiKeysView({
   getIdentityToken,
   initialSection,
   agentSetupText = PROGRAMMABLE_AGENT_SETUP_TEXT_V1,
+  moduleAgentSetupText = PROGRAMMABLE_MODULE_AGENT_SETUP_TEXT_V1,
   openWallet,
   sendCustomLaunchWalletAction,
   sendCustomLaunchWalletActionV4,
@@ -644,6 +741,8 @@ export function DeveloperApiKeysView({
   );
   const [listError, setListError] = useState("");
   const [label, setLabel] = useState("");
+  const [purpose, setPurpose] = useState<ApiKeyPurpose>("custom-launches");
+  const [moduleContributionsAvailable, setModuleContributionsAvailable] = useState(false);
   const [expiresInDays, setExpiresInDays] = useState<ExpiryDays>(90);
   const [labelError, setLabelError] = useState("");
   const [mutationState, setMutationState] = useState<ApiKeyMutationState>({
@@ -758,12 +857,14 @@ export function DeveloperApiKeysView({
         }
         if (readGeneration !== apiKeyReadGenerationRef.current) return;
         setApiKeys((current) => mergeApiKeySummaries(current, parsed));
+        setModuleContributionsAvailable(moduleContributionKeysAvailable(body));
         setListState("ready");
         if (mode === "refresh") setStatusMessage("API keys refreshed.");
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError")
           return;
         if (readGeneration !== apiKeyReadGenerationRef.current) return;
+        setModuleContributionsAvailable(false);
         setListError(
           error instanceof Error ? error.message : "Unable to load API keys.",
         );
@@ -864,6 +965,10 @@ export function DeveloperApiKeysView({
       revealRef.current?.focus();
       return;
     }
+    if (purpose === "module-contributions" && !moduleContributionsAvailable) {
+      setCreateError("Module contributions are not available right now. Refresh your keys to check again.");
+      return;
+    }
 
     const cleanLabel = label.trim();
     if (!cleanLabel) {
@@ -886,6 +991,7 @@ export function DeveloperApiKeysView({
       label: cleanLabel,
       schemaVersion,
       walletAddress: account,
+      ...(purpose === "module-contributions" ? { purpose } : {}),
     });
     let attempt: ApiKeyMutationAttempt;
     try {
@@ -922,7 +1028,7 @@ export function DeveloperApiKeysView({
           "Unable to create the API key.",
         ));
       }
-      const parsed = parseApiKeyMutationResult(responseBody, response.status);
+      const parsed = parseApiKeyMutationResult(responseBody, response.status, undefined, purpose);
       if (!parsed) {
         throw new Error(
           "The key may have been created, but the response could not be verified. Refresh your keys before trying again.",
@@ -969,7 +1075,9 @@ export function DeveloperApiKeysView({
 
   const copyAgentSetup = async () => {
     try {
-      await copyToClipboard(agentSetupText);
+      await copyToClipboard(purpose === "module-contributions"
+        ? moduleAgentSetupText
+        : agentSetupText);
       setSetupCopyState("copied");
       setStatusMessage("Agent setup copied without the API key.");
     } catch {
@@ -1079,6 +1187,11 @@ export function DeveloperApiKeysView({
       || mutationInFlightRef.current
       || revokingId !== null
     ) return;
+    const originalPurpose = apiKeyPurpose(apiKey.scopes);
+    if (!originalPurpose) {
+      setRotateError("The key permissions could not be verified. Refresh your keys before trying again.");
+      return;
+    }
     const body = JSON.stringify({
       expiresInDays: apiKeyLifetimeDays(apiKey),
       label: apiKey.label,
@@ -1124,6 +1237,7 @@ export function DeveloperApiKeysView({
         responseBody,
         response.status,
         apiKey.id,
+        originalPurpose,
       );
       if (!parsed) {
         throw new Error(
@@ -1139,6 +1253,7 @@ export function DeveloperApiKeysView({
       ));
       setListState("ready");
       setMutationResult({ operation: "rotate", result: parsed });
+      setPurpose(originalPurpose);
       setKeyPage(1);
       setConfirmingRotateId(null);
       setStatusMessage(parsed.secretState === "delivered-once"
@@ -1233,7 +1348,7 @@ export function DeveloperApiKeysView({
         <div className={styles.heroCopy}>
           <h1>API keys</h1>
           <p className={styles.intro}>
-            Manage access for your launch agents on Ethereum and Robinhood.
+            Manage access for launch agents and module contributors.
           </p>
         </div>
       </header>
@@ -1314,6 +1429,9 @@ export function DeveloperApiKeysView({
                     : "Already delivered"}
                 </span>
               </div>
+              <p className={styles.securityNote}>
+                Purpose: {apiKeyPurposeLabel(mutationResult.result.apiKey.scopes)}
+              </p>
               {mutationResult.result.secretState === "delivered-once" ? (
                 <>
                   <p className={styles.revealWarning}>
@@ -1406,6 +1524,18 @@ export function DeveloperApiKeysView({
                 </div>
 
                 <form className={styles.createForm} onSubmit={createApiKey}>
+                  <ApiKeyPurposeChoice
+                    value={purpose}
+                    onChange={(value) => {
+                      setPurpose(value);
+                      setCreateError("");
+                      setSetupCopyState("idle");
+                    }}
+                    moduleContributionsAvailable={moduleContributionsAvailable}
+                    checking={listState === "loading"}
+                    disabled={mutationState.kind !== "idle"
+                      || mutationResult?.result.secretState === "delivered-once"}
+                  />
                   <div className={styles.formFields}>
                     <div>
                       <label className={styles.field} htmlFor="api-key-label">
@@ -1420,7 +1550,7 @@ export function DeveloperApiKeysView({
                           autoComplete="off"
                           maxLength={64}
                           name="label"
-                          placeholder="Launch agent"
+                          placeholder={purpose === "module-contributions" ? "Module agent" : "Launch agent"}
                           spellCheck={false}
                           type="text"
                           value={label}
@@ -1451,6 +1581,7 @@ export function DeveloperApiKeysView({
                       disabled={
                         mutationState.kind !== "idle"
                         || mutationResult?.result.secretState === "delivered-once"
+                        || (purpose === "module-contributions" && !moduleContributionsAvailable)
                       }
                       type="submit"
                     >
@@ -1465,10 +1596,10 @@ export function DeveloperApiKeysView({
                   <details className={styles.scopeLedger}>
                     <summary>
                       <span>Permissions</span>
-                      <strong>2 launch scopes</strong>
+                      <strong>{purpose === "module-contributions" ? "2 module scopes" : "2 launch scopes"}</strong>
                     </summary>
                     <ul>
-                      {fixedScopes.map((scope) => (
+                      {(purpose === "module-contributions" ? moduleScopes : fixedScopes).map((scope) => (
                         <li key={scope}>
                           <code>{scope}</code>
                         </li>
@@ -1640,6 +1771,10 @@ export function DeveloperApiKeysView({
 
                           <dl className={styles.keyMetadata}>
                             <div>
+                              <dt>Purpose</dt>
+                              <dd>{apiKeyPurposeLabel(apiKey.scopes)}</dd>
+                            </div>
+                            <div>
                               <dt>Expires</dt>
                               <dd>
                                 {formatDate(apiKey.expiresAt, "Unavailable")}
@@ -1673,7 +1808,7 @@ export function DeveloperApiKeysView({
                             >
                               <p>
                                 The current key will stop working immediately.
-                                The replacement keeps this name and its original{" "}
+                                The replacement keeps this name, permissions and original{" "}
                                 {apiKeyLifetimeDays(apiKey)}-day lifetime. Update
                                 every agent that uses it.
                               </p>
@@ -1815,8 +1950,9 @@ export function DeveloperApiKeysView({
           <div className={styles.agentSetupBody}>
             <div className={styles.agentSetupCopy}>
               <p>
-                Use these instructions with a new or existing key. Your agent
-                prepares the launch; you review and approve it in your wallet.
+                {purpose === "module-contributions"
+                  ? "Use these instructions with a module contribution key. Your agent submits the source package; receipt does not mean approval."
+                  : "Use these instructions with a new or existing key. Your agent prepares the launch; you review and approve it in your wallet."}
               </p>
               <p className={styles.setupNote}>
                 The instructions use

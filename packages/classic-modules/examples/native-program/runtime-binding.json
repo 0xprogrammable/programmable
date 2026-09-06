@@ -1,0 +1,62 @@
+{
+  "format": "programmable.module-mode.native-program-binding.v1",
+  "status": "candidate-requires-review-and-host-admission",
+  "program": "reward",
+  "factory": "factory",
+  "configuration": {
+    "schema": "config.schema.json",
+    "encoding": "abi.encode(uint32,uint128,uint128,uint64,bool,address)",
+    "orderedFields": ["everyN", "minimumGrossNative", "rewardNative", "endsAt", "includeInitialBuy", "refundWallet"],
+    "bytes": 192,
+    "extraContractChecks": ["endsAt > block.timestamp at construction", "refundWallet != address(0)"],
+    "implementationReference": "tools/config-codec.mjs",
+    "genericOpenConfigEncodingIsFactoryConfig": false,
+    "old160ByteConfigurationAccepted": false
+  },
+  "callbacks": {
+    "host": "ModuleNativeRuntimeV1",
+    "gasPerCallback": 300000,
+    "onTrade": "authenticated completed native trade; actual actor receives a backed credit",
+    "onAction": "authenticated direct transaction sender; expected per-launch actor nonce plus deadline",
+    "failure": "atomic revert; no fail-open fallback"
+  },
+  "budget": {
+    "asset": "native ETH",
+    "funding": "explicit moduleFunding at launch or vault.fund(instanceId)",
+    "spendAuthority": "runtime.credit to the active program instance only",
+    "insufficient": "skip reward permanently; no debt and no trade veto",
+    "refundRole": "configuration.refundWallet",
+    "afterExpiry": "only available budget becomes a refund-wallet claim; winner claims are unchanged",
+    "lateFunding": "anyone can fund; after expiry the fixed refund wallet can reclaim that funding too",
+    "feeLedgerAccess": false,
+    "liquidityAccess": false
+  },
+  "actions": {
+    "reclaim-unused": {
+      "callTarget": "host runtime resolved from the admitted instance binding",
+      "function": "executeAction(bytes32,uint256,bytes32,bytes,uint64,uint256)",
+      "actionIdKeccakUtf8": "programmable.module-mode.reward.reclaim-unused.v1",
+      "inputs": "0x",
+      "role": "refund-wallet",
+      "roleBinding": "program.refundWallet()",
+      "precondition": "latest chain timestamp >= program.endsAt()",
+      "nonceRead": "runtime.actionNonce(launchKey,connectedWallet)",
+      "valueWei": "0",
+      "effect": "move available instance budget to claimable(instanceId,refundWallet)",
+      "emptyBudget": "successful no-op; nonce advances"
+    }
+  },
+  "hostComponents": {
+    "runtime": "existing host binding, never redeploy from the submitted runtime test source",
+    "vault": "runtime.vault(), checked against the released host",
+    "program": "runtime.instances(launchKey)[index] and matching instanceBinding/codehash"
+  },
+  "commonManagement": {
+    "fund": "vault.fund(instanceId), connected-wallet native transaction, amount > 0",
+    "claim": "vault.claim(instanceId,beneficiary), permissionless fixed-beneficiary payment",
+    "claimTo": "vault.claimTo(instanceId,recipient), beneficiary can redirect only its own claim",
+    "authority": "the program cannot change common host action permissions"
+  },
+  "upgrades": "none; source revisions create separately reviewed packages and new instances",
+  "reviewEnvelope": "all valid configurations accepted by the pinned factory, not a narrower metadata-only range"
+}

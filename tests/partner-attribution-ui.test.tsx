@@ -226,11 +226,13 @@ describe("partner attribution UI", () => {
       new URL("../components/wallet-provider.tsx", import.meta.url),
       "utf8",
     );
-    expect(wallet).toContain(
-      "const response = await fetch(`/api/admin/partners?${query}`",
+    expect(wallet).toContain("fetch(`/api/admin/partners?${query}`");
+    expect(wallet).toMatch(
+      /if \(controller\.signal\.aborted\) return;\s+setPartnerAdminAccount\(partner\.status === "fulfilled" && partner\.value\.ok \? account : null\)/,
     );
-    expect(wallet).toContain("if (response.ok && !controller.signal.aborted)");
-    expect(wallet).toContain("=== wallet.account.toLowerCase() ? (");
+    expect(wallet).toMatch(
+      /partnerAdminAccount\?\.toLowerCase\(\)\s+=== wallet\.account\.toLowerCase\(\) \? \(/,
+    );
     expect(wallet).toContain('href="/admin/partners"');
   });
 

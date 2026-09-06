@@ -1,5 +1,5 @@
-import type { RobinhoodLaunch } from "@/lib/robinhood-launches";
-import { parseSnapshot, type Checkpoint, type RobinhoodSnapshot } from "./model";
+import type { RobinhoodLaunch, RobinhoodModuleLaunch } from "@/lib/robinhood-launches";
+import { parseSnapshot, parseModuleModeSnapshot, type Checkpoint, type RobinhoodSnapshot, type ModuleModeSnapshot } from "./model";
 import type { IndexStore } from "./store";
 
 export type IndexSource = {
@@ -9,6 +9,19 @@ export type IndexSource = {
   finalized: Checkpoint;
   block(number: bigint): Promise<Checkpoint>;
   launches(from: bigint, to: bigint, known: readonly RobinhoodLaunch[]): Promise<RobinhoodLaunch[]>;
+};
+
+export type ModuleModeIndexSource = Omit<IndexSource, "routerAddress" | "binding" | "launches"> & {
+  sourceKind: "module-native-v1";
+  sourceAddress: string;
+  releaseDigest: string;
+  launches(from: bigint, to: bigint, known: readonly RobinhoodLaunch[]): Promise<RobinhoodModuleLaunch[]>;
+};
+type SyncOptions = { rangeSize?: bigint; maxRanges?: number; budgetMs?: number; now?: () => number };
+type RangeSnapshot = Pick<RobinhoodSnapshot, "cursor" | "checkpoints" | "pending" | "finalizedBlock" | "updatedAt" | "items">;
+type RangeStore = {
+  read(): Promise<{ snapshot: RangeSnapshot; etag: string } | null>;
+  write(snapshot: RangeSnapshot, etag: string | null): Promise<void>;
 };
 
 export class IndexRangeTooWide extends Error {}
@@ -31,19 +44,48 @@ function mergeVerifiedLaunches(known: RobinhoodLaunch[], discovered: RobinhoodLa
 
 // Only the background job uses the source. A failed range is retried from its
 // beginning; neither an RPC error nor partial verification advances the cursor.
-export async function syncRobinhoodIndex(source: IndexSource, store: IndexStore, options: {
-  rangeSize?: bigint; maxRanges?: number; budgetMs?: number; now?: () => number;
-} = {}) {
+export async function syncRobinhoodIndex(source: IndexSource, store: IndexStore, options: SyncOptions = {}) {
+  const saved = await store.read();
+  const initial: RobinhoodSnapshot = saved?.snapshot ?? {
+    version: 1, chainId: 4663, routerAddress: source.routerAddress, binding: source.binding,
+    startBlock: source.startBlock.toString(), cursor: null, checkpoints: [],
+    finalizedBlock: source.finalized.number, updatedAt: new Date((options.now ?? Date.now)()).toISOString(), items: [],
+  };
+  if (initial.binding !== source.binding || initial.routerAddress.toLowerCase() !== source.routerAddress.toLowerCase()
+    || initial.startBlock !== source.startBlock.toString()) throw new Error("Canonical Router changed; index migration required");
+  return syncRange(source, { read: async () => saved, write: (snapshot, etag) => store.write(parseSnapshot(snapshot), etag) },
+    initial, parseSnapshot, options);
+}
+
+/** Each source advances independently, while the shared Blob write remains atomic and version-fenced. */
+export async function syncModuleModeIndex(source: ModuleModeIndexSource, store: IndexStore, options: SyncOptions = {}) {
+  const saved = await store.read();
+  // Existing canonical Custom provenance initializes the shared envelope; never manufacture a Router binding.
+  if (!saved) throw new Error("Canonical Robinhood index must be initialized before adding Module Mode");
+  parseSnapshot(saved.snapshot);
+  const initial: ModuleModeSnapshot = saved.snapshot.moduleMode ?? {
+    version: 1, sourceKind: "module-native-v1", chainId: 4663, sourceAddress: source.sourceAddress,
+    releaseDigest: source.releaseDigest, startBlock: source.startBlock.toString(), cursor: null, checkpoints: [],
+    finalizedBlock: source.finalized.number, updatedAt: new Date((options.now ?? Date.now)()).toISOString(), items: [],
+  };
+  if (source.sourceKind !== "module-native-v1" || initial.sourceAddress.toLowerCase() !== source.sourceAddress.toLowerCase()
+    || initial.releaseDigest.toLowerCase() !== source.releaseDigest.toLowerCase()
+    || initial.startBlock !== source.startBlock.toString()) throw new Error("Module Mode source changed; index migration required");
+  return syncRange(source, {
+    read: async () => ({ snapshot: initial, etag: saved.etag }),
+    write: async (snapshot, etag) => {
+      const merged = parseSnapshot({ ...saved.snapshot, moduleMode: parseModuleModeSnapshot(snapshot) });
+      await store.write(merged, etag);
+    },
+  }, initial, parseModuleModeSnapshot, options);
+}
+
+async function syncRange(source: Pick<IndexSource, "startBlock" | "finalized" | "block" | "launches">,
+  store: RangeStore, initial: RangeSnapshot, parse: (value: unknown) => RangeSnapshot, options: SyncOptions) {
   const now = options.now ?? Date.now;
   const deadline = now() + (options.budgetMs ?? 45_000);
   const saved = await store.read();
-  let snapshot: RobinhoodSnapshot = saved?.snapshot ?? {
-    version: 1, chainId: 4663, routerAddress: source.routerAddress, binding: source.binding,
-    startBlock: source.startBlock.toString(), cursor: null, checkpoints: [],
-    finalizedBlock: source.finalized.number, updatedAt: new Date(now()).toISOString(), items: [],
-  };
-  if (snapshot.binding !== source.binding || snapshot.routerAddress.toLowerCase() !== source.routerAddress.toLowerCase()
-    || snapshot.startBlock !== source.startBlock.toString()) throw new Error("Canonical Router changed; index migration required");
+  let snapshot = saved?.snapshot ?? initial;
   const boundary = BigInt(source.finalized.number);
   let rewound = false;
   let progress = false;
@@ -94,7 +136,7 @@ export async function syncRobinhoodIndex(source: IndexSource, store: IndexStore,
       const accepted = [...snapshot.items, ...(snapshot.pending?.items ?? [])];
       const items = mergeVerifiedLaunches(accepted, rows);
       const cursor = snapshot.cursor && BigInt(snapshot.cursor.number) > to ? snapshot.cursor : end;
-      snapshot = parseSnapshot({ ...snapshot, cursor, pending: null,
+      snapshot = parse({ ...snapshot, cursor, pending: null,
         finalizedBlock: source.finalized.number,
         checkpoints: [...snapshot.checkpoints.filter((point) => point.number !== end.number), end]
           .sort((a, b) => BigInt(a.number) < BigInt(b.number) ? -1 : 1).slice(-16),
@@ -106,7 +148,7 @@ export async function syncRobinhoodIndex(source: IndexSource, store: IndexStore,
       if (error instanceof IndexBlockIncomplete && from === to) {
         const end = await source.block(to);
         const items = mergeVerifiedLaunches(snapshot.pending?.items ?? [], error.items);
-        snapshot = parseSnapshot({ ...snapshot, finalizedBlock: source.finalized.number,
+        snapshot = parse({ ...snapshot, finalizedBlock: source.finalized.number,
           pending: { block: end, items }, updatedAt: new Date(now()).toISOString() });
         progress = true;
         break;
