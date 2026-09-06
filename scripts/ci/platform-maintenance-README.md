@@ -35,6 +35,10 @@ The producer first checks the existing successful `foundry`,
 their actual GitHub Actions app, run, workflow path, PR/base/head identity, job
 and current run attempt. A name-only status, skipped job, old attempt, wrong
 workflow or another repository does not satisfy the policy.
+Job identity is resolved through its actual URL and `check_run_url`, with the
+check suite bound independently to the workflow run. For `pull_request_target`,
+the REST run/job/check head is the PR subject; it does not identify the separate
+trusted default-branch workflow source.
 
 Two fresh runners then independently execute the exact candidate head:
 
@@ -60,8 +64,9 @@ attempt, immutable artifact ID/digest and repository metadata.
 The consumer checks the exact signer workflow, source ref, source SHA, signer
 SHA and hosted-runner provenance with `gh attestation verify`. It then checks
 the live PR, current protected refs, source tree and all technical observations
-again. It can publish a real technical `platform-maintenance-release` success
-before protection migration; that publication alone never requests a merge.
+again. It publishes real technical `platform-maintenance-evidence` separately
+from the required `platform-maintenance-release` context. A technical success
+before protection migration never satisfies the required release context.
 
 The merge operation separately requires the complete target branch protection.
 It uses the ordinary GitHub squash-merge endpoint with the exact head `sha`.
@@ -70,6 +75,115 @@ head/base/check drift withdraws the consumer's success context. The returned
 squash commit is read back and must have the selected base as its sole parent
 and the selected canonical merge tree. An ambiguous API result is a failure,
 not a claim that a merge did or did not occur.
+
+There is one publication-and-consumption entry. It first replaces any old
+release context with `in_progress`, then publishes technical evidence. All
+later operations, including early revalidation and post-merge readback, are
+inside its withdrawal scope. An intentionally unmet protection rule or a
+missing policy reader may preserve only technical success, after another fresh
+subject, technical-run and expiry verification; the release context fails.
+Only after a successful separate policy read and complete protection check can
+the release context succeed. Policy, subject and technical state are read again
+before the conditional merge. If withdrawal cannot be confirmed, the controller
+reports uncertain state and requires reconciliation.
+
+## Policy-read authority is an activation blocker
+
+The complete classic branch-protection read requires repository
+`Administration:read`, which is not an available `GITHUB_TOKEN` workflow
+permission. The ordinary GitHub client explicitly refuses protection reads.
+The consumer uses a separate App token and closed policy-reader transport for
+that purpose. Its source pins are initially `policyReadAuthority: null`, so
+automatic merging remains unconfigured. Missing configuration has the specific
+failure `MAINTENANCE_POLICY_READ_AUTHORITY_UNCONFIGURED`; an authenticated but
+forbidden protection read has `MAINTENANCE_PROTECTION_READ_AUTHORITY_REQUIRED`.
+No fallback accepts a missing policy, manually supplied JSON or a named status.
+See GitHub's [branch-protection API permissions](https://docs.github.com/en/rest/branches/branch-protection#get-branch-protection)
+and [workflow token permissions](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#permissions).
+
+The inspected private admission App implementation allows `checks:write` and
+`contents/metadata/pull_requests:read`. The separate release-read App
+implementation binds exact `actions/attestations/contents/metadata/pull_requests`
+read scopes and rejects additional permissions. Neither existing source path
+proves the necessary administration authority, and neither is silently reused
+or broadened by this candidate. No installation token or credential was read
+or issued during implementation.
+
+The one-time setup is concrete:
+
+1. Establish a dedicated private App named **Programmable Maintenance Policy
+   Reader**, owned by **programmablehq**, with the configuration below. This is
+   the proposed registration name, not a claim an App already exists. Limit its
+   installation to Public repository
+   `programmablehq/PROGRAMMABLE`, numeric ID `1314365508`, with only
+   `Administration:read` and mandatory `Metadata:read`. Do not extend the
+   existing admission or release-reader App scope contracts. Do not add this
+   App to any bypass list or grant it check, content, merge or settings writes.
+2. Configure environment `platform-maintenance-policy` to allow only protected
+   `production`. Store the App private key there under
+   `PLATFORM_MAINTENANCE_POLICY_APP_PRIVATE_KEY`, not as a broadly available
+   repository secret. This environment needs no recurring manual-review gate.
+3. Independently review the observed numeric App and installation IDs, then
+   replace the null `policyReadAuthority` in protected controller source with
+   the exact `appId` and `installationId`. No PR, artifact, workflow input or
+   mutable repository variable can provide these expected pins. This changes
+   the policy hash and requires new source-bound producer evidence.
+4. Verify one real read of the complete current `main` protection with this
+   configured workflow before migrating the branch rule. A successful local
+   fixture or an owner token read does not prove the installed App's authority.
+
+Minimal inert manifest candidate; this document does not submit it:
+
+```json
+{
+  "name": "Programmable Maintenance Policy Reader",
+  "url": "https://programmable.family",
+  "public": false,
+  "hook_attributes": {
+    "url": "https://programmable.family/.well-known/disabled-github-app-webhook",
+    "active": false
+  },
+  "request_oauth_on_install": false,
+  "setup_on_update": false,
+  "default_permissions": {
+    "administration": "read",
+    "metadata": "read"
+  },
+  "default_events": []
+}
+```
+
+Choose the organization owner `programmablehq` when registering. Select only
+`PROGRAMMABLE` when installing; neither owner selection nor repository selection
+is inferred from the manifest. Leave webhook delivery, OAuth user authorization,
+callbacks and event subscriptions disabled. No repository or organization
+variable is required. The sole credential name is the environment secret
+`PLATFORM_MAINTENANCE_POLICY_APP_PRIVATE_KEY`; the only source-pin fields are
+numeric `policyReadAuthority.appId` and `policyReadAuthority.installationId`.
+Repository ID, repository name and target branch remain fixed in source policy.
+
+The protected workflow automatically creates a fresh installation token using
+the SHA-pinned `actions/create-github-app-token` action, explicit repository
+selection and explicit read-only permissions. It checks the returned
+installation ID against source policy. The key is passed only to that pinned
+action; the token is passed only to the closed policy reader and revoked at
+job completion. The reader checks `/installation/repositories` is exactly the
+selected numeric repository, then performs only the exact `main` protection
+GET. It checks the response URL is the selected branch, and repeats scope and
+policy reads before merge. Credentials never enter artifacts or error text.
+See the [official App-token action](https://github.com/actions/create-github-app-token/tree/bcd2ba49218906704ab6c1aa796996da409d3eb1)
+and [installation repository-scope API](https://docs.github.com/en/rest/apps/installations#list-repositories-accessible-to-the-app-installation).
+
+This integration is implemented but its App, environment, key and source pins
+are not provisioned by the candidate. After the one-time setup, policy reads
+are automatic for every merge; no manual policy JSON is part of the run path.
+Candidate workers, the evidence issuer and the post-merge dispatcher never
+receive this credential.
+
+Public ruleset metadata is not substituted for this read: it does not represent
+the existing classic protection, and a ruleset response can omit bypass actors.
+A policy observation for `main` never authorizes a `production` PR or website
+promotion. Production is only this lane's trusted controller source.
 
 ## Slither baseline
 
@@ -128,15 +242,17 @@ deployment/phase controllers retain their separate authority and evidence.
    an already-open PR, dispatch `Verify platform maintenance` on production
    with only its PR number. GitHub refetch, not that selector, chooses the
    authorized source. New ordinary PRs trigger automatically.
-4. Obtain a real successful producer and authenticated technical check at the
+4. Obtain a real successful producer and authenticated technical
+   `platform-maintenance-evidence` check at the
    current exact head. If Slither finds anything, review its actual diagnostics
    and land any justified exact-source disposition through a new protected
    production policy revision, then regenerate the evidence. Do not replace
    the empty baseline with a blanket allowlist. The consumer still refuses
    merge while the old protection rule is active.
-5. Read back the new successful check and its authentic GitHub Actions app
+5. Read back the new successful technical check and its authentic GitHub Actions app
    (`15368`), source/CI/Sigstore evidence and live PR/base/head. Only after that
-   evidence and the source policy have been reviewed, migrate `main` to the
+   evidence and the source policy have been reviewed, and the separately bound
+   policy-read authority above is installed and tested, configure `main` with the
    following **persistent replacement**, preserving any stronger unrelated
    rules: strict required checks `foundry`, `security`,
    `hook-builder-maintenance`, `public-intake`, `platform-maintenance-release`,
@@ -144,6 +260,10 @@ deployment/phase controllers retain their separate authority and evidence.
    pushes and deletion off. The machine rule replaces the internal maintenance
    requirement for one human review, CODEOWNER review and last-push approval.
    Do not remove a required technical check or temporarily bypass protection.
+   Add the required `platform-maintenance-release` context before retiring the
+   human-only rule: its pending/failure/missing state keeps the branch closed.
+   The successful bootstrap evidence has a different name and cannot satisfy
+   it. This avoids both a circular trigger bootstrap and an unprotected window.
 6. Regenerate the producer at the unchanged current subject, or let the next
    authentic technical-completion event do so. The consumer revalidates the
    rule and all evidence, requests the conditional protected merge, reads back
@@ -161,9 +281,10 @@ receipts to avoid that integration requirement.
 
 The existing admission App candidate has `checks:write` and only
 `pull_requests:read`; its approved-review orchestrator consumes an existing
-authenticated review and does not author `APPROVE` reviews. No new App, key,
-credential, bot self-review or administrative bypass is required by this
-maintenance gate. Initial developer branch publication uses the existing
+authenticated review and does not author `APPROVE` reviews. This candidate
+creates no App, key, credential, bot self-review or administrative bypass.
+Automatic merging still requires the separately reviewed one-time policy-reader
+setup described above. Initial developer branch publication uses the existing
 authorized developer/agent path; this workflow does not autonomously create
 arbitrary candidate branches or pull requests.
 

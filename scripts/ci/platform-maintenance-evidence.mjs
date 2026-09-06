@@ -120,10 +120,11 @@ export function validateLegacyChecks(observationValue, subjectValue, policy = MA
     "MAINTENANCE_REQUIRED_CHECK_NOT_AUTHENTICATED");
     const details = new RegExp(`^https://github\\.com/${policy.repository}/actions/runs/([1-9][0-9]*)/job/([1-9][0-9]*)$`)
       .exec(check.details_url);
-    requireValue(details && Number(details[2]) === check.id, "MAINTENANCE_CHECK_RUN_IDENTITY_INVALID");
-    const runId = Number(details[1]);
+    requireValue(details && Number.isSafeInteger(check.id) && check.id > 0,
+      "MAINTENANCE_CHECK_RUN_IDENTITY_INVALID");
+    const runId = Number(details[1]); const jobId = Number(details[2]);
     const run = observation.runs.find((item) => item.id === runId);
-    const job = observation.jobs.find((item) => item.id === check.id);
+    const job = observation.jobs.find((item) => item.id === jobId);
     requireValue(run && job && run.path === required.path
       && run.repository?.id === policy.repositoryId && run.head_repository?.id === policy.repositoryId
       && run.head_sha === subject.headSha && run.status === "completed" && run.conclusion === "success"
@@ -132,11 +133,15 @@ export function validateLegacyChecks(observationValue, subjectValue, policy = MA
         && pr.head?.sha === subject.headSha && pr.head.repo?.id === policy.repositoryId
         && pr.base.repo?.id === policy.repositoryId)
       && Number.isSafeInteger(run.run_attempt) && run.run_attempt > 0
+      && Number.isSafeInteger(run.check_suite_id) && run.check_suite_id > 0
+      && check.check_suite?.id === run.check_suite_id
       && job.run_id === runId && job.run_attempt === run.run_attempt && job.head_sha === subject.headSha
+      && job.check_run_url === `https://api.github.com/repos/${policy.repository}/check-runs/${check.id}`
+      && job.html_url === check.details_url
       && job.status === "completed" && job.conclusion === "success" && job.name === required.name,
     "MAINTENANCE_CHECK_WORKFLOW_MISMATCH");
     return { name: required.name, workflow: required.path, appId: check.app.id,
-      checkId: check.id, runId, runAttempt: run.run_attempt };
+      checkId: check.id, checkSuiteId: run.check_suite_id, jobId, runId, runAttempt: run.run_attempt };
   });
 }
 

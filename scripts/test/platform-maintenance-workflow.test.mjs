@@ -51,12 +51,33 @@ test("privileged consumer never checks out or executes candidate code and cannot
   assert.match(merge, /checks: write/);
   assert.match(merge, /contents: write/);
   assert.match(merge, /pull-requests: read/);
-  assert.doesNotMatch(merge, /path: candidate|needs\.select\.outputs|id-token: write|secrets\./);
+  assert.doesNotMatch(merge, /path: candidate|needs\.select\.outputs|id-token: write/);
   assert.match(merge, /artifact-ids: \$\{\{ steps\.producer\.outputs\.artifact_id \}\}/);
   assert.match(merge, /run-id: \$\{\{ steps\.producer\.outputs\.run_id \}\}/);
   assert.match(merge, /digest-mismatch: error/);
   const source = readFileSync(new URL("../ci/platform-maintenance-github.mjs", import.meta.url), "utf8");
   assert.doesNotMatch(source, /\/reviews|merge_action|admin_bypass|gh pr merge/);
+  const runner = readFileSync(new URL("../ci/platform-maintenance-runner.mjs", import.meta.url), "utf8");
+  assert.equal((runner.match(/await consumeAuthenticatedEvidence\(/g) ?? []).length, 1);
+  assert.doesNotMatch(runner, /publishAuthenticatedEvidenceCheck/);
+});
+
+test("only the trusted consumer mints a separately scoped policy-read token from source-pinned App identity", () => {
+  const merge = job(consumer, "consume");
+  assert.match(merge, /environment: platform-maintenance-policy/);
+  assert.match(merge, /runner\.mjs policy-config/);
+  assert.match(merge, /if: steps\.policy\.outputs\.configured == 'true'/);
+  assert.match(merge, /uses: actions\/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1/);
+  assert.match(merge, /app-id: \$\{\{ steps\.policy\.outputs\.app_id \}\}/);
+  assert.match(merge, /owner: programmablehq\n          repositories: PROGRAMMABLE/);
+  assert.match(merge, /permission-administration: read\n          permission-metadata: read/);
+  assert.match(merge, /skip-token-revoke: false/);
+  assert.match(merge, /MAINTENANCE_POLICY_INSTALLATION_ID: \$\{\{ steps\.policy_token\.outputs\.installation-id \}\}/);
+  assert.match(merge, /MAINTENANCE_POLICY_READ_TOKEN: \$\{\{ steps\.policy_token\.outputs\.token \}\}/);
+  assert.deepEqual(merge.match(/secrets\.[A-Z_]+/g), ["secrets.PLATFORM_MAINTENANCE_POLICY_APP_PRIVATE_KEY"]);
+  for (const source of [producer, postMerge, job(consumer, "dispatch")]) {
+    assert.doesNotMatch(source, /POLICY_READ_TOKEN|POLICY_APP_PRIVATE_KEY|create-github-app-token/);
+  }
 });
 
 test("post-merge dispatch has its own Actions-only write authority and exact returned merge input", () => {

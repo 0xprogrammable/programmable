@@ -8,8 +8,8 @@ import {
 } from "./platform-maintenance-policy.mjs";
 import { WORKER_SCHEMA, createEvidence, createPostMergeEvidence, evaluateSlither,
   validateLegacyChecks, verifyEvidence } from "./platform-maintenance-evidence.mjs";
-import { consumeAuthenticatedEvidence, createGitHubClient, dispatchPostMergeVerification,
-  observeLegacyChecks, publishAuthenticatedEvidenceCheck, revalidateMergedSubject, revalidateSubject,
+import { consumeAuthenticatedEvidence, createGitHubClient, createPolicyReadAuthority, dispatchPostMergeVerification,
+  observeLegacyChecks, policyReadConfiguration, revalidateMergedSubject, revalidateSubject,
   resolveProducer, selectSubject } from "./platform-maintenance-github.mjs";
 
 const controllerRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -67,7 +67,8 @@ function assertController(workflow) {
 
 export function assertWorkerEnvironment(env) {
   requireValue(!env.GH_TOKEN && !env.GITHUB_TOKEN && !env.ACTIONS_ID_TOKEN_REQUEST_TOKEN
-    && !env.ACTIONS_ID_TOKEN_REQUEST_URL, "MAINTENANCE_WORKER_CREDENTIAL_PRESENT");
+    && !env.ACTIONS_ID_TOKEN_REQUEST_URL && !env.MAINTENANCE_POLICY_READ_TOKEN,
+  "MAINTENANCE_WORKER_CREDENTIAL_PRESENT");
 }
 export function summarizeFoundryReport(report) {
   requireValue(report && typeof report === "object" && !Array.isArray(report), "MAINTENANCE_FORGE_REPORT_INVALID");
@@ -163,13 +164,20 @@ async function main() {
   const operation = process.argv[2];
   requireValue(process.argv.length === 3, "MAINTENANCE_ARGUMENTS_INVALID");
   const sha = assertController(operation?.startsWith("post-") ? policy.postMergeWorkflow
-    : ["resolve", "consume", "dispatch"].includes(operation) ? policy.consumerWorkflow : policy.producerWorkflow);
+    : ["resolve", "consume", "dispatch", "policy-config"].includes(operation) ? policy.consumerWorkflow : policy.producerWorkflow);
   const destination = path.resolve(process.env.MAINTENANCE_OUTPUT ?? "");
   requireValue(destination.startsWith(`${process.env.RUNNER_TEMP}/`), "MAINTENANCE_OUTPUT_PATH_INVALID");
   mkdirSync(destination, { recursive: true, mode: 0o700 });
   if (operation === "worker" || operation === "post-worker") {
     worker(process.env.MAINTENANCE_SUBJECT, process.env.MAINTENANCE_CANDIDATE,
       process.env.MAINTENANCE_LANE, destination);
+    return;
+  }
+  if (operation === "policy-config") {
+    const configuration = policyReadConfiguration();
+    output(configuration === null ? { configured: "false" } : {
+      configured: "true", app_id: configuration.appId, installation_id: configuration.installationId,
+    });
     return;
   }
   const client = createGitHubClient(process.env.GH_TOKEN);
@@ -192,8 +200,13 @@ async function main() {
     output({ artifact_id: producer.artifact.id, run_id: producer.run.id, run_attempt: producer.run.run_attempt });
   } else if (operation === "consume") {
     const { evidence, producer } = await authenticatedInput(client, sha);
-    await publishAuthenticatedEvidenceCheck(client, evidence, producer);
-    const result = await consumeAuthenticatedEvidence(client, evidence, producer);
+    const configuration = policyReadConfiguration();
+    const reader = configuration === null ? null : createPolicyReadAuthority(configuration, {
+      appId: Number(process.env.MAINTENANCE_POLICY_APP_ID),
+      installationId: Number(process.env.MAINTENANCE_POLICY_INSTALLATION_ID),
+      token: process.env.MAINTENANCE_POLICY_READ_TOKEN ?? "",
+    });
+    const result = await consumeAuthenticatedEvidence(client, evidence, producer, Date.now, policy, reader);
     writeJson(path.join(destination, "merge-observation.json"), result);
     output({ merge_sha: result.mergeCommit, producer_run: producer.run.id });
   } else if (operation === "dispatch" || operation === "post-select") {

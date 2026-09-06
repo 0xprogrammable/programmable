@@ -21,6 +21,7 @@ jobs:
       github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    environment: platform-maintenance-policy
     outputs:
       producer_run: ${{ steps.consume.outputs.producer_run }}
       merge_sha: ${{ steps.consume.outputs.merge_sha }}
@@ -57,10 +58,30 @@ jobs:
           repository: programmablehq/PROGRAMMABLE
           path: ${{ runner.temp }}/maintenance-evidence
           digest-mismatch: error
+      - name: Resolve independently reviewed policy-reader source pins
+        id: policy
+        env:
+          MAINTENANCE_OUTPUT: ${{ runner.temp }}/maintenance-consumer
+        run: node trusted/scripts/ci/platform-maintenance-runner.mjs policy-config
+      - name: Create repository-scoped read-only policy token
+        id: policy_token
+        if: steps.policy.outputs.configured == 'true'
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          app-id: ${{ steps.policy.outputs.app_id }}
+          private-key: ${{ secrets.PLATFORM_MAINTENANCE_POLICY_APP_PRIVATE_KEY }}
+          owner: programmablehq
+          repositories: PROGRAMMABLE
+          permission-administration: read
+          permission-metadata: read
+          skip-token-revoke: false
       - name: Verify provenance, all live bindings and protected merge policy
         id: consume
         env:
           GH_TOKEN: ${{ github.token }}
+          MAINTENANCE_POLICY_APP_ID: ${{ steps.policy.outputs.app_id }}
+          MAINTENANCE_POLICY_INSTALLATION_ID: ${{ steps.policy_token.outputs.installation-id }}
+          MAINTENANCE_POLICY_READ_TOKEN: ${{ steps.policy_token.outputs.token }}
           MAINTENANCE_PRODUCER: ${{ runner.temp }}/maintenance-consumer/producer.json
           MAINTENANCE_EVIDENCE: ${{ runner.temp }}/maintenance-evidence/evidence.json
           MAINTENANCE_OUTPUT: ${{ runner.temp }}/maintenance-consumer

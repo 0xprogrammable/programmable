@@ -6,14 +6,30 @@ import { MAINTENANCE_POLICY as policy, REQUIRED_LEGACY_CHECKS, assertLivePullReq
 } from "../ci/platform-maintenance-policy.mjs";
 import { WORKER_SCHEMA, createEvidence, createPostMergeEvidence, evaluateSlither, slitherAnalysisHash,
   validateLegacyChecks, verifyEvidence } from "../ci/platform-maintenance-evidence.mjs";
-import { consumeAuthenticatedEvidence, createGitHubClient, dispatchPostMergeVerification,
-  publishAuthenticatedEvidenceCheck, revalidateMergedSubject, resolveProducer, selectSubject } from "../ci/platform-maintenance-github.mjs";
+import { consumeAuthenticatedEvidence as consumeWithReader, createGitHubClient, createPolicyReadAuthority,
+  dispatchPostMergeVerification, policyReadConfiguration,
+  revalidateMergedSubject, resolveProducer, selectSubject } from "../ci/platform-maintenance-github.mjs";
 import { assertWorkerEnvironment, attestationArguments, summarizeFoundryReport } from "../ci/platform-maintenance-runner.mjs";
 
 const sha = (character) => character.repeat(40);
 const ROOT = `/repos/${policy.repository}`;
 const NOW = 1788650000000;
 const MERGED = sha("8");
+const READER_CONFIGURATION = { appId: 41, installationId: 42, repository: policy.repository,
+  repositoryId: policy.repositoryId, baseRef: policy.baseRef };
+const READER_CREDENTIAL = { appId: 41, installationId: 42, token: "synthetic-policy-reader-token" };
+const READER_SUBJECT = { repository: policy.repository, repositoryId: policy.repositoryId, baseRef: policy.baseRef };
+function consumeAuthenticatedEvidence(client, proof, producer, now) {
+  return consumeWithReader(client, proof, producer, now, policy, client.policyReader ?? null);
+}
+function checkTransitions(client, name) {
+  return client.seen.filter((call) => call.method === "POST" && call.body.name === name)
+    .map((call) => call.body.status === "in_progress" ? "in_progress" : call.body.conclusion);
+}
+function assertWithdrawn(client) {
+  assert.equal(checkTransitions(client, policy.checkName).at(-1), "failure");
+  assert.deepEqual(checkTransitions(client, policy.evidenceCheckName), ["success", "failure"]);
+}
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const blob = (text) => {
   const bytes = Buffer.from(text);
@@ -37,7 +53,8 @@ function pr(s = subject()) {
 }
 const permission = { permission: "write", user: { id: 7 } };
 function protection() {
-  return { enforce_admins: { enabled: true }, required_linear_history: { enabled: true },
+  return { url: `https://api.github.com${ROOT}/branches/main/protection`,
+    enforce_admins: { enabled: true }, required_linear_history: { enabled: true },
     allow_force_pushes: { enabled: false }, allow_deletions: { enabled: false },
     required_pull_request_reviews: { required_approving_review_count: 0, require_code_owner_reviews: false,
       require_last_push_approval: false },
@@ -47,16 +64,19 @@ function protection() {
 function observation(s = subject()) {
   const result = { checks: [], runs: [], jobs: [] };
   for (const [index, required] of REQUIRED_LEGACY_CHECKS.entries()) {
-    const id = 100 + index, runId = 200 + index;
+    const id = 100 + index, runId = 200 + index, jobId = 300 + index, suiteId = 400 + index;
+    const details = `https://github.com/${policy.repository}/actions/runs/${runId}/job/${jobId}`;
     result.checks.push({ id, name: required.name, status: "completed", conclusion: "success", head_sha: s.headSha,
       app: { id: policy.githubActionsAppId, slug: "github-actions", owner: { login: "github" } },
-      details_url: `https://github.com/${policy.repository}/actions/runs/${runId}/job/${id}` });
+      check_suite: { id: suiteId }, details_url: details });
     result.runs.push({ id: runId, path: required.path, repository: { id: policy.repositoryId },
       head_repository: { id: policy.repositoryId }, head_sha: s.headSha, status: "completed", conclusion: "success",
       event: required.name === "public-intake" ? "pull_request_target" : "pull_request", run_attempt: 1,
+      check_suite_id: suiteId,
       pull_requests: [{ number: s.pullRequest, base: { sha: s.baseSha, repo: { id: policy.repositoryId } },
         head: { sha: s.headSha, repo: { id: policy.repositoryId } } }] });
-    result.jobs.push({ id, run_id: runId, run_attempt: 1, head_sha: s.headSha,
+    result.jobs.push({ id: jobId, run_id: runId, run_attempt: 1, head_sha: s.headSha,
+      check_run_url: `https://api.github.com/repos/${policy.repository}/check-runs/${id}`, html_url: details,
       name: required.name, status: "completed", conclusion: "success" });
   }
   return result;
@@ -83,7 +103,7 @@ function postSubject(s = subject()) {
 function fixtureClient(s = subject(), alter = () => {}) {
   const seen = []; let merged = false;
   const observed = observation(s);
-  return { seen, setMerged: () => { merged = true; },
+  const client = { seen, setMerged: () => { merged = true; },
     async get(route) {
       seen.push({ method: "GET", route });
       let value;
@@ -108,7 +128,6 @@ function fixtureClient(s = subject(), alter = () => {}) {
       else if (route.includes("/check-runs?")) value = { check_runs: observed.checks };
       else if (route.includes("/actions/runs/")) value = observed.runs.find((run) => route.endsWith(`/${run.id}`));
       else if (route.includes("/actions/jobs/")) value = observed.jobs.find((job) => route.endsWith(`/${job.id}`));
-      else if (route.endsWith("/branches/main/protection")) value = protection();
       assert.notEqual(value, undefined, `Unexpected GET ${route}`);
       value = clone(value); await alter(route, value, seen); return value;
     },
@@ -124,6 +143,17 @@ function fixtureClient(s = subject(), alter = () => {}) {
       assert.deepEqual(body, { sha: s.headSha, merge_method: "squash" });
       merged = true; return { merged: true, sha: MERGED };
     } };
+  client.policyReader = createPolicyReadAuthority(READER_CONFIGURATION, READER_CREDENTIAL, async (url, init) => {
+    assert.equal(init.method, "GET");
+    assert.equal(init.headers.authorization, `Bearer ${READER_CREDENTIAL.token}`);
+    const route = url.replace("https://api.github.com", "");
+    seen.push({ method: "GET", route, authority: "policy-reader" });
+    if (route === "/installation/repositories?per_page=100&page=1") return Response.json({ total_count: 1,
+      repositories: [{ id: policy.repositoryId, full_name: policy.repository }] });
+    assert.equal(route, `${ROOT}/branches/main/protection`);
+    const value = protection(); await alter(route, value, seen); return Response.json(value);
+  });
+  return client;
 }
 
 test("inert policy snapshots reject getters, cycles, sparse arrays and shared memory without invoking getters", () => {
@@ -160,6 +190,7 @@ for (const [name, change] of [
   ["fork", (p) => { p.head.repo = { id: 999, full_name: "attacker/repo" }; }],
   ["different head", (p) => { p.head.sha = sha("9"); }],
   ["different base", (p) => { p.base.sha = sha("9"); }],
+  ["production target", (p) => { p.base.ref = "production"; }],
   ["draft", (p) => { p.draft = true; }],
   ["closed", (p) => { p.state = "closed"; }],
   ["incomplete file pagination", (p) => { p.changed_files = 2; }],
@@ -217,6 +248,9 @@ for (const [name, change] of [
   ["fork run", (o) => { o.runs[0].head_repository.id = 9; }],
   ["stale base", (o) => { o.runs[0].pull_requests[0].base.sha = sha("7"); }],
   ["stale attempt", (o) => { o.runs[0].run_attempt = 2; }],
+  ["another check suite", (o) => { o.runs[0].check_suite_id = 999; }],
+  ["job linked to another check", (o) => { o.jobs[0].check_run_url = `https://api.github.com/repos/${policy.repository}/check-runs/999`; }],
+  ["job linked to another run URL", (o) => { o.jobs[0].html_url = `https://github.com/${policy.repository}/actions/runs/999/job/300`; }],
   ["skipped gate", (o) => { o.checks[0].conclusion = "skipped"; }],
   ["newer failure", (o) => { o.checks.push({ ...o.checks[0], id: 999, conclusion: "failure" }); }],
   ["missing gate", (o) => { o.checks.pop(); }],
@@ -239,12 +273,17 @@ test("consumer uses standard head-conditioned merge and verifies actual protecte
   const result = await consumeAuthenticatedEvidence(client, proof, { run: { id: 901, run_attempt: 1 } }, () => NOW + 1);
   assert.equal(result.mergeCommit, MERGED); assert.equal(result.websiteDeployment, false);
   assert.equal(client.seen.filter((call) => call.method === "PUT").length, 1);
+  assert.deepEqual(checkTransitions(client, policy.checkName), ["in_progress", "success"]);
+  assert.deepEqual(checkTransitions(client, policy.evidenceCheckName), ["success"]);
   assert.ok(client.seen.findIndex((call) => call.route.endsWith("/protection"))
-    < client.seen.findIndex((call) => call.method === "POST"));
+    < client.seen.findIndex((call) => call.method === "POST" && call.body.name === policy.checkName
+      && call.body.conclusion === "success"));
   assert.ok(client.seen.some((call) => call.route.endsWith(`/git/commits/${MERGED}`)));
+  assert.equal(client.seen.filter((call) => call.route.endsWith("/branches/main/protection")
+    && call.authority === "policy-reader").length, 2);
 });
 
-test("current human rules or absent authenticated machine context block before any write", async () => {
+test("bootstrap protection holds preserve genuine technical evidence but never request merge", async () => {
   for (const change of [
     (p) => { p.required_pull_request_reviews.required_approving_review_count = 1; },
     (p) => { p.required_pull_request_reviews.require_code_owner_reviews = true; },
@@ -256,7 +295,10 @@ test("current human rules or absent authenticated machine context block before a
     const p = protection(); change(p); assert.throws(() => assertMergeProtection(p));
     const client = fixtureClient(subject(), (route, value) => { if (route.endsWith("/protection")) change(value); });
     await assert.rejects(consumeAuthenticatedEvidence(client, evidence(), { run: { id: 901, run_attempt: 1 } }, () => NOW + 1));
-    assert.equal(client.seen.some((call) => call.method !== "GET"), false);
+    const writes = client.seen.filter((call) => call.method !== "GET");
+    assert.equal(writes.length, 3); assert.equal(writes.every((call) => call.route === `${ROOT}/check-runs`), true);
+    assert.deepEqual(checkTransitions(client, policy.checkName), ["in_progress", "failure"]);
+    assert.deepEqual(checkTransitions(client, policy.evidenceCheckName), ["success"]);
   }
 });
 
@@ -264,15 +306,15 @@ test("bootstrap can publish genuine authenticated technical evidence without inv
   const client = fixtureClient(subject(), (route, value) => {
     if (route.endsWith("/protection")) value.required_pull_request_reviews.required_approving_review_count = 1;
   });
-  const result = await publishAuthenticatedEvidenceCheck(client, evidence(), { run: { id: 901, run_attempt: 1 } }, () => NOW + 1);
-  assert.equal(result.evidenceHash, digest(evidence()));
+  await assert.rejects(consumeAuthenticatedEvidence(client, evidence(), { run: { id: 901, run_attempt: 1 } },
+    () => NOW + 1), /HUMAN_RULE_STILL_ACTIVE/);
   const writes = client.seen.filter((call) => call.method !== "GET");
-  assert.equal(writes.length, 1); assert.equal(writes[0].route, `${ROOT}/check-runs`);
-  assert.equal(writes[0].body.conclusion, "success");
-  assert.doesNotMatch(writes[0].route, /\/merge|\/reviews|\/protection/);
+  assert.equal(writes.length, 3); assert.equal(writes.every((call) => call.route === `${ROOT}/check-runs`), true);
+  assert.deepEqual(checkTransitions(client, policy.evidenceCheckName), ["success"]);
+  assert.deepEqual(checkTransitions(client, policy.checkName), ["in_progress", "failure"]);
   const invalid = clone(evidence()); invalid.slither.sourceCommit = sha("9");
   const untouched = fixtureClient();
-  await assert.rejects(publishAuthenticatedEvidenceCheck(untouched, invalid, { run: { id: 901, run_attempt: 1 } }, () => NOW + 1));
+  await assert.rejects(consumeAuthenticatedEvidence(untouched, invalid, { run: { id: 901, run_attempt: 1 } }, () => NOW + 1));
   assert.equal(untouched.seen.some((call) => call.method !== "GET"), false);
 });
 
@@ -283,6 +325,105 @@ test("head change after check publication is revalidated before the merge endpoi
   await assert.rejects(consumeAuthenticatedEvidence(client, evidence(), { run: { id: 901, run_attempt: 1 } }, () => NOW + 1), /BINDING_DRIFT/);
   assert.equal(client.seen.some((call) => call.method === "PUT"), false);
   assert.equal(client.seen.filter((call) => call.method === "POST").at(-1).body.conclusion, "failure");
+});
+
+test("the CLI consumer entry withdraws early base and technical drifts after bootstrap publication", async () => {
+  for (const change of [
+    (route, value) => { if (route.endsWith("/heads/main")) value.object.sha = sha("9"); },
+    (route, value) => { if (route.endsWith("/heads/production")) value.object.sha = sha("9"); },
+    (route, value) => { if (route.includes("/check-runs?")) value.check_runs[0].conclusion = "failure"; },
+  ]) {
+    const client = fixtureClient(subject(), (route, value, seen) => {
+      if (seen.some((call) => call.method === "POST")) change(route, value);
+    });
+    await assert.rejects(consumeAuthenticatedEvidence(client, evidence(), { run: { id: 901, run_attempt: 1 } }, () => NOW + 1));
+    const writes = client.seen.filter((call) => call.method !== "GET");
+    assertWithdrawn(client);
+    assert.deepEqual(checkTransitions(client, policy.checkName), ["in_progress", "failure"]);
+    assert.equal(writes.every((call) => call.route === `${ROOT}/check-runs`), true);
+    assert.equal(client.seen.some((call) => call.route.endsWith("/protection")), false);
+  }
+});
+
+test("evidence expiring immediately after publication is withdrawn before protection inspection", async () => {
+  let reads = 0; const client = fixtureClient();
+  await assert.rejects(consumeAuthenticatedEvidence(client, evidence(), { run: { id: 901, run_attempt: 1 } },
+    () => ++reads === 1 ? NOW + 1 : NOW + policy.maxAgeMs), /EVIDENCE_EXPIRED/);
+  assertWithdrawn(client);
+  assert.equal(client.seen.some((call) => call.method === "PUT" || call.route.endsWith("/protection")), false);
+});
+
+test("a bootstrap hold cannot preserve success when the subject drifts during protection inspection", async () => {
+  const client = fixtureClient(subject(), (route, value, seen) => {
+    if (route.endsWith("/protection")) value.required_pull_request_reviews.required_approving_review_count = 1;
+    if (route.endsWith("/pulls/702") && seen.some((call) => call.route.endsWith("/protection"))) value.head.sha = sha("9");
+  });
+  await assert.rejects(consumeAuthenticatedEvidence(client, evidence(), { run: { id: 901, run_attempt: 1 } },
+    () => NOW + 1), /BINDING_DRIFT/);
+  assertWithdrawn(client);
+  assert.equal(client.seen.some((call) => call.method === "PUT"), false);
+});
+
+test("missing policy-read authority preserves only refreshed technical evidence and keeps merging closed", async () => {
+  const client = fixtureClient(); client.policyReader = null;
+  await assert.rejects(consumeAuthenticatedEvidence(client, evidence(), { run: { id: 901, run_attempt: 1 } },
+    () => NOW + 1), /POLICY_READ_AUTHORITY_UNCONFIGURED/);
+  const writes = client.seen.filter((call) => call.method !== "GET");
+  assert.equal(writes.length, 3);
+  assert.deepEqual(checkTransitions(client, policy.checkName), ["in_progress", "failure"]);
+  assert.deepEqual(checkTransitions(client, policy.evidenceCheckName), ["success"]);
+});
+
+test("an old release success is replaced before a new bootstrap-only attempt can return", async () => {
+  const client = fixtureClient(subject(), (route, value) => {
+    if (route.includes("/check-runs?")) value.check_runs.push({ name: policy.checkName,
+      id: 9999, head_sha: subject().headSha, status: "completed", conclusion: "success" });
+  });
+  client.policyReader = null;
+  await assert.rejects(consumeAuthenticatedEvidence(client, evidence(), { run: { id: 901, run_attempt: 1 } },
+    () => NOW + 1), /AUTHORITY_UNCONFIGURED/);
+  const writes = client.seen.filter((call) => call.method === "POST");
+  assert.equal(writes[0].body.name, policy.checkName); assert.equal(writes[0].body.status, "in_progress");
+  assert.deepEqual(checkTransitions(client, policy.checkName), ["in_progress", "failure"]);
+  assert.deepEqual(checkTransitions(client, policy.evidenceCheckName), ["success"]);
+});
+
+test("protection drift after release success is withdrawn before the merge endpoint", async () => {
+  const client = fixtureClient(subject(), (route, value, seen) => {
+    if (route.endsWith("/protection") && seen.some((call) => call.method === "POST"
+      && call.body.name === policy.checkName && call.body.conclusion === "success")) {
+      value.required_pull_request_reviews.require_last_push_approval = true;
+    }
+  });
+  await assert.rejects(consumeAuthenticatedEvidence(client, evidence(), { run: { id: 901, run_attempt: 1 } },
+    () => NOW + 1), /HUMAN_RULE_STILL_ACTIVE/);
+  assertWithdrawn(client);
+  assert.deepEqual(checkTransitions(client, policy.checkName), ["in_progress", "success", "failure"]);
+  assert.equal(client.seen.some((call) => call.method === "PUT"), false);
+});
+
+test("post-merge tree mismatch withdraws success and emits no merged-state receipt", async () => {
+  const client = fixtureClient(subject(), (route, value) => {
+    if (route.endsWith(`/git/commits/${MERGED}`)) value.tree.sha = sha("9");
+  });
+  await assert.rejects(consumeAuthenticatedEvidence(client, evidence(), { run: { id: 901, run_attempt: 1 } },
+    () => NOW + 1), /POST_MERGE_REF_DRIFT/);
+  assert.equal(client.seen.filter((call) => call.method === "PUT").length, 1);
+  assertWithdrawn(client);
+  assert.deepEqual(checkTransitions(client, policy.checkName), ["in_progress", "success", "failure"]);
+});
+
+test("an unsuccessful withdrawal reports uncertain merge state without exposing transport details", async () => {
+  const client = fixtureClient(subject(), (route, value, seen) => {
+    if (route.endsWith("/pulls/702") && seen.some((call) => call.method === "POST")) value.head.sha = sha("9");
+  });
+  const post = client.post;
+  client.post = async (route, body) => {
+    if (body.conclusion === "failure") throw new Error("synthetic transport detail");
+    return post(route, body);
+  };
+  await assert.rejects(consumeAuthenticatedEvidence(client, evidence(), { run: { id: 901, run_attempt: 1 } },
+    () => NOW + 1), /^Error: MAINTENANCE_MERGE_STATE_UNCERTAIN$/);
 });
 
 test("caller mutation after await cannot substitute nested merge subject or evidence", async () => {
@@ -324,7 +465,7 @@ test("post-merge base, tree, controller and current main drift cannot dispatch",
 
 test("worker guards require zero privileged credential exposure and actual successful tests", () => {
   assert.doesNotThrow(() => assertWorkerEnvironment({}));
-  for (const key of ["GH_TOKEN", "GITHUB_TOKEN", "ACTIONS_ID_TOKEN_REQUEST_TOKEN", "ACTIONS_ID_TOKEN_REQUEST_URL"]) {
+  for (const key of ["GH_TOKEN", "GITHUB_TOKEN", "ACTIONS_ID_TOKEN_REQUEST_TOKEN", "ACTIONS_ID_TOKEN_REQUEST_URL", "MAINTENANCE_POLICY_READ_TOKEN"]) {
     assert.throws(() => assertWorkerEnvironment({ [key]: "fixture-only" }), /CREDENTIAL_PRESENT/);
   }
   assert.equal(summarizeFoundryReport({ Example: { test_results: { example: { status: "Success" } } } }).testCount, 1);
@@ -348,8 +489,90 @@ test("bounded GitHub transport stays on the fixed repository and does not expose
   assert.equal(seen.length, 1);
   const failing = createGitHubClient("synthetic-unit-token", async () => new Response("secret-like-fixture", { status: 403 }));
   await assert.rejects(failing.get(`${ROOT}/pulls/702`), /^Error: MAINTENANCE_GITHUB_REQUEST_FAILED$/);
+  await assert.rejects(failing.get(`${ROOT}/branches/main/protection`), /^Error: MAINTENANCE_SEPARATE_POLICY_READER_REQUIRED$/);
   const dispatch = createGitHubClient("synthetic-unit-token", async () => new Response(null, { status: 204 }));
   assert.equal(await dispatch.post(`${ROOT}/actions/workflows/platform-maintenance-post-merge.yml/dispatches`, {}), null);
+});
+
+test("policy-reader installation pins require a separate reviewed configuration", () => {
+  assert.equal(policyReadConfiguration({ ...policy, policyReadAuthority: null }), null);
+  assert.throws(() => createPolicyReadAuthority(null, READER_CREDENTIAL), /AUTHORITY_UNCONFIGURED/);
+  for (const pins of [{ appId: 41 }, { appId: 0, installationId: 42 },
+    { appId: 41, installationId: 42, repository: "attacker/other" }]) {
+    assert.throws(() => policyReadConfiguration({ ...policy, policyReadAuthority: pins }));
+  }
+  assert.equal(canonical(policyReadConfiguration({ ...policy, policyReadAuthority: { appId: 41, installationId: 42 } })),
+    canonical(READER_CONFIGURATION));
+});
+
+test("policy reader binds App installation and immutable subject before the first request", async () => {
+  let calls = 0;
+  const transport = async () => { calls++; return Response.json({}); };
+  for (const credential of [{ ...READER_CREDENTIAL, appId: 99 }, { ...READER_CREDENTIAL, installationId: 99 },
+    { ...READER_CREDENTIAL, token: "" }]) {
+    assert.throws(() => createPolicyReadAuthority(READER_CONFIGURATION, credential, transport), /CREDENTIAL_BINDING_INVALID/);
+  }
+  for (const configuration of [{ ...READER_CONFIGURATION, repositoryId: 99 },
+    { ...READER_CONFIGURATION, baseRef: "production" }]) {
+    assert.throws(() => createPolicyReadAuthority(configuration, READER_CREDENTIAL, transport), /CONFIGURATION_INVALID/);
+  }
+  const reader = createPolicyReadAuthority(READER_CONFIGURATION, READER_CREDENTIAL, transport);
+  assert.deepEqual(Object.keys(reader), ["readProtection"]);
+  await assert.rejects(reader.readProtection({ ...READER_SUBJECT, baseRef: "production" }), /SUBJECT_MISMATCH/);
+  assert.equal(calls, 0);
+});
+
+test("policy reader uses only its separate token and refetches exact repository scope for every read", async () => {
+  const seen = []; const mutableConfig = clone(READER_CONFIGURATION); const mutableCredential = clone(READER_CREDENTIAL);
+  const reader = createPolicyReadAuthority(mutableConfig, mutableCredential, async (url, init) => {
+    seen.push(url); assert.equal(init.method, "GET"); assert.equal(init.redirect, "error");
+    assert.equal(init.headers.authorization, `Bearer ${READER_CREDENTIAL.token}`);
+    if (url.includes("/installation/repositories?")) return Response.json({ total_count: 1,
+      repositories: [{ id: policy.repositoryId, full_name: policy.repository }] });
+    assert.equal(url, `https://api.github.com${ROOT}/branches/main/protection`);
+    return Response.json(protection());
+  });
+  const mutableSubject = clone(READER_SUBJECT); const pending = reader.readProtection(mutableSubject);
+  mutableConfig.baseRef = "production"; mutableCredential.token = "unrelated-token"; mutableSubject.baseRef = "production";
+  assert.equal((await pending).url, protection().url);
+  await reader.readProtection(READER_SUBJECT);
+  assert.equal(seen.length, 4); assert.equal(seen.filter((url) => url.includes("/installation/repositories?")).length, 2);
+});
+
+test("wrong or broad policy-token scope and wrong-branch policy responses fail closed", async () => {
+  for (const scope of [{ total_count: 2, repositories: [{ id: policy.repositoryId, full_name: policy.repository }] },
+    { total_count: 1, repositories: [{ id: 99, full_name: policy.repository }] },
+    { total_count: 1, repositories: [{ id: policy.repositoryId, full_name: "attacker/other" }] }]) {
+    let calls = 0;
+    const reader = createPolicyReadAuthority(READER_CONFIGURATION, READER_CREDENTIAL, async () => {
+      calls++; return Response.json(scope);
+    });
+    await assert.rejects(reader.readProtection(READER_SUBJECT), /REPOSITORY_SCOPE_MISMATCH/);
+    assert.equal(calls, 1);
+  }
+  const reader = createPolicyReadAuthority(READER_CONFIGURATION, READER_CREDENTIAL, async (url) =>
+    url.includes("/installation/repositories?") ? Response.json({ total_count: 1,
+      repositories: [{ id: policy.repositoryId, full_name: policy.repository }] })
+      : Response.json({ ...protection(), url: `https://api.github.com${ROOT}/branches/production/protection` }));
+  await assert.rejects(reader.readProtection(READER_SUBJECT), /RESPONSE_SUBJECT_MISMATCH/);
+});
+
+test("unavailable policy administration permission is explicit and is never borrowed from GITHUB_TOKEN", async () => {
+  const reader = createPolicyReadAuthority(READER_CONFIGURATION, READER_CREDENTIAL, async (url) =>
+    url.includes("/installation/repositories?") ? Response.json({ total_count: 1,
+      repositories: [{ id: policy.repositoryId, full_name: policy.repository }] })
+      : new Response("sensitive provider detail", { status: 403 }));
+  await assert.rejects(reader.readProtection(READER_SUBJECT), /^Error: MAINTENANCE_PROTECTION_READ_AUTHORITY_REQUIRED$/);
+  let calls = 0;
+  const client = createGitHubClient("synthetic-workflow-token", async () => { calls++; return Response.json(protection()); });
+  await assert.rejects(client.get(`${ROOT}/branches/main/protection`), /SEPARATE_POLICY_READER_REQUIRED/);
+  assert.equal(calls, 0);
+  const consumer = fixtureClient(); let invoked = false;
+  consumer.policyReader = { readProtection() { invoked = true; return protection(); } };
+  await assert.rejects(consumeAuthenticatedEvidence(consumer, evidence(), { run: { id: 901, run_attempt: 1 } },
+    () => NOW + 1), /POLICY_READER_UNAUTHENTICATED/);
+  assert.equal(invoked, false);
+  assert.equal(consumer.seen.filter((call) => call.method === "POST").at(-1).body.conclusion, "failure");
 });
 
 function producerFixture(alter = () => {}) {

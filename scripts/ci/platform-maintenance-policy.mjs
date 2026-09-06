@@ -11,6 +11,7 @@ export const MAINTENANCE_POLICY = Object.freeze({
   consumerWorkflow: ".github/workflows/platform-maintenance-release.yml",
   postMergeWorkflow: ".github/workflows/platform-maintenance-post-merge.yml",
   checkName: "platform-maintenance-release",
+  evidenceCheckName: "platform-maintenance-evidence",
   githubActionsAppId: 15368,
   maxChangedFiles: 256,
   maxEvidenceBytes: 16 * 1024 * 1024,
@@ -18,6 +19,9 @@ export const MAINTENANCE_POLICY = Object.freeze({
   foundryVersion: "1.7.1",
   slitherVersion: "0.11.5",
   solcVersion: "0.8.26",
+  // One-time owner-reviewed App/installation pins. Null is deliberately not
+  // an installed policy reader and cannot authorize automatic merging.
+  policyReadAuthority: null,
   // This is the existing production CI-control authorization, not permission
   // to alter this policy or to manufacture an application-admission receipt.
   controlAuthorization: Object.freeze({

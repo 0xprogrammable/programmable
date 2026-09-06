@@ -1,45 +1,115 @@
 import { createHash } from "node:crypto";
 import {
   MAINTENANCE_POLICY, REQUIRED_LEGACY_CHECKS, assertLivePullRequest, assertMergeProtection,
-  canonical, digest, executionBinding, oid, requireValue, snapshotJson, validateSubject,
+  canonical, digest, exactKeys, executionBinding, oid, requireValue, snapshotJson, validateSubject,
 } from "./platform-maintenance-policy.mjs";
 import { verifyEvidence } from "./platform-maintenance-evidence.mjs";
 
 const API_ROOT = "https://api.github.com";
 const ROOT = `/repos/${MAINTENANCE_POLICY.repository}`;
 
+async function requestGitHubJson(token, transport, method, route, body) {
+  let response;
+  try {
+    response = await transport(`${API_ROOT}${route}`, {
+      method, redirect: "error", signal: AbortSignal.timeout(30000),
+      headers: { authorization: `Bearer ${token}`, accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2026-03-10", ...(body === undefined ? {} : { "content-type": "application/json" }) },
+      ...(body === undefined ? {} : { body: canonical(body) }),
+    });
+  } catch { throw new Error("MAINTENANCE_GITHUB_TRANSPORT_FAILED"); }
+  if (!response.ok && response.status === 403
+    && route === `${ROOT}/branches/${MAINTENANCE_POLICY.baseRef}/protection`) {
+    throw new Error("MAINTENANCE_PROTECTION_READ_AUTHORITY_REQUIRED");
+  }
+  requireValue(response.ok, "MAINTENANCE_GITHUB_REQUEST_FAILED");
+  if (response.status === 204 && method === "POST"
+    && route === `${ROOT}/actions/workflows/platform-maintenance-post-merge.yml/dispatches`) return null;
+  requireValue(response.body, "MAINTENANCE_GITHUB_REQUEST_FAILED");
+  const chunks = []; let size = 0;
+  for await (const chunk of response.body) {
+    size += chunk.length;
+    requireValue(size <= MAINTENANCE_POLICY.maxEvidenceBytes, "MAINTENANCE_GITHUB_RESPONSE_TOO_LARGE");
+    chunks.push(chunk);
+  }
+  try { return snapshotJson(JSON.parse(Buffer.concat(chunks).toString("utf8"))); }
+  catch { throw new Error("MAINTENANCE_GITHUB_RESPONSE_INVALID"); }
+}
+
 export function createGitHubClient(token, transport = fetch) {
   requireValue(typeof token === "string" && token.length > 0, "MAINTENANCE_GITHUB_AUTH_REQUIRED");
   async function request(method, route, body) {
     requireValue(["GET", "POST", "PUT"].includes(method) && route.startsWith(`${ROOT}/`)
       && !route.includes("..") && !/[\\\r\n#]/.test(route), "MAINTENANCE_GITHUB_ROUTE_INVALID");
-    let response;
-    try {
-      response = await transport(`${API_ROOT}${route}`, {
-        method, redirect: "error", signal: AbortSignal.timeout(30000),
-        headers: { authorization: `Bearer ${token}`, accept: "application/vnd.github+json",
-          "X-GitHub-Api-Version": "2026-03-10", ...(body === undefined ? {} : { "content-type": "application/json" }) },
-        ...(body === undefined ? {} : { body: canonical(body) }),
-      });
-    } catch { throw new Error("MAINTENANCE_GITHUB_TRANSPORT_FAILED"); }
-    requireValue(response.ok, "MAINTENANCE_GITHUB_REQUEST_FAILED");
-    if (response.status === 204 && method === "POST"
-      && route === `${ROOT}/actions/workflows/platform-maintenance-post-merge.yml/dispatches`) return null;
-    requireValue(response.body, "MAINTENANCE_GITHUB_REQUEST_FAILED");
-    const chunks = []; let size = 0;
-    for await (const chunk of response.body) {
-      size += chunk.length;
-      requireValue(size <= MAINTENANCE_POLICY.maxEvidenceBytes, "MAINTENANCE_GITHUB_RESPONSE_TOO_LARGE");
-      chunks.push(chunk);
-    }
-    try { return snapshotJson(JSON.parse(Buffer.concat(chunks).toString("utf8"))); }
-    catch { throw new Error("MAINTENANCE_GITHUB_RESPONSE_INVALID"); }
+    requireValue(!route.includes("/protection"), "MAINTENANCE_SEPARATE_POLICY_READER_REQUIRED");
+    return requestGitHubJson(token, transport, method, route, body);
   }
   return Object.freeze({
     get: (route) => request("GET", route),
     post: (route, body) => request("POST", route, body),
     put: (route, body) => request("PUT", route, body),
   });
+}
+
+export function policyReadConfiguration(policy = MAINTENANCE_POLICY) {
+  if (policy.policyReadAuthority === null) return null;
+  const pins = snapshotJson(policy.policyReadAuthority);
+  exactKeys(pins, ["appId", "installationId"], "MAINTENANCE_POLICY_READER_CONFIGURATION_INVALID");
+  requireValue(Number.isSafeInteger(pins.appId) && pins.appId > 0
+    && Number.isSafeInteger(pins.installationId) && pins.installationId > 0,
+  "MAINTENANCE_POLICY_READER_CONFIGURATION_INVALID");
+  return snapshotJson({ ...pins, repository: policy.repository, repositoryId: policy.repositoryId,
+    baseRef: policy.baseRef });
+}
+
+const policyReaders = new WeakSet();
+
+// Configuration is trusted constructor policy, never PR or artifact input.
+// The protected workflow supplies credentials exclusively from the pinned App
+// token action. This reader cannot send writes or use the ordinary merge token.
+export function createPolicyReadAuthority(configurationValue, credentialValue, transport = fetch) {
+  requireValue(configurationValue !== null, "MAINTENANCE_POLICY_READ_AUTHORITY_UNCONFIGURED");
+  const configuration = snapshotJson(configurationValue);
+  const credential = snapshotJson(credentialValue);
+  exactKeys(configuration, ["appId", "installationId", "repository", "repositoryId", "baseRef"]);
+  exactKeys(credential, ["appId", "installationId", "token"]);
+  requireValue(configuration.repository === MAINTENANCE_POLICY.repository
+    && configuration.repositoryId === MAINTENANCE_POLICY.repositoryId
+    && configuration.baseRef === MAINTENANCE_POLICY.baseRef
+    && Number.isSafeInteger(configuration.appId) && configuration.appId > 0
+    && Number.isSafeInteger(configuration.installationId) && configuration.installationId > 0,
+  "MAINTENANCE_POLICY_READER_CONFIGURATION_INVALID");
+  requireValue(credential.appId === configuration.appId
+    && credential.installationId === configuration.installationId
+    && typeof credential.token === "string" && credential.token.length > 0,
+  "MAINTENANCE_POLICY_READER_CREDENTIAL_BINDING_INVALID");
+  const reader = Object.freeze({
+    async readProtection(subjectValue) {
+      const selected = snapshotJson(subjectValue);
+      exactKeys(selected, ["repository", "repositoryId", "baseRef"]);
+      requireValue(selected.repository === configuration.repository
+        && selected.repositoryId === configuration.repositoryId && selected.baseRef === configuration.baseRef,
+      "MAINTENANCE_POLICY_READER_SUBJECT_MISMATCH");
+      const scope = await requestGitHubJson(credential.token, transport, "GET",
+        "/installation/repositories?per_page=100&page=1");
+      requireValue(scope.total_count === 1 && Array.isArray(scope.repositories) && scope.repositories.length === 1
+        && scope.repositories[0].id === configuration.repositoryId
+        && scope.repositories[0].full_name === configuration.repository,
+      "MAINTENANCE_POLICY_READER_REPOSITORY_SCOPE_MISMATCH");
+      const route = `${ROOT}/branches/${configuration.baseRef}/protection`;
+      const protection = await requestGitHubJson(credential.token, transport, "GET", route);
+      requireValue(protection.url === `${API_ROOT}${route}`, "MAINTENANCE_POLICY_READER_RESPONSE_SUBJECT_MISMATCH");
+      return protection;
+    },
+  });
+  policyReaders.add(reader);
+  return reader;
+}
+
+async function readMergeProtection(reader, subject, policy) {
+  requireValue(reader !== null, "MAINTENANCE_POLICY_READ_AUTHORITY_UNCONFIGURED");
+  requireValue(policyReaders.has(reader), "MAINTENANCE_POLICY_READER_UNAUTHENTICATED");
+  return reader.readProtection({ repository: subject.repository, repositoryId: subject.repositoryId, baseRef: policy.baseRef });
 }
 
 async function paginate(client, route, field, limit) {
@@ -152,10 +222,10 @@ export async function observeLegacyChecks(client, subject) {
     const check = checks.filter((item) => item.name === required.name).sort((a, b) => b.id - a.id)[0];
     const match = new RegExp(`^https://github\\.com/${MAINTENANCE_POLICY.repository}/actions/runs/([1-9][0-9]*)/job/([1-9][0-9]*)$`)
       .exec(check?.details_url ?? "");
-    requireValue(match && Number(match[2]) === check.id, "MAINTENANCE_CHECK_RUN_MISSING");
+    requireValue(match && Number.isSafeInteger(check.id) && check.id > 0, "MAINTENANCE_CHECK_RUN_MISSING");
     const runId = Number(match[1]);
     if (!runs.has(runId)) runs.set(runId, await client.get(`${ROOT}/actions/runs/${runId}`));
-    jobs.push(await client.get(`${ROOT}/actions/jobs/${check.id}`));
+    jobs.push(await client.get(`${ROOT}/actions/jobs/${Number(match[2])}`));
   }
   return snapshotJson({ checks, runs: [...runs.values()], jobs });
 }
@@ -191,30 +261,34 @@ export async function resolveProducer(client, runId, policy = MAINTENANCE_POLICY
   return snapshotJson({ run, artifact: matches[0] });
 }
 
-async function publishTechnicalCheck(client, subject, verified, policy) {
+async function publishMaintenanceCheck(client, subject, verified, policy, name, conclusion) {
+  const technical = name === policy.evidenceCheckName;
+  const status = conclusion === null ? "in_progress" : "completed";
   const check = await client.post(`${ROOT}/check-runs`, {
-    name: policy.checkName, head_sha: subject.headSha, status: "completed", conclusion: "success",
+    name, head_sha: subject.headSha, status, ...(conclusion === null ? {} : { conclusion }),
     external_id: verified.evidenceHash,
-    output: { title: "Exact platform maintenance evidence verified",
-      summary: `Source ${subject.headSha}; policy ${subject.policyHash}; evidence ${verified.evidenceHash}. Technical evidence only; protected merge authorization is checked separately. No application, deployment or onchain authority.` },
+    output: conclusion === null ? { title: "Current maintenance release policy is being verified",
+      summary: "No release authorization has been established for this verification attempt." }
+      : conclusion === "success" ? { title: technical ? "Exact platform maintenance evidence verified"
+        : "Current protected maintenance release verified",
+      summary: `Source ${subject.headSha}; policy ${subject.policyHash}; evidence ${verified.evidenceHash}. ${technical
+        ? "Technical evidence only; this context never grants merge permission."
+        : "Current authenticated protection and technical evidence verified for the conditional merge."} No application, deployment or onchain authority.` }
+      : { title: "Maintenance release state changed or could not be confirmed",
+        summary: "A subsequent subject, technical-evidence or conditional-merge check failed. Fresh evidence and state reconciliation are required." },
   });
-  requireValue(check.name === policy.checkName && check.head_sha === subject.headSha
+  requireValue(check.name === name && check.head_sha === subject.headSha
     && check.app?.id === policy.githubActionsAppId && check.external_id === verified.evidenceHash
-    && check.status === "completed" && check.conclusion === "success", "MAINTENANCE_CHECK_PUBLICATION_INVALID");
+    && check.status === status && (conclusion === null ? check.conclusion == null : check.conclusion === conclusion),
+  "MAINTENANCE_CHECK_PUBLICATION_INVALID");
 }
 
-// Bootstrap publication is real verified technical evidence, never a PR review
-// or a merge request. Keeping it separate lets the new required context exist
-// before an integration owner changes any branch-protection rule.
-export async function publishAuthenticatedEvidenceCheck(client, evidenceValue, producerValue,
-  now = Date.now, policy = MAINTENANCE_POLICY) {
-  const evidence = snapshotJson(evidenceValue); const producer = snapshotJson(producerValue);
-  const subject = validateSubject(evidence.subject, policy);
-  await revalidateSubject(client, subject, policy);
+async function currentEvidence(client, evidence, producer, now, policy) {
+  const subject = evidence.subject;
+  const pr = await revalidateSubject(client, subject, policy);
   const verified = verifyEvidence(evidence, { subject, runId: producer.run.id, runAttempt: producer.run.run_attempt,
     legacyObservation: await observeLegacyChecks(client, subject), now: now() }, policy);
-  await publishTechnicalCheck(client, subject, verified, policy);
-  return verified;
+  return { pr, verified };
 }
 
 // Only the trusted CLI calls this after gh attestation verify has succeeded.
@@ -222,49 +296,63 @@ export async function publishAuthenticatedEvidenceCheck(client, evidenceValue, p
 // substitute for that provenance step. The SHA condition is sent to GitHub's
 // ordinary merge endpoint; protected strict status checks remain authoritative.
 export async function consumeAuthenticatedEvidence(client, evidenceValue, producerValue,
-  now = Date.now, policy = MAINTENANCE_POLICY) {
+  now = Date.now, policy = MAINTENANCE_POLICY, policyReader = null) {
   const evidence = snapshotJson(evidenceValue);
   const producer = snapshotJson(producerValue);
   const subject = validateSubject(evidence.subject, policy);
-  await revalidateSubject(client, subject, policy);
-  const legacyObservation = await observeLegacyChecks(client, subject);
-  const verified = verifyEvidence(evidence, { subject, runId: producer.run.id,
-    runAttempt: producer.run.run_attempt, legacyObservation, now: now() }, policy);
-  const protection = await client.get(`${ROOT}/branches/${policy.baseRef}/protection`);
-  assertMergeProtection(protection, policy);
-  await publishTechnicalCheck(client, subject, verified, policy);
-  let result;
+  const { verified } = await currentEvidence(client, evidence, producer, now, policy);
+  let bootstrapProtectionHold = false;
   try {
-    // Re-observe every technical run after publishing the gate, then refetch
-    // the PR and protected refs immediately before the conditional merge.
-    verifyEvidence(evidence, { subject, runId: producer.run.id, runAttempt: producer.run.run_attempt,
-      legacyObservation: await observeLegacyChecks(client, subject), now: now() }, policy);
-    const finalPr = await revalidateSubject(client, subject, policy);
-    requireValue(finalPr.mergeable_state === "clean", "MAINTENANCE_MERGE_NOT_READY");
+    // Reset any prior release context. Genuine technical bootstrap evidence
+    // uses a different name and cannot later become a required merge success.
+    // Every operation after this pending publication is in the failure scope.
+    await publishMaintenanceCheck(client, subject, verified, policy, policy.checkName, null);
+    await publishMaintenanceCheck(client, subject, verified, policy, policy.evidenceCheckName, "success");
+    await currentEvidence(client, evidence, producer, now, policy);
+    try {
+      const protection = await readMergeProtection(policyReader, subject, policy);
+      assertMergeProtection(protection, policy);
+    } catch (error) {
+      const protectionHold = ["MAINTENANCE_BRANCH_PROTECTION_INCOMPLETE",
+        "MAINTENANCE_HUMAN_RULE_STILL_ACTIVE", "MAINTENANCE_REQUIRED_CHECK_MISSING",
+        "MAINTENANCE_PROTECTION_READ_AUTHORITY_REQUIRED",
+        "MAINTENANCE_POLICY_READ_AUTHORITY_UNCONFIGURED"].includes(error?.message);
+      if (!protectionHold) throw error;
+      // Retain real bootstrap evidence only after another fresh subject,
+      // technical-run and expiry check. A policy-read limitation never merges.
+      await currentEvidence(client, evidence, producer, now, policy);
+      bootstrapProtectionHold = true;
+      throw error;
+    }
+    await currentEvidence(client, evidence, producer, now, policy);
+    await publishMaintenanceCheck(client, subject, verified, policy, policy.checkName, "success");
+    // Re-observe after the release context, including fresh policy authority,
+    // before GitHub enforces its ordinary conditional protected merge.
+    assertMergeProtection(await readMergeProtection(policyReader, subject, policy), policy);
+    const { pr } = await currentEvidence(client, evidence, producer, now, policy);
+    requireValue(pr.mergeable_state === "clean", "MAINTENANCE_MERGE_NOT_READY");
     requireValue(now() < verified.expiresAt, "MAINTENANCE_EVIDENCE_EXPIRED");
-    result = await client.put(`${ROOT}/pulls/${subject.pullRequest}/merge`, {
+    const result = await client.put(`${ROOT}/pulls/${subject.pullRequest}/merge`, {
       sha: subject.headSha, merge_method: "squash",
     });
     requireValue(result.merged === true && oid(result.sha), "MAINTENANCE_MERGE_FAILED");
+    const postSubject = { schema: "programmable.platform-maintenance-post-merge-subject.v1", original: subject,
+      originalEvidenceHash: verified.evidenceHash, mergeCommit: result.sha,
+      mergeTree: subject.mergeTree, parentCommit: subject.baseSha };
+    await revalidateMergedSubject(client, postSubject, policy);
+    return snapshotJson({ schema: "programmable.platform-maintenance-merge-observation.v1",
+      subjectHash: digest(subject), evidenceHash: verified.evidenceHash, mergeCommit: result.sha,
+      mergeTree: subject.mergeTree, parentCommit: subject.baseSha, producerRunId: producer.run.id,
+      websiteDeployment: false, applicationAuthority: false });
   } catch (error) {
-    // Supersede our own green context when a later currentness gate fails.
-    // Do not leave a reusable success after head/base/technical evidence drift.
     try {
-      await client.post(`${ROOT}/check-runs`, { name: policy.checkName, head_sha: subject.headSha,
-        status: "completed", conclusion: "failure", external_id: verified.evidenceHash,
-        output: { title: "Maintenance merge did not complete",
-          summary: "The final protected-state or conditional-merge check failed. Fresh evidence is required." } });
+      await publishMaintenanceCheck(client, subject, verified, policy, policy.checkName, "failure");
+      if (!bootstrapProtectionHold) {
+        await publishMaintenanceCheck(client, subject, verified, policy, policy.evidenceCheckName, "failure");
+      }
     } catch { throw new Error("MAINTENANCE_MERGE_STATE_UNCERTAIN"); }
     throw error;
   }
-  const postSubject = { schema: "programmable.platform-maintenance-post-merge-subject.v1", original: subject,
-    originalEvidenceHash: verified.evidenceHash, mergeCommit: result.sha,
-    mergeTree: subject.mergeTree, parentCommit: subject.baseSha };
-  await revalidateMergedSubject(client, postSubject, policy);
-  return snapshotJson({ schema: "programmable.platform-maintenance-merge-observation.v1",
-    subjectHash: digest(subject), evidenceHash: verified.evidenceHash, mergeCommit: result.sha,
-    mergeTree: subject.mergeTree, parentCommit: subject.baseSha, producerRunId: producer.run.id,
-    websiteDeployment: false, applicationAuthority: false });
 }
 
 export async function revalidateMergedSubject(client, value, policy = MAINTENANCE_POLICY) {
