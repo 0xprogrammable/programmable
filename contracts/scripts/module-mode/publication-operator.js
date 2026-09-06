@@ -16,7 +16,14 @@ async function load() {
   row($('facts'), 'Maximum gas cost', 'Fresh simulation required', 'maximum');
   for (const [label, value] of [['Contract source', state.contractSourceCommit], ['Operator source', state.sourceCommit], ['Immutable release', state.releaseDigest], ['Operation plan', state.planDigest]]) row($('sources'), label, value);
   $('arguments').textContent = JSON.stringify(state.step.arguments, null, 2);
-  if (state.uiCheck) { $('mode').textContent = 'Preview only. Wallet, provider and journal access are disabled.'; $('connect').hidden = true; $('prepare').textContent = 'Review operation details'; }
+  if (state.uiCheck) {
+    $('mode').textContent = 'Preview only. Wallet, provider and journal access are disabled.';
+    $('intro-description').textContent = 'Inspect the operation details. This preview cannot send transactions.';
+    $('next-title').textContent = 'Review this step';
+    $('next-description').textContent = 'Open the function, arguments and source commitments for this operation.';
+    $('maximum').textContent = 'Unavailable in preview';
+    $('connect').hidden = true; $('prepare').textContent = 'Review operation details';
+  }
   else { $('mode').textContent = `Exact production source and hosted Verify run ${state.authority.runId} bound. Final wallet confirmation is yours.`; if (state.journalState !== 'not-requested') recovery(state.transactionHash); }
 }
 $('connect').onclick = async () => { try {
