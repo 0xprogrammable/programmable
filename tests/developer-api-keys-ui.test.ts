@@ -473,11 +473,11 @@ describe("developer API key interface", () => {
   });
 
   it("enables restricted issuance only with both capabilities and rotation only with preservation", () => {
-    const both = { restrictedIssuance: true, preservingRotation: true };
-    const rotationOnly = { restrictedIssuance: false, preservingRotation: true };
+    const both = { restrictedIssuance: true, preservingRotation: true, preservingModuleRotation: false };
+    const rotationOnly = { restrictedIssuance: false, preservingRotation: true, preservingModuleRotation: false };
     expect(apiKeyIssueVersion("read-only", both)).toBe("v2");
     expect(apiKeyIssueVersion("read-only", rotationOnly)).toBeNull();
-    expect(apiKeyIssueVersion("read-only", { restrictedIssuance: true, preservingRotation: false })).toBeNull();
+    expect(apiKeyIssueVersion("read-only", { restrictedIssuance: true, preservingRotation: false, preservingModuleRotation: false })).toBeNull();
     expect(apiKeyIssueVersion("prepare-and-read", null)).toBe("v1");
     expect(apiKeyRotationVersion(["custom-launch:create", "custom-launch:read"], null)).toBeNull();
     expect(apiKeyRotationVersion(["custom-launch:read"], rotationOnly)).toBe("v2");
@@ -486,6 +486,32 @@ describe("developer API key interface", () => {
     }
     expect(parseApiKeyCapabilities({ schemaVersion: "programmable.api-key-capabilities.v2", ...both })).toEqual(both);
     expect(parseApiKeyCapabilities({ schemaVersion: "programmable.api-key-capabilities.v2", restrictedIssuance: "true", preservingRotation: true })).toBeNull();
+  });
+
+  it("routes only the exact Module pair through its independent preserving V1 capability", () => {
+    const moduleOnly = { restrictedIssuance: false, preservingRotation: false, preservingModuleRotation: true };
+    const scopes = ["modules:submit", "modules:read"];
+    expect(apiKeyRotationVersion(scopes, moduleOnly)).toBe("v1");
+    expect(apiKeyRotationVersion([...scopes].reverse(), moduleOnly)).toBe("v1");
+    expect(apiKeyRotationVersion(["custom-launch:read"], moduleOnly)).toBeNull();
+    for (const unsupported of [["modules:read"], ["modules:submit", "modules:submit"], [...scopes, "modules:approve"]]) {
+      expect(apiKeyRotationVersion(unsupported, moduleOnly)).toBeNull();
+    }
+    const oldFlags = { schemaVersion: "programmable.api-key-capabilities.v2", restrictedIssuance: true, preservingRotation: true };
+    const old = parseApiKeyCapabilities(oldFlags);
+    expect(old?.preservingModuleRotation).toBe(false);
+    expect(apiKeyRotationVersion(scopes, old)).toBeNull();
+    expect(apiKeyRotationVersion(["custom-launch:read"], old)).toBe("v2");
+    for (const preservingModuleRotation of [null, "true", 1, {}, []]) {
+      expect(parseApiKeyCapabilities({ ...oldFlags, preservingModuleRotation })).toBeNull();
+    }
+    const attempt = { version: apiKeyRotationVersion(scopes, moduleOnly)!, kind: "rotate" as const, credentialId: "module-source" };
+    expect(apiKeyMutationPath(attempt)).toBe("/api/developer/api-keys/module-source/rotate");
+    const replacement = { schemaVersion: "programmable.custom-launch-api.v1", apiKey: apiKey("replacement", { scopes }),
+      secretState: "already-delivered", rotatedCredentialId: "module-source" };
+    expect(parseApiKeyMutationResult(replacement, 200, "module-source", undefined, { version: attempt.version, scopes })).not.toBeNull();
+    expect(parseApiKeyMutationResult({ ...replacement, apiKey: apiKey("replacement") }, 200, "module-source", undefined,
+      { version: attempt.version, scopes })).toBeNull();
   });
 
   it("binds retry version, exact body and selected scopes and validates V2 response rights", () => {

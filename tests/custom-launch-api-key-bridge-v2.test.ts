@@ -136,7 +136,7 @@ describe("versioned API key bridge", () => {
   it.each([true, false])("authenticates and projects exact capability flags (%s)", async (ready) => {
     fetchBackend.mockResolvedValueOnce(json({
       schemaVersion: API_KEY_CAPABILITIES_SCHEMA_V2,
-      restrictedIssuance: ready, preservingRotation: ready, internalDetails: "omit",
+      restrictedIssuance: ready, preservingRotation: ready, preservingModuleRotation: !ready, internalDetails: "omit",
     }));
     const response = await bridge().capabilitiesV2(new Request(
       `https://programmable.market/api/developer/api-keys/v2/capabilities?walletAddress=${WALLET}`,
@@ -145,7 +145,7 @@ describe("versioned API key bridge", () => {
     expect(response.headers.get("cache-control")).toBe("no-store");
     expect(await response.json()).toEqual({
       schemaVersion: API_KEY_CAPABILITIES_SCHEMA_V2,
-      restrictedIssuance: ready, preservingRotation: ready,
+      restrictedIssuance: ready, preservingRotation: ready, preservingModuleRotation: !ready,
     });
     const [url, init] = fetchBackend.mock.calls[0] as [URL, RequestInit];
     expect(url.pathname).toBe("/v2/wallet-admin/api-keys/capabilities");
@@ -157,11 +157,25 @@ describe("versioned API key bridge", () => {
     expect(headers.get("x-programmable-bff-assertion-version")).toBe("2");
   });
 
+  it("maps old two-flag capabilities to unavailable Module rotation without changing Custom flags", async () => {
+    fetchBackend.mockResolvedValueOnce(json({ schemaVersion: API_KEY_CAPABILITIES_SCHEMA_V2,
+      restrictedIssuance: true, preservingRotation: true }));
+    const response = await bridge().capabilitiesV2(new Request(
+      `https://programmable.market/api/developer/api-keys/v2/capabilities?walletAddress=${WALLET}`,
+    ));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ schemaVersion: API_KEY_CAPABILITIES_SCHEMA_V2,
+      restrictedIssuance: true, preservingRotation: true, preservingModuleRotation: false });
+  });
+
   it.each([
     {},
     { schemaVersion: CUSTOM_LAUNCH_API_SCHEMA_V1, restrictedIssuance: true, preservingRotation: true },
     { schemaVersion: API_KEY_CAPABILITIES_SCHEMA_V2, restrictedIssuance: "true", preservingRotation: true },
     { schemaVersion: API_KEY_CAPABILITIES_SCHEMA_V2, restrictedIssuance: true },
+    ...[null, "true", 1, {}, []].map(preservingModuleRotation => ({
+      schemaVersion: API_KEY_CAPABILITIES_SCHEMA_V2, restrictedIssuance: true, preservingRotation: true, preservingModuleRotation,
+    })),
   ])("rejects malformed capability metadata: %j", async (value) => {
     fetchBackend.mockResolvedValueOnce(json(value));
     const response = await bridge().capabilitiesV2(new Request(

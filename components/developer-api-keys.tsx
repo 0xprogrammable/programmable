@@ -58,6 +58,8 @@ export type ApiKeyChainRestriction = Readonly<{
 export type ApiKeyCapabilities = Readonly<{
   restrictedIssuance: boolean;
   preservingRotation: boolean;
+  /** Independently attests preserving V1 Module rotation; fresh admission remains server-side. */
+  preservingModuleRotation: boolean;
 }>;
 type ApiKeyAccess = "prepare-and-read" | "read-only";
 
@@ -174,10 +176,13 @@ export function parseApiKeyCapabilities(value: unknown): ApiKeyCapabilities | nu
     || value.schemaVersion !== "programmable.api-key-capabilities.v2"
     || typeof value.restrictedIssuance !== "boolean"
     || typeof value.preservingRotation !== "boolean"
+    || (value.preservingModuleRotation !== undefined
+      && typeof value.preservingModuleRotation !== "boolean")
   ) return null;
   return {
     restrictedIssuance: value.restrictedIssuance,
     preservingRotation: value.preservingRotation,
+    preservingModuleRotation: value.preservingModuleRotation === true,
   };
 }
 
@@ -186,7 +191,10 @@ export function apiKeyIssueVersion(access: ApiKeyAccess, capabilities: ApiKeyCap
   return access === "prepare-and-read" ? "v1" : null;
 }
 
-export function apiKeyRotationVersion(scopes: readonly string[], capabilities: ApiKeyCapabilities | null) {
+export function apiKeyRotationVersion(scopes: readonly string[], capabilities: ApiKeyCapabilities | null): "v1" | "v2" | null {
+  if (apiKeyPurpose(scopes) === "module-contributions") {
+    return capabilities?.preservingModuleRotation ? "v1" : null;
+  }
   if (!hasStandardScopes(scopes) && !hasReadOnlyScopes(scopes)) return null;
   if (capabilities?.preservingRotation) return "v2";
   return null;

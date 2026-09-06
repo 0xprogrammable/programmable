@@ -242,11 +242,14 @@ export function createDeveloperApiKeyBridgeV1(input: Readonly<{
           record.schemaVersion !== API_KEY_CAPABILITIES_SCHEMA_V2
           || typeof record.restrictedIssuance !== "boolean"
           || typeof record.preservingRotation !== "boolean"
+          || (record.preservingModuleRotation !== undefined
+            && typeof record.preservingModuleRotation !== "boolean")
         ) throw new BackendContractErrorV1();
         return jsonResponse(200, {
           schemaVersion: API_KEY_CAPABILITIES_SCHEMA_V2,
           restrictedIssuance: record.restrictedIssuance,
           preservingRotation: record.preservingRotation,
+          preservingModuleRotation: record.preservingModuleRotation === true,
         });
       } catch (error) {
         return mappedError(error);
@@ -326,28 +329,8 @@ export function createDeveloperApiKeyBridgeV1(input: Readonly<{
         const idempotencyKey = requireIdempotencyKey(request);
         const principal = await input.authenticator.authenticate(request);
         const walletAddress = requireLinkedWallet(principal, parsed.walletAddress);
-        if (parsed.purpose === "module-contributions") {
-          // A stale browser capability cannot authorize a new module key.
-          const capabilities = await callBackend(
-            request,
-            principal,
-            walletAddress,
-            "GET",
-            "/v1/wallet-admin/api-keys",
-          );
-          if (!capabilities.ok) throw await mappedBackendError(capabilities);
-          const record = jsonRecord(await readBoundedBackendJson(capabilities));
-          requireBackendSchema(record);
-          const available = parseModuleContributions(record.moduleContributions);
-          if (!available.apiKeyIssuance || !available.submissions) {
-            return errorResponse(
-              503,
-              "MODULE_SUBMISSIONS_UNAVAILABLE",
-              undefined,
-              "Module contributions are not available right now. Try again later.",
-            );
-          }
-        }
+        // The backend checks fresh admission after exact completed replay.
+        // A separate availability read here would suppress committed retries.
         const backend = await callBackend(
           request,
           principal,
