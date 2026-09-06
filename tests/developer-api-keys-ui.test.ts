@@ -7,9 +7,17 @@ import { describe, expect, it, vi } from "vitest";
 import {
   DeveloperApiKeysView,
   ApiKeyPermissions,
+  ApiKeyChainPolicy,
+  ApiKeyAccessChoice,
+  apiKeyIssueVersion,
+  apiKeyRotationVersion,
+  apiKeyMutationPath,
+  parseApiKeyCapabilities,
+  parseApiKeyChainRestriction,
   parseApiKeyList,
   ApiKeyPurposeChoice,
   PROGRAMMABLE_MODULE_AGENT_SETUP_TEXT_V1,
+  PROGRAMMABLE_READ_ONLY_AGENT_SETUP_TEXT,
   applyApiKeyMutationResult,
   apiKeyPurpose,
   apiKeyPurposeLabel,
@@ -17,6 +25,7 @@ import {
   mergeApiKeySummaries,
   moduleContributionKeysAvailable,
   parseApiKeyMutationResult,
+  parseApiKeyMutationResultForAttempt,
   prepareApiKeyMutationAttempt,
   shouldRetainApiKeyMutationAttempt,
   type ApiKeySummary,
@@ -300,7 +309,8 @@ describe("developer API key interface", () => {
       }),
     ]);
 
-    const input = { kind: "issue" as const, credentialId: null, body: "{}" };
+    const input = { version: "v1" as const, kind: "issue" as const, credentialId: null, body: "{}",
+      expectedScopes: ["custom-launch:create", "custom-launch:read"] };
     const attempt = prepareApiKeyMutationAttempt(
       null,
       input,
@@ -390,7 +400,7 @@ describe("developer API key interface", () => {
     expect(expirySelectSource).not.toContain('event.key === "Tab"');
     expect(apiKeysStyles).toContain(".expiryTrigger");
     expect(apiKeysStyles).toContain(".expiryMenu");
-    expect(apiKeysStyles).not.toContain("appearance: auto");
+    expect(apiKeysStyles).toMatch(/\.purposeOptions input\s*\{[^}]*appearance: auto/su);
   });
 
   it.each([
@@ -462,6 +472,140 @@ describe("developer API key interface", () => {
     }
     expect(parseApiKeyList({ ...response, apiKeys: [keys[0], keys[0]] })).toBeNull();
     expect(apiKeyPurposeLabel(["custom-launch:read"])).toBe("Custom launches");
+  });
+
+  it("enables restricted issuance only with both capabilities and rotation only with preservation", () => {
+    const both = { restrictedIssuance: true, preservingRotation: true, preservingModuleRotation: false };
+    const rotationOnly = { restrictedIssuance: false, preservingRotation: true, preservingModuleRotation: false };
+    expect(apiKeyIssueVersion("read-only", both)).toBe("v2");
+    expect(apiKeyIssueVersion("read-only", rotationOnly)).toBeNull();
+    expect(apiKeyIssueVersion("read-only", { restrictedIssuance: true, preservingRotation: false, preservingModuleRotation: false })).toBeNull();
+    expect(apiKeyIssueVersion("prepare-and-read", null)).toBe("v1");
+    expect(apiKeyRotationVersion(["custom-launch:create", "custom-launch:read"], null)).toBeNull();
+    expect(apiKeyRotationVersion(["custom-launch:read"], rotationOnly)).toBe("v2");
+    for (const scopes of [["custom-launch:create"], ["custom-launch:read", "fees:read"], ["modules:submit", "modules:read"]]) {
+      expect(apiKeyRotationVersion(scopes, both)).toBeNull();
+    }
+    expect(parseApiKeyCapabilities({ schemaVersion: "programmable.api-key-capabilities.v2", ...both })).toEqual(both);
+    expect(parseApiKeyCapabilities({ schemaVersion: "programmable.api-key-capabilities.v2", restrictedIssuance: "true", preservingRotation: true })).toBeNull();
+  });
+
+  it("routes only the exact Module pair through its independent preserving V1 capability", () => {
+    const moduleOnly = { restrictedIssuance: false, preservingRotation: false, preservingModuleRotation: true };
+    const scopes = ["modules:submit", "modules:read"];
+    expect(apiKeyRotationVersion(scopes, moduleOnly)).toBe("v1");
+    expect(apiKeyRotationVersion([...scopes].reverse(), moduleOnly)).toBe("v1");
+    expect(apiKeyRotationVersion(["custom-launch:read"], moduleOnly)).toBeNull();
+    for (const unsupported of [["modules:read"], ["modules:submit", "modules:submit"], [...scopes, "modules:approve"]]) {
+      expect(apiKeyRotationVersion(unsupported, moduleOnly)).toBeNull();
+    }
+    const oldFlags = { schemaVersion: "programmable.api-key-capabilities.v2", restrictedIssuance: true, preservingRotation: true };
+    const old = parseApiKeyCapabilities(oldFlags);
+    expect(old?.preservingModuleRotation).toBe(false);
+    expect(apiKeyRotationVersion(scopes, old)).toBeNull();
+    expect(apiKeyRotationVersion(["custom-launch:read"], old)).toBe("v2");
+    for (const preservingModuleRotation of [null, "true", 1, {}, []]) {
+      expect(parseApiKeyCapabilities({ ...oldFlags, preservingModuleRotation })).toBeNull();
+    }
+    const attempt = { version: apiKeyRotationVersion(scopes, moduleOnly)!, kind: "rotate" as const, credentialId: "module-source" };
+    expect(apiKeyMutationPath(attempt)).toBe("/api/developer/api-keys/module-source/rotate");
+    const replacement = { schemaVersion: "programmable.custom-launch-api.v1", apiKey: apiKey("replacement", { scopes }),
+      secretState: "already-delivered", rotatedCredentialId: "module-source" };
+    expect(parseApiKeyMutationResult(replacement, 200, "module-source", undefined, { version: attempt.version, scopes })).not.toBeNull();
+    expect(parseApiKeyMutationResult({ ...replacement, apiKey: apiKey("replacement") }, 200, "module-source", undefined,
+      { version: attempt.version, scopes })).toBeNull();
+  });
+
+  it("binds retry version, exact body and selected scopes and validates V2 response rights", () => {
+    const input = { kind: "issue" as const, credentialId: null, version: "v2" as const,
+      body: JSON.stringify({ scopes: ["custom-launch:read"] }), expectedScopes: ["custom-launch:read"] };
+    const attempt = prepareApiKeyMutationAttempt(null, input, () => "fixture-exact-read-only-operation");
+    expect(prepareApiKeyMutationAttempt(attempt, input, () => "not-used")).toBe(attempt);
+    expect(apiKeyMutationPath(attempt)).toBe("/api/developer/api-keys/v2");
+    for (const changed of [{ ...input, version: "v1" as const }, { ...input, body: JSON.stringify({ scopes: ["custom-launch:create", "custom-launch:read"] }) }]) {
+      expect(() => prepareApiKeyMutationAttempt(attempt, changed, () => "new-operation")).toThrow();
+    }
+    const expected = { version: "v2" as const, scopes: ["custom-launch:read"] };
+    const value = { schemaVersion: "programmable.custom-launch-api.v2", apiKey: apiKey("reader", { scopes: expected.scopes }), secretState: "already-delivered" };
+    expect(parseApiKeyMutationResult(value, 200, undefined, undefined, expected)).not.toBeNull();
+    expect(parseApiKeyMutationResult({ ...value, apiKey: apiKey("reader") }, 200, undefined, undefined, expected)).toBeNull();
+    expect(parseApiKeyMutationResult({ ...value, schemaVersion: "programmable.custom-launch-api.v1" }, 200, undefined, undefined, expected)).toBeNull();
+  });
+
+  it.each([
+    { version: "v1" as const, originalScopes: ["modules:submit", "modules:read"], currentScopes: ["custom-launch:create", "custom-launch:read"] },
+    { version: "v2" as const, originalScopes: ["custom-launch:read"], currentScopes: ["custom-launch:create", "custom-launch:read"] },
+  ])("keeps the original $version rotation response expectation after a lost response and changed-source refresh", ({ version, originalScopes, currentScopes }) => {
+    const mutableScopes = [...originalScopes];
+    const source = apiKey("rotation-source", { scopes: mutableScopes });
+    const input = { kind: "rotate" as const, credentialId: source.id, version,
+      body: JSON.stringify({ schemaVersion: `programmable.custom-launch-api.${version}`, label: source.label,
+        expiresInDays: 90, walletAddress: "0x1111111111111111111111111111111111111111" }),
+      expectedScopes: source.scopes };
+    const attempt = prepareApiKeyMutationAttempt(null, input, () => "original-rotation-operation");
+    expect(Object.isFrozen(attempt.expectedScopes)).toBe(true);
+    expect(attempt.expectedScopes).not.toBe(mutableScopes);
+    mutableScopes.splice(0, mutableScopes.length, ...currentScopes);
+    expect(attempt.expectedScopes).toEqual(originalScopes);
+    expect(shouldRetainApiKeyMutationAttempt(503, null)).toBe(true);
+
+    const refreshed = parseApiKeyList({ schemaVersion: "programmable.custom-launch-api.v1",
+      apiKeys: [apiKey(source.id, { scopes: currentScopes })] })!;
+    const refreshedSource = mergeApiKeySummaries([source], refreshed)[0];
+    const retry = prepareApiKeyMutationAttempt(attempt, { ...input, expectedScopes: refreshedSource.scopes }, () => "must-not-be-used");
+    expect(retry).toBe(attempt);
+    expect(apiKeyMutationPath(retry)).toBe(`/api/developer/api-keys${version === "v2" ? "/v2" : ""}/${source.id}/rotate`);
+    expect(retry.body).toBe(input.body);
+    expect(retry.idempotencyKey).toBe("original-rotation-operation");
+
+    const replay = { schemaVersion: `programmable.custom-launch-api.${version}`, secretState: "already-delivered",
+      apiKey: apiKey("replacement", { scopes: originalScopes }), rotatedCredentialId: source.id };
+    expect(parseApiKeyMutationResultForAttempt(replay, 200, retry)).toMatchObject({
+      apiKey: { scopes: originalScopes }, secretState: "already-delivered", rotatedCredentialId: source.id,
+    });
+    const changedReply = { ...replay, apiKey: apiKey("replacement", { scopes: currentScopes }) };
+    expect(parseApiKeyMutationResultForAttempt(changedReply, 200, retry)).toBeNull();
+    for (const changed of [{ ...input, credentialId: "different-source" },
+      { ...input, body: input.body.replace("0x1111111111111111111111111111111111111111", "0x2222222222222222222222222222222222222222") }]) {
+      expect(() => prepareApiKeyMutationAttempt(attempt, changed, () => "must-not-be-used")).toThrow();
+    }
+
+    const fresh = prepareApiKeyMutationAttempt(null, { ...input, expectedScopes: refreshedSource.scopes }, () => "new-rotation-operation");
+    expect(fresh.expectedScopes).toEqual(currentScopes);
+    expect(parseApiKeyMutationResultForAttempt(replay, 200, fresh)).toBeNull();
+    expect(parseApiKeyMutationResultForAttempt(changedReply, 200, fresh)).not.toBeNull();
+  });
+
+  it("retains module availability in V2 and gives read-only agents read instructions", () => {
+    expect(moduleContributionKeysAvailable({ schemaVersion: "programmable.custom-launch-api.v2", moduleContributions: { apiKeyIssuance: true, submissions: true } })).toBe(true);
+    expect(PROGRAMMABLE_READ_ONLY_AGENT_SETUP_TEXT).toContain("only to read launch history and status");
+    expect(PROGRAMMABLE_READ_ONLY_AGENT_SETUP_TEXT).toContain("cannot prepare or submit launches");
+    expect(PROGRAMMABLE_READ_ONLY_AGENT_SETUP_TEXT).toContain("$PROGRAMMABLE_API_KEY");
+    expect(PROGRAMMABLE_READ_ONLY_AGENT_SETUP_TEXT).not.toContain("status --watch");
+    expect(PROGRAMMABLE_READ_ONLY_AGENT_SETUP_TEXT).not.toContain("pm_live_");
+  });
+
+  it("renders accessible access options and truthful saved/legacy/missing chain restrictions", () => {
+    const choice = renderToStaticMarkup(createElement(ApiKeyAccessChoice, { value: "read-only", onChange: vi.fn(), available: true, disabled: false }));
+    expect(choice).toContain("Read account-wide launch history. Cannot prepare launches.");
+    expect(choice).toMatch(/<input[^>]*checked=""[^>]*>/u);
+    for (const [restriction, copy] of [
+      [undefined, "Not available"],
+      [{ allowedChainIds: null, mode: "legacy-policy-dependent", effectiveEligibility: "evaluated-per-request" }, "Legacy policy"],
+      [{ allowedChainIds: ["1", "4663"], mode: "persisted", effectiveEligibility: "evaluated-per-request" }, "Ethereum (1), Robinhood (4663)"],
+    ] as const) {
+      const key = { ...apiKey("reader"), chainRestriction: restriction };
+      const html = renderToStaticMarkup(createElement(ApiKeyChainPolicy, { apiKey: key }));
+      expect(html).toContain(copy);
+      expect(html).not.toContain("All chains");
+      expect(html).not.toContain("eligible");
+    }
+    expect(parseApiKeyChainRestriction({ allowedChainIds: [], mode: "persisted", effectiveEligibility: "evaluated-per-request" })).toBeNull();
+    expect(parseApiKeyChainRestriction({ allowedChainIds: null, mode: "persisted", effectiveEligibility: "evaluated-per-request" })).toBeNull();
+    const value = { schemaVersion: "programmable.custom-launch-api.v2", apiKeys: [{ ...apiKey("reader"), controllerWallet: "0x1111111111111111111111111111111111111111", chainRestriction: { allowedChainIds: ["1"], mode: "persisted", effectiveEligibility: "evaluated-per-request" } }] };
+    expect(parseApiKeyList(value, "0x1111111111111111111111111111111111111111")).toEqual(value.apiKeys);
+    expect(parseApiKeyList(value, "0x2222222222222222222222222222222222222222")).toBeNull();
+    expect(parseApiKeyList({ ...value, apiKeys: [apiKey("reader")] })).toBeNull();
   });
 
   it("recognizes only the two complete purpose pairs", () => {
@@ -555,7 +699,7 @@ describe("developer API key interface", () => {
     expect(PROGRAMMABLE_MODULE_AGENT_SETUP_TEXT_V1).toContain("not an approval");
     expect(PROGRAMMABLE_MODULE_AGENT_SETUP_TEXT_V1).not.toContain("custom-launch:create");
     expect(PROGRAMMABLE_MODULE_AGENT_SETUP_TEXT_V1).not.toMatch(/pm_live_[A-Za-z0-9_-]{22}_[A-Za-z0-9_-]{43}/u);
-    expect(apiKeysSource).toContain("setPurpose(originalPurpose)");
+    expect(apiKeysSource).toContain('setPurpose(apiKeyPurpose(parsed.apiKey.scopes) ?? "custom-launches")');
   });
 
   it("preserves wallet authority and one-time secret handling", () => {

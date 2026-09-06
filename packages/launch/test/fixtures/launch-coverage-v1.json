@@ -1,0 +1,588 @@
+{
+  "schemaVersion": "programmable.robinhood-launch-coverage.v1",
+  "chainId": "4663",
+  "profile": {
+    "schemaVersion": "programmable.custom-launch-profile-ref.v4",
+    "structuralProfileId": "programmable.custom-launch.robinhood-mainnet.v1",
+    "businessProfileId": "robinhood-production-launch",
+    "admissionDescriptorDigest": "sha256:b09611360e284641873fdb2914b4282e0545e32ea587b278fcd11f4db9a4e7f5",
+    "admissionPolicyDigest": "sha256:47801f57e2365f89eb7397a2df10d697bd1f756ec01536b9b34755e89809da04",
+    "admissionBindingDigest": "sha256:5b2486f35fcd44bd476cafd5bfb5a12decf05a756ba237ca191928f5414c721e",
+    "admissionSchemaDigest": "sha256:6a8194a3b5d8b6432a95ec04da3cd86091ad64c93c0531125caf00ecb919c8cf",
+    "profileRevision": 2,
+    "profileVersion": "4.1.0",
+    "profileDigest": "sha256:b0fca91264a49d358ed1a9eec2a679b59a48d716b71475bef583c2545e1ee502"
+  },
+  "readiness": {
+    "status": "ready",
+    "reasonCodes": []
+  },
+  "structuralFormat": {
+    "graphSchemaVersion": "programmable.custom-graph-bundle.v1",
+    "minimumTargets": 3,
+    "maximumTargets": 16,
+    "declaredHookPermissions": [
+      "beforeInitialize",
+      "afterInitialize",
+      "beforeAddLiquidity",
+      "afterAddLiquidity",
+      "beforeRemoveLiquidity",
+      "afterRemoveLiquidity",
+      "beforeSwap",
+      "afterSwap",
+      "beforeDonate",
+      "afterDonate",
+      "beforeSwapReturnDelta",
+      "afterSwapReturnDelta",
+      "afterAddLiquidityReturnDelta",
+      "afterRemoveLiquidityReturnDelta"
+    ],
+    "roleAssignments": {
+      "model": "one-role-per-physical-target",
+      "tokenAndHookMayShareAddress": false,
+      "sameAddressRequires": "versioned-graph-and-router-release"
+    },
+    "poolTopology": {
+      "poolKeyCount": 1,
+      "pair": "native-ETH-designated-token",
+      "tokenTargetCount": 1,
+      "hookTargetCount": 1,
+      "noPoolRepresentable": false,
+      "multiplePoolKeysRepresentable": false,
+      "otherTopologiesRequire": "transport-extension"
+    },
+    "fundingPlanDeclarations": {
+      "capitalSources": [
+        "buyer-funded",
+        "creator-funded",
+        "hybrid",
+        "custom"
+      ],
+      "pricingModels": [
+        "concentrated-liquidity",
+        "custom-curve",
+        "auction",
+        "custom"
+      ]
+    },
+    "representationIsExecutionEvidence": false,
+    "unknownMechanismIsUnsafe": false
+  },
+  "verifierCoverage": {
+    "availabilitySource": "server-activated-adapters-for-selected-profile",
+    "seedV1": {
+      "proofAdapterId": "programmable.robinhood-native20-seed-proof.v1",
+      "status": "proof-available",
+      "publicRequestSurface": "existing-v4.1",
+      "constraints": {
+        "kernel": "exact-reviewed-native20",
+        "token": "exact-reviewed-seed-token",
+        "initializer": "exact-reviewed-seed-initializer-v1",
+        "module": "none",
+        "lpFeePips": 0,
+        "tickSpacing": 60,
+        "initialSqrtPriceX96": "1747735933952748037356115466503453",
+        "liquidity": "positive-token-side-concentrated-liquidity",
+        "initialBuy": "atomic-full-native-input-and-positive-minimum-token-output",
+        "customSettlementDeltas": "not-covered"
+      }
+    },
+    "moduleSeedV2": {
+      "proofAdapterId": "programmable.robinhood-native20-module-seed-proof.v2",
+      "status": "candidate",
+      "publicRequestSurface": "none-versioned-transport-required",
+      "publiclyLaunchable": false,
+      "intendedConstraints": {
+        "kernel": "exact-reviewed-native20",
+        "token": "exact-reviewed-seed-token",
+        "initializer": "separately-reviewed-module-seed-initializer-v2",
+        "module": "codehash-bound-staticcall-only-zero-custom-deltas",
+        "lpFeeModes": [
+          "static",
+          "dynamic-with-immutable-cap"
+        ],
+        "tickSpacing": 60,
+        "initialSqrtPriceX96": "1747735933952748037356115466503453",
+        "applicantFindingsAutomaticallyCleared": false
+      }
+    },
+    "outsideListedProofs": {
+      "mechanisms": [
+        "stateful-modules",
+        "custom-return-delta-settlement",
+        "arbitrary-token-or-initializer",
+        "custom-curves-or-auctions",
+        "arbitrary-unchanged-hooks"
+      ],
+      "coverage": "additional-server-verification-required",
+      "findingDispositionChanged": false
+    }
+  },
+  "requestAuthorization": {
+    "status": "not-evaluated",
+    "requestAuthorized": false,
+    "permitIssued": false,
+    "walletSignatureProduced": false,
+    "transactionBroadcast": false,
+    "preflight": "/v4/chains/4663/custom-launches/preflight",
+    "create": "/v4/chains/4663/custom-launches",
+    "requirements": [
+      "wallet-bound-api-scope-and-chain-grant",
+      "exact-source-compiler-and-runtime-bindings",
+      "all-authoritative-findings-resolved",
+      "activated-fee-and-initial-buy-execution-proof",
+      "fresh-server-issued-initial-buy-quote",
+      "funding-plan-with-approved-value-and-gas-budget",
+      "chain-readiness-and-exact-transaction-simulation",
+      "separate-controller-wallet-signature"
+    ],
+    "coverageReportIsApproval": false,
+    "genericFeeClaimingAvailable": false
+  },
+  "findingObligations": [
+    {
+      "code": "ROBINHOOD_NATIVE_FEE_KERNEL_EVIDENCE_REQUIRED",
+      "recognized": true,
+      "category": "verifier-coverage",
+      "retryable": false,
+      "evidenceRequirements": [
+        "Exact compiler, constructor, runtime and official PoolKey bindings for the reviewed native20 kernel and vault.",
+        "20 bps on the gross native leg, rounded up once per successful swap, routed to the fixed platform recipient."
+      ],
+      "actions": [
+        {
+          "kind": "rebuild-and-preflight",
+          "method": "POST",
+          "path": "/v4/chains/4663/custom-launches/preflight",
+          "instruction": "Use the published native20 kernel with its exact compiler and constructor bindings when it preserves the intended behavior, then rebuild and preflight the new hash-bound request."
+        },
+        {
+          "kind": "platform-verifier-extension",
+          "method": null,
+          "path": null,
+          "instruction": "If the intended behavior is outside an activated verifier, a platform implementation and review must add an exact server-owned proof adapter. This API has no caller-proof upload route to clear the finding."
+        }
+      ],
+      "findingCleared": false,
+      "callerSuppliedProofAccepted": false
+    },
+    {
+      "code": "ROBINHOOD_ATOMIC_INITIAL_BUY_EVIDENCE_REQUIRED",
+      "recognized": true,
+      "category": "verifier-coverage",
+      "retryable": false,
+      "evidenceRequirements": [
+        "Server-issued execution evidence for the exact token, initializer, graph, funding allocation and launch wallet.",
+        "Atomic full-input purchase in the official pool with positive minimum token output and positive initial liquidity.",
+        "A fresh server-issued ETH/USD reference establishing the minimum initial-buy amount before permit authorization."
+      ],
+      "actions": [
+        {
+          "kind": "rebuild-and-preflight",
+          "method": "POST",
+          "path": "/v4/chains/4663/custom-launches/preflight",
+          "instruction": "Use an initializer recipe supported by an activated proof adapter and its public request contract, then rebuild and preflight. The existing v4.1 seed recipe requires module=null, its exact token and fixed pool configuration."
+        },
+        {
+          "kind": "platform-verifier-extension",
+          "method": null,
+          "path": null,
+          "instruction": "If the intended behavior is outside an activated verifier, a platform implementation and review must add an exact server-owned proof adapter. This API has no caller-proof upload route to clear the finding."
+        }
+      ],
+      "findingCleared": false,
+      "callerSuppliedProofAccepted": false
+    },
+    {
+      "code": "ROBINHOOD_NATIVE_FEE_CUSTOM_SETTLEMENT_EVIDENCE_REQUIRED",
+      "recognized": true,
+      "category": "verifier-coverage",
+      "retryable": false,
+      "evidenceRequirements": [
+        "Exact compiler, constructor, runtime and official PoolKey bindings for the reviewed native20 kernel and vault.",
+        "20 bps on the gross native leg, rounded up once per successful swap, routed to the fixed platform recipient.",
+        "Typed, authenticated native cashflow and fee coverage for every supported custom settlement path, with solvency, inventory, refund and withdrawal bounds.",
+        "An activated server verifier for that settlement architecture; declaring custom-settlement is not execution evidence."
+      ],
+      "actions": [
+        {
+          "kind": "platform-verifier-extension",
+          "method": null,
+          "path": null,
+          "instruction": "If the intended behavior is outside an activated verifier, a platform implementation and review must add an exact server-owned proof adapter. This API has no caller-proof upload route to clear the finding."
+        }
+      ],
+      "findingCleared": false,
+      "callerSuppliedProofAccepted": false
+    },
+    {
+      "code": "ROBINHOOD_INITIAL_BUY_USD_QUOTE_RETRY_REQUIRED",
+      "recognized": true,
+      "category": "quote-refresh",
+      "retryable": true,
+      "evidenceRequirements": [
+        "A fresh quote issued by the server's independent provider readers and rechecked before permit authorization."
+      ],
+      "actions": [
+        {
+          "kind": "read-current-quote",
+          "method": "GET",
+          "path": "/v4/chains/4663/initial-buy-quote",
+          "instruction": "Read the current initial-buy quote for funding guidance. Copying it into a request does not issue admission evidence."
+        },
+        {
+          "kind": "retry-preflight",
+          "method": "POST",
+          "path": "/v4/chains/4663/custom-launches/preflight",
+          "instruction": "Retry admission with the exact request while its other inputs remain valid. The server must obtain a fresh quote; an unavailable or expired quote cannot authorize a permit."
+        }
+      ],
+      "findingCleared": false,
+      "callerSuppliedProofAccepted": false
+    },
+    {
+      "code": "ROBINHOOD_INITIAL_BUY_BELOW_ONE_USD_REFERENCE",
+      "recognized": true,
+      "category": "funding-plan",
+      "retryable": false,
+      "evidenceRequirements": [
+        "Server-issued execution evidence for the exact token, initializer, graph, funding allocation and launch wallet.",
+        "Atomic full-input purchase in the official pool with positive minimum token output and positive initial liquidity.",
+        "A fresh server-issued ETH/USD reference establishing the minimum initial-buy amount before permit authorization."
+      ],
+      "actions": [
+        {
+          "kind": "read-current-quote",
+          "method": "GET",
+          "path": "/v4/chains/4663/initial-buy-quote",
+          "instruction": "Read the current minimumInitialBuyWei. It is a reference at authorization, not an execution-time USD guarantee."
+        },
+        {
+          "kind": "rebuild-and-preflight",
+          "method": "POST",
+          "path": "/v4/chains/4663/custom-launches/preflight",
+          "instruction": "Within the controller's approved spending budget, rebuild the initializer value, initialBuyWei allocation and graph-bound total together, then preflight the new request. A funding declaration alone cannot prove the purchase."
+        }
+      ],
+      "findingCleared": false,
+      "callerSuppliedProofAccepted": false
+    },
+    {
+      "code": "FUNDING_PLAN_BUILD_ONLY",
+      "recognized": true,
+      "category": "funding-plan",
+      "retryable": false,
+      "evidenceRequirements": [
+        "An approved fund-and-launch plan with a positive initial-buy allocation and gas budget, consistent with the exact graph value.",
+        "The same execution and quote evidence required for any funded launch."
+      ],
+      "actions": [
+        {
+          "kind": "rebuild-and-preflight",
+          "method": "POST",
+          "path": "/v4/chains/4663/custom-launches/preflight",
+          "instruction": "If the controller intends to launch and approves the spending budget, repack as fund-and-launch and preflight. Build-only does not establish wallet funds or authorize a launch."
+        }
+      ],
+      "findingCleared": false,
+      "callerSuppliedProofAccepted": false
+    },
+    {
+      "code": "TX_SIMULATION_PENDING",
+      "recognized": true,
+      "category": "transaction-simulation",
+      "retryable": false,
+      "evidenceRequirements": [
+        "The mandatory server simulation of the exact launch transaction before wallet handoff."
+      ],
+      "actions": [
+        {
+          "kind": "submit-exact-request",
+          "method": "POST",
+          "path": "/v4/chains/4663/custom-launches",
+          "instruction": "Submit the exact validated request using the required API scope and idempotency key. Preflight's chain checkpoint is not execution of the launch transaction; create runs the remaining server gates."
+        }
+      ],
+      "findingCleared": false,
+      "callerSuppliedProofAccepted": false
+    },
+    {
+      "code": "V4_CALLBACK_AUTHENTICATION_MISSING",
+      "recognized": true,
+      "category": "source-repair",
+      "retryable": false,
+      "evidenceRequirements": [
+        "Enabled callback implementations whose first reachable effects are protected by exact chain PoolManager authentication, with source and runtime bindings."
+      ],
+      "actions": [
+        {
+          "kind": "rebuild-and-preflight",
+          "method": "POST",
+          "path": "/v4/chains/4663/custom-launches/preflight",
+          "instruction": "Repair the reported callback implementation or authentication in the exact source, rebuild the compiler-bound graph, and preflight a new request. A wider API key scope cannot clear callback findings."
+        }
+      ],
+      "findingCleared": false,
+      "callerSuppliedProofAccepted": false
+    },
+    {
+      "code": "V4_CALLBACK_AUTHENTICATION_INVALID",
+      "recognized": true,
+      "category": "source-repair",
+      "retryable": false,
+      "evidenceRequirements": [
+        "Enabled callback implementations whose first reachable effects are protected by exact chain PoolManager authentication, with source and runtime bindings."
+      ],
+      "actions": [
+        {
+          "kind": "rebuild-and-preflight",
+          "method": "POST",
+          "path": "/v4/chains/4663/custom-launches/preflight",
+          "instruction": "Repair the reported callback implementation or authentication in the exact source, rebuild the compiler-bound graph, and preflight a new request. A wider API key scope cannot clear callback findings."
+        }
+      ],
+      "findingCleared": false,
+      "callerSuppliedProofAccepted": false
+    },
+    {
+      "code": "V4_CALLBACK_POOL_MANAGER_MISMATCH",
+      "recognized": true,
+      "category": "source-repair",
+      "retryable": false,
+      "evidenceRequirements": [
+        "Enabled callback implementations whose first reachable effects are protected by exact chain PoolManager authentication, with source and runtime bindings."
+      ],
+      "actions": [
+        {
+          "kind": "rebuild-and-preflight",
+          "method": "POST",
+          "path": "/v4/chains/4663/custom-launches/preflight",
+          "instruction": "Repair the reported callback implementation or authentication in the exact source, rebuild the compiler-bound graph, and preflight a new request. A wider API key scope cannot clear callback findings."
+        }
+      ],
+      "findingCleared": false,
+      "callerSuppliedProofAccepted": false
+    },
+    {
+      "code": "V4_ENABLED_CALLBACK_IMPLEMENTATION_MISSING",
+      "recognized": true,
+      "category": "source-repair",
+      "retryable": false,
+      "evidenceRequirements": [
+        "Enabled callback implementations whose first reachable effects are protected by exact chain PoolManager authentication, with source and runtime bindings."
+      ],
+      "actions": [
+        {
+          "kind": "rebuild-and-preflight",
+          "method": "POST",
+          "path": "/v4/chains/4663/custom-launches/preflight",
+          "instruction": "Repair the reported callback implementation or authentication in the exact source, rebuild the compiler-bound graph, and preflight a new request. A wider API key scope cannot clear callback findings."
+        }
+      ],
+      "findingCleared": false,
+      "callerSuppliedProofAccepted": false
+    },
+    {
+      "code": "RUNTIME_CALLCODE",
+      "recognized": true,
+      "category": "source-repair",
+      "retryable": false,
+      "evidenceRequirements": [
+        "Exact source and compiler-derived runtime without the reported prohibited execution or mutable implementation surface."
+      ],
+      "actions": [
+        {
+          "kind": "rebuild-and-preflight",
+          "method": "POST",
+          "path": "/v4/chains/4663/custom-launches/preflight",
+          "instruction": "Remove the identified prohibited behavior from the exact source and compiled runtime, then preflight the new hash-bound request. Claimed tests or broader key permissions cannot override this gate."
+        }
+      ],
+      "findingCleared": false,
+      "callerSuppliedProofAccepted": false
+    },
+    {
+      "code": "RUNTIME_DELEGATECALL",
+      "recognized": true,
+      "category": "source-repair",
+      "retryable": false,
+      "evidenceRequirements": [
+        "Exact source and compiler-derived runtime without the reported prohibited execution or mutable implementation surface."
+      ],
+      "actions": [
+        {
+          "kind": "rebuild-and-preflight",
+          "method": "POST",
+          "path": "/v4/chains/4663/custom-launches/preflight",
+          "instruction": "Remove the identified prohibited behavior from the exact source and compiled runtime, then preflight the new hash-bound request. Claimed tests or broader key permissions cannot override this gate."
+        }
+      ],
+      "findingCleared": false,
+      "callerSuppliedProofAccepted": false
+    },
+    {
+      "code": "RUNTIME_SELFDESTRUCT",
+      "recognized": true,
+      "category": "source-repair",
+      "retryable": false,
+      "evidenceRequirements": [
+        "Exact source and compiler-derived runtime without the reported prohibited execution or mutable implementation surface."
+      ],
+      "actions": [
+        {
+          "kind": "rebuild-and-preflight",
+          "method": "POST",
+          "path": "/v4/chains/4663/custom-launches/preflight",
+          "instruction": "Remove the identified prohibited behavior from the exact source and compiled runtime, then preflight the new hash-bound request. Claimed tests or broader key permissions cannot override this gate."
+        }
+      ],
+      "findingCleared": false,
+      "callerSuppliedProofAccepted": false
+    },
+    {
+      "code": "SOURCE_PROXY_OR_UPGRADE_SURFACE",
+      "recognized": true,
+      "category": "source-repair",
+      "retryable": false,
+      "evidenceRequirements": [
+        "Exact source and compiler-derived runtime without the reported prohibited execution or mutable implementation surface."
+      ],
+      "actions": [
+        {
+          "kind": "rebuild-and-preflight",
+          "method": "POST",
+          "path": "/v4/chains/4663/custom-launches/preflight",
+          "instruction": "Remove the identified prohibited behavior from the exact source and compiled runtime, then preflight the new hash-bound request. Claimed tests or broader key permissions cannot override this gate."
+        }
+      ],
+      "findingCleared": false,
+      "callerSuppliedProofAccepted": false
+    },
+    {
+      "code": "SOURCE_SELFDESTRUCT_SURFACE",
+      "recognized": true,
+      "category": "source-repair",
+      "retryable": false,
+      "evidenceRequirements": [
+        "Exact source and compiler-derived runtime without the reported prohibited execution or mutable implementation surface."
+      ],
+      "actions": [
+        {
+          "kind": "rebuild-and-preflight",
+          "method": "POST",
+          "path": "/v4/chains/4663/custom-launches/preflight",
+          "instruction": "Remove the identified prohibited behavior from the exact source and compiled runtime, then preflight the new hash-bound request. Claimed tests or broader key permissions cannot override this gate."
+        }
+      ],
+      "findingCleared": false,
+      "callerSuppliedProofAccepted": false
+    },
+    {
+      "code": "SOURCE_TARGET_ANALYSIS_INCOMPLETE",
+      "recognized": true,
+      "category": "verifier-coverage",
+      "retryable": false,
+      "evidenceRequirements": [
+        "Complete deterministic source analysis and callback authentication evidence bound to the exact compiler output and graph target."
+      ],
+      "actions": [
+        {
+          "kind": "rebuild-and-preflight",
+          "method": "POST",
+          "path": "/v4/chains/4663/custom-launches/preflight",
+          "instruction": "Check the identified target, compiler output and callback source bindings. If an actual source or binding defect is found, repair it and preflight a new request; otherwise the platform analyzer needs additional coverage."
+        },
+        {
+          "kind": "platform-verifier-extension",
+          "method": null,
+          "path": null,
+          "instruction": "If the intended behavior is outside an activated verifier, a platform implementation and review must add an exact server-owned proof adapter. This API has no caller-proof upload route to clear the finding."
+        }
+      ],
+      "findingCleared": false,
+      "callerSuppliedProofAccepted": false
+    },
+    {
+      "code": "V4_CALLBACK_AUTHENTICATION_REVIEW_REQUIRED",
+      "recognized": true,
+      "category": "verifier-coverage",
+      "retryable": false,
+      "evidenceRequirements": [
+        "Complete deterministic source analysis and callback authentication evidence bound to the exact compiler output and graph target."
+      ],
+      "actions": [
+        {
+          "kind": "rebuild-and-preflight",
+          "method": "POST",
+          "path": "/v4/chains/4663/custom-launches/preflight",
+          "instruction": "Check the identified target, compiler output and callback source bindings. If an actual source or binding defect is found, repair it and preflight a new request; otherwise the platform analyzer needs additional coverage."
+        },
+        {
+          "kind": "platform-verifier-extension",
+          "method": null,
+          "path": null,
+          "instruction": "If the intended behavior is outside an activated verifier, a platform implementation and review must add an exact server-owned proof adapter. This API has no caller-proof upload route to clear the finding."
+        }
+      ],
+      "findingCleared": false,
+      "callerSuppliedProofAccepted": false
+    },
+    {
+      "code": "SOURCE_LIQUIDITY_LOCK_OR_CUSTODY_SURFACE",
+      "recognized": true,
+      "category": "verifier-coverage",
+      "retryable": false,
+      "evidenceRequirements": [
+        "Exact target-specific bounds for custody, approvals, principal exits, fee claims and immutable recipients.",
+        "Any discharge must apply to the proven target and effect only; proof for a kernel or initializer cannot clear applicant module findings."
+      ],
+      "actions": [
+        {
+          "kind": "rebuild-and-preflight",
+          "method": "POST",
+          "path": "/v4/chains/4663/custom-launches/preflight",
+          "instruction": "Inspect the reported target's custody and withdrawal paths. If the intended design can use a currently proven artifact or remove an unintended path, rebuild and preflight it."
+        },
+        {
+          "kind": "platform-verifier-extension",
+          "method": null,
+          "path": null,
+          "instruction": "If the intended behavior is outside an activated verifier, a platform implementation and review must add an exact server-owned proof adapter. This API has no caller-proof upload route to clear the finding."
+        }
+      ],
+      "findingCleared": false,
+      "callerSuppliedProofAccepted": false
+    },
+    {
+      "code": "SOURCE_MUTABLE_TAX_OR_FEE_SURFACE",
+      "recognized": true,
+      "category": "verifier-coverage",
+      "retryable": false,
+      "evidenceRequirements": [
+        "Exact authority, maximum fee, native cashflow and recipient bounds for the reported target, independent of kernel-only fee evidence."
+      ],
+      "actions": [
+        {
+          "kind": "rebuild-and-preflight",
+          "method": "POST",
+          "path": "/v4/chains/4663/custom-launches/preflight",
+          "instruction": "Inspect the reported target's fee setters and reachable fee paths. Remove unintended authority or use a currently proven artifact where appropriate, then rebuild and preflight."
+        },
+        {
+          "kind": "platform-verifier-extension",
+          "method": null,
+          "path": null,
+          "instruction": "If the intended behavior is outside an activated verifier, a platform implementation and review must add an exact server-owned proof adapter. This API has no caller-proof upload route to clear the finding."
+        }
+      ],
+      "findingCleared": false,
+      "callerSuppliedProofAccepted": false
+    }
+  ],
+  "unknownFindingPolicy": {
+    "classification": "unclassified",
+    "findingCleared": false,
+    "findingDispositionChanged": false,
+    "callerSuppliedProofAccepted": false
+  }
+}

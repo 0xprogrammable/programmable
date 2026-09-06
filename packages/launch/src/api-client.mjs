@@ -54,6 +54,12 @@ import {
   sha256Hex,
 } from "./io.mjs";
 import { canonicalizeJson, parseStrictJson } from "./canonical-json.mjs";
+import {
+  ApiResponseContractError,
+  MAX_API_CONTROL_RESPONSE_BYTES,
+  MAX_API_RESOURCE_RESPONSE_BYTES,
+  readApiResponse,
+} from "./api-response.mjs";
 import { validateDirectNativePermitWindow } from "./profile-direct-native-v1.mjs";
 import { validateLaunchFile } from "./validate.mjs";
 import {
@@ -140,6 +146,7 @@ export async function getLaunchCapabilities(options = {}) {
   const result = await requestWithRetry({
     method: "GET",
     url: `${apiOrigin}${capabilitiesPath}`,
+    maximumResponseBytes: MAX_API_CONTROL_RESPONSE_BYTES,
     headers: { accept: "application/json" },
     maxAttempts: options.maxAttempts,
     timeoutMs: options.timeoutMs,
@@ -202,6 +209,7 @@ export async function validateLaunchRemote(options) {
   const result = await requestWithRetry({
     method: "POST",
     url: `${apiOrigin}${preflightPath}`,
+    maximumResponseBytes: MAX_API_CONTROL_RESPONSE_BYTES,
     headers: {
       accept: "application/json",
       authorization: `Bearer ${apiKey}`,
@@ -360,6 +368,7 @@ export async function submitLaunch(options) {
   const result = await requestWithRetry({
     method: "POST",
     url: `${apiOrigin}${requestPath}`,
+    maximumResponseBytes: MAX_API_RESOURCE_RESPONSE_BYTES,
     headers: {
       authorization: `Bearer ${apiKey}`,
       "content-type": "application/json",
@@ -438,6 +447,7 @@ export async function statusLaunch(options) {
     const result = await requestWithRetry({
       method: "GET",
       url: `${apiOrigin}${requestPath}/${encodeURIComponent(options.requestId)}`,
+      maximumResponseBytes: MAX_API_RESOURCE_RESPONSE_BYTES,
       headers: { authorization: `Bearer ${apiKey}` },
       maxAttempts: options.maxAttempts,
       timeoutMs: options.timeoutMs,
@@ -558,6 +568,7 @@ export async function requestPermitReissueDisposition(options) {
     const result = await requestWithRetry({
       method: "POST",
       url: `${apiOrigin}${requestPath}`,
+      maximumResponseBytes: MAX_API_CONTROL_RESPONSE_BYTES,
       headers: {
         accept: "application/json",
         authorization: `Bearer ${apiKey}`,
@@ -683,13 +694,13 @@ async function requestWithRetry(options) {
   }
   const fetchImpl = options.fetchImpl ?? fetch;
   const sleepImpl = options.sleepImpl ?? sleep;
-  let lastError;
+  let timedOut = false;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(new Error("request timed out")), timeoutMs);
     let response;
     let retryAfter = null;
-    let responseBytes;
+    let body;
     try {
       response = await fetchImpl(options.url, {
         method: options.method,
@@ -699,21 +710,24 @@ async function requestWithRetry(options) {
         signal: controller.signal,
       });
       retryAfter = response.headers.get("retry-after");
-      responseBytes = Buffer.from(await response.arrayBuffer());
+      body = await readApiResponse(response, {
+        maximumBytes: options.maximumResponseBytes,
+        signal: controller.signal,
+      });
     } catch (error) {
-      lastError = error;
+      if (error instanceof ApiResponseContractError) {
+        throw new ProgrammableApiError("Custom Launch API returned an invalid response body", {
+          code: error.code,
+          httpStatus: response.status,
+          retryAfter: safeRetryAfter(retryAfter),
+        });
+      }
+      timedOut = controller.signal.aborted;
       if (attempt === maxAttempts) break;
       await sleepImpl(retryDelayMs(retryAfter, attempt));
       continue;
     } finally {
       clearTimeout(timeout);
-    }
-    let body;
-    try {
-      body = parseResponseBody(responseBytes, response.status);
-    } catch (error) {
-      if (response.status !== 429 && response.status !== 503) throw error;
-      body = null;
     }
     const retryable503 = response.status === 503
       && (!options.retryExplicit503Only || explicitlyRetryable503(body));
@@ -732,17 +746,8 @@ async function requestWithRetry(options) {
   }
   throw new ProgrammableApiError("Custom Launch API request remained ambiguous after identical retries", {
     code: "AMBIGUOUS_TRANSPORT_RESULT",
-    cause: lastError instanceof Error ? lastError.message : String(lastError),
+    cause: timedOut ? "REQUEST_TIMEOUT" : "TRANSPORT_FAILURE",
   });
-}
-
-function parseResponseBody(bytes, status) {
-  if (bytes.byteLength === 0) return null;
-  try {
-    return JSON.parse(bytes.toString("utf8"));
-  } catch {
-    throw new ProgrammableApiError("Custom Launch API returned invalid JSON", { httpStatus: status });
-  }
 }
 
 function apiError(status, body, retryAfter) {

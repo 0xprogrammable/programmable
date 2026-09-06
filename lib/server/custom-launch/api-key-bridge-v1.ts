@@ -20,12 +20,25 @@ import {
   readPreservedBackendPublicErrorV1,
 } from "./backend-public-error-v1";
 import {
+  BoundedBodyErrorV1,
+  discardBodyV1,
+  readBoundedUtf8BodyV1,
+  type BodyReadOptionsV1,
+} from "./bounded-utf8-body-v1";
+import {
   createWalletAdminBffAssertionV2,
   requireWalletAdminBffAssertionKeyV2,
 } from "./wallet-admin-bff-assertion-v2";
 
 export const CUSTOM_LAUNCH_API_SCHEMA_V1 =
   "programmable.custom-launch-api.v1" as const;
+
+export const CUSTOM_LAUNCH_API_SCHEMA_V2 =
+  "programmable.custom-launch-api.v2" as const;
+export const API_KEY_CAPABILITIES_SCHEMA_V2 =
+  "programmable.api-key-capabilities.v2" as const;
+type ApiKeySchemaVersion = typeof CUSTOM_LAUNCH_API_SCHEMA_V1
+  | typeof CUSTOM_LAUNCH_API_SCHEMA_V2;
 
 const MAXIMUM_BROWSER_BODY_BYTES = 4_096;
 const MAXIMUM_BACKEND_BODY_BYTES = 65_536;
@@ -64,6 +77,10 @@ export type DeveloperApiKeySummaryV1 = Readonly<{
 
 export interface DeveloperApiKeyBridgeV1 {
   list(request: Request): Promise<Response>;
+  listV2(request: Request): Promise<Response>;
+  capabilitiesV2(request: Request): Promise<Response>;
+  createV2(request: Request): Promise<Response>;
+  rotateV2(request: Request, credentialId: string): Promise<Response>;
   create(request: Request): Promise<Response>;
   rotate(request: Request, credentialId: string): Promise<Response>;
   revoke(request: Request, credentialId: string): Promise<Response>;
@@ -153,7 +170,7 @@ export function createDeveloperApiKeyBridgeV1(input: Readonly<{
     }
     const timeoutSignal = AbortSignal.timeout(timeoutMs);
     const signal = AbortSignal.any([request.signal, timeoutSignal]);
-    return input.fetchBackend(backendUrl, {
+    const response = await input.fetchBackend(backendUrl, {
       method,
       headers,
       body: body === undefined ? undefined : bodyBytes,
@@ -161,9 +178,120 @@ export function createDeveloperApiKeyBridgeV1(input: Readonly<{
       redirect: "error",
       signal,
     });
+    return { response, readOptions: { signal, timeoutMs } };
+  };
+
+  const mutateV2 = async (request: Request, credentialId?: string) => {
+    if (request.method !== "POST") {
+      return errorResponse(405, "method_not_allowed", "POST");
+    }
+    try {
+      requireJsonRequest(request);
+      const normalizedCredentialId = credentialId === undefined
+        ? undefined
+        : requireBrowserCredentialId(credentialId);
+      const body = await readBrowserJson(request);
+      const parsed = parseMutationBodyV2(body, normalizedCredentialId === undefined);
+      const idempotencyKey = requireIdempotencyKey(request);
+      const principal = await input.authenticator.authenticate(request);
+      const walletAddress = requireLinkedWallet(principal, parsed.walletAddress);
+      const { response: backend, readOptions } = await callBackend(
+        request,
+        principal,
+        walletAddress,
+        "POST",
+        normalizedCredentialId === undefined
+          ? "/v2/wallet-admin/api-keys"
+          : `/v2/wallet-admin/api-keys/${encodeURIComponent(normalizedCredentialId)}/rotate`,
+        Object.freeze({
+          schemaVersion: CUSTOM_LAUNCH_API_SCHEMA_V2,
+          label: parsed.label,
+          expiresInDays: parsed.expiresInDays,
+          ...(parsed.scopes === undefined ? {} : { scopes: parsed.scopes }),
+        }),
+        idempotencyKey,
+      );
+      if (!backend.ok) throw await mappedBackendError(backend, readOptions);
+      const result = parseApiKeyMutationResult(
+        await readBoundedBackendJson(backend, readOptions),
+        backend.status,
+        normalizedCredentialId,
+        undefined,
+        CUSTOM_LAUNCH_API_SCHEMA_V2,
+      );
+      if (parsed.scopes !== undefined && !sameScopes(result.apiKey.scopes, parsed.scopes)) {
+        throw new BackendContractErrorV1();
+      }
+      return jsonResponse(backend.status, {
+        schemaVersion: CUSTOM_LAUNCH_API_SCHEMA_V2,
+        ...result,
+      });
+    } catch (error) {
+      return mappedError(error);
+    }
   };
 
   return Object.freeze({
+    async capabilitiesV2(request: Request) {
+      if (request.method !== "GET") {
+        return errorResponse(405, "method_not_allowed", "GET");
+      }
+      try {
+        requireJsonResponse(request);
+        const walletInput = exactWalletQuery(request);
+        const principal = await input.authenticator.authenticate(request);
+        const walletAddress = requireLinkedWallet(principal, walletInput);
+        const { response: backend, readOptions } = await callBackend(request, principal, walletAddress, "GET",
+          "/v2/wallet-admin/api-keys/capabilities");
+        if (!backend.ok) throw await mappedBackendError(backend, readOptions);
+        const record = jsonRecord(await readBoundedBackendJson(backend, readOptions));
+        if (
+          record.schemaVersion !== API_KEY_CAPABILITIES_SCHEMA_V2
+          || typeof record.restrictedIssuance !== "boolean"
+          || typeof record.preservingRotation !== "boolean"
+          || (record.preservingModuleRotation !== undefined
+            && typeof record.preservingModuleRotation !== "boolean")
+        ) throw new BackendContractErrorV1();
+        return jsonResponse(200, {
+          schemaVersion: API_KEY_CAPABILITIES_SCHEMA_V2,
+          restrictedIssuance: record.restrictedIssuance,
+          preservingRotation: record.preservingRotation,
+          preservingModuleRotation: record.preservingModuleRotation === true,
+        });
+      } catch (error) {
+        return mappedError(error);
+      }
+    },
+
+    createV2: (request: Request) => mutateV2(request),
+    rotateV2: (request: Request, credentialId: string) => mutateV2(request, credentialId),
+
+    async listV2(request: Request) {
+      if (request.method !== "GET") return errorResponse(405, "method_not_allowed", "GET");
+      try {
+        requireJsonResponse(request);
+        const walletInput = exactWalletQuery(request);
+        const principal = await input.authenticator.authenticate(request);
+        const walletAddress = requireLinkedWallet(principal, walletInput);
+        const { response: backend, readOptions } = await callBackend(request, principal, walletAddress, "GET", "/v2/wallet-admin/api-keys");
+        if (!backend.ok) throw await mappedBackendError(backend, readOptions);
+        const record = jsonRecord(await readBoundedBackendJson(backend, readOptions));
+        requireBackendSchema(record, CUSTOM_LAUNCH_API_SCHEMA_V2);
+        const summaries = parseApiKeyList(record.apiKeys);
+        const apiKeys = summaries.map((summary, index) => ({
+          ...summary,
+          ...parseChainMetadataV2((record.apiKeys as JsonValue[])[index], walletAddress),
+        }));
+        return jsonResponse(200, {
+          schemaVersion: CUSTOM_LAUNCH_API_SCHEMA_V2,
+          apiKeys,
+          ...(record.moduleContributions === undefined ? {} : {
+            moduleContributions: parseModuleContributions(record.moduleContributions),
+          }),
+        });
+      } catch (error) { return mappedError(error); }
+    },
+
     async list(request: Request) {
       if (request.method !== "GET") {
         return errorResponse(405, "method_not_allowed", "GET");
@@ -173,15 +301,15 @@ export function createDeveloperApiKeyBridgeV1(input: Readonly<{
         const walletInput = exactWalletQuery(request);
         const principal = await input.authenticator.authenticate(request);
         const walletAddress = requireLinkedWallet(principal, walletInput);
-        const backend = await callBackend(
+        const { response: backend, readOptions } = await callBackend(
           request,
           principal,
           walletAddress,
           "GET",
           "/v1/wallet-admin/api-keys",
         );
-        if (!backend.ok) throw await mappedBackendError(backend);
-        const value = await readBoundedBackendJson(backend);
+        if (!backend.ok) throw await mappedBackendError(backend, readOptions);
+        const value = await readBoundedBackendJson(backend, readOptions);
         const record = jsonRecord(value);
         requireBackendSchema(record);
         const apiKeys = parseApiKeyList(record.apiKeys);
@@ -208,29 +336,9 @@ export function createDeveloperApiKeyBridgeV1(input: Readonly<{
         const idempotencyKey = requireIdempotencyKey(request);
         const principal = await input.authenticator.authenticate(request);
         const walletAddress = requireLinkedWallet(principal, parsed.walletAddress);
-        if (parsed.purpose === "module-contributions") {
-          // A stale browser capability cannot authorize a new module key.
-          const capabilities = await callBackend(
-            request,
-            principal,
-            walletAddress,
-            "GET",
-            "/v1/wallet-admin/api-keys",
-          );
-          if (!capabilities.ok) throw await mappedBackendError(capabilities);
-          const record = jsonRecord(await readBoundedBackendJson(capabilities));
-          requireBackendSchema(record);
-          const available = parseModuleContributions(record.moduleContributions);
-          if (!available.apiKeyIssuance || !available.submissions) {
-            return errorResponse(
-              503,
-              "MODULE_SUBMISSIONS_UNAVAILABLE",
-              undefined,
-              "Module contributions are not available right now. Try again later.",
-            );
-          }
-        }
-        const backend = await callBackend(
+        // The backend checks fresh admission after exact completed replay.
+        // A separate availability read here would suppress committed retries.
+        const { response: backend, readOptions } = await callBackend(
           request,
           principal,
           walletAddress,
@@ -246,9 +354,9 @@ export function createDeveloperApiKeyBridgeV1(input: Readonly<{
           }),
           idempotencyKey,
         );
-        if (!backend.ok) throw await mappedBackendError(backend);
+        if (!backend.ok) throw await mappedBackendError(backend, readOptions);
         const result = parseApiKeyMutationResult(
-          await readBoundedBackendJson(backend),
+          await readBoundedBackendJson(backend, readOptions),
           backend.status,
           undefined,
           parsed.purpose,
@@ -274,7 +382,7 @@ export function createDeveloperApiKeyBridgeV1(input: Readonly<{
         const idempotencyKey = requireIdempotencyKey(request);
         const principal = await input.authenticator.authenticate(request);
         const walletAddress = requireLinkedWallet(principal, parsed.walletAddress);
-        const backend = await callBackend(
+        const { response: backend, readOptions } = await callBackend(
           request,
           principal,
           walletAddress,
@@ -289,9 +397,9 @@ export function createDeveloperApiKeyBridgeV1(input: Readonly<{
           }),
           idempotencyKey,
         );
-        if (!backend.ok) throw await mappedBackendError(backend);
+        if (!backend.ok) throw await mappedBackendError(backend, readOptions);
         const result = parseApiKeyMutationResult(
-          await readBoundedBackendJson(backend),
+          await readBoundedBackendJson(backend, readOptions),
           backend.status,
           normalizedCredentialId,
         );
@@ -314,7 +422,7 @@ export function createDeveloperApiKeyBridgeV1(input: Readonly<{
         const walletInput = exactWalletQuery(request);
         const principal = await input.authenticator.authenticate(request);
         const walletAddress = requireLinkedWallet(principal, walletInput);
-        const backend = await callBackend(
+        const { response: backend, readOptions } = await callBackend(
           request,
           principal,
           walletAddress,
@@ -323,10 +431,11 @@ export function createDeveloperApiKeyBridgeV1(input: Readonly<{
           Object.freeze({ schemaVersion: CUSTOM_LAUNCH_API_SCHEMA_V1 }),
         );
         if (backend.status === 404) {
+          discardBodyV1(backend);
           return errorResponse(404, "api_key_not_found");
         }
-        if (!backend.ok) throw await mappedBackendError(backend);
-        const value = await readBoundedBackendJson(backend);
+        if (!backend.ok) throw await mappedBackendError(backend, readOptions);
+        const value = await readBoundedBackendJson(backend, readOptions);
         const record = jsonRecord(value);
         requireBackendSchema(record);
         if (
@@ -372,7 +481,42 @@ function parseCreateBody(value: JsonValue, allowPurpose = false) {
     "expiresInDays",
     ...(allowPurpose ? ["purpose"] : []),
   ], ["schemaVersion", "walletAddress", "label"]);
-  if (record.schemaVersion !== CUSTOM_LAUNCH_API_SCHEMA_V1) {
+  const common = parseMutationFields(record, CUSTOM_LAUNCH_API_SCHEMA_V1);
+  const purpose = record.purpose === undefined
+    ? "custom-launches"
+    : record.purpose;
+  if (purpose !== "custom-launches" && purpose !== "module-contributions") {
+    throw new BrowserRequestErrorV1(400, "request_schema_invalid");
+  }
+  return Object.freeze({ ...common, purpose });
+}
+
+function parseMutationBodyV2(value: JsonValue, issuing: boolean) {
+  const record = exactBrowserRecord(value, [
+    "schemaVersion", "walletAddress", "label", "expiresInDays",
+    ...(issuing ? ["scopes"] : []),
+  ], ["schemaVersion", "walletAddress", "label", ...(issuing ? ["scopes"] : [])]);
+  const common = parseMutationFields(record, CUSTOM_LAUNCH_API_SCHEMA_V2);
+  if (!issuing) return { ...common, scopes: undefined };
+  const scopes = record.scopes;
+  if (
+    !Array.isArray(scopes)
+    || !((scopes.length === 1 && scopes[0] === "custom-launch:read")
+      || sameScopes(scopes, CURRENT_SCOPES))
+  ) throw new BrowserRequestErrorV1(400, "request_schema_invalid");
+  return { ...common, scopes: [...scopes] as string[] };
+}
+
+function sameScopes(actual: readonly JsonValue[], expected: readonly string[]) {
+  return actual.length === expected.length
+    && expected.every((scope) => actual.includes(scope));
+}
+
+function parseMutationFields(
+  record: Readonly<Record<string, JsonValue>>,
+  schemaVersion: ApiKeySchemaVersion,
+) {
+  if (record.schemaVersion !== schemaVersion) {
     throw new BrowserRequestErrorV1(400, "request_schema_invalid");
   }
   if (typeof record.walletAddress !== "string" || record.walletAddress.length !== 42) {
@@ -396,13 +540,7 @@ function parseCreateBody(value: JsonValue, allowPurpose = false) {
     || (expiresInDays as number) < 1
     || (expiresInDays as number) > MAXIMUM_EXPIRY_DAYS
   ) throw new BrowserRequestErrorV1(400, "request_schema_invalid");
-  const purpose = record.purpose === undefined
-    ? "custom-launches"
-    : record.purpose;
-  if (purpose !== "custom-launches" && purpose !== "module-contributions") {
-    throw new BrowserRequestErrorV1(400, "request_schema_invalid");
-  }
-  return Object.freeze({ walletAddress, label, expiresInDays, purpose });
+  return Object.freeze({ walletAddress, label, expiresInDays });
 }
 
 function parseModuleContributions(value: JsonValue | undefined) {
@@ -450,34 +588,32 @@ function requireLinkedWallet(
 }
 
 async function readBrowserJson(request: Request): Promise<JsonValue> {
-  const declaredLength = Number(request.headers.get("content-length") ?? "0");
-  if (Number.isFinite(declaredLength) && declaredLength > MAXIMUM_BROWSER_BODY_BYTES) {
-    throw new BrowserRequestErrorV1(413, "request_too_large");
-  }
-  const text = await request.text();
-  if (!text || Buffer.byteLength(text, "utf8") > MAXIMUM_BROWSER_BODY_BYTES) {
-    throw new BrowserRequestErrorV1(413, "request_too_large");
-  }
   try {
+    const text = await readBoundedUtf8BodyV1(request, MAXIMUM_BROWSER_BODY_BYTES, {
+      signal: request.signal,
+    });
+    if (!text) throw new BrowserRequestErrorV1(413, "request_too_large");
     return parseStrictJson(text, {
       maximumBytes: MAXIMUM_BROWSER_BODY_BYTES,
       maximumDepth: 8,
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof BrowserRequestErrorV1) throw error;
+    if (error instanceof BoundedBodyErrorV1) {
+      if (error.code === "too-large") throw new BrowserRequestErrorV1(413, "request_too_large");
+      if (error.code === "timeout") throw new BrowserRequestErrorV1(408, "request_timeout");
+      if (error.code === "aborted") throw new BrowserRequestErrorV1(400, "request_aborted");
+    }
     throw new BrowserRequestErrorV1(400, "request_schema_invalid");
   }
 }
 
-async function readBoundedBackendJson(response: Response): Promise<JsonValue> {
-  const declaredLength = Number(response.headers.get("content-length") ?? "0");
-  if (Number.isFinite(declaredLength) && declaredLength > MAXIMUM_BACKEND_BODY_BYTES) {
-    throw new BackendContractErrorV1();
-  }
-  const text = await response.text();
-  if (!text || Buffer.byteLength(text, "utf8") > MAXIMUM_BACKEND_BODY_BYTES) {
-    throw new BackendContractErrorV1();
-  }
+async function readBoundedBackendJson(
+  response: Response,
+  options: BodyReadOptionsV1,
+): Promise<JsonValue> {
   try {
+    const text = await readBoundedUtf8BodyV1(response, MAXIMUM_BACKEND_BODY_BYTES, options);
     return parseStrictJson(text, {
       maximumBytes: MAXIMUM_BACKEND_BODY_BYTES,
       maximumDepth: 12,
@@ -517,6 +653,31 @@ function parseApiKeySummary(value: JsonValue | undefined): DeveloperApiKeySummar
   });
 }
 
+function parseChainMetadataV2(value: JsonValue, walletAddress: string) {
+  const record = jsonRecord(value);
+  if (typeof record.controllerWallet !== "string" || !isAddress(record.controllerWallet)
+    || record.controllerWallet.toLowerCase() !== walletAddress.toLowerCase()) {
+    throw new BackendContractErrorV1();
+  }
+  const restriction = jsonRecord(record.chainRestriction);
+  const chainIds = restriction.allowedChainIds;
+  if (restriction.effectiveEligibility !== "evaluated-per-request"
+    || (chainIds === null ? restriction.mode !== "legacy-policy-dependent"
+      : !Array.isArray(chainIds) || chainIds.length < 1 || chainIds.length > 64
+        || restriction.mode !== "persisted" || new Set(chainIds).size !== chainIds.length
+        || chainIds.some((id) => typeof id !== "string" || !/^[1-9][0-9]{0,77}$/u.test(id)))) {
+    throw new BackendContractErrorV1();
+  }
+  return {
+    controllerWallet: record.controllerWallet.toLowerCase(),
+    chainRestriction: {
+      allowedChainIds: chainIds,
+      mode: restriction.mode,
+      effectiveEligibility: "evaluated-per-request",
+    },
+  };
+}
+
 function parseScopes(value: JsonValue | undefined): readonly string[] {
   // Persisted metadata can outlive this reader. Unknown names are displayed,
   // never interpreted as selectable issuance permissions.
@@ -533,13 +694,14 @@ function parseApiKeyMutationResult(
   status: number,
   rotatedCredentialId?: string,
   expectedPurpose?: DeveloperApiKeyPurposeV1,
+  schemaVersion: ApiKeySchemaVersion = CUSTOM_LAUNCH_API_SCHEMA_V1,
 ): DeveloperApiKeyMutationResultV1 {
   const record = jsonRecord(value);
-  requireBackendSchema(record);
+  requireBackendSchema(record, schemaVersion);
   const apiKey = parseApiKeySummary(record.apiKey);
   const supportedPair = [CURRENT_SCOPES, MODULE_SCOPES].some((pair) =>
     apiKey.scopes.length === pair.length && pair.every((scope) => apiKey.scopes.includes(scope)));
-  if (!supportedPair) throw new BackendContractErrorV1();
+  if (schemaVersion === CUSTOM_LAUNCH_API_SCHEMA_V1 && !supportedPair) throw new BackendContractErrorV1();
   if (expectedPurpose !== undefined) {
     const expectedScopes = expectedPurpose === "module-contributions"
       ? MODULE_SCOPES
@@ -582,8 +744,11 @@ function parseApiKeyMutationResult(
   return Object.freeze({ apiKey, secretState, apiKeySecret, ...rotation });
 }
 
-function requireBackendSchema(record: Readonly<Record<string, JsonValue>>) {
-  if (record.schemaVersion !== CUSTOM_LAUNCH_API_SCHEMA_V1) {
+function requireBackendSchema(
+  record: Readonly<Record<string, JsonValue>>,
+  schemaVersion: ApiKeySchemaVersion = CUSTOM_LAUNCH_API_SCHEMA_V1,
+) {
+  if (record.schemaVersion !== schemaVersion) {
     throw new BackendContractErrorV1();
   }
 }
@@ -706,11 +871,12 @@ function requiredRawEnvironment(name: string) {
   return value;
 }
 
-async function mappedBackendError(response: Response) {
+async function mappedBackendError(response: Response, options: BodyReadOptionsV1) {
   if (response.status === 404) {
+    discardBodyV1(response);
     return new BrowserRequestErrorV1(404, "api_key_not_found");
   }
-  const preserved = await readPreservedBackendPublicErrorV1(response);
+  const preserved = await readPreservedBackendPublicErrorV1(response, options);
   if (preserved) return preserved;
   return new BackendContractErrorV1();
 }

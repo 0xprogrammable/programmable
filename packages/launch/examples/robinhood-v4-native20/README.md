@@ -97,7 +97,7 @@ The placeholders are deliberately invalid until the agent obtains the user's val
 
 ```sh
 npm run build -- --input native20-input.json
-programmable-launch pack --config programmable-launch.config.json --out launch.json
+programmable-launch pack --config programmable-launch.config.json --output launch.json
 programmable-launch validate launch.json --config programmable-launch.config.json
 ```
 

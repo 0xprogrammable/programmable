@@ -1,0 +1,331 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Programmable Launch CLI 4.1.1 client source binding",
+  "description": "Source metadata only. Full release readiness requires the unchanged API 4.1.0 release gates.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schemaVersion",
+    "package",
+    "apiProfile",
+    "existingApiReleaseBinding",
+    "coverage",
+    "clientFiles",
+    "machineContracts"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "./cli-release-binding.schema.json"
+    },
+    "schemaVersion": {
+      "const": "programmable.launch-cli-v4-client-release-binding.v1"
+    },
+    "package": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "version",
+        "tag",
+        "repository"
+      ],
+      "properties": {
+        "name": {
+          "const": "@programmable/launch"
+        },
+        "version": {
+          "const": "4.1.1"
+        },
+        "tag": {
+          "const": "programmable-launch-v4.1.1"
+        },
+        "repository": {
+          "const": "programmablehq/PROGRAMMABLE"
+        }
+      }
+    },
+    "apiProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "structuralProfileId",
+        "businessProfileId",
+        "admissionDescriptorDigest",
+        "admissionPolicyDigest",
+        "admissionBindingDigest",
+        "admissionSchemaDigest",
+        "profileRevision",
+        "profileVersion",
+        "profileDigest"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "programmable.custom-launch-profile-ref.v4"
+        },
+        "structuralProfileId": {
+          "const": "programmable.custom-launch.robinhood-mainnet.v1"
+        },
+        "businessProfileId": {
+          "const": "robinhood-production-launch"
+        },
+        "admissionDescriptorDigest": {
+          "const": "sha256:b09611360e284641873fdb2914b4282e0545e32ea587b278fcd11f4db9a4e7f5"
+        },
+        "admissionPolicyDigest": {
+          "const": "sha256:47801f57e2365f89eb7397a2df10d697bd1f756ec01536b9b34755e89809da04"
+        },
+        "admissionBindingDigest": {
+          "const": "sha256:5b2486f35fcd44bd476cafd5bfb5a12decf05a756ba237ca191928f5414c721e"
+        },
+        "admissionSchemaDigest": {
+          "const": "sha256:6a8194a3b5d8b6432a95ec04da3cd86091ad64c93c0531125caf00ecb919c8cf"
+        },
+        "profileRevision": {
+          "const": 2
+        },
+        "profileVersion": {
+          "const": "4.1.0"
+        },
+        "profileDigest": {
+          "const": "sha256:b0fca91264a49d358ed1a9eec2a679b59a48d716b71475bef583c2545e1ee502"
+        }
+      }
+    },
+    "existingApiReleaseBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "path",
+        "sha256"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "programmable.launch-cli-v4-release-binding.v2"
+        },
+        "path": {
+          "const": "docs/operations/releases/custom-launch-v4.1/cli-release-binding.json"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "schemaVersion",
+        "authentication",
+        "requestAuthorization",
+        "activatesWriteProfile"
+      ],
+      "properties": {
+        "path": {
+          "const": "/v4/chains/4663/launch-coverage"
+        },
+        "schemaVersion": {
+          "const": "programmable.robinhood-launch-coverage.v1"
+        },
+        "authentication": {
+          "const": "none"
+        },
+        "requestAuthorization": {
+          "const": false
+        },
+        "activatesWriteProfile": {
+          "const": false
+        }
+      }
+    },
+    "clientFiles": {
+      "type": "array",
+      "minItems": 7,
+      "maxItems": 7,
+      "prefixItems": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "path",
+            "sha256"
+          ],
+          "properties": {
+            "path": {
+              "const": "packages/launch/package.json"
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "path",
+            "sha256"
+          ],
+          "properties": {
+            "path": {
+              "const": "packages/launch/npm-shrinkwrap.json"
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "path",
+            "sha256"
+          ],
+          "properties": {
+            "path": {
+              "const": "packages/launch/src/constants.mjs"
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "path",
+            "sha256"
+          ],
+          "properties": {
+            "path": {
+              "const": "packages/launch/src/cli.mjs"
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "path",
+            "sha256"
+          ],
+          "properties": {
+            "path": {
+              "const": "packages/launch/src/index.mjs"
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "path",
+            "sha256"
+          ],
+          "properties": {
+            "path": {
+              "const": "packages/launch/src/launch-coverage-v1.mjs"
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "path",
+            "sha256"
+          ],
+          "properties": {
+            "path": {
+              "const": "packages/launch/schemas/robinhood-launch-coverage-v1.json"
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            }
+          }
+        }
+      ],
+      "items": false
+    },
+    "machineContracts": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "prefixItems": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "path",
+            "url",
+            "sha256"
+          ],
+          "properties": {
+            "name": {
+              "const": "openapi"
+            },
+            "path": {
+              "const": "public/openapi/launch-coverage-v1.json"
+            },
+            "url": {
+              "const": "https://programmable.market/openapi/launch-coverage-v1.json"
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "path",
+            "url",
+            "sha256"
+          ],
+          "properties": {
+            "name": {
+              "const": "response"
+            },
+            "path": {
+              "const": "public/schemas/custom-launch/coverage/v1.json"
+            },
+            "url": {
+              "const": "https://programmable.market/schemas/custom-launch/coverage/v1.json"
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            }
+          }
+        }
+      ],
+      "items": false
+    }
+  }
+}

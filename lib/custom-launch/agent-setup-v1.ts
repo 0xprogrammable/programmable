@@ -131,6 +131,11 @@ export function programmableAgentSetupLinksV1(profileVersion = "4.0.0") {
       contract.guideUrl ?? "https://programmable.market/developers/custom-launch-api-v1.md",
     robinhoodOpenApi:
       contract.openApiUrl ?? "https://programmable.market/openapi/custom-launch-v4.json",
+    ...(profileVersion === "4.1.0" ? {
+      robinhoodCoverage: "https://api.programmable.market/v4/chains/4663/launch-coverage",
+      robinhoodLaunchGuide: "https://api.programmable.market/v4/chains/4663/launch-guide",
+      robinhoodLaunchGuideMarkdown: "https://programmable.market/developers/robinhood-launch-guide-v1.md",
+    } : {}),
   });
 }
 
@@ -153,9 +158,19 @@ export function buildProgrammableAgentSetupTextV1(profileVersion = "4.0.0") {
     "The same API-key entry point serves both chains. A key needs custom-launch:create and custom-launch:read plus server authorization for the selected chain; its presence does not prove a chain grant. A wallet key's launchWallet must equal its wallet binding. Keep credentials on https://api.programmable.market and follow only the selected chain's instructions below.",
     "",
     "Robinhood Chain Mainnet only (V4, chain 4663)",
+    ...(successor ? [
+      `Before implementation, compilation or pack, read public GET ${links.robinhoodCoverage} and GET ${links.robinhoodLaunchGuide}. These reads need no API key, query parameters or body; do not create or rotate a key for them.`,
+      `Follow the current launch workflow and recovery guide: ${links.robinhoodLaunchGuideMarkdown}. Require schemaVersion programmable.robinhood-launch-coverage.v1 for coverage and programmable.robinhood-launch-guide.v1 for the guide. A 404 or unknown response contract means discovery is unavailable on that deployment; report it and do not infer support or fall back to another chain, profile or create route.`,
+      "Check the intended architecture against structuralFormat and verifierCoverage before building. A same-address token/hook such as BLOB, a no-pool project or multiple pool keys requires a versioned graph/Router or transport extension. Arbitrary tokens or initializers, stateful modules and custom settlement deltas need their own activated server verification. The exact native20 seed recipe is a bounded proof path with no optional module; declaring a pricing or funding model does not establish launch eligibility. Unknown mechanisms are not automatically unsafe. Preserve the intended design and report missing platform support without requesting a bypass.",
+      "Guide workflow stages, scenario assessments/blockerLayer and errorRecovery are instructions, not request approval. Its scenarioProfileVersion is 4.1.0; another or unavailable profile is not-evaluated. Readiness, structural representation, activated verifier coverage and exact-request admission are separate. Neither public report clears a finding, issues a permit or creates a wallet action.",
+    ] : []),
     PROGRAMMABLE_ROBINHOOD_FUNDING_INTAKE_TEXT_V1,
     "",
     `Read customLaunchApi.versions.v4 and the matching chains entry in live discovery. Require publicAuthorization, publicWrites and releaseReady to be true in both. Require an advertised released, installable CLI for profile ${successor ? "4.1.0" : "4.0.0"}, an immutable published release and matching tarball checksum before installing it. If any field, release asset or verification is missing or false, stop before authenticated preflight or submission and report the missing public release gate. A deployed runtime, a source candidate or a local checkout cannot replace these gates.`,
+    ...(successor ? [
+      "Distinguish API profile from client version: API profile 4.1.0 retains its exact tuple and historical CLI release. CLI 4.1.1 adds the public coverage command with a separate immutable release and client binding to that same API profile. Verify the selected client's own release, source and checksum; a patch version never activates a new write profile. The direct public GET works without a CLI upgrade, and an unpublished client candidate is not installable release evidence.",
+      "Public capabilities, readiness, initial-buy-quote, launch-coverage, launch-guide and finalized-custom-launches require no key. Authenticated POST preflight and POST create require custom-launch:create; authenticated list and single-launch GET require custom-launch:read. Use the key's grant for chain 4663 and its controller binding. A read-only key cannot preflight or create, and a module-contribution key does not grant launch access. Keep Authorization only on https://api.programmable.market.",
+    ] : []),
     `Public V4 capabilities: ${links.robinhoodCapabilities}`,
     `Public V4 readiness: ${links.robinhoodReadiness}`,
     `V4 non-persisting preflight: ${links.robinhoodPreflight}`,
@@ -170,6 +185,11 @@ export function buildProgrammableAgentSetupTextV1(profileVersion = "4.0.0") {
     "After all public release gates pass: programmable-launch pack --config programmable-launch.config.json --output launch.json",
     "Then: programmable-launch validate launch.json --config programmable-launch.config.json --remote",
     "Follow the V4 preflight's server-authored disposition and typed remediation. Preflight is not admission or a wallet action. If ready for submission, submit the exact validated bytes with programmable-launch submit launch.json --config programmable-launch.config.json. Keep the CLI journal and Idempotency-Key unchanged for retries. An action_required resource requires its specified correction, rebuild and a new immutable request; never bypass a server decision.",
+    ...(successor ? [
+      "Read launchEligibility.deployable and every finding before create. If deployable is true and TX_SIMULATION_PENDING is a warning, submit the exact validated request so the server can run the mandatory transaction simulation. The preflight chain checkpoint did not execute the launch. A build-only plan or needs_evidence/unsupported disposition does not permit create.",
+      "Create returns HTTP 202 for a new durable request and HTTP 200 for an exact idempotent replay; neither is wallet authorization. Read the returned resource.launchId in CLI output and preserve request bytes, journal and Idempotency-Key for ambiguous transport, 429 and explicitly retryable 503 responses. A detail GET 404 means check launchId, chain and credential lineage; do not create a replacement launch just to poll it.",
+      "Recover by code: UNAUTHENTICATED means verify the configured key is present and valid; INSUFFICIENT_SCOPE means use a key with the required operation scope; CHAIN_NOT_ALLOWED means check that credential's chain 4663 grant; WALLET_BINDING_MISMATCH means reconcile the intended controller with the key binding. Do not rotate a key for missing verifier coverage. Preserve unresolved findings and follow the launch guide's recovery for quote, source, permit-window and idempotency errors.",
+    ] : []),
     "Use the returned launchId as LAUNCH_ID, not requestId: programmable-launch status LAUNCH_ID --api-version 4 --chain-id 4663 --watch --until authorized",
     "At authorized, awaiting_wallet_signature or wallet_action_required, open only the server-provided same-origin walletHandoffUrl and stop for the controller to review the bound project metadata, chain 4663, sender, Router, value, calldata and expiry. The API key and CLI never sign or broadcast. After the controller sends the exact transaction: programmable-launch status LAUNCH_ID --api-version 4 --chain-id 4663 --watch --until finalized. Source verification, indexing, trading and publication remain separate from finality. The following Ethereum instructions do not apply to this V4 request.",
     "",

@@ -1,8 +1,18 @@
 # Programmable Launch CLI
 
 `@programmable/launch` is the source package for the Programmable Custom Launch packager and API client. It has
-exactly four commands: `pack`, `validate`, `submit`, and `status`. It never signs or broadcasts a wallet transaction.
+five source commands: `coverage`, `pack`, `validate`, `submit`, and `status`. It never signs or broadcasts a wallet transaction.
 Release and installability are version-specific.
+
+CLI `4.1.2` bounds API response bodies and rejects invalid UTF-8, duplicate JSON keys and excessive nesting. It
+includes the public `coverage` command introduced in `4.1.1`; the API profile remains `4.1.0`. Verify the separately
+published immutable client release before installing it. Earlier immutable release assets retain their exact bytes.
+
+API capabilities, preflight and permit-reissue responses allow up to 4 MiB; individual launch resource responses
+allow up to 64 MiB for source and transaction evidence. Error responses allow up to 1 MiB. The client counts streamed
+body bytes and limits JSON nesting to 128 levels. An oversized body, invalid UTF-8, duplicate JSON key or malformed JSON produces
+a terminal `API_RESPONSE_*` error, including on HTTP 429 or 503. These responses are not retried.
+For valid responses, the existing retry rules preserve the exact request body and idempotency key.
 
 ## Install the current public Ethereum V3 release
 
@@ -64,7 +74,8 @@ local preparation is not a public release or permission to submit.
 selects `4.0.0`, or `programmable-launch-v4.1.0` when it selects `4.1.0`, in
 `programmablehq/PROGRAMMABLE`. Stop if discovery selects any other version. Require the release manifest and tarball checksum to match the advertised version,
 exact source commit and downloaded tarball bytes. Install only that verified tarball and
-require `programmable-launch --version` to match the advertised version. If any check fails, stop; a published artifact alone is
+require `programmable-launch --version` to match that release's version. The separate CLI `4.1.2` patch below can use
+the same activated API profile `4.1.0`; verify its own immutable release identity. If any check fails, stop; a published artifact alone is
 not public activation. This conditional procedure does not assert today's release state.
 
 Before authenticated preflight or submission, also fetch the public
@@ -115,6 +126,68 @@ permit. Do not increase the amount or budget without user approval; wallet-time 
 leg once per successful buy or sell, rounded up, separately from creator and LP fees. Fees accrue as PoolManager
 native claims for `0xD88539d3c4C460136a733A3Fd60cf6BF269079da`, with permissionless claims paid only to that recipient.
 Source admission is not proof of deployed state, trades or collected revenue; the CLI and API key do not claim fees.
+
+## Install the CLI 4.1.2 release
+
+This conditional procedure does not assert that the release is published. Check the immutable release and download
+its four assets into an empty directory. If it is absent or any verification fails, stop; do not fall back to an
+unverified npm-registry package or an older release with a different identity.
+
+```sh
+launch_cli_dir="$(mktemp -d)"
+gh release verify programmable-launch-v4.1.2 --repo programmablehq/PROGRAMMABLE
+gh release download programmable-launch-v4.1.2 --repo programmablehq/PROGRAMMABLE --dir "$launch_cli_dir"
+for launch_asset in "$launch_cli_dir"/*; do
+  gh release verify-asset programmable-launch-v4.1.2 "$launch_asset" --repo programmablehq/PROGRAMMABLE
+done
+(cd "$launch_cli_dir" && shasum -a 256 -c programmable-launch-4.1.2.tgz.sha256)
+```
+
+Require exactly the tarball, its adjacent checksum, CycloneDX inventory and release manifest for `4.1.2`. Check the
+manifest's version, tag, protected production commit/tree, exact Node/npm toolchain and every asset digest. Its
+`machineContractBinding` must reference `docs/operations/releases/custom-launch-v4.1.2/cli-release-binding.json`
+with the matching digest at that exact source commit. That client record binds the response decoder, API client, UTF-8 and JSON readers, and separate coverage schemas. It
+references the unchanged API `4.1.0` release record by digest. The [release runbook](../../docs/operations/releases/custom-launch-v4.1.2/README.md)
+describes the full source and production-evidence verification. Only after those checks pass:
+
+```sh
+npm install --global "$launch_cli_dir/programmable-launch-4.1.2.tgz"
+programmable-launch --version
+```
+
+The version must print `4.1.2`. Installation does not activate a write profile; authenticated V4 operations still
+require the public-release, capabilities, preflight and wallet gates above. The public coverage read requires no key.
+
+## Read Robinhood architecture coverage
+
+Before building, read the separate public report. It requires no API key or query parameters:
+
+```sh
+curl --fail --silent --show-error https://api.programmable.market/v4/chains/4663/launch-coverage
+```
+
+With the separately verified CLI `4.1.2` release:
+
+```sh
+programmable-launch coverage --chain-id 4663
+```
+
+`readiness.status: ready` describes service readiness. Check `structuralFormat` and `verifierCoverage` separately:
+the current graph has one role per physical target and `tokenAndHookMayShareAddress: false`. It represents one
+native ETH/token pool; no-pool and multiple-pool projects require a transport extension. A declared funding model or
+hook permission does not prove its execution. `proof-available` names activated server verification for the listed
+constraints; a `candidate` adapter or `publicRequestSurface: none-versioned-transport-required` is not a launch route.
+
+The report always has `requestAuthorization.requestAuthorized: false`. Use `findingObligations` to distinguish source
+repair, quote refresh, funding, simulation and missing platform verifier coverage. Unknown finding codes remain
+unclassified. Wider API-key permissions and caller-supplied JSON proofs cannot clear admission findings. Preserve
+the intended architecture when it needs a platform extension; do not split a token/hook simply to silence a client check.
+
+See the [coverage OpenAPI](https://programmable.market/openapi/launch-coverage-v1.json) and
+[response schema](https://programmable.market/schemas/custom-launch/coverage/v1.json). If the server returns 404,
+coverage discovery has not been deployed there. A timeout, unavailable report or unknown schema does not imply an
+invalid API key or supported architecture. Retry the public read later. Existing clients and launch requests retain
+their original contracts; this read never calls preflight, reads credentials, creates a launch, signs or broadcasts.
 
 ## V3 general hook profile
 
