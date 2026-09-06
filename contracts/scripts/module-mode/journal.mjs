@@ -3,7 +3,7 @@ import { lstat, open, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { REPOSITORY_ROOT } from './build.mjs';
-import { canonicalJson, hash, need } from './core.mjs';
+import { canonicalJson, digest, hash, need } from './core.mjs';
 
 export async function journalDirectory(directory) {
   need(path.isAbsolute(directory), 'Journal directory must be absolute and owner controlled');
@@ -38,6 +38,25 @@ export async function journalEntry(directory, planDigest, stage) {
 export async function armJournal(directory, prepared, authority) {
   await journalDirectory(directory);
   await appendOnce(filename(directory, prepared.planDigest, prepared.stepIndex, 'request'), { ...prepared, authority, state: 'wallet-requested-outcome-unknown' });
+}
+export async function retryJournalEntry(directory, planDigest, stage, attempt) {
+  await journalDirectory(directory);
+  need(Number.isSafeInteger(attempt) && attempt > 0, 'Invalid explicit retry attempt');
+  const entry = await readProtected(filename(directory, planDigest, stage, `retry-${attempt}.request`));
+  if (entry) need(entry.planDigest === planDigest && entry.stepIndex === stage && entry.retryAttempt === attempt, 'Retry journal identity differs');
+  return entry;
+}
+/** A separately reviewed retry is append-only; the original request and its nonce never change. */
+export async function armRetryJournal(directory, prepared, authority) {
+  await journalDirectory(directory);
+  need(Number.isSafeInteger(prepared.retryAttempt) && prepared.retryAttempt > 0, 'Invalid explicit retry attempt');
+  const original = await journalEntry(directory, prepared.planDigest, prepared.stepIndex);
+  need(original && !original.transactionHash, 'Reconcile the recorded transaction before retrying');
+  need(original.requestDigest === prepared.originalRequestDigest && canonicalJson(original.request) === canonicalJson(prepared.request), 'Retry must retain the exact original wallet request');
+  const { requestDigest, ...body } = prepared;
+  need(digest('programmable.module-mode-owner-retry.v1', body) === hash(requestDigest), 'Retry request digest differs');
+  await appendOnce(filename(directory, prepared.planDigest, prepared.stepIndex, `retry-${prepared.retryAttempt}.request`),
+    { ...prepared, authority, state: 'same-nonce-wallet-retry-outcome-unknown' });
 }
 export async function recordTransaction(directory, planDigest, stage, transactionHash) {
   hash(transactionHash); const entry = await journalEntry(directory, planDigest, stage); need(entry, 'No armed wallet request');
