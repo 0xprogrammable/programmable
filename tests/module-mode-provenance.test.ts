@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import preview from "../config/module-mode/robinhood.preview.json";
+import configuredRelease from "../config/module-mode/robinhood.preview.json";
 import { bindActiveModuleModeRelease, computeModuleModeReleaseDigest, MODULE_MODE_DEPENDENCIES, ModuleModeProvenanceError } from "../lib/module-mode/release";
 import { normalizeModuleModeLaunch, normalizeModuleModeLaunches } from "../lib/module-mode/provenance";
 import { a, h, moduleEvidenceFixture } from "./fixtures/module-mode-evidence";
@@ -25,27 +25,26 @@ describe("Module Mode native source provenance",()=>{
     expect(rows).toHaveLength(2); expect(rows[0].selections).toEqual([]); expect(rows[0].revisions).toEqual([]);
     expect(rows[0].tokenRuntimeCodeHash).not.toBe(rows[1].tokenRuntimeCodeHash);
   });
-  it("pins the deployed source identity while keeping public provenance disabled",()=>{
-    expect(preview).toMatchObject({
+  it("pins the deployed source identity and rejects pending public provenance",()=>{
+    expect(configuredRelease).toMatchObject({
       schemaVersion: "programmable.module-mode-source.v1", sourceVersion: "module-native-v1", chainId: 4663,
-      enabled: false, status: "preview",
       releaseDigest: "0x546172aa670b543c19f00a707a0e9328acfd770f3040fbdd03a8bc709f786dee",
       sourceCommit: "9a2a1257a1b97dc0658157247890105a26e824ec",
       deploymentEvidenceDigest: "0xc75f4baa2142d61e4f007bf969d9a52638ab2ffa80af333f8612144ba07ba705",
       sourceVerificationDigest: "0x429c32b033bee913c85424c27d1bd1f34e1a5f9af82ce5b0d89ee3b9da51e7b1",
-      lifecycleEvidenceDigest: null,
       startBlock: "56160214", minimumInitialBuyNative: "400000000000000",
       tokenCreationCodeHash: "0x445809d9f7a34e959de4a96dec1e1beddfb265755bf28c57c42744adea1128ef",
       finalityPolicy: "robinhood-ethereum-finalized-v1",
     });
     // The fixed identity commits every deployed address and runtime hash, without authorizing activation.
-    expect(computeModuleModeReleaseDigest(preview)).toBe(preview.releaseDigest);
-    expect(()=>bindActiveModuleModeRelease(preview)).toThrow("release.enabled");
+    expect(computeModuleModeReleaseDigest(configuredRelease)).toBe(configuredRelease.releaseDigest);
+    const pendingRelease={...configuredRelease,enabled:false,status:"preview",lifecycleEvidenceDigest:null};
+    expect(()=>bindActiveModuleModeRelease(pendingRelease)).toThrow("release.enabled");
     const {evidence}=moduleEvidenceFixture();
-    expect(()=>normalizeModuleModeLaunch(evidence,preview)).toThrow("release.enabled");
-    expect(()=>normalizeModuleModeLaunches([evidence],preview)).toThrow("release.enabled");
-    expect(()=>normalizeModuleModeLaunches([],preview)).toThrow("release.enabled");
-    expect(()=>bindActiveModuleModeRelease({...preview,enabled:true,status:"active"}))
+    expect(()=>normalizeModuleModeLaunch(evidence,pendingRelease)).toThrow("release.enabled");
+    expect(()=>normalizeModuleModeLaunches([evidence],pendingRelease)).toThrow("release.enabled");
+    expect(()=>normalizeModuleModeLaunches([],pendingRelease)).toThrow("release.enabled");
+    expect(()=>bindActiveModuleModeRelease({...configuredRelease,enabled:true,status:"active",lifecycleEvidenceDigest:null}))
       .toThrow("release.lifecycleEvidenceDigest");
   });
   it.each([

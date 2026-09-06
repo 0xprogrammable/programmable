@@ -18,7 +18,9 @@ const WEBSITE_TOKEN = "service_" + "a".repeat(48);
 const ASSERTION_KEY = "assert_" + "b".repeat(48);
 const TIME = "2026-09-06T02:00:00.000Z";
 const NONCE = "abcdefghijklmnopqrstuv";
-function setup(options: { wallet?: string; release?: boolean | "configured" } = {}) {
+// Real immutable host pins with an explicit pending lifecycle, independent of production activation.
+const pendingRelease = { ...configuredRelease, enabled: false, status: "preview", lifecycleEvidenceDigest: null };
+function setup(options: { wallet?: string; release?: boolean | "pending" } = {}) {
   const f = moduleReviewAdminFixture(); const wallet = options.wallet ?? f.reviewer;
   const authenticate = vi.fn(async () => ({ privyUserId: "did:privy:test-reviewer", privySessionId: "session-review", wallets: [wallet] }));
   const queue = { schemaVersion: "programmable.modules.review-queue.v1", jobs: [{ ...f.job, plan: null, artifact: null }], nextCursor: null };
@@ -36,7 +38,7 @@ function setup(options: { wallet?: string; release?: boolean | "configured" } = 
     return Response.json(path.endsWith(f.subject.submissionId) ? detail : queue);
   });
   const client = createModuleReviewClient({ authenticator: { authenticate } as WalletPrincipalAuthenticatorV1, backendBaseUrl: "https://review.example.invalid", websiteToken: WEBSITE_TOKEN, bffAssertionKeyV2: ASSERTION_KEY, fetchBackend, now: () => new Date(TIME), nonce: () => NONCE,
-    ...(options.release === "configured" ? {} : { releaseIdentity: options.release === false ? { enabled: false, status: "preview", releaseDigest: null } : f.release }) });
+    releaseIdentity: options.release === "pending" ? pendingRelease : options.release === false ? { enabled: false, status: "preview", releaseDigest: null } : f.release });
   const read = (suffix = "") => new Request(`https://programmable.example/api/admin/modules${suffix}?walletAddress=${wallet}`, { headers: { Authorization: "Bearer browser-private-token", "X-Programmable-Bff-Assertion-Signature": "forged-browser-value" } });
   const post = (suffix: string, body: object) => new Request(`https://programmable.example/api/admin/modules/${f.subject.submissionId}/${suffix}`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer browser-private-token" }, body: JSON.stringify({ walletAddress: wallet, ...body }) });
   const command = (outcome: ModuleReviewDecisionCommandV1["outcome"] = "accept"): ModuleReviewDecisionCommandV1 => ({ schemaVersion: "programmable.modules.review-command.v1", submissionId: f.subject.submissionId, requestDigest: f.subject.requestDigest, expectedReviewRevision: 2, outcome, reason: "Synthetic review test only. Do not publish this fixture.", artifactDigest: outcome === "accept" ? f.artifact.artifactDigest : null, hostManifestHash: outcome === "accept" ? f.manifestHash : null, acknowledgedReviewAreas: outcome === "accept" ? f.artifact.reviewRequired : [] });
@@ -118,12 +120,12 @@ describe("Module review admin BFF", () => {
     expect(f.fetchBackend.mock.calls.every(([, init]) => init?.method === "GET")).toBe(true);
   });
   it("checks a private manifest against the real pending host identity without an active release", async () => {
-    const f = setup({ release: "configured" });
-    expect(configuredRelease.releaseDigest).toBe(computeModuleModeReleaseDigest(configuredRelease));
-    expect(configuredRelease.lifecycleEvidenceDigest).toBeNull();
-    expect(() => bindActiveModuleModeRelease(configuredRelease)).toThrow("release.enabled");
+    const f = setup({ release: "pending" });
+    expect(pendingRelease.releaseDigest).toBe(computeModuleModeReleaseDigest(pendingRelease));
+    expect(pendingRelease.lifecycleEvidenceDigest).toBeNull();
+    expect(() => bindActiveModuleModeRelease(pendingRelease)).toThrow("release.enabled");
     // Only the host identity is real here; the source/build fixture remains synthetic and unapproved.
-    const manifest = createModuleModeHostManifest({ release: configuredRelease as ModuleModeHostReleaseIdentity,
+    const manifest = createModuleModeHostManifest({ release: pendingRelease as ModuleModeHostReleaseIdentity,
       definition: f.definition, nativeBinding: f.binding, descriptor: f.source.descriptor });
     const result = await f.client.handle(f.post("manifest", { expectedReviewRevision: 2, hostManifestJson: JSON.stringify(manifest) }), "manifest", f.subject.submissionId);
     expect(result.status).toBe(200);
@@ -133,7 +135,7 @@ describe("Module review admin BFF", () => {
   it("keeps public launches disabled while the pending host identity permits private review", async () => {
     const authenticateRelease = vi.fn(async () => { throw new Error("A disabled preview must not authenticate as active"); });
     const fetchPublic = vi.fn<typeof fetch>(async () => { throw new Error("A disabled preview must not fetch publications"); });
-    const read = createModuleModeAvailabilityReader({ releaseProfile: configuredRelease, catalogFile: configuredCatalog,
+    const read = createModuleModeAvailabilityReader({ releaseProfile: pendingRelease, catalogFile: configuredCatalog,
       collector: () => ({ authenticateRelease }), fetchPublic });
     const result = await read();
     expect(result.release).toBeNull();

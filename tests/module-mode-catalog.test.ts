@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
-import { NATIVE_ENGINE_PROFILE } from "../lib/module-mode/builder";
+import { NATIVE_ENGINE_PROFILE, PREVIEW_MODULE_CATALOG } from "../lib/module-mode/builder";
 import { referenceManagementManifest } from "../lib/module-mode/management-manifest";
-import type { NativeModuleModeCatalogEntry } from "../lib/module-mode/native-catalog";
+import type { ModuleModeAvailability, NativeModuleModeCatalogEntry } from "../lib/module-mode/native-catalog";
 import { bindActiveModuleModeRelease } from "../lib/module-mode/release";
 import {
   bindModuleModeCatalogFile, computeModuleModeHostManifestHash, createModuleModeAvailabilityReader,
@@ -14,9 +14,11 @@ import { computeModuleReviewDecisionDigestV1, type ModuleReviewDecisionRecordV1 
 import { createModuleModeHttpCollector } from "../lib/server/robinhood-index/module-source";
 import { validateModuleSubmissionRequest, type ModuleSubmissionRequest } from "../packages/classic-modules/src/open-transport.mjs";
 import { canonicalizeJson } from "../lib/server/projection-target/canonical-json";
-import preview from "../config/module-mode/robinhood.preview.json";
+import configuredRelease from "../config/module-mode/robinhood.preview.json";
 import catalogFile from "../config/module-mode/catalog.json";
 import { a, h, moduleEvidenceFixture } from "./fixtures/module-mode-evidence";
+
+const pendingRelease = { ...configuredRelease, enabled: false, status: "preview", lifecycleEvidenceDigest: null };
 
 // Entirely synthetic parser/transport fixtures. These objects are never deployment, review or provider evidence.
 function fixture(options: { requiresHost?: string[]; managementCapabilities?: string[] } = {}) {
@@ -165,7 +167,7 @@ describe("Reviewed starter publication bytes", () => {
       },
     },
   ])("preserves and binds the canonical $name export", expected => {
-    const release = preview as ModuleModeHostReleaseIdentity;
+    const release = configuredRelease as ModuleModeHostReleaseIdentity;
     const publication = bindModuleModeCatalogFile(catalogFile, release).entries.find(item => item.entry.nativeBinding.packageId === expected.packageId);
     expect(publication).toBeDefined();
     if (!publication) throw new Error("Reviewed starter publication is missing.");
@@ -187,10 +189,9 @@ describe("Reviewed starter publication bytes", () => {
 describe("Read-only Module Mode availability", () => {
   it("keeps the reviewed starter catalogue unavailable while the release is disabled", async () => {
     expect(catalogFile.schemaVersion).toBe(MODULE_MODE_CATALOG_SCHEMA);
-    expect(catalogFile.sourceReleaseDigest).toBe(preview.releaseDigest);
+    expect(catalogFile.sourceReleaseDigest).toBe(configuredRelease.releaseDigest);
     expect(catalogFile.entries).toHaveLength(2);
-    expect(preview).toMatchObject({ enabled: false, status: "preview", lifecycleEvidenceDigest: null });
-    const f = fixture(); const read = createModuleModeAvailabilityReader({ ...f.dependencies, releaseProfile: preview, catalogFile });
+    const f = fixture(); const read = createModuleModeAvailabilityReader({ ...f.dependencies, releaseProfile: pendingRelease, catalogFile });
     const result = await read();
     expect(result.release).toBeNull(); expect(result.reason).toContain("being prepared");
     expect(result.catalog.every(entry => entry.status === "preview" && !Object.hasOwn(entry, "nativeBinding"))).toBe(true);
@@ -274,11 +275,32 @@ describe("Read-only Module Mode availability", () => {
     expect(f.fetchPublic).not.toHaveBeenCalled();
   });
   it("keeps the public route read-only and uncached at the browser boundary", async () => {
-    const route = await import("../app/api/module-mode/route");
-    const response = await route.GET(); const body = await response.json();
-    expect(response.status).toBe(200); expect(response.headers.get("cache-control")).toBe("no-store");
-    expect(body.release).toBeNull(); expect(body.catalog.every((entry: { status: string }) => entry.status === "preview")).toBe(true);
-    expect(Object.keys(route)).not.toContain("POST");
+    const readAvailability = vi.fn<() => Promise<ModuleModeAvailability>>();
+    vi.resetModules();
+    vi.doMock("../lib/server/module-mode/catalog", async importOriginal => ({
+      ...await importOriginal<typeof import("../lib/server/module-mode/catalog")>(),
+      readModuleModeAvailability: readAvailability,
+    }));
+    try {
+      const route = await import("../app/api/module-mode/route");
+      const schemaVersion = "programmable.module-mode.availability.v1" as const;
+      const cases: { availability: ModuleModeAvailability; status: number }[] = [
+        { availability: { schemaVersion, release: fixture().release, catalog: [], reason: null }, status: 200 },
+        { availability: { schemaVersion, release: null, catalog: PREVIEW_MODULE_CATALOG, reason: "Module previews." }, status: 200 },
+        { availability: { schemaVersion, release: null, catalog: [], reason: "Temporarily unavailable." }, status: 503 },
+      ];
+      for (const { availability, status } of cases) {
+        readAvailability.mockResolvedValueOnce(availability);
+        const response = await route.GET();
+        expect(response.status).toBe(status); expect(response.headers.get("cache-control")).toBe("no-store");
+        expect(await response.json()).toEqual(availability);
+      }
+      expect(readAvailability).toHaveBeenCalledTimes(cases.length);
+      expect(Object.keys(route)).not.toContain("POST");
+    } finally {
+      vi.doUnmock("../lib/server/module-mode/catalog");
+      vi.resetModules();
+    }
   });
   it("uses canonical JSON rather than mutable property insertion order", () => {
     expect(canonicalizeJson({ z: [1, false], a: "é" })).toBe('{"a":"é","z":[1,false]}');
