@@ -185,7 +185,8 @@ both providers. A separate buy or sell action is:
 {
   kind: "buy" | "sell", canaryKind: "plain" | "modules",
   token: Address, tokenCodeHash: Hex,
-  amount: string, minimumOut: string, deadline: string
+  amount: string, minimumOut: string, deadline: string,
+  launch: { plan: originalLaunchPlan, evidence: verifiedLaunchReceipt }
 }
 ```
 
@@ -195,12 +196,21 @@ must be positive, and the recipient is always the reviewed owner. Both providers
 must confirm that the token belongs to that owner's native launcher record. The
 receipt must contain the matching native trade event and amounts.
 
+Embed the original complete launch plan and its actual verified receipt output as
+JSON objects in `launch`; filenames or locally invented receipt claims are not
+accepted. Every subsequent operation re-reads that transaction and its canonical
+receipt from both providers, then binds the exact module configurations, recipe,
+program, creator fees and recipients. Keep creator recipients at revision zero
+until both canaries have completed their sell. CTO demonstrations follow those
+trades; the lifecycle collector reads fee state at the historical sell block.
+
 Before selling, create a separate exact approval, never an unlimited allowance:
 
 ```ts
 {
   kind: "approve", canaryKind: "plain" | "modules",
-  token: Address, tokenCodeHash: Hex, amount: string
+  token: Address, tokenCodeHash: Hex, amount: string,
+  launch: { plan: originalLaunchPlan, evidence: verifiedLaunchReceipt }
 }
 ```
 
