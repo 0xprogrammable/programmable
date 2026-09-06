@@ -1185,6 +1185,7 @@ export function DeveloperApiKeysView({
       !account
       || mutationState.kind !== "idle"
       || mutationInFlightRef.current
+      || pendingMutationAttempt?.kind === "rotate"
     ) return;
     if (mutationResult?.result.secretState === "delivered-once") {
       setStatusMessage("Save the visible API key before creating another.");
@@ -1818,6 +1819,7 @@ export function DeveloperApiKeysView({
                       className={styles.primaryButton}
                       disabled={
                         mutationState.kind !== "idle"
+                        || pendingMutationAttempt?.kind === "rotate"
                         || mutationResult?.result.secretState === "delivered-once"
                         || (purpose === "module-contributions" && !moduleContributionsAvailable && pendingMutationAttempt?.kind !== "issue")
                         || (purpose === "custom-launches" && access === "read-only" && !canIssueReadOnly && !pendingMutationAttempt)
