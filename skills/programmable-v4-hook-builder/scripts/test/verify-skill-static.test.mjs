@@ -186,6 +186,41 @@ test("installed-mode portable execution keeps its single CLI test in one nonempt
   assert.equal(result.failure, null);
 });
 
+test("verifier awaits all three terminal error gates", () => {
+  const source = fs.readFileSync(verifier, "utf8");
+  const calls = [...source.matchAll(/^.*\bfailWithErrors\(errors\);.*$/gmu)];
+  assert.equal(calls.length, 3);
+  for (const [call] of calls) assert.match(call, /\bawait failWithErrors\(errors\);/u);
+});
+
+test("verifier flushes complete large error output before exiting without continuing", () => {
+  const source = fs.readFileSync(verifier, "utf8");
+  const declaration = source.match(/(?:async )?function failWithErrors\(messages\) \{[\s\S]*\}\s*$/u);
+  assert.ok(declaration, "exercise the exact verifier error function from source");
+
+  for (const payloadBytes of [128 * 1024, 2 * 1024 * 1024]) {
+    const result = childProcess.spawnSync(process.execPath, ["--input-type=module", "-e", `
+      ${declaration[0]}
+      const repeatedError = "x".repeat(${payloadBytes});
+      await failWithErrors(["z-complete-end-marker", repeatedError, "a-first", repeatedError]);
+      console.log("unexpected-success-after-error");
+    `], {
+      encoding: "utf8",
+      maxBuffer: 4 * 1024 * 1024,
+      shell: false,
+      stdio: ["ignore", "pipe", "pipe"],
+      timeout: 10_000
+    });
+    assert.ifError(result.error);
+    assert.equal(result.signal, null);
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, "", "the caller must not continue after the error gate");
+    const expected = `- a-first\n- ${"x".repeat(payloadBytes)}\n- z-complete-end-marker\n`;
+    assert.equal(Buffer.byteLength(result.stderr), Buffer.byteLength(expected), "stderr must be fully flushed");
+    assert.equal(result.stderr, expected, "retain sorted, deduplicated errors and the final marker");
+  }
+});
+
 function readDeclaredRequiredInventories() {
   const source = fs.readFileSync(verifier, "utf8");
   const testDeclaration = source.match(/const REQUIRED_PORTABLE_TESTS = Object\.freeze\(`([\s\S]*?)`\.trim\(\)\.split/u);

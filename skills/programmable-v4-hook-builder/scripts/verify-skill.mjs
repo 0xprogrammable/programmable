@@ -450,7 +450,7 @@ if (packageBytes > MAX_PORTABLE_BYTES) errors.push(`portable package is ${packag
 for (const entry of packageEntries) {
   if (entry.stat.size > MAX_PORTABLE_FILE_BYTES) errors.push(`${relative(entry.path)} exceeds the ${MAX_PORTABLE_FILE_BYTES}-byte per-file limit`);
 }
-if (errors.length > 0) failWithErrors(errors);
+if (errors.length > 0) await failWithErrors(errors);
 
 for (const jsonPath of packageFiles.filter((entry) => entry.toLowerCase().endsWith(".json"))) {
   try {
@@ -460,7 +460,7 @@ for (const jsonPath of packageFiles.filter((entry) => entry.toLowerCase().endsWi
     errors.push(`${relative(jsonPath)}: must be bounded duplicate-free UTF-8 JSON`);
   }
 }
-if (errors.length > 0) failWithErrors(errors);
+if (errors.length > 0) await failWithErrors(errors);
 
 const skill = read("SKILL.md");
 const rawSkillLineCount = skill.split("\n").length;
@@ -686,7 +686,7 @@ await validateScriptsAndTests({
 });
 
 if (errors.length > 0) {
-  failWithErrors(errors);
+  await failWithErrors(errors);
 }
 
 if (untrustedDataMode) {
@@ -695,7 +695,10 @@ if (untrustedDataMode) {
   console.log(`Validated portable skill structure, schema, links, Git pin shapes, deterministic CLI checks${installedMode ? "" : " and repository fixture tests"} and ${lineCount}-line SKILL.md.`);
 }
 
-function failWithErrors(messages) {
-  for (const error of [...new Set(messages)].sort()) console.error(`- ${error}`);
+async function failWithErrors(messages) {
+  const output = `${[...new Set(messages)].sort().map((error) => `- ${error}`).join("\n")}\n`;
+  await new Promise((resolve, reject) => {
+    process.stderr.write(output, (error) => error ? reject(error) : resolve());
+  });
   process.exit(1);
 }
