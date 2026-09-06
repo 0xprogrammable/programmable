@@ -286,7 +286,7 @@ describe("Read-only Module Mode availability", () => {
       const schemaVersion = "programmable.module-mode.availability.v1" as const;
       const cases: { availability: ModuleModeAvailability; status: number }[] = [
         { availability: { schemaVersion, release: fixture().release, catalog: [], reason: null }, status: 200 },
-        { availability: { schemaVersion, release: null, catalog: PREVIEW_MODULE_CATALOG, reason: "Module previews." }, status: 200 },
+        { availability: { schemaVersion, release: null, catalog: [...PREVIEW_MODULE_CATALOG], reason: "Module previews." }, status: 200 },
         { availability: { schemaVersion, release: null, catalog: [], reason: "Temporarily unavailable." }, status: 503 },
       ];
       for (const { availability, status } of cases) {
