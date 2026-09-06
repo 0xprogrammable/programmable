@@ -5,7 +5,7 @@ import { decodeFunctionData, encodeAbiParameters, encodeEventTopics, encodeFunct
 import { moduleReviewAdminFixture } from "./fixtures/module-review-admin";
 import { a, h } from "./fixtures/module-mode-evidence";
 import { computeModuleModeReleaseDigest } from "../lib/module-mode/release";
-import { reviewDigest } from "../lib/module-mode/review-contract";
+import { reviewDigest, type ReviewAttempt } from "../lib/module-mode/review-contract";
 import { computeModuleReviewDecisionDigestV1, type ModuleReviewDecisionRecordV1 } from "../lib/server/module-mode/review-decision-wire-v1";
 import { moduleSubmissionFromPack, validateModuleSubmissionRequest, type ModuleSubmissionRequest } from "../packages/classic-modules/src/open-transport.mjs";
 import { loadOpenSourcePackage } from "../packages/classic-modules/src/open-package-io.mjs";
@@ -14,6 +14,11 @@ import { CREATE2_DEPLOYER, REGISTRY_ABI, createHostPreparation, prepareModulePub
 import { observePublicationReadback, publicationRpc, readPublicationOwner, type PublicationProvider } from "../ops/module-mode-publication/rpc";
 
 // Synthetic parser/RPC evidence only. Never upload these fixtures or treat them as review or chain proof.
+function workerIdentity(overrides: Partial<Omit<NonNullable<ReviewAttempt["workerIdentity"]>, "identityDigest">> = {}) {
+  const fields = { sourceCommit: "a".repeat(40), runId: "12345", runAttempt: "1",
+    workflowRef: "programmablehq/programmable-open-hook-v2-internal/.github/workflows/protected-module-review-v1.yml@refs/heads/main", ...overrides };
+  return { ...fields, identityDigest: reviewDigest("programmable.modules.worker-identity.v1", fields) };
+}
 async function fixture() {
   const f = moduleReviewAdminFixture();
   const source = structuredClone(f.source);
@@ -33,8 +38,11 @@ async function fixture() {
   const detail = structuredClone(f.detail);
   detail.job = { ...f.job, subject, plan, planDigest, artifact };
   detail.source.descriptor = source.descriptor; detail.source.packageId = checked.packageId;
-  detail.attempts = [{ ...detail.attempts[0], requestDigest: checked.requestDigest, planDigest, artifactDigest: artifact.artifactDigest,
-    workerIdentity: { ...detail.attempts[0].workerIdentity!, workflowRef: "programmablehq/programmable-open-hook-v2-internal/.github/workflows/protected-module-review-v1.yml@refs/heads/main" } }];
+  const attempt = { ...detail.attempts[0], requestDigest: checked.requestDigest, planDigest };
+  detail.attempts = [
+    { ...attempt, event: "claimed", artifactDigest: null, workerIdentity: workerIdentity(), createdAt: detail.job.createdAt },
+    { ...attempt, event: "completed", artifactDigest: artifact.artifactDigest, workerIdentity: null, createdAt: detail.job.updatedAt },
+  ];
   const release = structuredClone(f.release);
   const codes = new Map<string, Hex>(); let index = 0;
   for (const pin of Object.values(release.contracts)) { const code = `0x60${(++index).toString(16).padStart(2, "0")}` as Hex; (pin as { runtimeCodeHash: Hex }).runtimeCodeHash = keccak256(code); codes.set(pin.address, code); }
@@ -93,7 +101,8 @@ async function starterFixture(changeSource?: (source: ModuleSubmissionRequest) =
   const digestArtifact = () => {
     const contents = Object.fromEntries(Object.entries(artifact).filter(([key]) => key !== "artifactDigest"));
     artifact.artifactDigest = reviewDigest("programmable.modules.native-build.v1", contents);
-    Object.assign(f.detail.attempts[0], { requestDigest: checked.requestDigest, planDigest, artifactDigest: artifact.artifactDigest });
+    for (const attempt of f.detail.attempts) Object.assign(attempt, { requestDigest: checked.requestDigest, planDigest,
+      artifactDigest: attempt.event === "completed" ? artifact.artifactDigest : null });
   };
   digestArtifact();
   f.fetchImpl.mockImplementation(async url => Response.json(String(url).includes("/source?") ? source : f.detail));
@@ -190,7 +199,7 @@ describe("Generic module publication authority and binding", () => {
       (f: Awaited<ReturnType<typeof fixture>>) => { f.artifact.program.sourcePath = "src/Other.sol"; },
       (f: Awaited<ReturnType<typeof fixture>>) => { f.detail.attempts[0].workerIdentity!.workflowRef = "untrusted/workflow"; },
     ]) {
-      const f = await fixture(); change(f); f.digestArtifact(); f.detail.attempts[0].artifactDigest = f.artifact.artifactDigest;
+      const f = await fixture(); change(f); f.digestArtifact(); f.detail.attempts[1].artifactDigest = f.artifact.artifactDigest;
       await expect(f.reader.read(f.subject.submissionId)).rejects.toThrow();
     }
   });
@@ -202,6 +211,97 @@ describe("Generic module publication authority and binding", () => {
     await expect(f.reader.read(f.subject.submissionId)).rejects.not.toThrow("credential-canary-private");
     f.fetchImpl.mockImplementation(async () => new Response(null, { status: 302, headers: { location: "https://other.invalid" } }));
     await expect(f.reader.read(f.subject.submissionId)).rejects.toThrow("Authenticated module review read failed");
+  });
+});
+
+describe("Protected worker attempt history", () => {
+  it("matches the backend worker-identity digests for the two observed protected runs", () => {
+    const sourceCommit = "55cd1e5f99503d3f2e79182eff143201db6ae34e";
+    expect(workerIdentity({ sourceCommit, runId: "34040891158" }).identityDigest)
+      .toBe("0xaf2412dc42797e9b6f2ce77184dbc2b276ced7f6f28432cd3f2ccaf1089a8485");
+    expect(workerIdentity({ sourceCommit, runId: "34041582141" }).identityDigest)
+      .toBe("0x2c200da264a3db039278b26e2c84cc860f35080a793015cece4a42841b01a6c8");
+  });
+  it("binds the current completed artifact to its claim's worker without inventing terminal identity", async () => {
+    const f = await fixture();
+    expect(f.detail.attempts.map(attempt => attempt.event)).toEqual(["claimed", "completed"]);
+    expect(f.detail.attempts[0].artifactDigest).toBeNull();
+    expect(f.detail.attempts[1].workerIdentity).toBeNull();
+    expect(f.built.worker).toEqual(f.detail.attempts[0].workerIdentity);
+    expect(f.built.job.attempt).toBe(f.detail.attempts[1].attempt);
+    expect(f.built.artifact.artifactDigest).toBe(f.detail.attempts[1].artifactDigest);
+  });
+  it.each(["expired", "failed", "completed"] as const)("retains older %s attempts without borrowing their plan or worker", async event => {
+    const f = await fixture();
+    f.detail.job.attempt = 2;
+    for (const attempt of f.detail.attempts) attempt.attempt = 2;
+    f.detail.attempts[0].createdAt = "2026-09-06T01:05:00.000Z";
+    const oldClaim: ReviewAttempt = { ...f.detail.attempts[0], attempt: 1, planDigest: h(811),
+      workerIdentity: workerIdentity({ sourceCommit: "b".repeat(40), runId: "12344" }), createdAt: "2026-09-06T01:01:00.000Z" };
+    const oldTerminal: ReviewAttempt = { ...oldClaim, event, workerIdentity: null,
+      artifactDigest: event === "completed" ? h(812) : null, errorCode: event === "failed" ? "MODULE_BUILD_FAILED" : null,
+      createdAt: "2026-09-06T01:02:00.000Z" };
+    f.detail.attempts.push(oldClaim, oldTerminal);
+    const value = await f.reader.read(f.subject.submissionId);
+    expect(value.worker).toEqual(f.detail.attempts[0].workerIdentity);
+    expect(value.worker).not.toEqual(oldClaim.workerIdentity);
+  });
+  it.each<[string, (f: Awaited<ReturnType<typeof fixture>>) => void]>([
+    ["missing claim", f => { f.detail.attempts.shift(); }],
+    ["missing completion", f => { f.detail.attempts.pop(); }],
+    ["worker copied only onto an orphan completion", f => { f.detail.attempts[1].workerIdentity = f.detail.attempts[0].workerIdentity; f.detail.attempts.shift(); }],
+    ["current attempt advanced beyond the successful history", f => { f.detail.job.attempt = 2; }],
+    ["claim from another attempt", f => { f.detail.attempts[0].attempt = 2; }],
+    ["completion from another attempt", f => { f.detail.attempts[1].attempt = 2; }],
+    ["claim for another request", f => { f.detail.attempts[0].requestDigest = h(813); }],
+    ["completion for another request", f => { f.detail.attempts[1].requestDigest = h(813); }],
+    ["claim for another plan", f => { f.detail.attempts[0].planDigest = h(814); }],
+    ["completion for another plan", f => { f.detail.attempts[1].planDigest = h(814); }],
+    ["completion for another artifact", f => { f.detail.attempts[1].artifactDigest = h(815); }],
+    ["duplicate claim", f => { f.detail.attempts.splice(1, 0, structuredClone(f.detail.attempts[0])); }],
+    ["duplicate completion", f => { f.detail.attempts.push(structuredClone(f.detail.attempts[1])); }],
+    ["competing claimed worker", f => { f.detail.attempts.splice(1, 0, { ...f.detail.attempts[0], workerIdentity: workerIdentity({ runId: "12346" }) }); }],
+    ["reversed event order", f => { f.detail.attempts.reverse(); }],
+    ["expired current attempt", f => { f.detail.attempts.push({ ...f.detail.attempts[1], event: "expired", artifactDigest: null }); }],
+    ["failed current attempt", f => { f.detail.attempts[1] = { ...f.detail.attempts[1], event: "failed", artifactDigest: null, errorCode: "MODULE_BUILD_FAILED" }; }],
+    ["claim with an artifact", f => { f.detail.attempts[0].artifactDigest = f.artifact.artifactDigest; }],
+    ["claim with an error", f => { f.detail.attempts[0].errorCode = "MODULE_BUILD_FAILED"; }],
+    ["completion with an error", f => { f.detail.attempts[1].errorCode = "MODULE_BUILD_FAILED"; }],
+    ["missing claimed worker", f => { f.detail.attempts[0].workerIdentity = null; }],
+    ["unbound worker identity fields", f => { f.detail.attempts[0].workerIdentity!.runId = "12346"; }],
+    ["different protected workflow", f => { f.detail.attempts[0].workerIdentity = workerIdentity({ workflowRef: "untrusted/workflow" }); }],
+    ["another worker on the completion", f => { f.detail.attempts[1].workerIdentity = workerIdentity({ runId: "12346" }); }],
+    ["claim after completion", f => { f.detail.attempts[0].createdAt = "2026-09-06T01:11:00.000Z"; }],
+    ["claim before job creation", f => { f.detail.attempts[0].createdAt = "2026-09-06T00:59:59.000Z"; }],
+    ["completion after job update", f => { f.detail.attempts[1].createdAt = "2026-09-06T01:11:00.000Z"; }],
+  ])("rejects %s", async (_label, mutate) => {
+    const f = await fixture(); mutate(f);
+    await expect(f.reader.read(f.subject.submissionId)).rejects.toThrow();
+  });
+  it("does not use an older matching artifact to complete the current attempt", async () => {
+    const f = await fixture();
+    f.detail.job.attempt = 2;
+    const oldHistory = structuredClone(f.detail.attempts);
+    f.detail.attempts = [{ ...oldHistory[0], attempt: 2, workerIdentity: workerIdentity({ runId: "12346" }) }, ...oldHistory];
+    await expect(f.reader.read(f.subject.submissionId)).rejects.toThrow("Current claimed/completed worker pair missing");
+  });
+  it("rejects older attempts placed before the current attempt despite valid pairs", async () => {
+    const f = await fixture();
+    const oldHistory = structuredClone(f.detail.attempts);
+    f.detail.job.attempt = 2;
+    for (const attempt of f.detail.attempts) attempt.attempt = 2;
+    f.detail.attempts.unshift(...oldHistory);
+    await expect(f.reader.read(f.subject.submissionId)).rejects.toThrow("Worker history order or uniqueness differs");
+  });
+  it("rejects concurrent worker-history changes even when job and decisions stay unchanged", async () => {
+    const f = await fixture(); let details = 0;
+    f.fetchImpl.mockImplementation(async url => {
+      if (String(url).includes("/source?")) return Response.json(f.source);
+      const detail = structuredClone(f.detail);
+      if (++details === 2) detail.attempts[0].workerIdentity = workerIdentity({ runId: "12346" });
+      return Response.json(detail);
+    });
+    await expect(f.reader.read(f.subject.submissionId)).rejects.toThrow("Concurrent worker history");
   });
 });
 
