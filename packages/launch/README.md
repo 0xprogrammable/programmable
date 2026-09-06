@@ -1,8 +1,11 @@
 # Programmable Launch CLI
 
 `@programmable/launch` is the source package for the Programmable Custom Launch packager and API client. It has
-exactly four commands: `pack`, `validate`, `submit`, and `status`. It never signs or broadcasts a wallet transaction.
+five source commands: `coverage`, `pack`, `validate`, `submit`, and `status`. It never signs or broadcasts a wallet transaction.
 Release and installability are version-specific.
+
+The additive `coverage` command requires a separately published and verified new CLI release. The immutable
+`4.0.0` and `4.1.0` assets retain their original four commands; do not reinstall the same version expecting this command.
 
 ## Install the current public Ethereum V3 release
 
@@ -115,6 +118,37 @@ permit. Do not increase the amount or budget without user approval; wallet-time 
 leg once per successful buy or sell, rounded up, separately from creator and LP fees. Fees accrue as PoolManager
 native claims for `0xD88539d3c4C460136a733A3Fd60cf6BF269079da`, with permissionless claims paid only to that recipient.
 Source admission is not proof of deployed state, trades or collected revenue; the CLI and API key do not claim fees.
+
+## Read Robinhood architecture coverage
+
+Before building, read the separate public report. It requires no API key or query parameters:
+
+```sh
+curl --fail --silent --show-error https://api.programmable.market/v4/chains/4663/launch-coverage
+```
+
+With a verified new CLI release containing this command:
+
+```sh
+programmable-launch coverage --chain-id 4663
+```
+
+`readiness.status: ready` describes service readiness. Check `structuralFormat` and `verifierCoverage` separately:
+the current graph has one role per physical target and `tokenAndHookMayShareAddress: false`. It represents one
+native ETH/token pool; no-pool and multiple-pool projects require a transport extension. A declared funding model or
+hook permission does not prove its execution. `proof-available` names activated server verification for the listed
+constraints; a `candidate` adapter or `publicRequestSurface: none-versioned-transport-required` is not a launch route.
+
+The report always has `requestAuthorization.requestAuthorized: false`. Use `findingObligations` to distinguish source
+repair, quote refresh, funding, simulation and missing platform verifier coverage. Unknown finding codes remain
+unclassified. Wider API-key permissions and caller-supplied JSON proofs cannot clear admission findings. Preserve
+the intended architecture when it needs a platform extension; do not split a token/hook simply to silence a client check.
+
+See the [coverage OpenAPI](https://programmable.market/openapi/launch-coverage-v1.json) and
+[response schema](https://programmable.market/schemas/custom-launch/coverage/v1.json). If the server returns 404,
+coverage discovery has not been deployed there. A timeout, unavailable report or unknown schema does not imply an
+invalid API key or supported architecture. Retry the public read later. Existing clients and launch requests retain
+their original contracts; this read never calls preflight, reads credentials, creates a launch, signs or broadcasts.
 
 ## V3 general hook profile
 

@@ -81,10 +81,43 @@ Admission does not prove deployed state, completed trades or collected revenue; 
 V4 metadata images are exactly PNG or single-frame GIF, as published by `metadataImage.mediaTypes` and `gifFrames`.
 JPEG, WebP, and animated GIF are rejected by the V4 packer before any network request.
 
-Project-owned token and hook targets, 3–16 graph targets and all fourteen hook permission bits are structurally
-representable. That does not prove safety or behavior. `feeBehaviorClaim` remains false, generic fee claiming and
-generic buyback management are not live, and outside indexers may lag or omit Robinhood data even after a launch is
-finalized. Legacy Registry and GitHub intake stay closed.
+Project-owned token and hook targets at distinct addresses, 3–16 graph targets and all fourteen hook permission bits
+are structurally representable. The active graph assigns one role to each physical target, so a combined token/hook
+at the same address requires a versioned graph and Router release. Structural representation does not prove safety
+or behavior. `feeBehaviorClaim` remains false, generic fee claiming and generic buyback management are not live, and
+outside indexers may lag or omit Robinhood data even after a launch is finalized. Legacy Registry and GitHub intake
+stay closed.
+
+### Check architecture coverage before building
+
+Read `GET https://api.programmable.market/v4/chains/4663/launch-coverage` without an API key, query parameters or body.
+The separate [coverage OpenAPI](https://programmable.market/openapi/launch-coverage-v1.json) and
+[response schema](https://programmable.market/schemas/custom-launch/coverage/v1.json) preserve the existing 4.0 and
+4.1 launch contracts. The response distinguishes:
+
+| Field | Meaning |
+| --- | --- |
+| `readiness` | Whether the service is ready, independently of architecture coverage. |
+| `structuralFormat` | Representable roles, pool topology, permissions and funding declarations. `tokenAndHookMayShareAddress: false` is an explicit same-address limitation. |
+| `verifierCoverage` | Activated server proof adapters and their exact constraints. A candidate or missing public request surface cannot authorize a launch. |
+| `findingObligations` | Required source repairs, funding/quote updates, transaction simulation or additional platform verification. Unknown codes remain unclassified. |
+| `requestAuthorization` | Always `requestAuthorized: false`; no particular request has been checked or approved. |
+
+The active format represents one native ETH/token pool. No-pool projects, multiple pool keys and same-address
+token/hooks need a transport extension. Listing all permission bits or a funding model does not prove every hook,
+curve, module or settlement behavior. Keep the project's intended architecture when it needs additional platform
+support; wider key permissions or uploaded proof claims cannot make that support available.
+
+```sh
+curl --fail --silent --show-error https://api.programmable.market/v4/chains/4663/launch-coverage
+```
+
+A new, separately verified CLI release may also provide `programmable-launch coverage --chain-id 4663`. Immutable
+CLI 4.0.0 and 4.1.0 releases keep their original commands; this documentation does not publish a replacement asset.
+If coverage returns 404, the deployment does not provide this report yet. A missing endpoint, timeout or unknown
+report version is a coverage-discovery problem, not a reason to rotate a key or assume an architecture is supported.
+When the report is available, still run the original authenticated preflight and server admission for exact launch
+bytes before the separate wallet review.
 
 A bounded V4 external-contract reference is admissible only after the protected API server verifies its exact
 `eip155:4663` address, live runtime hash, source-verification evidence, declared graph role and verification

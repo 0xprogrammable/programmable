@@ -83,6 +83,7 @@ transaction and pays gas.
 V4 contract pointers:
 
 - `GET /v4/chains/4663/capabilities`
+- Separate public coverage read: `GET /v4/chains/4663/launch-coverage` (no API key, query parameters or body)
 - `POST /v4/chains/4663/custom-launches/preflight`
 - `POST /v4/chains/4663/custom-launches`
 - `GET /v4/chains/4663/custom-launches/{launchId}`
@@ -104,6 +105,28 @@ and hook targets, 3–16 graph targets and all fourteen hook permissions are str
 claims. `feeBehaviorClaim` is false; generic fee claiming and generic buyback management are not live. External
 indexers may lag or omit chain data, so finalized Router evidence and Programmable indexing state remain distinct.
 Legacy Registry and GitHub intake are closed.
+
+Before choosing an architecture, read the separate
+[launch coverage report](https://api.programmable.market/v4/chains/4663/launch-coverage),
+[coverage OpenAPI](https://programmable.market/openapi/launch-coverage-v1.json) and
+[response schema](https://programmable.market/schemas/custom-launch/coverage/v1.json). `readiness.status: ready`
+describes the service. Check `structuralFormat` and `verifierCoverage` separately: the current format uses one role
+per physical target, explicitly reports `tokenAndHookMayShareAddress: false`, and represents one native ETH/token
+pool. Same-address token/hooks, no-pool designs and multiple pool keys require a versioned transport extension.
+Preserve the intended project architecture; do not split a token/hook just to satisfy the older format.
+
+The report always has `requestAuthorization.requestAuthorized: false`. Listed hook permissions and funding models
+are declarations, not execution evidence. `proof-available` applies only to the named server adapter and its exact
+constraints; candidates and `publicRequestSurface: none-versioned-transport-required` do not create a public route.
+Use `findingObligations` to distinguish source repair, funding, quote refresh, simulation and missing platform
+verification. Keep unknown codes unclassified. Wider API-key scopes or caller-supplied JSON proofs cannot clear a
+finding. A missing coverage endpoint, timeout or unknown report version does not mean the key is invalid or the
+architecture is supported. Retry the public read later without rotating credentials. Still use the original
+preflight, server admission and separate wallet handoff for the exact launch request.
+
+The source command `programmable-launch coverage --chain-id 4663` requires a separately verified new immutable CLI
+release. Existing 4.0.0 and 4.1.0 release assets keep their original commands; do not reinstall them expecting this
+addition. The direct public GET needs no CLI upgrade and does not modify any existing launch contract.
 
 V4 metadata images are exactly PNG or single-frame GIF, as published by `metadataImage.mediaTypes` and `gifFrames`.
 JPEG, WebP, and animated GIF are rejected by the V4 packer before any network request.

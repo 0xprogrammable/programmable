@@ -115,6 +115,27 @@ and it never uses `--clobber`.
 
 ## Publish
 
+### Additive launch coverage rollout
+
+The public coverage read is independent of the frozen launch profiles. Deploy the backend implementation of
+`GET /v4/chains/4663/launch-coverage` first and verify its exact production response against
+`public/schemas/custom-launch/coverage/v1.json`, including `tokenAndHookMayShareAddress: false` and
+`requestAuthorized: false`. Readiness does not establish wider architecture support. Check that ordinary 4.0/4.1
+capabilities, preflight, request and status contracts retain their original bytes and behavior.
+
+Publish the separate `public/openapi/launch-coverage-v1.json`, response schema and developer guidance from the
+reviewed `production` release. The source `coverage` CLI command requires a new package version, an immutable new
+GitHub Release and the same exact-source, checksum and downloaded-asset verification described here. Do not reuse
+or replace the existing 4.0.0 or 4.1.0 release tags, tarballs, checksums or discovery pins. A source-only merge does not
+make the command available in those installed clients. Update client discovery only after verifying the new release;
+the older CLI commands and their existing request semantics remain compatible.
+
+Verify the new client against the live unauthenticated report and an older deployment returning 404. The latter
+must produce `LAUNCH_COVERAGE_UNAVAILABLE`, without loading or transmitting a key, inferring support or changing any
+launch request. Neither this report nor its publication activates a new graph, Router or write profile.
+
+### Dispatch the immutable release
+
 From the Actions page, run `Release Programmable Launch CLI` on the
 `production` branch with the exact version from `packages/launch/package.json`.
 Use a new first-attempt dispatch immediately after setting both signed owner

@@ -19,6 +19,7 @@ import {
 import { createCliDiagnosticError } from "./diagnostics.mjs";
 import { packLaunch } from "./pack.mjs";
 import { validateLaunchFile } from "./validate.mjs";
+import { getRobinhoodLaunchCoverageV1 } from "./launch-coverage-v1.mjs";
 import {
   ProgrammableApiError,
   statusLaunch,
@@ -94,7 +95,16 @@ export async function main(argv) {
     return;
   }
   let result;
-  if (command === "pack") {
+  if (command === "coverage") {
+    rejectPositionals(parsed, 0, "coverage");
+    if (parsed.booleans.size > 0 || Object.keys(parsed.flags).some(flag => !["chain-id", "timeout-ms"].includes(flag))) {
+      throw new TypeError("coverage accepts only --chain-id and --timeout-ms; it reads public information without credentials");
+    }
+    result = await getRobinhoodLaunchCoverageV1({
+      chainId: parsed.flags["chain-id"],
+      timeoutMs: integerFlag(parsed, "timeout-ms"),
+    });
+  } else if (command === "pack") {
     rejectPositionals(parsed, 0, "pack");
     result = await packLaunch({
       configPath: requiredV3ConfigFlag(parsed),
@@ -135,7 +145,7 @@ export async function main(argv) {
       chainId: parsed.flags["chain-id"],
     });
   } else {
-    throw new TypeError(`Unknown command ${command}. Expected pack, validate, submit, or status.`);
+    throw new TypeError(`Unknown command ${command}. Expected coverage, pack, validate, submit, or status.`);
   }
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
 }
@@ -222,12 +232,20 @@ function usage(command) {
     `programmable-launch ${PACKAGE_VERSION}`,
     "",
     "Commands:",
+    "  coverage   Read public launch architecture and verifier coverage",
     "  pack       Derive launch.json and its receipt from exact source/build artifacts",
     "  validate   Recompute and validate a launch request",
     "  submit     Persistently bind and submit exact request bytes",
     "  status     Read or poll one Custom launch request",
   ];
   const details = {
+    coverage: [
+      "Usage: programmable-launch coverage --chain-id 4663 [--timeout-ms 15000]",
+      "Reads public launch coverage with no API key. A ready service does not mean every architecture is supported.",
+      "The report does not authorize a request, clear findings, issue a permit, sign, or broadcast.",
+      "A missing endpoint means coverage discovery is unavailable; do not replace credentials or assume support.",
+      "Published 4.0.0 and 4.1.0 CLI assets do not include this additive source command; use it only from a separately verified new release.",
+    ],
     pack: [
       "Usage: programmable-launch pack --config <programmable-launch.config.json> [--output launch.json] [--receipt receipt.json]",
     ],
