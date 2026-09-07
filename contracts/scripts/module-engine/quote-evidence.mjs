@@ -6,7 +6,7 @@ import { evidenceBytes, evidenceDigest, sourcifyVerificationRequests } from '../
 import { SOURCIFY_BASE, boundedPublicJson, exactJson, sourcifyNeedsRecompilation, sourcifyPreflight, validateSourcifySource } from '../module-mode/source-readback.mjs';
 import { recompileSourcifyInput } from '../module-mode/source-recompile.mjs';
 import { assertQuoteProfile, QUOTE_DEPLOYMENT_SCHEMA, QUOTE_ROLES, quoteInfrastructureIdentity } from './quote-core.mjs';
-import { observeQuoteReceipt } from './quote-rpc.mjs';
+import { assertQuoteWethProxyObservation, observeQuoteReceipt } from './quote-rpc.mjs';
 
 export const QUOTE_SOURCE_SCHEMA = 'programmable.module-engine-quote-source-verification-evidence.v1';
 export function quoteConstructorArguments(plan, role) {
@@ -54,6 +54,7 @@ export function quoteSourceCreation(plan, role, evidence) {
       && bindings.planDigest === plan.planDigest && BigInt(bindings.blockNumber) === BigInt(record.receipt.blockNumber)
       && bindings.blockHash === record.receipt.blockHash && canonicalJson(bindings.dependencies) === canonicalJson(plan.dependencies)
       && canonicalJson(bindings.deployedRoles) === canonicalJson(QUOTE_ROLES.slice(0, index + 1)), 'Quote dependency readback differs');
+    assertQuoteWethProxyObservation(plan, bindings);
   }
   const record = records[QUOTE_ROLES.indexOf(role)];
   return { transactionHash: hash(record.receipt.transactionHash), blockNumber: record.receipt.blockNumber,

@@ -376,6 +376,19 @@ factory, V3 factory, SwapRouter02 and WETH runtimes are also checked at one comm
 locked-position factory and router getters must reproduce their expected links. Stage 1 requires the exact stage 0
 planner runtime. A matching occupied target requires its actual receipt; it never becomes a fresh deployment request.
 
+The official WETH address is a `TransparentUpgradeableProxy`. Its outer runtime hash does not bind the current
+implementation or make that implementation immutable. Every Quote stage and included-receipt observation also
+reads the EIP-1967 implementation and admin slots, then the complete implementation runtime, through the same two
+providers at the same block used for the outer pins. `quoteBindings.wethProxy` records those slot words, addresses,
+implementation bytes and hash, and block identity. Missing, disagreeing, noncanonical or empty-code observations
+fail closed; deployment evidence used to bind source requests must retain the internally consistent snapshot.
+This is an observation, not a new hardcoded implementation allowlist or a guarantee that later upgrades cannot
+occur. The external proxy administration can change WETH behavior or availability after that block, while its
+outer code hash remains unchanged. An observed admin address alone does not establish the ultimate executor's
+governance permissions. A release using this dependency retains that external upgrade assumption. The converter's
+actual ETH receipt, exact allowance/residue and atomic fee-funding checks still apply to completed operations;
+they do not prove unchanged external implementation semantics. This observation adds no contract or fee rights.
+
 The deployment preparation reuses the existing pinned compiler sealer, complete Git-object source equality,
 historical locked-position-factory source closure, independent provider custody, owner wallet requests, journal,
 receipts and source readback. The shared operator dispatch recognizes this exact fourth schema and only these two

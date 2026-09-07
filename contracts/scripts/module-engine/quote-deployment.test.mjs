@@ -13,7 +13,8 @@ import { ECONOMICS_POLICY_ID } from '../module-native-v2/core.mjs';
 import { assertQuotePlan, assertQuoteProfile, assertQuoteIdentity, buildQuotePlan, quoteInfrastructureIdentity, quoteReviewConfiguration,
   quoteSimulationInput, QUOTE_CONFIGURATION_ABI, QUOTE_DEPLOYMENT_SCHEMA, QUOTE_IDENTITY_SCHEMA, QUOTE_PLAN_SCHEMA, QUOTE_REUSE_DOMAIN, QUOTE_ROLES } from './quote-core.mjs';
 import { quoteConstructorArguments, quoteSourceCreation, quoteSourceRequests, quoteSourceReuse } from './quote-evidence.mjs';
-import { observeQuoteBindings, observeQuoteReceipt, observeQuoteStage } from './quote-rpc.mjs';
+import { observeQuoteBindings, observeQuoteReceipt, observeQuoteStage, WETH_ADMIN_SLOT, WETH_IMPLEMENTATION_SLOT,
+  WETH_PROXY_OBSERVATION_SCHEMA } from './quote-rpc.mjs';
 import { QUOTE_REVIEW_SETTINGS, quoteReviewSettings, quoteReviewSources } from './quote-review-compiler.mjs';
 const h = value => keccak256(toHex(value));
 
@@ -133,11 +134,22 @@ test('Fork input includes all nine code pins, and infrastructure identity cannot
   assert.throws(() => assertQuoteIdentity(plan, { ...identity, releaseDigest: identity.infrastructureDigest }), /identity differs/);
 });
 
+const storageWord = target => `0x${'0'.repeat(24)}${target.slice(2)}`;
+function proxyObservation(plan, blockNumber, blockHash, overrides = {}) {
+  const implementation = overrides.implementation ?? addr(90), admin = addr(91), runtime = overrides.implementationRuntime ?? '0x6001600355';
+  return { schemaVersion: WETH_PROXY_OBSERVATION_SCHEMA, proxy: plan.dependencies.weth.address,
+    proxyRuntimeCodeHash: plan.dependencies.weth.runtimeCodeHash, blockNumber, blockHash,
+    implementationSlot: WETH_IMPLEMENTATION_SLOT, implementationStorageValue: storageWord(implementation), implementation,
+    implementationRuntime: runtime, implementationRuntimeCodeHash: keccak256(runtime), adminSlot: WETH_ADMIN_SLOT,
+    adminStorageValue: storageWord(admin), admin, externalUpgradeAssumption: 'snapshot-only-not-immutable-implementation' };
+}
 function providersFor(original, overrides = {}) {
   const plan = structuredClone(original), calls = new Map(), runtimes = new Map(), readLog = [], blockHash = h('quote-block'), blockNumber = '0x30';
   for (const [index, [role, pin]] of Object.entries(plan.dependencies).entries()) {
     const runtime = `0x60${(index + 1).toString(16).padStart(2, '0')}6000`; pin.runtimeCodeHash = keccak256(runtime); runtimes.set(pin.address, runtime);
   }
+  const proxy = proxyObservation(plan, blockNumber, blockHash, overrides);
+  if (!overrides.emptyImplementation) runtimes.set(proxy.implementation, proxy.implementationRuntime);
   for (const role of overrides.deployed ?? []) runtimes.set(plan.contracts[role].address, plan.contracts[role].runtime);
   function getter(target, signature, result) {
     const abi = parseAbi([signature]), functionName = abi[0].name;
@@ -160,6 +172,13 @@ function providersFor(original, overrides = {}) {
     if (method === 'eth_chainId') return overrides.wrongChain ? '0x1' : '0x1237';
     if (method === 'eth_getBlockByNumber') return { ...block, hash: overrides.reorg && ++blockCalls > 6 ? h('reorg') : blockHash };
     if (method === 'eth_getCode') { assert.equal(args[1], blockNumber); return overrides.badCode === args[0] ? '0xdeadbeef' : runtimes.get(args[0]) ?? '0x'; }
+    if (method === 'eth_getStorageAt') {
+      assert.equal(args[0], plan.dependencies.weth.address); assert.equal(args[2], blockNumber);
+      assert.ok([WETH_IMPLEMENTATION_SLOT, WETH_ADMIN_SLOT].includes(args[1]));
+      if (overrides.disagreeSlot === args[1] && index === 1) return storageWord(addr(92));
+      return args[1] === WETH_IMPLEMENTATION_SLOT ? overrides.implementationWord ?? proxy.implementationStorageValue
+        : overrides.adminWord ?? proxy.adminStorageValue;
+    }
     if (method === 'eth_getTransactionCount') return args[0] === params.owner
       ? args[1] === 'pending' && overrides.pending ? '0x4' : '0x3' : overrides.targetNonce ? '0x1' : '0x0';
     if (method === 'eth_getBalance') return overrides.balance ?? '0xde0b6b3a7640000';
@@ -190,10 +209,33 @@ test('Both stages use one bound block for real dependency links, CREATE2 simulat
     const f = providersFor(plan, { deployed: QUOTE_ROLES.slice(0, stepIndex) });
     const result = await observeQuoteStage(f.plan, stepIndex, f.providers); assert.equal(result.state, 'vacant-simulated');
     assert.deepEqual(result.quoteBindings.deployedRoles, QUOTE_ROLES.slice(0, stepIndex));
+    assert.deepEqual(result.quoteBindings.wethProxy, proxyObservation(f.plan, '48', f.blockHash));
+    assert.equal(f.readLog.filter(call => call.method === 'eth_getStorageAt').length, 4, 'Both slots read through both providers');
+    assert.equal(f.readLog.filter(call => call.method === 'eth_getCode' && call.args[0] === addr(90)).length, 2);
     const request = walletRequest(f.plan, result, ceilings); assert.equal(request.value, '0x0'); assert.equal(request.to, plan.steps[stepIndex].to);
     assert.equal(request.nonce, '0x3'); assert.equal(request.data, plan.steps[stepIndex].data);
     assert.ok(f.readLog.every(call => !/send|sign|debug|anvil/i.test(call.method)));
   }
+});
+test('WETH proxy slots require canonical nonzero addresses, provider agreement and actual implementation code', async () => {
+  const { plan } = fixture();
+  for (const override of [{ disagreeSlot: WETH_IMPLEMENTATION_SLOT }, { disagreeSlot: WETH_ADMIN_SLOT },
+    { implementationWord: '0x01' }, { implementationWord: toHex(0n, { size: 32 }) },
+    { implementationWord: `0x01${'00'.repeat(31)}` }, { adminWord: storageWord(zeroAddress) },
+    { adminWord: `0x01${'00'.repeat(31)}` }, { emptyImplementation: true }]) {
+    const f = providersFor(plan, override); await assert.rejects(observeQuoteStage(f.plan, 0, f.providers));
+  }
+  const disagreement = providersFor(plan), originalRpc = disagreement.providers[1].rpc;
+  disagreement.providers[1].rpc = (method, args) => method === 'eth_getCode' && args[0] === addr(90) ? '0x00' : originalRpc(method, args);
+  await assert.rejects(observeQuoteStage(disagreement.plan, 0, disagreement.providers), /Provider disagreement: WETH implementation runtime/);
+});
+test('A changed WETH implementation is captured separately even when the outer proxy runtime is unchanged', async () => {
+  const { plan } = fixture(), first = providersFor(plan), second = providersFor(plan, { implementation: addr(93), implementationRuntime: '0x6002600355' });
+  const left = await observeQuoteStage(first.plan, 0, first.providers), right = await observeQuoteStage(second.plan, 0, second.providers);
+  assert.equal(left.quoteBindings.wethProxy.proxyRuntimeCodeHash, right.quoteBindings.wethProxy.proxyRuntimeCodeHash);
+  assert.notEqual(left.quoteBindings.wethProxy.implementation, right.quoteBindings.wethProxy.implementation);
+  assert.notEqual(left.quoteBindings.wethProxy.implementationRuntimeCodeHash, right.quoteBindings.wethProxy.implementationRuntimeCodeHash);
+  assert.notEqual(evidenceDigest(evidenceBytes(left.quoteBindings)), evidenceDigest(evidenceBytes(right.quoteBindings)));
 });
 test('Unsafe dependency, quorum, vacancy, nonce, gas and freshness states cannot arm a stage', async () => {
   const { plan } = fixture();
@@ -243,7 +285,8 @@ function sourceEvidence(plan) {
       receipt: { status: '0x1', transactionHash: txHash, blockHash, blockNumber, transactionIndex: '0x0' },
       contracts: { [step.role]: plan.identityCandidate.contracts[step.role] },
       quoteBindings: { schemaVersion: 'programmable.module-engine-quote-bindings.v1', chainId: 4663, planDigest: plan.planDigest,
-        blockNumber, blockHash, dependencies: plan.dependencies, deployedRoles: QUOTE_ROLES.slice(0, i + 1) } };
+        blockNumber, blockHash, dependencies: plan.dependencies, deployedRoles: QUOTE_ROLES.slice(0, i + 1),
+        wethProxy: proxyObservation(plan, blockNumber, blockHash) } };
   });
   return { schemaVersion: QUOTE_DEPLOYMENT_SCHEMA, chainId: 4663, sourceVersion: plan.identityCandidate.sourceVersion,
     sourceCommit: plan.sourceCommit, planDigest: plan.planDigest, buildDigest: plan.buildDigest, status: 'included-code-verified',
@@ -258,6 +301,10 @@ test('Source requests require both exact ordered zero-value CREATE2 receipt line
   for (const mutate of [e => { e.records.pop(); }, e => { e.records[0].transaction.from = addr(99); }, e => { e.records[1].transaction.to = addr(99); },
     e => { e.records[1].transaction.input = '0x'; }, e => { e.records[1].quoteBindings.blockHash = h('other'); },
     e => { e.records[1].contracts.converter.runtimeCodeHash = h('other'); }, e => { e.infrastructureDigest = h('other'); },
+    e => { delete e.records[1].quoteBindings.wethProxy; }, e => { e.records[0].quoteBindings.wethProxy.blockHash = h('other'); },
+    e => { e.records[0].quoteBindings.wethProxy.implementationRuntime = '0x00'; },
+    e => { e.records[0].quoteBindings.wethProxy.implementation = addr(99); },
+    e => { e.records[0].quoteBindings.wethProxy.adminStorageValue = storageWord(addr(99)); },
     e => { e.schemaVersion = 'programmable.module-engine-deployment-evidence.v1'; }, e => { e.records.reverse(); }]) {
     const bad = structuredClone(evidence); mutate(bad); assert.throws(() => quoteSourceCreation(plan, 'converter', bad));
   }

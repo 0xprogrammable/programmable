@@ -3,6 +3,30 @@ import { address, bytes, canonicalJson, hash, hexQuantity, jsonSafe, need } from
 import { observeReceipt } from '../module-mode/rpc.mjs';
 import { assertQuoteProfile, QUOTE_ROLES } from './quote-core.mjs';
 
+export const WETH_PROXY_OBSERVATION_SCHEMA = 'programmable.module-engine-quote-weth-proxy-observation.v1';
+export const WETH_IMPLEMENTATION_SLOT = '0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc';
+export const WETH_ADMIN_SLOT = '0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103';
+
+function slotAddress(value) {
+  const word = hash(value, 'WETH proxy storage word');
+  need(word.slice(2, 26) === '0'.repeat(24), 'WETH proxy slot is not a canonical address');
+  return address(`0x${word.slice(26)}`, 'WETH proxy slot address');
+}
+/** The observation binds external proxy state at one block; it cannot freeze future upgrades. */
+export function assertQuoteWethProxyObservation(plan, bindings) {
+  const value = bindings?.wethProxy;
+  need(value?.schemaVersion === WETH_PROXY_OBSERVATION_SCHEMA && value.proxy === plan.dependencies.weth.address
+    && value.proxyRuntimeCodeHash === plan.dependencies.weth.runtimeCodeHash && value.blockNumber === bindings.blockNumber
+    && value.blockHash === bindings.blockHash && value.implementationSlot === WETH_IMPLEMENTATION_SLOT
+    && value.adminSlot === WETH_ADMIN_SLOT && value.externalUpgradeAssumption === 'snapshot-only-not-immutable-implementation',
+  'Bound WETH proxy observation required');
+  need(value.implementation === slotAddress(value.implementationStorageValue) && value.admin === slotAddress(value.adminStorageValue),
+    'WETH proxy slot/address binding differs');
+  const runtime = bytes(value.implementationRuntime, 'WETH implementation runtime');
+  need(runtime !== '0x' && keccak256(runtime) === hash(value.implementationRuntimeCodeHash), 'WETH implementation runtime hash differs');
+  return value;
+}
+
 function pairRequired(providers) {
   need(Array.isArray(providers) && providers.length === 2 && providers.every(p => typeof p.providerId === 'string' && p.providerId
     && typeof p.trustDomain === 'string' && p.trustDomain) && providers[0].providerId !== providers[1].providerId
@@ -44,6 +68,18 @@ export async function observeQuoteBindings(plan, providers, blockNumber, blockHa
   const block = hexQuantity(blockNumber); await blockAt(providers, block, hash(blockHash));
   const reads = {}, d = plan.dependencies;
   for (const pin of Object.values(d)) await code(providers, pin, block);
+  const [implementationStorageValue, adminStorageValue] = await Promise.all([
+    pair(providers, 'eth_getStorageAt', [d.weth.address, WETH_IMPLEMENTATION_SLOT, block], 'WETH implementation slot'),
+    pair(providers, 'eth_getStorageAt', [d.weth.address, WETH_ADMIN_SLOT, block], 'WETH admin slot'),
+  ]);
+  const implementation = slotAddress(implementationStorageValue), admin = slotAddress(adminStorageValue);
+  const implementationRuntime = bytes(await pair(providers, 'eth_getCode', [implementation, block], 'WETH implementation runtime'));
+  need(implementationRuntime !== '0x', 'WETH implementation has no runtime');
+  const wethProxy = { schemaVersion: WETH_PROXY_OBSERVATION_SCHEMA, proxy: d.weth.address, proxyRuntimeCodeHash: d.weth.runtimeCodeHash,
+    blockNumber: BigInt(blockNumber).toString(), blockHash, implementationSlot: WETH_IMPLEMENTATION_SLOT,
+    implementationStorageValue: hash(implementationStorageValue), implementation, implementationRuntime,
+    implementationRuntimeCodeHash: keccak256(implementationRuntime), adminSlot: WETH_ADMIN_SLOT,
+    adminStorageValue: hash(adminStorageValue), admin, externalUpgradeAssumption: 'snapshot-only-not-immutable-implementation' };
   async function getter(role, target, signature, expected) {
     const abi = parseAbi([signature]), functionName = abi[0].name;
     const result = decodeFunctionResult({ abi, functionName,
@@ -63,8 +99,9 @@ export async function observeQuoteBindings(plan, providers, blockNumber, blockHa
     }
   }
   await blockAt(providers, block, blockHash);
-  return { schemaVersion: 'programmable.module-engine-quote-bindings.v1', chainId: 4663, planDigest: plan.planDigest,
-    blockNumber: BigInt(blockNumber).toString(), blockHash, dependencies: d, deployedRoles, reads, providers: publicProviders(providers) };
+  const bindings = { schemaVersion: 'programmable.module-engine-quote-bindings.v1', chainId: 4663, planDigest: plan.planDigest,
+    blockNumber: BigInt(blockNumber).toString(), blockHash, dependencies: d, deployedRoles, reads, wethProxy, providers: publicProviders(providers) };
+  assertQuoteWethProxyObservation(plan, bindings); return bindings;
 }
 export async function observeQuoteStage(plan, stepIndex, providers) {
   assertQuoteProfile(plan); pairRequired(providers);
