@@ -24,7 +24,7 @@ Open [Create](https://programmable.market/launch) to start a launch, or [Explore
 
 Coin creators choose the settings and creator fees supported by their launch path. Module authors publish reusable behavior that other creators can select and earn rewards when their eligible modules are used. Custom developers control their project's code within the selected API's contract and evidence requirements.
 
-Programmable receives the platform share of trading fees. Its revenue policy allocates half of net protocol revenue to V4 buybacks and burns. [Fees and revenue](economics.md) explains each fee model and the distinction between protocol revenue, creator rewards and module author rewards. The [V4 token page](v4-token.md) covers the main token, its liquidity fees and burn accounting.
+Programmable earns a share of trading fees. We use half of our platform fee revenue to buy and burn V4 each day, and keep the other half in the treasury. [Fees and revenue](economics.md) shows what each launch model charges and who receives it. The [V4 token page](v4-token.md) explains the main token and its burns.
 
 ## Build and integrate
 

@@ -35,11 +35,11 @@ Each launch records the exact module versions and configuration it used. Publish
 
 ## Fees and contributor rewards
 
-The launch review separates the coin creator's fee, the platform charge and any module operating budget. Creator fees can be set up to 10% under the active engine. Module author rewards accrue from qualifying use and are shared among the eligible module families selected for the coin.
+Coin creators can set a trading fee of up to **10%** and keep that fee. Our Module Mode fee policy adds **0.10% (10 bps) for Programmable** and **0.20% (20 bps) in total for module authors**. Authors share that 0.20% when their eligible modules are used by the coin.
 
-Fee contracts are versioned. The allocation policy is 10 bps for Programmable and 20 bps in total for module authors. The deployed `module-native-v1` engine retains its 20 bps total fee and 10/10 split when eligible modules are used. Read [Fees and revenue](../economics.md#module-mode) for the policy, deployed-version rules and treatment of launches without eligible modules.
+Existing coins keep their original fees. Check the launch screen for your coin's fee breakdown and any funds required to run its modules. [Fees and revenue](../economics.md#module-mode) explains the fee models and includes an example.
 
-The author and reward wallet are recorded with the module revision. Submission or review acceptance alone does not generate a payout.
+Module rewards go to the reward wallet registered with the module. Publishing a module alone does not earn fees; it needs to be used by a coin that trades.
 
 ## Build a module
 

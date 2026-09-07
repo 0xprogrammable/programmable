@@ -14,9 +14,9 @@ Every launched coin records the revisions and configuration it selected. A new s
 
 ## Earn from use
 
-Module rewards accrue when eligible modules are used by a coin that generates qualifying trading fees. The total author allocation is shared among the eligible module families selected for that launch. Adding multiple components from the same family does not create extra shares. [Fees and revenue](../economics.md) lists the fee policy and version-specific rates.
+You earn rewards when creators use your eligible module in a coin that trades. Our Module Mode fee policy reserves **0.20% (20 bps) in total for module authors**, shared among the eligible module families used by that coin. Multiple components from one family share the same reward allocation. Existing coins keep their original fee model, as explained in [Fees and revenue](../economics.md#module-mode).
 
-A contribution submission, review result or catalog listing does not itself generate revenue. Use the registered reward wallet and the supported claim interface to receive accrued rewards.
+Publishing a module makes it available for use. Earnings start when a coin using it generates trading fees. Claim your earnings to the reward wallet registered with your module.
 
 ## Custom projects
 
