@@ -1,13 +1,34 @@
 import { describe, expect, it, vi } from "vitest";
 import { sha256 } from "viem";
 
-import { assertModuleModeWalletUnchanged, isModuleModeChain, isModuleModeWalletRejection, moduleModeSubmissionIsUncertain, moduleModeWalletStep, uploadModuleModeImage } from "@/components/module-mode-wallet-state";
+import { assertModuleModeWalletUnchanged, isModuleModeChain, isModuleModeWalletRejection, moduleModeSubmissionIsUncertain, moduleModeWalletStep, switchModuleModeNetwork, uploadModuleModeImage } from "@/components/module-mode-wallet-state";
 import { PROGRAMMABLE_TOKEN_IMAGE_HOST } from "@/lib/token-image";
 
 const account = `0x${"12".repeat(20)}`;
 const connected = { account, chainId: "0x1237", authenticated: true, sessionReady: true };
 
 describe("Module Mode wallet boundary", () => {
+  it("switches through the wallet context's decimal network contract before allowing preparation", async () => {
+    const state = { ...connected, chainId: "0x1" };
+    const switchNetwork = vi.fn(async (chainId: string) => {
+      // Match the public wallet context: RPC hex IDs are not accepted as network requests.
+      if (chainId !== "4663") return false;
+      state.chainId = "0x1237";
+      return true;
+    });
+    expect(moduleModeWalletStep(state)).toBe("switch");
+    await switchModuleModeNetwork(switchNetwork);
+    expect(switchNetwork).toHaveBeenCalledOnce();
+    expect(moduleModeWalletStep(state)).toBe("prepare");
+  });
+
+  it("reports a refused network change and preserves thrown wallet errors", async () => {
+    await expect(switchModuleModeNetwork(async () => false)).rejects.toThrow("network change was not completed");
+    const rejected = new Error("Network change cancelled.");
+    await expect(switchModuleModeNetwork(async () => { throw rejected; })).rejects.toBe(rejected);
+    expect(moduleModeWalletStep({ ...connected, chainId: "0x1" })).toBe("switch");
+  });
+
   it("requires explicit connection and the actual Robinhood wallet chain before preparation", () => {
     expect(moduleModeWalletStep({ ...connected, authenticated: false })).toBe("connect");
     expect(moduleModeWalletStep({ ...connected, sessionReady: false })).toBe("connect");

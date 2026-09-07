@@ -5,6 +5,7 @@ import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from 
 import { ArrowLeft, ArrowUpRight, RefreshCw } from "lucide-react";
 import { formatUnits, isAddress, type Address, type Hex } from "viem";
 import { useWallet } from "@/components/wallet-provider";
+import { switchModuleModeNetwork } from "@/components/module-mode-wallet-state";
 import { ModuleSchemaField } from "@/components/module-mode-fields";
 import { ROBINHOOD_BLOCK_EXPLORER_URL } from "@/lib/chains";
 import { configurationFromForm, defaultSchemaValue, parseExactUnits, type FormValue } from "@/lib/module-mode/builder";
@@ -144,7 +145,7 @@ export function ModuleCoinConsole({ token }: { token: Address }) {
     onPrepareTrade={intent => { void prepareTrade(intent); }}
     onCheckReceipt={transactionHash => { void checkReceipt(transactionHash); }}
     onCancel={() => { if (phase === "review") { setPrepared(null); setPhase("idle"); } }} onRefresh={() => { setLoading(true); void refresh(); }}
-    onWallet={wallet.openWallet} onSwitch={() => { void wallet.switchNetwork("0x1237").catch(caught => setError(errorMessage(caught))); }} />;
+    onWallet={wallet.openWallet} onSwitch={() => { setError(""); void switchModuleModeNetwork(wallet.switchNetwork).catch(caught => setError(errorMessage(caught))); }} />;
 }
 
 export interface ModuleCoinConsoleViewProps {

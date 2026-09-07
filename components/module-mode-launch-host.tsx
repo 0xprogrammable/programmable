@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { formatUnits, toHex, type Address, type Hex } from "viem";
 
 import { ModuleModeBuilder, type ModuleModeLaunchAction } from "@/components/module-mode-builder";
-import { assertModuleModeWalletUnchanged, isModuleModeWalletRejection, moduleModeSubmissionIsUncertain, moduleModeWalletStep, uploadModuleModeImage, type ModuleModeWalletSnapshot } from "@/components/module-mode-wallet-state";
+import { assertModuleModeWalletUnchanged, isModuleModeWalletRejection, moduleModeSubmissionIsUncertain, moduleModeWalletStep, switchModuleModeNetwork, uploadModuleModeImage, type ModuleModeWalletSnapshot } from "@/components/module-mode-wallet-state";
 import { useWallet } from "@/components/wallet-provider";
 import styles from "@/components/module-mode-builder.module.css";
 import { ROBINHOOD_BLOCK_EXPLORER_URL } from "@/lib/chains";
@@ -100,7 +100,7 @@ export function ModuleModeLaunchHost() {
     if (flow.phase === "reverted") submitted.current = null;
     if (!release) throw new Error("Wallet launching is not available. You can keep or export this draft.");
     if (walletStep === "connect") { openWallet(); return; }
-    if (walletStep === "switch") { await switchNetwork("0x1237"); return; }
+    if (walletStep === "switch") { await switchModuleModeNetwork(switchNetwork); return; }
     if (!wallet) return;
     const account = wallet.account as Address;
     const requestId = ++operation.current;
