@@ -26,6 +26,15 @@ describe("Installed Module Mode source discovery", () => {
     expect(await inventory.lanes[0].source()).toMatchObject({ releaseDigest: f.release.releaseDigest, sourceAddress: f.release.contracts.launcher.address });
     expect(f.request.mock.calls[0][1]?.body).toBe("{}");
   });
+  it("preserves explicit disabled installation diagnostics without creating a collection lane", async () => {
+    const f = fixture();
+    const unavailableSources = [{ releaseId: "module-mode-native-v1", reasonCode: "MODULE_MODE_RELEASE_DISABLED" }];
+    f.request.mockResolvedValue(Response.json({ schemaVersion: "programmable.module-mode-index.v1", result: { releases: [], unavailableSources } }));
+    const inventory = await configuredModuleModeSources(f.collector, undefined, { enabled: false, status: "preview" });
+    expect(inventory).toEqual({ lanes: [], unavailableSources });
+    expect(f.request).toHaveBeenCalledOnce();
+    expect(String(f.request.mock.calls[0][0])).toBe("https://api.programmable.market/internal/module-mode-index/v1/sources");
+  });
   it("isolates a malformed current profile and reports it while preserving a healthy historical lane", async () => {
     const f = fixture();
     const inventory = await configuredModuleModeSources(f.collector, undefined, { enabled: true, status: "active" });
