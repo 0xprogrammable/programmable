@@ -1,15 +1,15 @@
 import { concatHex, decodeAbiParameters, decodeEventLog, decodeFunctionResult, encodeAbiParameters, encodeEventTopics, encodeFunctionData, erc20Abi, getCreate2Address, keccak256, parseAbi, parseAbiParameters, toHex, type Abi, type Address, type Hex, type TransactionReceipt } from "viem";
 import { compileOpenConfig, type OpenConfigValue } from "@/packages/classic-modules/src/open-config.mjs";
-import { evaluateOpenConstraints } from "@/packages/classic-modules/src/open-constraints.mjs";
-import { validateTokenImage } from "@/lib/module-mode/builder";
 import { createModuleNativeClient, type ModuleNativeClient, type ModuleNativeWalletTransaction } from "@/lib/module-mode/native-client";
 import { nativeCanonicalJson } from "@/lib/module-mode/native-catalog";
 import { moduleAddress, moduleBytes, moduleHash, moduleRecord, moduleUint } from "@/lib/module-mode/release";
-import { MODULE_DEFAULT_TOKEN_IMAGE, moduleTokenMetadata, type ModuleSocialLinks } from "@/lib/module-mode/token-metadata";
-import { MAX_TOKEN_DESCRIPTION_BYTES, MAX_TOKEN_NAME_BYTES } from "@/lib/metadata-policy";
-import { ENGINE_CONTEXT, moduleEngineAuthorWalletAbi, moduleEngineConstructorParameters, moduleEngineHostAbi, moduleEngineLaunchParameters, moduleEngineLedgerAbi, moduleEnginePlanParameters, moduleEngineReadAbi, moduleEngineTradeLimitsParameters } from "./abi";
+import type { ModuleSocialLinks } from "@/lib/module-mode/token-metadata";
+import { ENGINE_CONTEXT, moduleEngineAuthorWalletAbi, moduleEngineHostAbi, moduleEngineLaunchParameters, moduleEngineLedgerAbi, moduleEnginePlanParameters, moduleEngineReadAbi, moduleEngineTradeLimitsParameters } from "./abi";
 import { bindActiveModuleEngineRelease, bindModuleEngineTemplate, ENGINE_ZERO_ADDRESS as ZERO, ENGINE_ZERO_HASH as ZERO_HASH, MODULE_ENGINE_CONTRACTS, MODULE_ENGINE_SOURCE_ID, moduleEngineOptionalHash, parseModuleEngineAvailability, type ModuleEngineAvailability, type ModuleEnginePermission, type ModuleEngineRelease, type ModuleEngineTemplate } from "./catalog";
 import { encodeModuleEngineConfiguration } from "./configuration";
+
+import { compileModuleEngineLaunch, moduleEngineOperation as operationFor } from "./operation-plan";
+export { materializeModuleEngineRuntime, predictModuleEngineAddress } from "./operation-plan";
 
 export type ModuleEngineClient = ModuleNativeClient;
 export const createModuleEngineClient = createModuleNativeClient;
@@ -153,10 +153,6 @@ async function approvalRequired(client: ModuleEngineClient, block: BoundBlock, t
   need(uint(balance, "input balance") >= amount, "Insufficient balance in the exact input asset.");
   const currentAllowance = uint(allowance, "input allowance"); return currentAllowance < amount ? { kind: "approval-required", token, spender, amount, currentAllowance } : null;
 }
-function operationFor(intent: ModuleEngineOperationIntent, account: Address, expiresAt: bigint, nonce: bigint): ModuleEngineOperation {
-  return { operationId: moduleHash(intent.operationId, "operationId"), actor: account, recipient: moduleAddress(intent.recipient, "recipient"), inputAsset: moduleAddress(intent.inputAsset, "inputAsset", true), inputAmount: uint(intent.inputAmount, "inputAmount"), outputAsset: moduleAddress(intent.outputAsset, "outputAsset", true), minimumOutput: uint(intent.minimumOutput, "minimumOutput"), deadline: expiresAt, nonce, data: moduleBytes(intent.data, "operation.data", 16_384) };
-}
-function emptyOperation(): ModuleEngineOperation { return { operationId: ZERO_HASH, actor: ZERO, recipient: ZERO, inputAsset: ZERO, inputAmount: 0n, outputAsset: ZERO, minimumOutput: 0n, deadline: 0n, nonce: 0n, data: "0x" }; }
 async function simulate(client: ModuleEngineClient, block: BoundBlock, transaction: ModuleNativeWalletTransaction, returnsNothing = false) {
   const request = { account: transaction.from, to: transaction.to, data: transaction.data, value: BigInt(transaction.value), blockNumber: block.blockNumber };
   const [result, gasEstimate] = await Promise.all([client.call(request), client.estimateGas(request)]);
@@ -174,20 +170,6 @@ export interface PrepareModuleEngineLaunchInput {
   initialOperation?: (identity: { token: Address; quoteAsset: Address }) => ModuleEngineOperationIntent;
   deadlineSeconds?: number;
 }
-export function materializeModuleEngineRuntime(template: Hex, constructorArgs: Hex, runtimeOffsets: readonly number[], constructorOffsets: readonly number[]): Hex {
-  need(runtimeOffsets.length === constructorOffsets.length, "Immutable map lengths differ."); let runtime = template; let previous = -32;
-  runtimeOffsets.forEach((offset, i) => { const binding = constructorOffsets[i]; need(Number.isInteger(offset) && offset >= previous + 32 && offset * 2 + 66 <= runtime.length && Number.isInteger(binding) && binding >= 0 && binding % 32 === 0 && binding * 2 + 66 <= constructorArgs.length, "Immutable mapping is out of bounds.");
-    const start = offset * 2 + 2; need(runtime.slice(start, start + 64) === "0".repeat(64), "Immutable slot is not zero."); runtime = `${runtime.slice(0, start)}${constructorArgs.slice(2 + binding * 2, 66 + binding * 2)}${runtime.slice(start + 64)}` as Hex; previous = offset; }); return runtime;
-}
-export function predictModuleEngineAddress(host: Address, creator: Address, engineSalt: Hex, launchId: Hex, initCodeHash: Hex) { return getCreate2Address({ from: host, salt: keccak256(encodeAbiParameters(parseAbiParameters("address,bytes32,bytes32"), [creator, engineSalt, launchId])), bytecodeHash: initCodeHash }).toLowerCase() as Address; }
-async function minedSalt(host: Address, creator: Address, base: Hex, launchId: Hex, initCodeHash: Hex) {
-  for (let i = 0n; i < 262_144n; i++) {
-    const salt = toHex((BigInt(base) + i) % (1n << 256n), { size: 32 }), address = predictModuleEngineAddress(host, creator, salt, launchId, initCodeHash);
-    if ((BigInt(address) & 0x3fffn) === 0x2080n) return { salt, address };
-    if (i % 2048n === 2047n) await new Promise<void>(resolve => setTimeout(resolve, 0));
-  }
-  throw new Error("Module engine: No valid hook address found. Change the engine salt and prepare again.");
-}
 export async function prepareModuleEngineLaunch(input: PrepareModuleEngineLaunchInput): Promise<PreparedModuleEngineLaunch | ModuleEngineApprovalRequired> {
   const availability = active(input.availability), account = moduleAddress(input.account, "account"), release = freeze(availability.release);
   const rawTemplate = availability.templates.find(item => item.manifest.manifest.catalogDefinition.id === input.templateId); need(rawTemplate, "Template is not in the current catalog.");
@@ -195,41 +177,22 @@ export async function prepareModuleEngineLaunch(input: PrepareModuleEngineLaunch
   const quoteAsset = moduleAddress(input.quoteAsset, "quoteAsset"); if (m.revision.fixedQuoteAsset !== ZERO) same(quoteAsset, m.revision.fixedQuoteAsset, "Fixed quote asset");
   const quoteCode = await input.client.getCode({ address: quoteAsset, blockNumber: block.blockNumber }); need(quoteCode && quoteCode !== "0x", "Quote asset is not a deployed token.");
   const quoteDecimals = Number(await read(input.client, quoteAsset, "decimals", [], block.blockNumber)); need(Number.isInteger(quoteDecimals) && quoteDecimals >= 0 && quoteDecimals <= 18, "Quote decimals are unsupported.");
-  const name = input.name.trim(), symbol = input.symbol.trim(); need(name.length > 0 && new TextEncoder().encode(name).length <= MAX_TOKEN_NAME_BYTES && /^[A-Za-z0-9]{1,11}$/.test(symbol), "Check the token name and symbol.");
-  need(new TextEncoder().encode(input.description).length <= MAX_TOKEN_DESCRIPTION_BYTES, "Description is too long.");
-  const imageUri = input.imageUri || MODULE_DEFAULT_TOKEN_IMAGE; need(!validateTokenImage({ kind: "uri", uri: imageUri, contentVerified: false }), "Use a public HTTPS token image.");
-  const config = compileOpenConfig(m.catalogDefinition.schema, input.configuration, { roles: { launchWallet: account }, assets: { quote: { chainId: "4663", address: quoteAsset, decimals: quoteDecimals } } });
-  const constraints = evaluateOpenConstraints(m.catalogDefinition.constraints, { self: { schema: m.catalogDefinition.schema, value: config.value } }); need(constraints.ok, constraints.violations[0]?.message ?? "Configuration constraints failed.");
-  const configuration = encodeModuleEngineConfiguration(m.catalogDefinition.configurationAbi, config, m.catalogDefinition.schema), configurationHash = keccak256(configuration); need(configuration.length <= 16_384 * 2 + 2, "Configuration is too large.");
-  if (m.revision.fixedConfigurationHash !== ZERO_HASH) same(configurationHash, m.revision.fixedConfigurationHash, "Fixed configuration");
-  const host = release.contracts.host.address, creatorSalt = moduleEngineOptionalHash(input.creatorSalt, "creatorSalt");
-  const predicted = await read(input.client, host, "predictTokenAddress", [name, symbol, account, creatorSalt], block.blockNumber, moduleEngineHostAbi) as readonly [Address, Hex];
-  const graffiti = keccak256(encodeAbiParameters(parseAbiParameters("string,address,bytes32"), ["programmable.module-engine.token.v1", account, creatorSalt])); same(predicted[1], graffiti, "Token graffiti");
-  const predictedToken = getCreate2Address({ from: release.contracts.tokenFactory.address, salt: keccak256(encodeAbiParameters(parseAbiParameters("string,string,uint8,address,bytes32"), [name, symbol, 18, host, graffiti])), bytecodeHash: release.tokenCreationCodeHash }).toLowerCase() as Address;
-  same(predicted[0], predictedToken, "Predicted token"); need(predictedToken !== quoteAsset, "Primary and quote assets must differ.");
-  const launchId = keccak256(encodeAbiParameters(parseAbiParameters("uint256,address,address,bytes32,bytes32"), [4663n, host, predictedToken, m.revision.packageId, configurationHash]));
-  const context = contextFor(release, { launchId, token: predictedToken, creator: account, quoteAsset }), constructorArgs = encodeAbiParameters(moduleEngineConstructorParameters, [context, configuration]);
-  const constructorHash = keccak256(constructorArgs), initCodeHash = keccak256(concatHex([m.source.engine.creationBytecode, constructorArgs]));
-  need((m.source.engine.creationBytecode.length + constructorArgs.length - 4) / 2 <= 49_152, "Engine init code exceeds the chain limit.");
-  const engineCodeHash = keccak256(materializeModuleEngineRuntime(m.source.engine.runtimeTemplate, constructorArgs, m.source.engine.immutableRuntimeOffsets, m.source.engine.immutableConstructorOffsets));
-  const initialSalt = moduleEngineOptionalHash(input.engineSalt, "engineSalt"); const engineIdentity = m.catalogDefinition.interface === "quote-v1" ? await minedSalt(host, account, initialSalt, launchId, initCodeHash) : { salt: initialSalt, address: predictModuleEngineAddress(host, account, initialSalt, launchId, initCodeHash) };
-  const expiresAt = deadline(block.timestamp, input.deadlineSeconds), initialOperation = input.initialOperation ? operationFor(input.initialOperation({ token: predictedToken, quoteAsset }), account, expiresAt, 0n) : emptyOperation();
-  same(initialOperation.operationId, m.revision.initialOperationId, "Required initial operation");
+  const expiresAt = deadline(block.timestamp, input.deadlineSeconds);
+  const compiled = await compileModuleEngineLaunch(input, release, template.manifest, quoteDecimals, expiresAt);
+  const { parameters, graffiti, predictedToken, launchId, configurationHash, constructorHash, initCodeHash, engineCodeHash, initialOperation, buyCreatorFeeBps, sellCreatorFeeBps, planHash } = compiled;
+  const host = release.contracts.host.address, engineIdentity = { address: compiled.engine };
+  const predicted = await read(input.client, host, "predictTokenAddress", [parameters.name, parameters.symbol, account, parameters.creatorSalt], block.blockNumber, moduleEngineHostAbi) as readonly [Address, Hex];
+  same(predicted[1], graffiti, "Token graffiti"); same(predicted[0], predictedToken, "Predicted token");
   if (initialOperation.operationId !== ZERO_HASH) { const required = await validateOperation(input.client, block, { launchId, revisionId: m.revision.packageId, creator: account, token: predictedToken, quoteAsset }, initialOperation, account); if (required) return required; }
-  need(input.creatorWallets.length > 0 && input.creatorWallets.length <= 16 && input.creatorWallets.length === input.creatorSharesBps.length && input.creatorSharesBps.every(value => Number.isInteger(value) && value > 0 && value <= 10_000) && input.creatorSharesBps.reduce((sum, value) => sum + value, 0) === 10_000, "Creator shares must total 100%.");
-  const creatorWallets = input.creatorWallets.map(wallet => moduleAddress(wallet, "creatorWallet")); need(new Set(creatorWallets).size === creatorWallets.length, "Creator recipients must be unique.");
-  const buyCreatorFeeBps = fee(input.buyCreatorFeeBps), sellCreatorFeeBps = fee(input.sellCreatorFeeBps);
-  const parameters = { name, symbol, creatorSalt, revisionId: m.revision.packageId, quoteAsset, configuration, creationCode: m.source.engine.creationBytecode, runtimeTemplate: m.source.engine.runtimeTemplate, engineSalt: engineIdentity.salt, launchData: moduleBytes(input.launchData ?? "0x", "launchData", 16_384), metadata: moduleTokenMetadata(input.description, imageUri, input.socialLinks), creatorWallets, creatorSharesBps: [...input.creatorSharesBps], buyCreatorFeeBps, sellCreatorFeeBps, initialOperation };
-  const planHash = keccak256(encodeAbiParameters(moduleEnginePlanParameters, [4663n, host, account, parameters]));
-  const transaction = tx(account, host, encodeFunctionData({ abi: moduleEngineHostAbi, functionName: "launch", args: [parameters] }), initialOperation.inputAsset === ZERO ? initialOperation.inputAmount : 0n, "launch", `Launch ${symbol} with ${m.catalogDefinition.title}`);
+  const transaction = tx(account, host, encodeFunctionData({ abi: moduleEngineHostAbi, functionName: "launch", args: [parameters] }), initialOperation.inputAsset === ZERO ? initialOperation.inputAmount : 0n, "launch", `Launch ${parameters.symbol} with ${m.catalogDefinition.title}`);
   const simulated = await simulate(input.client, block, transaction), result = launchRecord(decodeFunctionResult({ abi: moduleEngineHostAbi, functionName: "launch", data: simulated.data }));
   for (const [key, expected] of Object.entries({ launchId, revisionId: m.revision.packageId, token: predictedToken, creator: account, quoteAsset, engine: engineIdentity.address, engineCodeHash, constructorHash, initCodeHash, configurationHash, planHash })) same(result[key as keyof ModuleEngineLaunchRecord], expected, `Simulated ${key}`);
-  const snapshots = await Promise.all(m.revision.eligibleFamilies.map(family => read(input.client, release.contracts.registry.address, "familyFeeEligibility", [family], block.blockNumber)));
-  const platformFeeBps = snapshots.some(snapshot => Array.isArray(snapshot) && snapshot[0] === true) ? 30 : 10;
+  // Host V1 admits its immutable reviewed family list into Ledger V2. Its reused Registry V1
+  // has no Native V2 familyFeeEligibility getter; the list itself selects the 10/30 bps policy.
+  const platformFeeBps = m.revision.eligibleFamilies.length > 0 ? 30 : 10;
   const prepared: PreparedModuleEngineLaunch = { sourceKind: "module-engine-v1", kind: "launch", account, releaseDigest: release.releaseDigest, blockNumber: block.blockNumber, expiresAt, gasEstimate: simulated.gasEstimate, transaction: { ...transaction, gas: toHex(simulated.gasEstimate * 12n / 10n) }, predictedToken, engine: engineIdentity.address, launchId, revisionId: m.revision.packageId, planHash, configurationHash, engineCodeHash, quoteAsset, quoteDecimals, initialOperation, platformFeeBps, buyCreatorFeeBps, sellCreatorFeeBps };
   return bind(prepared, { client: input.client, release, refresh: async () => {
     const current = await assertModuleEngineRelease({ client: input.client, release }); need(current.timestamp <= expiresAt, "Launch preview expired."); await assertTemplate(input.client, current, template, true);
-    const currentSnapshots = await Promise.all(m.revision.eligibleFamilies.map(family => read(input.client, release.contracts.registry.address, "familyFeeEligibility", [family], current.blockNumber))); equal(currentSnapshots, snapshots, "Fee eligibility review snapshot");
     if (initialOperation.operationId !== ZERO_HASH) need(!await validateOperation(input.client, current, { ...result }, initialOperation, account), "Initial funding approval changed.");
     const fresh = await simulate(input.client, current, transaction); const currentLaunch = launchRecord(decodeFunctionResult({ abi: moduleEngineHostAbi, functionName: "launch", data: fresh.data }));
     for (const key of ["launchId", "planHash", "token", "engine", "engineCodeHash", "configurationHash"] as const) same(currentLaunch[key], result[key], `Current launch ${key}`);

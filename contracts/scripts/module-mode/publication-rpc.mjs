@@ -2,6 +2,8 @@ import { decodeEventLog, decodeFunctionResult, encodeAbiParameters, encodeFuncti
 import { OFFICIAL, address, bytes, canonicalJson, digest, exactKeys, hash, hexQuantity, jsonSafe, need, uint } from './core.mjs';
 import { registryAbi, ZERO_ADDRESS } from './publication-plan.mjs';
 import { publicationValidators } from './publication-shared.mjs';
+import { isEngineOperationPlan } from '../module-engine/publication-plan.mjs';
+import { assertEngineOperationPreflight, bindEngineSimulation, equalEngineSimulation, finishEngineReceipt } from '../module-engine/operation-rpc.mjs';
 const canaryStateAbi = parseAbi([
   'function creatorRecipients(bytes32 poolId) view returns (address[] wallets,uint16[] sharesBps,uint256 adminRevision)',
   'function instances(bytes32 launchKey) view returns ((bytes32 instanceId,bytes32 packageId,bytes32 configHash,address factory,bytes32 factoryCodeHash,address module,bytes32 moduleCodeHash,uint32 callbackGas)[])',
@@ -129,20 +131,23 @@ async function assertCanaryToken(plan, step, providers, block) {
 export async function observePublicationOperation(plan, stepIndex, providers) {
   const step = plan.steps[stepIndex]; need(step, 'Unknown operation step'); const block = await blockSnapshot(providers);
   await Promise.all(Object.values(plan.identity.contracts).map(pin => code(providers, pin, block.number)));
-  await assertV2Policy(plan, providers, block.number);
-  if (step.kind === 'factory') await code(providers, OFFICIAL.deterministicDeployer, block.number);
-  const owner = await read(providers, plan.identity.contracts.registry.address, registryAbi, 'owner', [], block.number);
-  need(address(owner) === plan.owner, 'Registry review authority differs');
-  for (const previous of plan.steps.slice(0, stepIndex)) {
-    for (const pin of previous.newCode) await code(providers, pin, block.number);
-    await readConditions(providers, previous.postReads, block.number);
+  if (isEngineOperationPlan(plan)) await assertEngineOperationPreflight(plan, stepIndex, providers, block, engineRpcContext());
+  else {
+    await assertV2Policy(plan, providers, block.number);
+    if (step.kind === 'factory') await code(providers, OFFICIAL.deterministicDeployer, block.number);
+    const owner = await read(providers, plan.identity.contracts.registry.address, registryAbi, 'owner', [], block.number);
+    need(address(owner) === plan.owner, 'Registry review authority differs');
+    for (const previous of plan.steps.slice(0, stepIndex)) {
+      for (const pin of previous.newCode) await code(providers, pin, block.number);
+      await readConditions(providers, previous.postReads, block.number);
+    }
+    for (const pin of step.requiredCode ?? []) await code(providers, pin, block.number);
+    await readConditions(providers, step.preReads, block.number);
+    if (['factory', 'launch'].includes(step.kind)) {
+      need(same(await pair(providers, 'eth_getCode', [step.target, block.number]), 'target vacancy') === '0x', 'Target is already deployed; reconcile its actual receipt');
+      need(operationQuantity(same(await pair(providers, 'eth_getTransactionCount', [step.target, block.number]), 'target nonce')) === 0n, 'CREATE2 target has a nonzero nonce');
+    } else if (TRADES.includes(step.kind) || step.kind === 'approve') await assertCanaryToken(plan, step, providers, block.number);
   }
-  for (const pin of step.requiredCode ?? []) await code(providers, pin, block.number);
-  await readConditions(providers, step.preReads, block.number);
-  if (['factory', 'launch'].includes(step.kind)) {
-    need(same(await pair(providers, 'eth_getCode', [step.target, block.number]), 'target vacancy') === '0x', 'Target is already deployed; reconcile its actual receipt');
-    need(operationQuantity(same(await pair(providers, 'eth_getTransactionCount', [step.target, block.number]), 'target nonce')) === 0n, 'CREATE2 target has a nonzero nonce');
-  } else if (TRADES.includes(step.kind) || step.kind === 'approve') await assertCanaryToken(plan, step, providers, block.number);
   if (step.deadline) {
     const remaining = BigInt(step.deadline) - operationQuantity(block.timestamp); need(remaining >= 120n && remaining <= 3600n, 'Canary deadline must be between two minutes and one hour from the observed block');
   }
@@ -153,13 +158,14 @@ export async function observePublicationOperation(plan, stepIndex, providers) {
   const call = { from: plan.owner, to: step.to, value: hexQuantity(step.value), data: step.data };
   const simulation = bytes(same(await pair(providers, 'eth_call', [call, block.number]), 'operation simulation'));
   const api = await publicationValidators(); let decoded = null;
-  if (step.result !== null) need(simulation === step.result, 'Operation simulation returned an unexpected result');
+  if (isEngineOperationPlan(plan)) decoded = await bindEngineSimulation(plan, step, simulation);
+  else if (step.result !== null) need(simulation === step.result, 'Operation simulation returned an unexpected result');
   else if (step.kind === 'launch') decoded = jsonSafe(bindLaunchRecord(plan, step, decodeFunctionResult({ abi: api.moduleNativeLaunchAbiFor(plan.identity), functionName: 'launch', data: simulation }), true));
   else {
     const amounts = decodeFunctionResult({ abi: api.moduleNativeRouterAbi, functionName: 'swap', data: simulation });
     decoded = jsonSafe(bindTradeAmounts(plan, step, amounts[0], amounts[1]));
   }
-  const estimates = (await pair(providers, 'eth_estimateGas', [call])).map(operationQuantity), high = estimates[0] > estimates[1] ? estimates[0] : estimates[1], low = estimates[0] < estimates[1] ? estimates[0] : estimates[1];
+  const estimates = (await pair(providers, 'eth_estimateGas', isEngineOperationPlan(plan) ? [call, block.number] : [call])).map(operationQuantity), high = estimates[0] > estimates[1] ? estimates[0] : estimates[1], low = estimates[0] < estimates[1] ? estimates[0] : estimates[1];
   need(high - low <= 1000n + high / 10000n, 'Provider gas estimates disagree');
   need((await pair(providers, 'eth_getBlockByNumber', [block.number, false])).every(value => value?.hash === block.hash), 'Snapshot was reorganized');
   return { state: 'operation-simulated', stepIndex, blockNumber: operationQuantity(block.number).toString(), blockHash: block.hash,
@@ -195,6 +201,7 @@ export async function revalidatePublicationRequest(plan, prepared, providers, ce
   assertPublicationRequest(plan, prepared);
   need(Date.now() >= prepared.issuedAt && prepared.expiresAt - Date.now() >= 60000, 'Owner request has expired');
   const fresh = await observePublicationOperation(plan, prepared.stepIndex, providers), next = publicationWalletRequest(plan, fresh, ceilings);
+  if (isEngineOperationPlan(plan)) equalEngineSimulation(plan, prepared.stepIndex, fresh.simulatedResult, prepared.observation.simulatedResult);
   for (const key of Object.keys(next).filter(key => key !== 'gas')) need(canonicalJson(next[key]) === canonicalJson(prepared.request[key]), `Owner request changed: ${key}`);
   need(BigInt(next.gas) <= BigInt(prepared.request.gas), 'Fresh gas estimate exceeds the reviewed request');
   need(BigInt(fresh.minimumBalance) >= BigInt(prepared.request.value) + BigInt(prepared.request.gas) * BigInt(prepared.request.maxFeePerGas), 'Owner balance fell below value and maximum gas cost'); return fresh;
@@ -206,7 +213,9 @@ function receiptLogs(logs) {
     transactionIndex: log.transactionIndex, logIndex: log.logIndex, removed: log.removed ?? false }));
 }
 export async function observePublicationReceipt(plan, entry, providers) {
-  requirePair(providers); assertPublicationRequest(plan, entry); const step = plan.steps[entry.stepIndex], transactionHash = hash(entry.transactionHash);
+  requirePair(providers); assertPublicationRequest(plan, entry);
+  if (isEngineOperationPlan(plan)) need((await pair(providers, 'eth_chainId', [])).every(value => operationQuantity(value) === 4663n), 'Wrong Engine receipt chain');
+  const step = plan.steps[entry.stepIndex], transactionHash = hash(entry.transactionHash);
   const txs = await pair(providers, 'eth_getTransactionByHash', [transactionHash]); need(txs.every(Boolean), 'Transaction is not observed by both providers');
   const tx = same(txs.map(transactionView), 'transaction');
   for (const key of ['from', 'to', 'value', 'nonce', 'chainId', 'type', 'gas', 'maxFeePerGas', 'maxPriorityFeePerGas']) need(tx[key] === entry.request[key], `Wallet changed ${key}`);
@@ -218,6 +227,7 @@ export async function observePublicationReceipt(plan, entry, providers) {
   need((await pair(providers, 'eth_getBlockByNumber', [receipt.blockNumber, false])).every(b => b?.hash === receipt.blockHash && b.transactions.includes(transactionHash)), 'Receipt is not canonical');
   const pins = [...Object.values(plan.identity.contracts), ...plan.steps.slice(0, entry.stepIndex + 1).flatMap(s => s.newCode), ...(step.requiredCode ?? [])];
   await Promise.all(pins.map(pin => code(providers, pin, receipt.blockNumber))); await readConditions(providers, step.postReads, receipt.blockNumber);
+  if (isEngineOperationPlan(plan)) return finishEngineReceipt(plan, entry, providers, receipt, tx, pins, engineRpcContext());
   await assertV2Policy(plan, providers, receipt.blockNumber);
   let canary = null;
   if (step.kind === 'launch' || step.kind === 'approve' || TRADES.includes(step.kind)) canary = jsonSafe(await assertCanaryToken(plan, step, providers, receipt.blockNumber));
@@ -267,6 +277,7 @@ export async function preparePublicationRetry(plan, entry, providers, ceilings, 
     && Number.isSafeInteger(retryAttempt) && retryAttempt > 0, 'An explicit unresolved same-request retry is required');
   assertPublicationRequest(plan, entry);
   const observation = await observePublicationOperation(plan, entry.stepIndex, providers), next = publicationWalletRequest(plan, observation, ceilings);
+  if (isEngineOperationPlan(plan)) equalEngineSimulation(plan, entry.stepIndex, observation.simulatedResult, entry.observation.simulatedResult);
   for (const key of Object.keys(next).filter(key => key !== 'gas')) need(canonicalJson(next[key]) === canonicalJson(entry.request[key]), `Retry wallet field changed: ${key}`);
   need(BigInt(next.gas) <= BigInt(entry.request.gas), 'Retry estimate exceeds the original reviewed gas');
   need(BigInt(observation.minimumBalance) >= BigInt(entry.request.value) + BigInt(entry.request.gas) * BigInt(entry.request.maxFeePerGas), 'Retry is not funded for original gas plus value');
@@ -274,3 +285,6 @@ export async function preparePublicationRetry(plan, entry, providers, ceilings, 
     issuedAt, expiresAt: issuedAt + 300000, retryAttempt, originalRequestDigest: entry.requestDigest };
   return { ...body, requestDigest: digest('programmable.module-mode-owner-retry.v1', body) };
 }
+
+// Reuse the existing quorum and receipt transport; Engine contributes only its closed contract semantics.
+function engineRpcContext() { return { pair, same, code, read, readConditions, publicBindings, quantity: operationQuantity, observeReceipt: observePublicationReceipt }; }

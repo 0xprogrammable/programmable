@@ -1,3 +1,4 @@
+import '../module-engine/wallet-operator.test.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { decodeFunctionData, encodeFunctionResult, keccak256, parseAbi } from 'viem';

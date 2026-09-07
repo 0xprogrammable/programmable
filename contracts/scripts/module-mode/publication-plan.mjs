@@ -8,6 +8,8 @@ import { repositoryState } from './build.mjs';
 import { exactJson } from './source-readback.mjs';
 import { publicationValidators } from './publication-shared.mjs';
 
+import { isEngineOperationPlan, assertAuthenticatedEngineOperationPlan } from '../module-engine/publication-plan.mjs';
+
 export const PUBLICATION_PLAN_SCHEMA = 'programmable.module-mode-publication-owner-plan.v1';
 export const registryAbi = parseAbi([
   'function owner() view returns (address)',
@@ -120,6 +122,7 @@ export async function assertPublicationPlan(plan) {
 }
 /** The existing fixed-origin private BFF reader is the only runtime review authority. Local JSON is a consistency input. */
 export async function assertAuthenticatedOperationPlan(plan, sessionFile) {
+  if (isEngineOperationPlan(plan)) return assertAuthenticatedEngineOperationPlan(plan, sessionFile);
   if (!plan.modules.length) return;
   need(typeof sessionFile === 'string' && sessionFile.length > 0, 'Private reviewer session file required for module operations');
   const api = await publicationValidators(), session = await api.readOperatorSession(sessionFile);

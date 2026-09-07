@@ -14,10 +14,14 @@ import { reviewedProviders } from './rpc.mjs';
 import { PUBLICATION_PLAN_SCHEMA, assertPublicationPlan, assertAuthenticatedOperationPlan, readOperatorJson } from './publication-plan.mjs';
 import { LIFECYCLE_OPERATOR_SCHEMA, assertLifecyclePlan } from './lifecycle-plan.mjs';
 import { preparePublicationRequest, preparePublicationRetry, revalidatePublicationRequest, observePublicationReceipt, observePublicationOperation } from './publication-rpc.mjs';
+import { ENGINE_PUBLICATION_OPERATOR_SCHEMA, ENGINE_LIFECYCLE_OPERATOR_SCHEMA, assertEnginePublicationOperatorPlan } from '../module-engine/publication-plan.mjs';
+import { assertEngineLifecycleOperatorPlan } from '../module-engine/lifecycle-operator-plan.mjs';
 const directory = path.dirname(fileURLToPath(import.meta.url));
 export async function assertOperationPlan(plan) {
   if (plan.schemaVersion === PUBLICATION_PLAN_SCHEMA) return assertPublicationPlan(plan);
   if (plan.schemaVersion === LIFECYCLE_OPERATOR_SCHEMA) return assertLifecyclePlan(plan);
+  if (plan.schemaVersion === ENGINE_PUBLICATION_OPERATOR_SCHEMA) return assertEnginePublicationOperatorPlan(plan);
+  if (plan.schemaVersion === ENGINE_LIFECYCLE_OPERATOR_SCHEMA) return assertEngineLifecycleOperatorPlan(plan);
   throw new Error('Unknown module publication or lifecycle operation plan');
 }
 async function body(req) { let size = 0; const chunks = []; for await (const chunk of req) { size += chunk.length; need(size <= 4096, 'Request exceeds limit'); chunks.push(chunk); } return exactJson(size ? Buffer.concat(chunks) : Buffer.from('{}'), 'Operator request'); }
