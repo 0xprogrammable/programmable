@@ -69,7 +69,7 @@ export function fixture() {
         const p = decoded.args![0] as Record<string, unknown>; const token = (await readContract({ address: host, functionName: "predictTokenAddress", args: [p.name, p.symbol, ACCOUNT, p.creatorSalt] }) as [Address, Hex])[0];
         const configHash = keccak256(p.configuration as Hex), id = keccak256(encodeAbiParameters(parseAbiParameters("uint256,address,address,bytes32,bytes32"), [4663n, host, token, hash(10), configHash]));
         const constructor = encodeAbiParameters(moduleEngineConstructorParameters, [{ host, launchId: id, token, creator: ACCOUNT, quoteAsset: QUOTE, feeCollector: host }, p.configuration as Hex]), initCodeHash = keccak256(concatHex([CODE, constructor]));
-        const result = { ...launch, launchId: id, token, configurationHash: configHash, constructorHash: keccak256(constructor), initCodeHash, engine: predictModuleEngineAddress(host, ACCOUNT, p.engineSalt as Hex, id, initCodeHash), planHash: keccak256(encodeAbiParameters(moduleEnginePlanParameters, [4663n, host, ACCOUNT, p as never])) };
+        const result = { ...launch, buyCreatorFeeBps: p.buyCreatorFeeBps, sellCreatorFeeBps: p.sellCreatorFeeBps, launchId: id, token, configurationHash: configHash, constructorHash: keccak256(constructor), initCodeHash, engine: predictModuleEngineAddress(host, ACCOUNT, p.engineSalt as Hex, id, initCodeHash), planHash: keccak256(encodeAbiParameters(moduleEnginePlanParameters, [4663n, host, ACCOUNT, p as never])) };
         return { data: encodeFunctionResult({ abi: moduleEngineHostAbi, functionName: "launch", result }) };
       }
       throw new Error("Unknown simulation");
