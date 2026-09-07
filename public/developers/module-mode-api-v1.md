@@ -18,6 +18,29 @@ The [Engine starter manifest](https://programmable.market/developers/module-mode
 
 SDK development.4 configuration fields can declare `binding: {mode: "input", default?: value}` or `binding: {mode: "fixed", value}`. Fixed values may be omitted or repeated exactly; an override fails with `OPEN_CONFIG_FIXED_OVERRIDE`. A general quote address is a launch input in one reusable package. A fixed quote also requires the reviewed host revision and constructor to enforce that address against direct onchain calls. General quote trading still requires a nonzero fixed infrastructure configuration hash. See [Build a module](https://programmable.market/developer-reference/module-mode) for profile limits, fee versions and website-independent recovery.
 
+### Packaged Engine dependencies
+
+Keep dependency bytes in the submitted source inventory and include their hashes. For scoped Solidity imports, Engine review supports these fixed aliases from SDK-safe file paths to compiler source names:
+
+| Submitted path prefix | Solidity import prefix |
+| --- | --- |
+| `dependencies/scoped/openzeppelin/contracts/` | `@openzeppelin/contracts/` |
+| `dependencies/scoped/openzeppelin/uniswap-hooks/` | `@openzeppelin/uniswap-hooks/` |
+| `dependencies/scoped/uniswap/blocknumberish/` | `@uniswap/blocknumberish/` |
+| `dependencies/scoped/uniswap/liquidity-launcher/` | `@uniswap/liquidity-launcher/` |
+| `dependencies/scoped/uniswap/uerc20-factory/` | `@uniswap/uerc20-factory/` |
+| `dependencies/scoped/uniswap/v4-core/` | `@uniswap/v4-core/` |
+| `dependencies/scoped/uniswap/v4-periphery/` | `@uniswap/v4-periphery/` |
+| `dependencies/scoped/solady/src/` | `@solady/src/` |
+
+For example, package `dependencies/scoped/uniswap/v4-core/src/interfaces/IPoolManager.sol` for an unchanged import of `@uniswap/v4-core/src/interfaces/IPoolManager.sol`. The worker preserves file contents and rejects duplicate compiler source names with `MODULE_BUILD_SOURCE_ALIAS_COLLISION`. It does not fetch imports or accept contributor-selected remappings. These aliases apply only to Engine compilation; the Native profile keeps its existing source rules.
+
+### Quote review environment
+
+The operator can select `testEnvironment` in the existing Engine build plan with `profile: "programmable.engine-quote-v4-v3@1"` and the exact `sourceDigest` supplied by the deployed worker's reviewed service profile. This selects a fixed isolated V4/V3 environment, including archived dependency artifacts and service-owned test assets. The digest binds its recipe, Solidity fixture and dependency archive. A plan cannot supply a different genesis, deployment script, compiler command or external endpoint.
+
+Plans without this field retain the existing Engine environment. The selected profile and digest remain bound through the saved plan, worker job and build artifact. Tests of fixed templates must still use the exact configuration admitted for publication. Successful fixture execution does not establish live token eligibility, production market liquidity or public launch availability.
+
 ## Author and reward wallet
 
 The package descriptor requires two nonzero EVM addresses:
