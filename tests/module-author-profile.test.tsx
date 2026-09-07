@@ -6,9 +6,10 @@ import { readModuleAuthorProfileResponse } from "@/lib/profile/module-author-pro
 import { ProfileModuleCards, ProfileModules } from "@/components/profile-modules";
 import { GET } from "@/app/api/profile/modules/route";
 
-const mocks = vi.hoisted(() => ({ published: vi.fn() }));
+const mocks = vi.hoisted(() => ({ published: vi.fn(), releaseDigests: vi.fn() }));
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/server/module-mode/public-details", () => ({ readPublicModuleDetails: mocks.published }));
+vi.mock("@/lib/server/module-mode/catalog", () => ({ configuredModuleModeReleaseDigests: mocks.releaseDigests }));
 
 const account = `0x${"a".repeat(40)}`;
 const other = `0x${"b".repeat(40)}`;
@@ -19,18 +20,18 @@ const item = (id = 1, author = account): ModulePublicDetails => ({
 });
 const published = (items = [item()]) => ({ releaseDigest: hash(999), items });
 
-beforeEach(() => { vi.clearAllMocks(); mocks.published.mockResolvedValue(published()); });
+beforeEach(() => { vi.clearAllMocks(); mocks.published.mockResolvedValue(published()); mocks.releaseDigests.mockReturnValue([hash(999)]); });
 
 describe("public modules authored by a wallet", () => {
   it("uses the publication reader's author and never treats a payout recipient as the author", async () => {
     const payoutOnly = { ...item(2, other), rewardWallet: account };
     const own = { ...item(), subject: { principalId: "private-principal", submissionId: "private-application" }, rewardWallet: other };
     const result = moduleAuthorProfile(account.toUpperCase().replace("0X", "0x"), 1, published([payoutOnly, own]));
-    expect(result.items).toEqual([item()]);
+    expect(result.items).toEqual([{ ...item(), sourceReleaseDigests: [hash(999)] }]);
     expect(result.page.totalItems).toBe(1);
     expect(JSON.stringify(result)).not.toMatch(/principalId|submissionId|rewardWallet|private-principal/);
     expect(await readModuleAuthorProfile(account)).toEqual(moduleAuthorProfile(account, 1, published()));
-    expect(mocks.published).toHaveBeenCalledExactlyOnceWith();
+    expect(mocks.published).toHaveBeenCalledExactlyOnceWith(hash(999));
   });
 
   it("paginates all matching published modules and clamps pages after the final page", () => {
@@ -90,7 +91,9 @@ describe("public profile module endpoint", () => {
     mocks.published.mockRejectedValueOnce(new Error("private-principal internal failure"));
     const failure = await GET(new Request(`https://programmable.market/api/profile/modules?account=${account}`));
     expect(failure.status).toBe(503);
-    expect(await failure.json()).toEqual({ error: "modules_unavailable" });
+    const body = await failure.json();
+    expect(body).toMatchObject({ status: "unavailable", items: [], unavailableReleaseDigests: [hash(999)] });
+    expect(JSON.stringify(body)).not.toContain("private-principal");
     const write = await GET(new Request(`https://programmable.market/api/profile/modules?account=${account}`, { method: "POST" }));
     expect(write.status).toBe(405);
   });
@@ -100,7 +103,7 @@ describe("profile module presentation", () => {
   it("provides native named module buttons and readable descriptions without rendering HTML from metadata", () => {
     const html = renderToStaticMarkup(<ProfileModuleCards items={[{ ...item(), title: "A <script> module" }]} onSelect={() => {}} />);
     expect(html).toContain('type="button"');
-    expect(html).toContain('aria-label="View module A &lt;script&gt; module"');
+    expect(html).toContain('aria-label="View module A &lt;script&gt; module, version 1.0.0"');
     expect(html).toContain("Reviewed module description.");
     expect(html).toContain("Trading");
     expect(html).not.toContain("<script>");
@@ -112,5 +115,86 @@ describe("profile module presentation", () => {
     expect(html).toContain("Loading modules");
     expect(html).toContain('aria-label="Refresh modules"');
     expect(html).not.toContain("No published modules yet.");
+  });
+});
+
+describe("supported historical contributor publications", () => {
+  it("reads every configured release exactly and preserves healthy historical modules when the current read fails", async () => {
+    mocks.releaseDigests.mockReturnValue([hash(999), hash(998), hash(998)]);
+    mocks.published.mockImplementation(async digest => digest === hash(999) ? null : { releaseDigest: digest, items: [item(3)] });
+    const profile = await readModuleAuthorProfile(account);
+    expect(mocks.published.mock.calls).toEqual([[hash(999)], [hash(998)]]);
+    expect(profile).toMatchObject({ status: "partial", releaseDigest: hash(998), releaseDigests: [hash(998)], unavailableReleaseDigests: [hash(999)],
+      items: [{ ...item(3), sourceReleaseDigests: [hash(998)] }] });
+    expect(readModuleAuthorProfileResponse(profile, account)).toEqual(profile);
+  });
+
+  it("returns readable HTTP 200 partial data without leaking a failed release's private error", async () => {
+    mocks.releaseDigests.mockReturnValue([hash(999), hash(998), hash(997)]);
+    mocks.published.mockImplementation(async digest => {
+      if (digest === hash(998)) throw new Error("private submission principal rewardWallet");
+      if (digest === hash(997)) return null;
+      return published();
+    });
+    const response = await GET(new Request(`https://programmable.market/api/profile/modules?account=${account}`));
+    expect(response.status).toBe(200);
+    const profile = await response.json();
+    expect(profile).toMatchObject({ status: "partial", unavailableReleaseDigests: [hash(997), hash(998)], page: { totalItems: 1 } });
+    expect(JSON.stringify(profile)).not.toMatch(/submission|principal|rewardWallet/);
+    expect(readModuleAuthorProfileResponse(profile, account)).toEqual(profile);
+  });
+
+  it("deduplicates only identical package and manifest bindings and keeps other versions independently addressable", () => {
+    const original = item(); const nextVersion = { ...original, version: "2.0.0", manifestHash: hash(500) };
+    const profile = moduleAuthorProfile(account, 1, [published([original]), { releaseDigest: hash(998), items: [original, nextVersion] }]);
+    expect(profile.page.totalItems).toBe(2);
+    expect(profile.items).toEqual([{ ...original, sourceReleaseDigests: [hash(998), hash(999)] }, { ...nextVersion, sourceReleaseDigests: [hash(998)] }]);
+    expect(readModuleAuthorProfileResponse(profile, account)).toEqual(profile);
+    const html = renderToStaticMarkup(<ProfileModuleCards items={profile.items} onSelect={() => {}} />);
+    expect(html).toContain('aria-label="View module Module 01, version 1.0.0"');
+    expect(html).toContain('aria-label="View module Module 01, version 2.0.0"');
+  });
+
+  it("sorts and paginates the complete revision set independently of configured release order", () => {
+    const left = { releaseDigest: hash(999), items: Array.from({ length: 14 }, (_, index) => item(index * 2 + 1)) };
+    const right = { releaseDigest: hash(998), items: Array.from({ length: 14 }, (_, index) => item(index * 2 + 2)).reverse() };
+    const first = moduleAuthorProfile(account, 1, [left, right]);
+    const second = moduleAuthorProfile(account, 2, [right, left]);
+    const last = moduleAuthorProfile(account, 999, [left, right]);
+    expect(first.items).toEqual(moduleAuthorProfile(account, 1, [right, left]).items);
+    expect(second.items).toEqual(moduleAuthorProfile(account, 2, [left, right]).items);
+    expect(last.page).toEqual({ number: 3, size: 12, totalItems: 28, totalPages: 3 });
+    expect(new Set([...first.items, ...second.items, ...last.items].map(value => value.packageId)).size).toBe(28);
+  });
+
+  it("never substitutes a newer release response for a requested historical digest", async () => {
+    mocks.releaseDigests.mockReturnValue([hash(999), hash(998)]);
+    mocks.published.mockResolvedValue(published());
+    expect(await readModuleAuthorProfile(account)).toMatchObject({ status: "partial", releaseDigests: [hash(999)], unavailableReleaseDigests: [hash(998)], page: { totalItems: 1 } });
+  });
+
+  it("marks an empty healthy subset as partial, never as proof that the author has no publications", async () => {
+    mocks.releaseDigests.mockReturnValue([hash(999), hash(998)]);
+    mocks.published.mockImplementation(async digest => digest === hash(999) ? published([item(1, other)]) : null);
+    const profile = await readModuleAuthorProfile(account);
+    expect(profile).toMatchObject({ status: "partial", items: [], page: { totalItems: 0 } });
+    expect(readModuleAuthorProfileResponse(profile, account)).toEqual(profile);
+  });
+
+  it("caps the configured fanout without reading unbounded releases", async () => {
+    mocks.releaseDigests.mockReturnValue(Array.from({ length: 34 }, (_, index) => hash(index + 1)));
+    await expect(readModuleAuthorProfile(account)).rejects.toThrow("Too many");
+    expect(mocks.published).not.toHaveBeenCalled();
+  });
+
+  it("rejects false complete status, unbound revision sources and repeated manifest bindings", () => {
+    const profile = moduleAuthorProfile(account, 1, [published()], [hash(998)]);
+    for (const invalid of [
+      { ...profile, status: "ready" }, { ...profile, unavailableReleaseDigests: [] },
+      { ...profile, releaseDigests: [hash(999), hash(998)] }, { ...profile, releaseDigest: hash(998) },
+      { ...profile, items: [{ ...profile.items[0], sourceReleaseDigests: [hash(998)] }] },
+      { ...profile, items: [{ ...profile.items[0], sourceReleaseDigests: [] }] },
+      { ...profile, items: [...profile.items, ...profile.items], page: { number: 1, size: 12, totalItems: 2, totalPages: 1 } },
+    ]) expect(() => readModuleAuthorProfileResponse(invalid, account)).toThrow();
   });
 });

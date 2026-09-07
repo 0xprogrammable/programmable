@@ -17,8 +17,8 @@ export function ProfileModuleCards({ items, onSelect }: { items: readonly Module
     {items.map(item => {
       const category = MODULE_CATEGORIES.find(candidate => candidate.id === item.category.split("/")[0]);
       const Icon = category ? categoryIcons[category.id] : Puzzle;
-      return <li key={item.packageId}>
-        <button type="button" className={styles.card} onClick={() => onSelect(item)} aria-label={`View module ${item.title}`}>
+      return <li key={`${item.packageId}:${item.manifestHash}`}>
+        <button type="button" className={styles.card} onClick={() => onSelect(item)} aria-label={`View module ${item.title}, version ${item.version}`}>
           <span className={styles.icon} aria-hidden="true"><Icon size={20} strokeWidth={1.7} /></span>
           <span className={styles.copy}>
             <strong>{item.title}</strong>
@@ -57,7 +57,7 @@ export function ProfileModules({ account, ownProfile = false }: { account: strin
       })
       .then(next => {
         if (controller.signal.aborted) return;
-        if (next.status !== "ready") throw new Error("Modules unavailable.");
+        if (next.status === "unavailable") throw new Error("Modules unavailable.");
         setData(next);
         setFailed(false);
       })
@@ -66,18 +66,23 @@ export function ProfileModules({ account, ownProfile = false }: { account: strin
     return () => { disposed = true; window.clearTimeout(timeout); controller.abort(); };
   }, [account, page, refresh, retry]);
 
+  const partial = scoped?.status === "partial";
+  const notice = failed ? `Couldn’t ${scoped ? "refresh" : "load"} modules.`
+    : partial ? `Some module versions are unavailable. ${items.length ? "Showing verified publications." : "Refresh to check again."}`
+      : loading && !scoped ? "Loading modules…" : "";
+
   return <section className={styles.section} aria-labelledby="profile-modules-title">
     <header className={styles.heading}>
-      <h2 id="profile-modules-title">Modules{scoped ? <span className={styles.count}> {scoped.page.totalItems}</span> : null}</h2>
+      <h2 id="profile-modules-title">Modules{scoped && (!partial || scoped.page.totalItems > 0) ? <span className={styles.count}> {scoped.page.totalItems}{partial ? "+" : ""}</span> : null}</h2>
       <button type="button" className={styles.refresh} onClick={() => setRetry(value => value + 1)} disabled={loading} aria-label="Refresh modules" aria-busy={loading}>
         <RefreshCw aria-hidden="true" size={15} strokeWidth={1.8} /><span>Refresh</span>
       </button>
     </header>
-    <p className={failed ? styles.notice : styles.srOnly} role="status">{failed ? `Couldn’t ${scoped ? "refresh" : "load"} modules.` : loading && !scoped ? "Loading modules…" : ""}</p>
+    <p className={failed || partial ? styles.notice : styles.srOnly} role="status">{notice}</p>
     <div aria-busy={loading}>
       {items.length ? <ProfileModuleCards items={items} onSelect={setSelected} />
         : loading && !scoped ? <div className={styles.skeleton} aria-hidden="true"><span /><div><span /><span /></div></div>
-          : !failed ? <div className={styles.empty}><p>No published modules yet.</p>{ownProfile ? <Link href="/developer-reference/module-mode">Build a module</Link> : null}</div> : null}
+          : !failed && !partial ? <div className={styles.empty}><p>No published modules yet.</p>{ownProfile ? <Link href="/developer-reference/module-mode">Build a module</Link> : null}</div> : null}
     </div>
     {(scoped?.page.totalPages ?? 1) > 1 ? <nav className={styles.pagination} aria-label="Module pages">
       <button type="button" aria-label="Previous module page" disabled={loading || shownPage === 1} onClick={() => setPage(Math.max(1, shownPage - 1))}><ChevronLeft aria-hidden="true" size={18} /></button>
