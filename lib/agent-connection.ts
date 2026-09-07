@@ -30,6 +30,12 @@ export const PROGRAMMABLE_AGENT_ENTRY = Object.freeze({
       ethereum: { chainId: 1, capabilities: "https://api.programmable.market/v3/capabilities", openApi: "https://programmable.market/openapi/custom-launch-v3.json" },
       robinhood: { chainId: 4663, capabilities: "https://api.programmable.market/v4/chains/4663/capabilities", readiness: "https://api.programmable.market/v4/chains/4663/readiness", openApi: "https://programmable.market/openapi/custom-launch-v4.json" },
     },
+    multiRoleProject: {
+      scopes: ["custom-launch:create", "custom-launch:read"],
+      capabilities: "https://api.programmable.market/v4/chains/4663/multi-role-custom-launches/capabilities",
+      guide: "https://api.programmable.market/v4/chains/4663/multi-role-custom-launches/guide.md",
+      availability: "Read current capabilities; published documentation does not imply enabled admission.",
+    },
     moduleContribution: {
       scopes: ["modules:submit", "modules:read"],
       guide: "https://programmable.market/developers/module-mode-api-v1.md",
@@ -64,6 +70,7 @@ export function buildAgentInstructions(input?: { scopes?: readonly string[]; wal
     `Start by reading ${PROGRAMMABLE_AGENT_GUIDE_URL} and ${PROGRAMMABLE_AGENT_DISCOVERY_URL}. They cover the product, API workflows, current capability endpoints, website actions, contribution requirements and error recovery. Follow their links for the selected task.`,
     "Read the API key from PROGRAMMABLE_API_KEY in the environment or your secret store. Send it only in the Authorization header to https://api.programmable.market. Documentation and capability reads are public. Never print the key or put it in a URL, logs or committed files.",
     input?.scopes ? `This connection was issued with: ${input.scopes.join(", ")}. Check current API authorization on each operation; a guide does not add permissions to a key.` : "Use the key's actual permissions. Older launch-only and module-only keys retain their original access.",
+    "Launch history can include requests from other keys and linked wallets in the same account. The key is not isolated to one project; its saved chain restrictions still apply.",
     input?.wallet ? `The controller and module author wallet for this connection is ${input.wallet}. Ask for the contributor's reward wallet when it has not been specified.` : "Use the key's bound wallet for the controller or module author. Obtain the reward wallet from the user.",
     input?.intent ? `Requested workflow: ${input.intent}.` : "Choose the workflow from the user's request: a configurable coin, a complete custom project, a reusable module, or an existing coin's controls.",
     "Use live capabilities before a write, preserve exact request bytes and idempotency keys on retries, and distinguish submission, review, deployment and public availability. Wallet signing remains a separate action.",
