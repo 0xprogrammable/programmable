@@ -21,7 +21,13 @@ export type RobinhoodExploreFilters = {
 export const DEFAULT_EXPLORE_FILTERS: RobinhoodExploreFilters = { sort: "highest", mode: "all" };
 
 export function activeExploreFilterCount(filters: RobinhoodExploreFilters) {
-  return Number(filters.sort !== DEFAULT_EXPLORE_FILTERS.sort);
+  return Number(filters.sort !== DEFAULT_EXPLORE_FILTERS.sort) + Number((filters.mode ?? "all") !== "all");
+}
+
+export type RobinhoodExploreRequest = { page: number; q: string } & RobinhoodExploreFilters;
+
+export function sameRobinhoodExploreRequest(a: RobinhoodExploreRequest | null | undefined, b: RobinhoodExploreRequest) {
+  return Boolean(a && a.page === b.page && a.q === b.q && a.sort === b.sort && (a.mode ?? "all") === (b.mode ?? "all"));
 }
 
 export function parseRobinhoodExploreQuery(query: URLSearchParams) {

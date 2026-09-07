@@ -6,6 +6,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { AnimatedMarketCap } from "@/components/animated-market-cap";
 import { MODULE_TOKEN_FALLBACK_IMAGE, RobinhoodCoinArtwork } from "@/components/robinhood-coin-artwork";
 import { RobinhoodProjectLinks } from "@/components/robinhood-project-links";
+import { TokenLaunchModules } from "@/components/token-launch-modules";
 import { useRobinhoodPresentation } from "@/components/use-robinhood-presentation";
 import { isRobinhoodModuleLaunch, robinhoodModuleManageHref, type RobinhoodLaunch } from "@/lib/robinhood-launches";
 import { coinDollars, coinTicker } from "@/lib/robinhood-presentation";
@@ -50,7 +51,7 @@ export function RobinhoodTokenView({ address, token, status }: {
         <section className={styles.market} aria-label={`${name} market`}>
         <header className={styles.header}>
           <div className={styles.identity}>
-            <RobinhoodCoinArtwork className={styles.avatar} imageUrl={details?.imageUrl} loading={presentation.loading}
+            <RobinhoodCoinArtwork className={styles.avatar} imageUrl={details?.imageUrl} loading={presentation.loading} eager={true}
               fallbackImageUrl={moduleLaunch ? MODULE_TOKEN_FALLBACK_IMAGE : undefined} />
             <div className={styles.identityText}>
               <div className={styles.nameRow}>
@@ -66,26 +67,22 @@ export function RobinhoodTokenView({ address, token, status }: {
               {copyState === "copied" ? <Check aria-hidden="true" size={16} /> : <Copy aria-hidden="true" size={16} />}
               {copyState === "copied" ? "Copied" : "Copy address"}
             </button>
+            {/^0x(?!0{40}$)[\da-f]{40}$/i.test(token.creator) ? <Link className={styles.secondaryButton} href={`/profile?account=${token.creator}&chain=4663`} prefetch={false} title={`Dev wallet: ${token.creator}`}>Dev wallet</Link> : null}
             <a className={styles.secondaryButton} href={`${EXPLORER}/token/${address}`} target="_blank" rel="noreferrer">Explorer <ArrowUpRight aria-hidden="true" size={16} /><span className="sr-only"> (opens in a new tab)</span></a>
           </div>
         </header>
         <p className="sr-only" role="status">{copyState === "copied" ? "Token address copied" : ""}</p>
         {copyState === "failed" ? <p className={styles.notice} role="status">Could not copy. <a href={`${EXPLORER}/token/${address}`} target="_blank" rel="noreferrer">View the address on Explorer.</a></p> : null}
 
-        {moduleLaunch && manageHref ? <section className={styles.launchContext} aria-label="Programmable launch">
+        <section className={styles.launchContext} aria-label="Programmable launch">
           <div>
-            <p className={styles.origin}>Programmable · Module Mode</p>
-            <p className={styles.launchDetails}>
-              <span>{moduleLaunch.modulePackageIds.length === 0 ? "Base coin" : `${moduleLaunch.modulePackageIds.length} ${moduleLaunch.modulePackageIds.length === 1 ? "module" : "modules"}`}</span>
-              <Link href={`/profile?account=${moduleLaunch.creator}`} prefetch={false}>Launch wallet</Link>
-              <a href={`${EXPLORER}/tx/${moduleLaunch.transactionHash}`} target="_blank" rel="noreferrer">Launch transaction<span className="sr-only"> (opens in a new tab)</span></a>
-            </p>
+            <p className={styles.origin}>Programmable · {moduleLaunch ? "Module" : "Custom"}</p>
           </div>
-          <div className={styles.launchActions}>
-            <Link className={`${styles.secondaryButton} ${styles.tradeButton}`} href={`${manageHref}#trade`} prefetch={false} aria-label="Trade coin">Trade</Link>
+          {manageHref ? <div className={styles.launchActions}>
             <Link className={styles.secondaryButton} href={manageHref} prefetch={false} aria-label="Manage coin">Manage <ArrowRight aria-hidden="true" size={16} /></Link>
-          </div>
-        </section> : null}
+          </div> : null}
+        </section>
+        {moduleLaunch ? <TokenLaunchModules launch={moduleLaunch} /> : null}
         {token && status !== "ready" ? <p className={styles.notice} role="status">{status === "syncing"
           ? "New launches are still being checked. This coin comes from the verified launch index."
           : "Showing the last verified launch record. Index updates are temporarily unavailable."}</p> : null}

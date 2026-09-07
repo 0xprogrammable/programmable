@@ -24,7 +24,7 @@ function state(): ModuleManagementSnapshot {
 }
 function props(snapshot: ModuleManagementSnapshot | null = state()): ModuleCoinConsoleViewProps {
   return { token: a(21), snapshot, loading: false, unavailable: false, walletReady: true, onChain: true, phase: "idle", prepared: null,
-    hash: null, error: "", onPrepare: vi.fn(), onPrepareTrade: vi.fn(), onConfirm: vi.fn(), onCancel: vi.fn(), onRefresh: vi.fn(), onCheckReceipt: vi.fn(), onWallet: vi.fn(), onSwitch: vi.fn() };
+    hash: null, error: "", onPrepare: vi.fn(), onConfirm: vi.fn(), onCancel: vi.fn(), onRefresh: vi.fn(), onCheckReceipt: vi.fn(), onWallet: vi.fn(), onSwitch: vi.fn() };
 }
 function view(input = props()) { return renderToStaticMarkup(<ModuleCoinConsoleView {...input} />); }
 function button(html: string, label: string) {
@@ -48,15 +48,15 @@ describe("Module Mode coin controls", () => {
     expect(html).toContain("0.5 ETH"); expect(html).toContain("0.01 ETH"); expect(html).toContain("Buyer rewards");
     expect(html).toContain("1970-01-24 03:33 UTC");
     expect(html).toContain("Available fees across your Module Mode coins"); expect(html).toContain("Earned from this coin");
-    expect(button(html, "Claim ETH")).not.toContain("disabled"); expect(button(html, "Review buy")).not.toContain("disabled");
-    expect(html).toContain('id="trade"'); expect(html).not.toMatch(/<p[^>]*>[^<]*<details/);
+    expect(button(html, "Claim ETH")).not.toContain("disabled");
+    expect(html).not.toContain('id="trade"'); expect(html).not.toMatch(/<p[^>]*>[^<]*<details/);
   });
   it("renders unknown claims as unknown until the wallet connects and disables actions on the wrong chain", () => {
     const snapshot = state(); snapshot.actor = null; snapshot.fees.claimable = null; snapshot.instances[0].claimable = null;
     const html = view({ ...props(snapshot), walletReady: false });
     expect(html).toContain("Your available claim</span><strong>— ETH"); expect(button(html, "Claim ETH")).toContain("disabled");
     expect(button(html, "Connect wallet")).not.toContain("disabled");
-    const wrongChain = view({ ...props(), onChain: false }); expect(button(wrongChain, "Review buy")).toContain("disabled");
+    const wrongChain = view({ ...props(), onChain: false }); expect(button(wrongChain, "Review funding")).toContain("disabled");
     expect(button(wrongChain, "Switch network")).not.toContain("disabled");
   });
   it("shows unsupported management while preserving already backed claims", () => {
@@ -91,19 +91,21 @@ describe("Module Mode coin controls", () => {
     const html = view({ ...props(), phase: "review", prepared }); expect(html).toContain(a(95)); expect(html).toContain("1 ETH"); expect(button(html, "Confirm in wallet")).not.toContain("disabled");
     for (const phase of ["pending", "unconfirmed", "checking"] as const) {
       const result = view({ ...props(), phase, prepared, hash: phase === "unconfirmed" ? null : h(999) });
-      expect(result).not.toContain("Confirm in wallet"); expect(button(result, "Review buy")).toContain("disabled");
+      expect(result).not.toContain("Confirm in wallet"); expect(button(result, "Review funding")).toContain("disabled");
       expect(button(result, "Claim ETH")).toContain("disabled"); expect(result).toContain("never sends another transaction");
       expect(button(result, phase === "checking" ? "Checking confirmation…" : "Check confirmation")).toContain(phase === "checking" ? "disabled" : "type=\"submit\"");
     }
     const mined = view({ ...props(), phase: "mined", hash: h(999) }); expect(mined).toContain("Finality and indexing are separate checks");
     const reverted = view({ ...props(), phase: "reverted", hash: h(999) }); expect(reverted).toContain("Its changes were not applied");
   });
-  it("keeps swap amounts, minimum output, fee split and limited approval distinct in review", () => {
-    const base = review();
-    const swap = { ...base, kind: "swap" as const, token: a(21), poolId: h(22), isBuy: true, amountSpecified: -(10n ** 18n), limit: 99n * 10n ** 18n, recipient: a(90),
-      nativeAmount: 10n ** 18n, tokenAmount: 100n * 10n ** 18n, feeComponents: { creatorBps: 100, platformBps: 20, poolProtocolPips: 0, poolLpPips: 0 } };
-    const buy = view({ ...props(), phase: "review", prepared: swap }); expect(buy).toContain("99 ORBIT"); expect(buy).toContain("1% creator + 0.2% platform");
-    const approval = { ...base, kind: "approve" as const, token: a(21), amount: 5n * 10n ** 18n };
-    expect(view({ ...props(), phase: "review", prepared: approval })).toContain("This approval does not sell your tokens");
+  it("does not expose buys or sells from the coin management route", () => {
+    for (const input of [props(), { ...props(), walletReady: false }, { ...props(), onChain: false }]) {
+      const html = view(input);
+      expect(html).not.toContain('id="trade"');
+      expect(html).not.toContain('aria-label="Trade side"');
+      expect(html).not.toContain("Review buy");
+      expect(html).not.toContain("Review sell");
+      expect(html).toContain("Your modules");
+    }
   });
 });

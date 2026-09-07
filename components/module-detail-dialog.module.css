@@ -1,0 +1,19 @@
+.dialog { background: transparent; border: 0; color: var(--webde-ink); margin: auto; max-height: calc(100dvh - 32px); max-width: min(560px, calc(100vw - 32px)); overflow: auto; overscroll-behavior: contain; padding: 0; width: 560px; }
+.dialog::backdrop { background: rgb(0 0 0 / 72%); }
+.surface { background: var(--webde-surface, #181818); border: 1px solid var(--webde-line, #323232); border-radius: 16px; padding: 24px; }
+.header { align-items: flex-start; display: flex; gap: 16px; justify-content: space-between; }
+.header h2 { font-size: 24px; font-weight: 500; letter-spacing: -.02em; line-height: 32px; margin: 4px 0 0; overflow-wrap: anywhere; }
+.close { align-items: center; background: transparent; border: 0; border-radius: 8px; color: inherit; cursor: pointer; display: inline-flex; flex: 0 0 44px; height: 44px; justify-content: center; width: 44px; }
+.description { color: var(--webde-muted, #b7b7b3); font-size: 14px; line-height: 20px; margin: 16px 0 24px; overflow-wrap: anywhere; white-space: pre-line; }
+.facts { display: grid; gap: 16px; margin: 0; }
+.facts > div { align-items: baseline; display: flex; gap: 16px; justify-content: space-between; }
+.facts dt, .identity dt { color: var(--webde-muted, #b7b7b3); font-size: 12px; line-height: 16px; }
+.facts dd { font-size: 14px; line-height: 20px; margin: 0; overflow-wrap: anywhere; text-align: right; }
+.facts a { color: inherit; display: inline-flex; align-items: center; min-height: 44px; text-decoration: underline; text-underline-offset: 4px; }
+.identity { margin-top: 16px; }
+.identity summary { color: var(--webde-muted, #b7b7b3); cursor: pointer; font-size: 12px; line-height: 16px; min-height: 44px; padding-block: 14px; }
+.identity dl { display: grid; gap: 16px; margin: 8px 0 0; }
+.identity dd { font-size: 12px; line-height: 20px; margin: 4px 0 0; overflow-wrap: anywhere; }
+.dialog :is(button, a, summary):focus-visible { outline: 2px solid var(--webde-ink, #fff); outline-offset: 4px; }
+@media (hover: hover) and (pointer: fine) { .close:hover { background: var(--webde-control, #272727); } }
+@media (max-width: 390px) { .surface { padding: 16px; } .header h2 { font-size: 20px; line-height: 28px; } }

@@ -96,7 +96,6 @@
 .launchDetails { color: var(--webde-muted); display: flex; flex-wrap: wrap; font-size: 14px; gap: 4px 16px; line-height: 20px; margin: 4px 0 0; }
 .launchDetails a { align-items: center; color: inherit; display: inline-flex; min-height: 24px; text-decoration: underline; text-underline-offset: 4px; }
 .launchActions { display: flex; flex: none; flex-wrap: wrap; gap: 8px; }
-.tradeButton { background: var(--webde-ink); border-color: var(--webde-ink); color: var(--webde-surface); }
 
 .metrics {
   display: grid;
@@ -154,7 +153,6 @@
   .back:hover { color: var(--webde-ink); text-decoration: underline; text-underline-offset: 4px; }
   .secondaryButton:hover { background: var(--webde-surface-raised); color: var(--webde-ink); }
   .launchDetails a:hover { color: var(--webde-ink); }
-  .tradeButton:hover { background: var(--webde-ink); color: var(--webde-surface); opacity: .9; }
 }
 .secondaryButton:active { transform: translateY(1px); }
 
@@ -175,9 +173,12 @@
 
 @media (max-width: 480px) {
   .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .headerActions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
+  .headerActions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; }
   .headerActions > * { min-width: 0; }
-  .launchActions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
+  .headerActions .secondaryButton { font-size: 12px; gap: 4px; padding-inline: 8px; }
+  .headerActions .secondaryButton svg { flex: none; }
+  .headerActions a svg { display: none; }
+  .launchActions { width: auto; }
 }
 
 @media (max-width: 360px) {

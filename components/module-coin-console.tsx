@@ -9,8 +9,7 @@ import { switchModuleModeNetwork } from "@/components/module-mode-wallet-state";
 import { ModuleSchemaField } from "@/components/module-mode-fields";
 import { ROBINHOOD_BLOCK_EXPLORER_URL } from "@/lib/chains";
 import { configurationFromForm, defaultSchemaValue, parseExactUnits, type FormValue } from "@/lib/module-mode/builder";
-import { createModuleNativeClient, ModuleNativeTransactionRevertedError, prepareModuleNativeManagementTransaction, waitForModuleNativeReceipt,
-  prepareModuleNativeSwap, prepareModuleNativeApproval, type PreparedModuleNativeManagement, type PreparedModuleNativeSwap, type PreparedModuleNativeApproval } from "@/lib/module-mode/native-client";
+import { createModuleNativeClient, ModuleNativeTransactionRevertedError, prepareModuleNativeManagementTransaction, waitForModuleNativeReceipt, type PreparedModuleNativeManagement } from "@/lib/module-mode/native-client";
 import { parseModuleModeAvailability, type ModuleModeAvailability } from "@/lib/module-mode/native-catalog";
 import { managementActionProblem, moduleManagementChainMatches, readModuleManagementSnapshot,
   type ManagementValue, type ModuleManagedInstance, type ModuleManagementIntent, type ModuleManagementSnapshot } from "@/lib/module-mode/management";
@@ -19,8 +18,7 @@ import styles from "./module-coin-console.module.css";
 
 type Phase = "idle" | "preparing" | "review" | "wallet" | "pending" | "unconfirmed" | "checking" | "mined" | "reverted";
 type Prepare = (intent: ModuleManagementIntent) => void;
-type ConsolePrepared = PreparedModuleNativeManagement | PreparedModuleNativeSwap | PreparedModuleNativeApproval;
-export type ModuleConsoleTradeIntent = { isBuy: boolean; amount: string; slippageBps: number };
+type ConsolePrepared = PreparedModuleNativeManagement;
 const native = (value: bigint | null) => value === null ? "—" : formatUnits(value, 18);
 const shortAddress = (value: string) => `${value.slice(0, 6)}…${value.slice(-4)}`;
 function errorMessage(error: unknown) {
@@ -90,21 +88,6 @@ export function ModuleCoinConsole({ token }: { token: Address }) {
     } catch (caught) { setError(errorMessage(caught)); setPhase("idle"); }
     finally { operation.current = false; }
   };
-  const prepareTrade = async (intent: ModuleConsoleTradeIntent) => {
-    if (operation.current || ["wallet", "pending", "unconfirmed", "checking"].includes(phase)) return;
-    if (!walletReady || !onChain || !account || !availability?.release) { setError("Connect your wallet on Robinhood Chain before reviewing a trade."); return; }
-    operation.current = true; setError(""); setPrepared(null); setHash(null); setPhase("preparing");
-    try {
-      const amount = BigInt(parseExactUnits(intent.amount, 18));
-      if (amount <= 0n) throw new Error("Enter an amount above zero.");
-      const result = await prepareModuleNativeSwap({ client, availability, account, token, isBuy: intent.isBuy,
-        amountSpecified: -amount, recipient: account, slippageBps: intent.slippageBps, deadlineSeconds: 300 });
-      const transaction = result.kind === "approval-required"
-        ? await prepareModuleNativeApproval({ client, availability, account, token, amount: result.amount, deadlineSeconds: 300 }) : result;
-      setPrepared(transaction); setPhase("review");
-    } catch (caught) { setError(errorMessage(caught)); setPhase("idle"); }
-    finally { operation.current = false; }
-  };
   const confirm = async () => {
     if (!prepared || phase !== "review" || operation.current) return;
     operation.current = true; setError(""); setPhase("wallet");
@@ -142,7 +125,6 @@ export function ModuleCoinConsole({ token }: { token: Address }) {
     unavailable={!loading && !error && availability?.release === null} walletReady={walletReady} onChain={onChain}
     phase={phase} prepared={prepared} hash={hash} error={error}
     onPrepare={intent => { void prepare(intent); }} onConfirm={() => { void confirm(); }}
-    onPrepareTrade={intent => { void prepareTrade(intent); }}
     onCheckReceipt={transactionHash => { void checkReceipt(transactionHash); }}
     onCancel={() => { if (phase === "review") { setPrepared(null); setPhase("idle"); } }} onRefresh={() => { setLoading(true); void refresh(); }}
     onWallet={wallet.openWallet} onSwitch={() => { setError(""); void switchModuleModeNetwork(wallet.switchNetwork).catch(caught => setError(errorMessage(caught))); }} />;
@@ -153,7 +135,6 @@ export interface ModuleCoinConsoleViewProps {
   walletReady: boolean; onChain: boolean; phase: Phase; prepared: ConsolePrepared | null;
   hash: Hex | null; error: string;
   onPrepare: Prepare; onConfirm: () => void; onCancel: () => void; onRefresh: () => void;
-  onPrepareTrade: (intent: ModuleConsoleTradeIntent) => void;
   onCheckReceipt: (transactionHash: Hex) => void;
   onWallet: () => void; onSwitch: () => void;
 }
@@ -182,12 +163,11 @@ export function ModuleCoinConsoleView(props: ModuleCoinConsoleViewProps) {
     {props.unavailable ? <section className={styles.empty}><h2>Module management is not available yet</h2><p>Controls will become available when the Module Mode release is ready. Refresh to check again.</p><Link href="/docs/developers/module-mode" className={styles.textLink}>Read the Module Mode guide</Link></section> : null}
     {loading && !snapshot ? <section className={styles.empty} aria-busy="true"><h2>Loading coin controls</h2><p>Checking this coin and your available balances.</p></section> : null}
 
-    {prepared && phase === "review" ? <PreparedReview prepared={prepared} symbol={snapshot?.symbol ?? "tokens"} onConfirm={props.onConfirm} onCancel={props.onCancel} /> : null}
+    {prepared && phase === "review" ? <PreparedReview prepared={prepared} onConfirm={props.onConfirm} onCancel={props.onCancel} /> : null}
     {props.hash || phase === "unconfirmed" ? <ReceiptStatus key={`${props.hash ?? "unknown"}:${phase === "mined"}`} phase={phase} hash={props.hash} onCheckReceipt={props.onCheckReceipt} /> : null}
 
     {snapshot ? <div className={styles.layout}>
       <section className={styles.modules} aria-labelledby="coin-modules-heading">
-        <TradePanel symbol={snapshot.symbol} disabled={disabled} onPrepare={props.onPrepareTrade} />
         <div className={styles.sectionHeading}><h2 id="coin-modules-heading">Your modules</h2><span>{snapshot.instances.length}</span></div>
         {snapshot.instances.length === 0 ? <div className={styles.plain}><h3>Plain coin</h3><p>This coin has no extra modules. Your creator fee controls are available below.</p></div> : snapshot.instances.map(instance => <InstancePanel key={`${instance.instanceId}:${snapshot.actor}`} instance={instance} snapshot={snapshot} disabled={disabled} onPrepare={props.onPrepare} />)}
         <FeeRecipients key={`${snapshot.launch.poolId}:${snapshot.fees.adminRevision}:${snapshot.fees.wallets.join(":")}:${snapshot.actor}`} snapshot={snapshot} disabled={disabled} onPrepare={props.onPrepare} />
@@ -203,54 +183,18 @@ export function ModuleCoinConsoleView(props: ModuleCoinConsoleViewProps) {
   </section>;
 }
 
-function PreparedReview({ prepared, symbol, onConfirm, onCancel }: { prepared: ConsolePrepared; symbol: string; onConfirm: () => void; onCancel: () => void }) {
+function PreparedReview({ prepared, onConfirm, onCancel }: { prepared: ConsolePrepared; onConfirm: () => void; onCancel: () => void }) {
   const review = useRef<HTMLElement>(null);
   useEffect(() => { review.current?.focus(); review.current?.scrollIntoView({ behavior: "instant", block: "nearest" }); }, []);
   return <section className={styles.review} tabIndex={-1} ref={review} aria-labelledby="management-review-heading">
-    <span className={styles.eyebrow}>Review transaction</span><h2 id="management-review-heading">{prepared.kind === "swap" ? `Review ${prepared.isBuy ? "buy" : "sell"}` : prepared.kind === "approve" ? "Approve tokens for sale" : "Confirm the change"}</h2>
+    <span className={styles.eyebrow}>Review transaction</span><h2 id="management-review-heading">Confirm the change</h2>
     <p>{prepared.transaction.description}</p>
-    {prepared.kind === "swap" ? <>
-      <dl className={styles.facts}>
-        <div><dt>You pay</dt><dd>{prepared.isBuy ? `${native(prepared.nativeAmount)} ETH` : `${native(prepared.tokenAmount)} ${symbol}`}</dd></div>
-        <div><dt>Estimated received</dt><dd>{prepared.isBuy ? `${native(prepared.tokenAmount)} ${symbol}` : `${native(prepared.nativeAmount)} ETH`}</dd></div>
-        <div><dt>Minimum received</dt><dd>{native(prepared.limit)} {prepared.isBuy ? symbol : "ETH"}</dd></div>
-        <div><dt>Trade fees</dt><dd>{prepared.feeComponents.creatorBps / 100}% creator + {prepared.feeComponents.platformBps / 100}% platform{prepared.feeComponents.poolProtocolPips ? ` + ${prepared.feeComponents.poolProtocolPips / 10_000}% pool protocol` : ""}</dd></div>
-      </dl><p className={styles.small}>The estimate includes trade fees. Execution reverts if the minimum received cannot be met.</p>
-    </> : prepared.kind === "approve" ? <p>Allow the fixed Module Mode router to spend {native(prepared.amount)} {symbol}. After confirmation, review your sell separately. This approval does not sell your tokens.</p> : null}
     <dl className={styles.facts}>
       <div><dt>Wallet</dt><dd>{prepared.transaction.from}</dd></div><div><dt>ETH sent</dt><dd>{native(BigInt(prepared.transaction.value))} ETH</dd></div>
       <div><dt>Valid until</dt><dd>{timestamp(prepared.expiresAt)}</dd></div><div><dt>Network cost</dt><dd>Shown by your wallet</dd></div>
     </dl>
     <details className={styles.details}><summary>Contract details</summary><dl className={styles.facts}><div><dt>Contract</dt><dd>{prepared.transaction.to}</dd></div><div><dt>Action selector</dt><dd>{prepared.transaction.data.slice(0, 10)}</dd></div></dl></details>
     <div className={styles.actions}><button className={styles.primaryButton} type="button" onClick={onConfirm}>Confirm in wallet</button><button className={styles.secondaryButton} type="button" onClick={onCancel}>Cancel</button></div>
-  </section>;
-}
-
-function TradePanel({ symbol, disabled, onPrepare }: { symbol: string; disabled: boolean; onPrepare: (intent: ModuleConsoleTradeIntent) => void }) {
-  const [isBuy, setIsBuy] = useState(true); const [amount, setAmount] = useState(""); const [slippage, setSlippage] = useState("0.5");
-  const [error, setError] = useState(""); const errorId = useId(); const amountInput = useRef<HTMLInputElement>(null);
-  const prepare = (event: FormEvent) => {
-    event.preventDefault(); setError("");
-    try {
-      if (BigInt(parseExactUnits(amount, 18)) <= 0n) throw new Error("Enter an amount above zero.");
-      const slippageBps = Number(parseExactUnits(slippage, 2));
-      if (slippageBps > 500) throw new Error("Choose slippage between 0% and 5%.");
-      onPrepare({ isBuy, amount, slippageBps });
-    } catch (caught) { setError(errorMessage(caught)); amountInput.current?.focus(); }
-  };
-  return <section id="trade" className={styles.trade} aria-labelledby="module-trade-heading">
-    <h2 id="module-trade-heading">Trade {symbol}</h2>
-    <div className={styles.tradeSides} role="group" aria-label="Trade side">
-      <button type="button" className={isBuy ? styles.primaryButton : styles.secondaryButton} aria-pressed={isBuy} disabled={disabled} onClick={() => { setIsBuy(true); setAmount(""); setError(""); }}>Buy</button>
-      <button type="button" className={!isBuy ? styles.primaryButton : styles.secondaryButton} aria-pressed={!isBuy} disabled={disabled} onClick={() => { setIsBuy(false); setAmount(""); setError(""); }}>Sell</button>
-    </div>
-    <form onSubmit={prepare}>
-      <label className={styles.field}>You pay · {isBuy ? "ETH" : symbol}<input ref={amountInput} value={amount} onChange={event => setAmount(event.target.value)} inputMode="decimal" autoComplete="off" placeholder={isBuy ? "0.01" : "100"} aria-invalid={!!error} aria-describedby={error ? errorId : undefined} /></label>
-      <details className={styles.details}><summary>Slippage · {slippage || "0"}%</summary><label className={styles.field}>Maximum slippage (%)<input value={slippage} onChange={event => setSlippage(event.target.value)} inputMode="decimal" autoComplete="off" /></label><p className={styles.small}>Sets your minimum received amount. The trade reverts if the price moves beyond this limit.</p></details>
-      {error ? <p id={errorId} className={styles.fieldError} role="alert">{error}</p> : null}
-      <button className={styles.primaryButton} type="submit" disabled={disabled}>Review {isBuy ? "buy" : "sell"}</button>
-      <p className={styles.small}>{isBuy ? "Review the estimated tokens, minimum received and fees before confirming." : "A token approval may be needed first. You review the sale after the approval is confirmed."}</p>
-    </form>
   </section>;
 }
 

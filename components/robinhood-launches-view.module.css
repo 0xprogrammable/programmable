@@ -35,33 +35,8 @@
   display: flex;
   gap: 8px;
   justify-content: center;
-  margin-bottom: 16px;
-}
-
-.modeFilters {
-  display: flex;
-  gap: 4px;
-  justify-content: center;
   margin-bottom: 24px;
-}
-
-.modeFilters button {
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: var(--webde-radius-control);
-  color: var(--webde-muted);
-  cursor: pointer;
-  font: inherit;
-  font-size: 14px;
-  min-height: 44px;
-  min-width: 64px;
-  padding: 8px 16px;
-}
-
-.modeFilters button[aria-pressed="true"] {
-  background: var(--webde-surface-raised);
-  border-color: var(--webde-line);
-  color: var(--webde-ink);
+  min-width: 0;
 }
 
 .search,
@@ -135,7 +110,9 @@
 }
 
 .pagination button {
-  padding: 8px 16px;
+  height: 44px;
+  padding: 0;
+  width: 44px;
 }
 
 .status {
@@ -148,6 +125,7 @@
 .list {
   display: grid;
   gap: 16px;
+  grid-auto-rows: 1fr;
   grid-template-columns: repeat(auto-fill, minmax(208px, 1fr));
   list-style: none;
   margin: 0;
@@ -177,13 +155,21 @@
 .name, .symbol { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .name { font-size: 18px; font-weight: 550; line-height: 28px; }
 .symbol { color: var(--webde-muted); font-size: 14px; line-height: 20px; }
+.mode { color: var(--webde-muted); display: block; font-size: 12px; line-height: 20px; }
 .cardFooter { align-items: flex-end; display: flex; gap: 8px; justify-content: space-between; margin-top: 16px; padding: 0 4px 8px; }
 .marketCap { display: grid; gap: 4px; min-width: 0; }
 .marketCap > span { color: var(--webde-muted); font-size: 12px; line-height: 16px; }
 .marketCap strong { font-size: 18px; font-weight: 500; font-variant-numeric: tabular-nums; line-height: 28px; }
 .launched { color: var(--webde-muted); flex-shrink: 0; font-size: 12px; line-height: 28px; }
-.loading { display: flex; justify-content: center; padding: 24px; }
-.loading span { background: var(--webde-surface-raised); border-radius: 4px; height: 8px; width: 120px; }
+.emptySlot { visibility: hidden; }
+.skeletonArtwork { aspect-ratio: 1; background: var(--webde-surface-raised); }
+.skeletonLine { background: var(--webde-surface-raised); border-radius: 4px; display: block; }
+.skeletonName { height: 20px; margin-block: 4px; width: 80%; }
+.skeletonSymbol { height: 12px; margin-block: 4px; width: 44%; }
+.skeletonMode { height: 12px; margin-block: 4px; width: 32%; }
+.skeletonCaption { height: 12px; margin-block: 2px; width: 64px; }
+.skeletonNumber { height: 20px; margin-block: 4px; width: 88px; }
+.skeletonAge { height: 12px; margin-block: 8px; width: 40px; }
 
 .empty {
   border: 1px solid var(--webde-line);
@@ -225,44 +211,33 @@
 .pagination {
   align-items: center;
   display: flex;
-  gap: 16px;
-  justify-content: center;
-  margin-top: 24px;
+  flex: none;
+  gap: 8px;
 }
 
-.pagination > span {
-  color: var(--webde-muted);
-  font-size: 14px;
-  text-align: center;
-}
-
-.pagination button:disabled {
+.pagination button[aria-disabled="true"] {
   cursor: default;
   opacity: 0.5;
 }
 
 .cardLink:active,
 .clearSearch:active,
-.modeFilters button:active,
-.pagination button:active:not(:disabled) {
+.pagination button:active:not([aria-disabled="true"]) {
   background: var(--webde-surface-raised);
 }
 
 .clearSearch:focus-visible,
 .pagination button:focus-visible,
 .textButton:focus-visible,
-.cardLink:focus-visible,
-.heading :is(h1, h2):focus-visible,
-.modeFilters button:focus-visible {
+.cardLink:focus-visible {
   outline: 2px solid var(--webde-ink);
   outline-offset: 2px;
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .row:hover,
-  .modeFilters button:hover,
+  .item:not(.skeleton):not(.emptySlot) .row:hover,
   .clearSearch:hover,
-  .pagination button:hover:not(:disabled) {
+  .pagination button:hover:not([aria-disabled="true"]) {
     background: var(--webde-surface-raised);
   }
 }
@@ -283,7 +258,7 @@
 
   .toolbar {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 44px 44px;
+    grid-template-columns: minmax(0, 1fr) 44px 44px auto;
   }
 
   .search {
@@ -296,17 +271,18 @@
 
   .list { gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .name { font-size: 16px; line-height: 24px; }
+  .skeletonName { height: 16px; }
   .cardFooter { align-items: start; flex-direction: column; gap: 4px; margin-top: 12px; }
   .launched { line-height: 20px; }
+  .skeletonAge { margin-block: 4px; }
 
-  .pagination {
-    gap: 8px;
-    justify-content: space-between;
-  }
+}
 
-  .pagination button {
-    padding-inline: 12px;
-  }
+@media (max-width: 480px) {
+  .toolbar, .pagination { gap: 4px; }
+  .search { padding-inline: 8px; }
+  .search > svg, .clearSearch { display: none; }
+  .search input::-webkit-search-cancel-button { display: initial; }
 }
 
 @media (forced-colors: active) {
@@ -319,8 +295,6 @@
   }
 
   .cardLink:focus-visible,
-  .heading :is(h1, h2):focus-visible,
-  .modeFilters button:focus-visible,
   .search:focus-within,
   .clearSearch:focus-visible,
   .pagination button:focus-visible,

@@ -14,7 +14,7 @@ export function TokenDetailShell() {
       </div>
 
       <div
-        className={`${styles.layout} ${styles.classicLayout} ${styles.detailSkeleton}`}
+        className={`${styles.layout} ${styles.classicLayout} ${styles.readOnlyLayout} ${styles.detailSkeleton}`}
         aria-hidden="true"
         data-skeleton-model="neutral"
       >
@@ -67,33 +67,7 @@ export function TokenDetailShell() {
           </div>
         </section>
 
-        <aside className={styles.tradeShell}>
-          <div
-            className={styles.detailSkeletonTradeBody}
-            data-skeleton-panel="market-access"
-          >
-            <span
-              className={`${styles.detailSkeletonLine} ${styles.detailSkeletonTradeHeading}`}
-              data-skeleton="true"
-            />
-            <span
-              className={`${styles.detailSkeletonLine} ${styles.detailSkeletonTradeBalance}`}
-              data-skeleton="true"
-            />
-            <span
-              className={styles.detailSkeletonTradeControl}
-              data-skeleton="true"
-            />
-            <span
-              className={`${styles.detailSkeletonTradeControl} ${styles.detailSkeletonTradeControlCompact}`}
-              data-skeleton="true"
-            />
-            <span
-              className={styles.detailSkeletonTradeAction}
-              data-skeleton="true"
-            />
-          </div>
-        </aside>
+
       </div>
 
       <span className="sr-only" role="status" aria-live="polite">

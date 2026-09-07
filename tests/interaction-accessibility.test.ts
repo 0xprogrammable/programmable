@@ -51,9 +51,10 @@ describe("interaction accessibility", () => {
     expect(chartCss).toMatch(
       /\.rangeButton\s*\{[^}]*height:\s*44px;[^}]*min-width:\s*44px;/s,
     );
-    expect(tokenSource).toContain(
-      "<section\n      className={styles.tradeForm}",
-    );
+    expect(tokenCss).toMatch(/\.tokenHeaderButton\s*\{[^}]*min-height:\s*44px;/s);
+    expect(tokenCss).toMatch(/\.tokenHeaderButton:focus-visible\s*\{[^}]*outline:\s*2px/s);
+    expect(tokenSource).toContain("TokenIdentityActions");
+    expect(tokenSource).not.toMatch(/<(?:TokenTrade|PreparedTradeReview|CustomMarketTrade)\b/);
     expect(tokenSource).toContain(
       "className={`${styles.links} ${styles.addressLinks}`}",
     );

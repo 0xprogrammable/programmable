@@ -73,6 +73,29 @@
   display: contents;
 }
 
+.layout.readOnlyLayout {
+  grid-template-areas: "identity" "chart" "facts" "deep";
+  grid-template-columns: minmax(0, 1fr);
+}
+.layout.readOnlyLayout.classicLayout { grid-template-areas: "identity" "chart" "deep"; }
+.readOnlyLayout .customMarketPanel { grid-area: facts; }
+.readOnlyLayout .identity { align-items: start; grid-template-columns: 132px minmax(0, 1fr) auto; }
+.tokenHeaderActions { align-items: center; display: flex; flex-wrap: wrap; gap: 8px; }
+.tokenHeaderButton { align-items: center; background: transparent; border: 1px solid var(--webde-line); border-radius: 8px; color: var(--webde-ink); cursor: pointer; display: inline-flex; font: inherit; font-size: 14px; gap: 8px; justify-content: center; min-height: 44px; padding: 8px 12px; text-decoration: none; }
+.tokenHeaderButton svg { flex: none; }
+.tokenHeaderButton:focus-visible { outline: 2px solid var(--webde-ink); outline-offset: 4px; }
+.tokenAddressText { color: var(--webde-muted); display: block; font-size: 12px; line-height: 20px; max-width: 100%; overflow-wrap: anywhere; }
+@media (hover: hover) and (pointer: fine) { .tokenHeaderButton:hover { background: var(--webde-surface-raised); } }
+@media (max-width: 1020px) {
+  .readOnlyLayout .identity { grid-template-columns: 88px minmax(0, 1fr); }
+  .tokenHeaderActions { grid-column: 1 / -1; }
+}
+@media (max-width: 480px) {
+  .tokenHeaderActions { display: flex; width: 100%; }
+  .tokenHeaderButton { flex: 1; font-size: 12px; gap: 4px; padding-inline: 8px; }
+  .tokenHeaderActions a svg { display: none; }
+}
+
 .identity {
   align-items: center;
   display: grid;
