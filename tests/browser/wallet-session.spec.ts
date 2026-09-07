@@ -229,15 +229,29 @@ test("signing out while awaiting a reconnect lease never opens a prompt for the 
 });
 
 for (const path of ["/profile", "/developers/api-keys"]) {
-  test(`${path}: the real header opens the owned wallet selector and returns focus on close`, async ({ page }) => {
+  test(`${path}: the header keeps wallet actions compact and restores keyboard focus`, async ({ page }) => {
     await open(page, path);
     await scenario(page, "owned-with-foreign");
     const header = page.getByRole("banner");
     const trigger = header.getByRole("button", { name: "Wallet 0xaaaa…aaaa", exact: true });
     await trigger.click();
     const menu = header.getByRole("group", { name: "Wallet actions", exact: true });
-    await menu.getByRole("button", { name: "Manage wallets", exact: true }).click();
+    await expect(menu.getByRole("link", { name: "Profile", exact: true })).toHaveAttribute("href", "/profile");
+    await expect(menu.getByRole("button", { name: "Copy address", exact: true })).toBeVisible();
+    await expect(menu.getByRole("button", { name: "Disconnect", exact: true })).toBeVisible();
+    await expect(menu.getByRole("button", { name: "Manage wallets", exact: true })).toHaveCount(0);
+    await page.keyboard.press("Escape");
     await expect(menu).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expectMethods(page, []);
+  });
+
+  test(`${path}: contextual account selection exposes only owned wallets and restores focus`, async ({ page }) => {
+    await open(page, path);
+    await scenario(page, "owned-with-foreign");
+    const trigger = page.getByRole("button", { name: "Open account", exact: true });
+    await trigger.click();
     const dialog = page.getByRole("dialog", { name: "Connected account", exact: true });
     await expect(dialog).toBeVisible();
     const wallets = dialog.locator('[aria-label="Connected wallets"]');
@@ -248,22 +262,26 @@ for (const path of ["/profile", "/developers/api-keys"]) {
     await expect(trigger).toBeFocused();
 
     await trigger.click();
-    await header.getByRole("button", { name: "Manage wallets", exact: true }).click();
     await dialog.getByRole("button", { name: "0xbbbb…bbbb", exact: true }).click();
     await expect(page.getByLabel("Selected account", { exact: true })).toHaveText(accountB);
     await expect(dialog).toHaveCount(0);
-    await expect(header.getByRole("button", { name: "Wallet 0xbbbb…bbbb", exact: true })).toBeFocused();
+    await expect(trigger).toBeFocused();
     await expectMethods(page, []);
   });
 }
 
-test("the inline wallet menu reaches the same account manager", async ({ page }) => {
+test("the inline wallet menu exposes profile and API access without a management action", async ({ page }) => {
   await open(page);
-  await inlineWallet(page).getByRole("button", { name: "Manage wallet 0xaaaa…aaaa", exact: true }).click();
+  const trigger = inlineWallet(page).getByRole("button", { name: "Manage wallet 0xaaaa…aaaa", exact: true });
+  await trigger.click();
   const menu = page.getByRole("group", { name: "Wallet actions", exact: true });
-  await menu.getByRole("button", { name: "Manage wallets", exact: true }).click();
+  await expect(menu.getByRole("link", { name: "Profile", exact: true })).toHaveAttribute("href", "/profile");
+  await expect(menu.getByRole("link", { name: "API keys", exact: true })).toHaveAttribute("href", "/developers/api-keys");
+  await expect(menu.getByRole("button", { name: "Manage wallets", exact: true })).toHaveCount(0);
+  await page.keyboard.press("Escape");
   await expect(menu).toHaveCount(0);
-  await expect(page.getByRole("dialog", { name: "Connected account", exact: true })).toBeVisible();
+  await expect(trigger).toBeFocused();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   await expectMethods(page, []);
 });
 
