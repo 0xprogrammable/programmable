@@ -13,7 +13,7 @@ import { ClassicModuleLaunchPolicyV1 } from "../classic-modules/ClassicModuleLau
 import { ClassicModuleFeeLedgerV2 } from "../classic-modules/ClassicModuleFeeLedgerV2.sol";
 import { IClassicModuleAuthorRegistry } from "../classic-modules/ClassicModuleFeeLedgerV1.sol";
 import { ClassicModuleCalls } from "../classic-modules/ClassicModuleCalls.sol";
-import { IModuleEngineV1, IModuleEngineFeeCollectorV1 } from "./IModuleEngineV1.sol";
+import { IModuleEngineV1, IModuleEngineFeeCollectorV1, IModuleEngineAdmissionV1 } from "./IModuleEngineV1.sol";
 import { ModuleEngineCallsV1 } from "./ModuleEngineCallsV1.sol";
 import { ModuleEngineTypesV1 as T } from "./ModuleEngineTypesV1.sol";
 
@@ -25,7 +25,7 @@ interface IModuleEngineReviewAuthorityV1 is IClassicModuleAuthorRegistry {
 /// @notice Additional EVM engine host. Existing native sources, registries and claims remain unchanged.
 /// @dev Admission uses the existing registry owner. It has no post-launch engine/config/asset/fee-rate setters.
 ///      An engine owns only its launch resources. The host never grants engine allowances or mint permissions.
-contract ModuleEngineHostV1 is ReentrancyGuardTransient, IModuleEngineFeeCollectorV1 {
+contract ModuleEngineHostV1 is ReentrancyGuardTransient, IModuleEngineFeeCollectorV1, IModuleEngineAdmissionV1 {
     using SafeERC20 for IERC20;
 
     uint256 public constant TOKEN_SUPPLY = 1_000_000_000 ether;
@@ -233,6 +233,12 @@ contract ModuleEngineHostV1 is ReentrancyGuardTransient, IModuleEngineFeeCollect
 
     function getLaunch(bytes32 launchId) external view returns (Launch memory) {
         return _launches[launchId];
+    }
+
+    function fixedConfigurationHash(bytes32 launchId) external view returns (bytes32) {
+        Launch storage launched = _launches[launchId];
+        if (launched.engine == address(0)) revert InvalidOperation();
+        return _revisions[launched.revisionId].fixedConfigurationHash;
     }
 
     function predictTokenAddress(string calldata name, string calldata symbol, address creator, bytes32 salt)

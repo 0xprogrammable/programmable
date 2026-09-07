@@ -4,10 +4,18 @@ pragma solidity 0.8.26;
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { Address } from "@openzeppelin/contracts/utils/Address.sol";
+import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { ReentrancyGuardTransient } from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import { IUniswapV3FactoryLikeV3, IUniswapV3SwapRouterLikeV3 } from "../StockPairedEthLaunchCoordinatorV3.sol";
+import { LiquidityGrowthFullRangePolicyV3 as Policy } from "../LiquidityGrowthFullRangePolicyV3.sol";
+import { ModuleV3FeeOracleV1 as Oracle, IModuleV3OraclePoolV1 } from "./ModuleV3FeeOracleV1.sol";
 
 interface IModuleQuoteEthConverterV1 {
+    function weth() external view returns (IModuleWethV1);
+    function quoteConversion(address quoteAsset, uint256 quoteAmount, bytes calldata route)
+        external
+        view
+        returns (uint256 minimumEth, uint256 twapEth, bytes32 observationHash);
     function convert(address quoteAsset, uint256 quoteAmount, uint256 minimumEth, uint256 deadline, bytes calldata data)
         external
         returns (uint256 ethAmount);
@@ -18,23 +26,36 @@ interface IModuleWethV1 is IERC20 {
 }
 
 /// @notice Generic, atomic quote-to-ETH conversion using the existing V3 SwapRouter ABI.
-/// @dev A route is an operation input, not an asset/ticker allowlist. It must begin at quoteAsset and end at WETH.
-///      No owner, route setter, subsidies, retained user reserves or persistent allowances.
+/// @dev The engine binds the direct Quote/WETH route in its reviewed configuration. This converter independently
+///      derives the fee-sale floor from that pool's qualified history. No owner, oracle updater or per-CA list.
 contract ModuleQuoteEthConverterV1 is IModuleQuoteEthConverterV1, ReentrancyGuardTransient {
     using SafeERC20 for IERC20;
     using Address for address payable;
 
     IUniswapV3SwapRouterLikeV3 public immutable router;
     IUniswapV3FactoryLikeV3 public immutable factory;
-    IModuleWethV1 public immutable weth;
+    IModuleWethV1 public immutable override weth;
     bytes32 public immutable routerCodeHash;
     bytes32 public immutable factoryCodeHash;
     bytes32 public immutable wethCodeHash;
+    uint32 public constant TWAP_WINDOW = uint32(Policy.TWAP_WINDOW);
+    uint32 public constant SHORT_TWAP_WINDOW = uint32(Policy.SHORT_TWAP_WINDOW);
+    uint256 public constant MIN_WETH_DEPTH = Oracle.MIN_WETH_DEPTH;
+    uint256 public constant MAX_NOTIONAL_BPS = Oracle.MAX_NOTIONAL_BPS;
 
     error InvalidDependency();
     error InvalidRoute();
     error InvalidConversion();
     error UnauthorizedNativeSender();
+
+    event FeeConversionObserved(
+        address indexed quoteAsset,
+        address indexed pool,
+        bytes32 observationHash,
+        uint256 quoteAmount,
+        uint256 minimumEth,
+        uint256 receivedEth
+    );
 
     constructor(IUniswapV3SwapRouterLikeV3 router_, IModuleWethV1 weth_) {
         if (address(router_).code.length == 0 || address(weth_).code.length == 0 || router_.WETH9() != address(weth_)) {
@@ -54,18 +75,32 @@ contract ModuleQuoteEthConverterV1 is IModuleQuoteEthConverterV1, ReentrancyGuar
         if (msg.sender != address(weth)) revert UnauthorizedNativeSender();
     }
 
+    function quoteConversion(address quoteAsset, uint256 quoteAmount, bytes calldata route)
+        external
+        view
+        returns (uint256 minimumEth, uint256 twapEth, bytes32 observationHash)
+    {
+        _checkDependencies();
+        if (quoteAmount == 0) revert InvalidConversion();
+        if (quoteAsset == address(weth)) {
+            if (route.length != 0) revert InvalidRoute();
+            return
+                (quoteAmount, quoteAmount, keccak256(abi.encode(block.chainid, address(this), quoteAsset, quoteAmount)));
+        }
+        Oracle.Snapshot memory s = _quote(quoteAsset, quoteAmount, route);
+        return (s.minimumEth, s.twapEth, s.observationHash);
+    }
+
     function convert(address quoteAsset, uint256 quoteAmount, uint256 minimumEth, uint256 deadline, bytes calldata data)
         external
         nonReentrant
         returns (uint256 ethAmount)
     {
-        if (
-            quoteAmount == 0 || minimumEth == 0 || deadline < block.timestamp
-                || address(router).codehash != routerCodeHash || address(factory).codehash != factoryCodeHash
-                || address(weth).codehash != wethCodeHash
-        ) revert InvalidConversion();
+        if (quoteAmount == 0 || deadline < block.timestamp) revert InvalidConversion();
+        _checkDependencies();
         if (quoteAsset == address(weth)) return _unwrapQuote(quoteAmount, minimumEth, data);
-        _validateRoute(quoteAsset, data);
+        Oracle.Snapshot memory observed = _quote(quoteAsset, quoteAmount, data);
+        minimumEth = Math.max(minimumEth, observed.minimumEth);
         IERC20 quote = IERC20(quoteAsset);
         uint256 beforeQuote = quote.balanceOf(address(this));
         uint256 beforeWeth = weth.balanceOf(address(this));
@@ -87,12 +122,16 @@ contract ModuleQuoteEthConverterV1 is IModuleQuoteEthConverterV1, ReentrancyGuar
             ethAmount < minimumEth || weth.balanceOf(address(this)) - beforeWeth != ethAmount
                 || quote.balanceOf(address(this)) != beforeQuote
         ) revert InvalidConversion();
+        Oracle.afterSwap(observed);
         weth.withdraw(ethAmount);
         if (address(this).balance - beforeEth != ethAmount || weth.balanceOf(address(this)) != beforeWeth) {
             revert InvalidConversion();
         }
         payable(msg.sender).sendValue(ethAmount);
         if (address(this).balance != beforeEth) revert InvalidConversion();
+        emit FeeConversionObserved(
+            quoteAsset, observed.pool, observed.observationHash, quoteAmount, minimumEth, ethAmount
+        );
     }
 
     function _unwrapQuote(uint256 quoteAmount, uint256 minimumEth, bytes calldata data) private returns (uint256) {
@@ -110,27 +149,36 @@ contract ModuleQuoteEthConverterV1 is IModuleQuoteEthConverterV1, ReentrancyGuar
         return quoteAmount;
     }
 
-    function _validateRoute(address quoteAsset, bytes calldata path) private view {
-        if (path.length < 43 || path.length > 112 || (path.length - 20) % 23 != 0 || quoteAsset == address(weth)) {
-            revert InvalidRoute();
-        }
+    function _quote(address quoteAsset, uint256 quoteAmount, bytes calldata path)
+        private
+        view
+        returns (Oracle.Snapshot memory)
+    {
+        if (path.length != 43 || quoteAsset == address(weth)) revert InvalidRoute();
         address first;
         address last;
+        uint24 fee;
         assembly ("memory-safe") {
             first := shr(96, calldataload(path.offset))
-            last := shr(96, calldataload(add(path.offset, sub(path.length, 20))))
+            fee := shr(232, calldataload(add(path.offset, 20)))
+            last := shr(96, calldataload(add(path.offset, 23)))
         }
         if (first != quoteAsset || last != address(weth)) revert InvalidRoute();
-        for (uint256 offset; offset + 43 <= path.length; offset += 23) {
-            address tokenIn;
-            address tokenOut;
-            uint24 fee;
-            assembly ("memory-safe") {
-                tokenIn := shr(96, calldataload(add(path.offset, offset)))
-                fee := shr(232, calldataload(add(add(path.offset, offset), 20)))
-                tokenOut := shr(96, calldataload(add(add(path.offset, offset), 23)))
-            }
-            if (tokenIn == tokenOut || factory.getPool(tokenIn, tokenOut, fee).code.length == 0) revert InvalidRoute();
-        }
+        address poolAddress = factory.getPool(first, last, fee);
+        if (poolAddress.code.length == 0) revert InvalidRoute();
+        IModuleV3OraclePoolV1 pool = IModuleV3OraclePoolV1(poolAddress);
+        bool first0 = first < last;
+        if (
+            pool.factory() != address(factory) || pool.token0() != (first0 ? first : last)
+                || pool.token1() != (first0 ? last : first) || pool.fee() != fee
+        ) revert InvalidRoute();
+        return Oracle.read(poolAddress, quoteAsset, address(weth), quoteAmount, fee);
+    }
+
+    function _checkDependencies() private view {
+        if (
+            address(router).codehash != routerCodeHash || address(factory).codehash != factoryCodeHash
+                || address(weth).codehash != wethCodeHash
+        ) revert InvalidDependency();
     }
 }

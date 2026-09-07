@@ -29,7 +29,7 @@ import { StockPairedPositionPlannerV3 } from "../StockPairedPositionPlannerV3.so
 import { LockedPositionFeeForwarderFactoryV1 } from "../LockedPositionFeeForwarderFactoryV1.sol";
 import { ModuleEngineBaseV1 } from "./ModuleEngineBaseV1.sol";
 import { ModuleEngineTypesV1 as T } from "./ModuleEngineTypesV1.sol";
-import { IModuleEngineFeeCollectorV1 } from "./IModuleEngineV1.sol";
+import { IModuleEngineFeeCollectorV1, IModuleEngineAdmissionV1 } from "./IModuleEngineV1.sol";
 import { IModuleQuoteEthConverterV1 } from "./ModuleQuoteEthConverterV1.sol";
 
 /// @notice Contributor reference: fixed-supply, locked V4 spot market with a generic ERC20 quote address.
@@ -55,6 +55,7 @@ contract ModuleQuoteEngineV1 is ModuleEngineBaseV1, BaseHook, IUnlockCallback {
         bytes32 converterCodeHash;
         uint256 initialQuotePerTokenX18;
         address fixedQuoteAsset;
+        bytes feeConversionRouteSuffix;
     }
 
     struct TradeLimits {
@@ -76,6 +77,11 @@ contract ModuleQuoteEngineV1 is ModuleEngineBaseV1, BaseHook, IUnlockCallback {
         uint256 output;
     }
 
+    struct QuoteFeeRemainders {
+        uint16 platform;
+        uint16 creator;
+    }
+
     IPositionManager public positionManager;
     StockPairedPositionPlannerV3 public positionPlanner;
     LockedPositionFeeForwarderFactoryV1 public positionForwarderFactory;
@@ -91,6 +97,10 @@ contract ModuleQuoteEngineV1 is ModuleEngineBaseV1, BaseHook, IUnlockCallback {
     uint256 public positionTokenId;
     uint256 public lockedTokenDust;
     bytes32 public poolId;
+    bytes public feeConversionRoute;
+    mapping(bool buy => QuoteFeeRemainders) public quoteFeeRemainders;
+    mapping(bool buy => uint128) public platformEthRemainderX128;
+    bytes32 private _configurationHash;
     bool private _swapping;
 
     error InvalidConfiguration();
@@ -132,6 +142,18 @@ contract ModuleQuoteEngineV1 is ModuleEngineBaseV1, BaseHook, IUnlockCallback {
                 || address(positionForwarderFactory.positionManager()) != config.positionManager
         ) revert InvalidConfiguration();
         converter = IModuleQuoteEthConverterV1(config.converter);
+        _configurationHash = keccak256(configuration);
+        address weth = address(converter.weth());
+        if (config.feeConversionRouteSuffix.length != 0) {
+            bytes memory suffix = config.feeConversionRouteSuffix;
+            if (suffix.length != 23) revert InvalidConfiguration();
+            address last;
+            assembly ("memory-safe") { last := shr(96, mload(add(add(suffix, 32), sub(mload(suffix), 20)))) }
+            if (last != weth) revert InvalidConfiguration();
+            if (context_.quoteAsset != weth) feeConversionRoute = bytes.concat(bytes20(context_.quoteAsset), suffix);
+        } else if (context_.quoteAsset != weth) {
+            revert InvalidConfiguration();
+        }
         converterCodeHash = config.converterCodeHash;
         positionManagerCodeHash = config.positionManager.codehash;
         positionPlannerCodeHash = config.positionPlanner.codehash;
@@ -176,10 +198,15 @@ contract ModuleQuoteEngineV1 is ModuleEngineBaseV1, BaseHook, IUnlockCallback {
     }
 
     function _initialize(bytes calldata launchData) internal override returns (bytes32 resourcesHash) {
-        if (launchData.length != 0 || IERC20(_context.token).balanceOf(address(this)) != TOKEN_SUPPLY) {
+        if (
+            launchData.length != 0 || IERC20(_context.token).balanceOf(address(this)) != TOKEN_SUPPLY
+                || IModuleEngineAdmissionV1(_context.host).fixedConfigurationHash(_context.launchId)
+                    != _configurationHash
+        ) {
             revert InvalidConfiguration();
         }
         _checkDependencies();
+        _validateFeeMarket();
         PoolKey memory key = poolKey();
         bool quote0 = _context.quoteAsset < _context.token;
         int24 tick = quote0 ? initialAbsoluteTick : -initialAbsoluteTick;
@@ -207,6 +234,7 @@ contract ModuleQuoteEngineV1 is ModuleEngineBaseV1, BaseHook, IUnlockCallback {
         ) revert InvalidOperationShape();
         _checkDependencies();
         TradeLimits memory limits = abi.decode(op.data, (TradeLimits));
+        if (keccak256(limits.conversionRoute) != keccak256(feeConversionRoute)) revert InvalidConversion();
         (uint16 platformBps, uint16 creatorBps) =
             IModuleEngineFeeCollectorV1(_context.feeCollector).feeTerms(_context.launchId, trade.buy);
         trade.quoteBefore = IERC20(_context.quoteAsset).balanceOf(address(this));
@@ -214,7 +242,8 @@ contract ModuleQuoteEngineV1 is ModuleEngineBaseV1, BaseHook, IUnlockCallback {
         uint256 swapInput = op.inputAmount;
         if (trade.buy) {
             trade.grossQuote = op.inputAmount;
-            (trade.platformQuote, trade.creatorQuote) = _fees(trade.grossQuote, platformBps, creatorBps);
+            (trade.platformQuote, trade.creatorQuote) = _fees(trade.buy, trade.grossQuote, platformBps, creatorBps);
+            if (trade.platformQuote + trade.creatorQuote >= swapInput) revert InvalidSettlement();
             swapInput -= trade.platformQuote + trade.creatorQuote;
         }
         _swapping = true;
@@ -227,11 +256,12 @@ contract ModuleQuoteEngineV1 is ModuleEngineBaseV1, BaseHook, IUnlockCallback {
         } else {
             trade.tokenAmount = op.inputAmount;
             trade.grossQuote = trade.output;
-            (trade.platformQuote, trade.creatorQuote) = _fees(trade.grossQuote, platformBps, creatorBps);
+            (trade.platformQuote, trade.creatorQuote) = _fees(trade.buy, trade.grossQuote, platformBps, creatorBps);
+            if (trade.platformQuote + trade.creatorQuote >= trade.output) revert InvalidSettlement();
             trade.output -= trade.platformQuote + trade.creatorQuote;
         }
         (trade.platformEth, trade.creatorEth) =
-            _convertFees(trade.platformQuote, trade.creatorQuote, op.deadline, limits);
+            _convertFees(trade.buy, trade.platformQuote, trade.creatorQuote, op.deadline, limits);
         _transferOutputExactly(op.outputAsset, op.recipient, trade.output);
         _swapping = false;
         if (
@@ -277,33 +307,73 @@ contract ModuleQuoteEngineV1 is ModuleEngineBaseV1, BaseHook, IUnlockCallback {
         return (BaseHook.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
     }
 
-    function _convertFees(uint256 platformQuote, uint256 creatorQuote, uint256 deadline, TradeLimits memory limits)
-        private
-        returns (uint256 platformEth, uint256 creatorEth)
-    {
+    function _convertFees(
+        bool buy,
+        uint256 platformQuote,
+        uint256 creatorQuote,
+        uint256 deadline,
+        TradeLimits memory limits
+    ) private returns (uint256 platformEth, uint256 creatorEth) {
         uint256 quoteAmount = platformQuote + creatorQuote;
-        if (quoteAmount == 0) return (0, 0);
-        if (limits.minimumEthFees == 0 || address(converter).codehash != converterCodeHash) revert InvalidConversion();
+        if (quoteAmount == 0) {
+            _validateFeeMarket();
+            return (0, 0);
+        }
+        if (address(converter).codehash != converterCodeHash) revert InvalidConversion();
         IERC20 quote = IERC20(_context.quoteAsset);
         uint256 quoteBefore = quote.balanceOf(address(this));
         uint256 ethBefore = address(this).balance;
         quote.forceApprove(address(converter), quoteAmount);
-        uint256 ethAmount = converter.convert(
-            _context.quoteAsset, quoteAmount, limits.minimumEthFees, deadline, limits.conversionRoute
-        );
+        uint256 ethAmount =
+            converter.convert(_context.quoteAsset, quoteAmount, limits.minimumEthFees, deadline, feeConversionRoute);
         quote.forceApprove(address(converter), 0);
         if (
             ethAmount < limits.minimumEthFees || address(this).balance - ethBefore != ethAmount
                 || quoteBefore - quote.balanceOf(address(this)) != quoteAmount
         ) revert InvalidConversion();
-        platformEth = FullMath.mulDiv(ethAmount, platformQuote, quoteAmount);
-        creatorEth = ethAmount - platformEth;
+        (platformEth, creatorEth) = _splitEth(buy, ethAmount, platformQuote, quoteAmount);
         IModuleEngineFeeCollectorV1(_context.feeCollector).depositFees{ value: ethAmount }(platformEth, creatorEth);
         if (address(this).balance != ethBefore) revert InvalidConversion();
     }
 
-    function _fees(uint256 grossQuote, uint16 platformBps, uint16 creatorBps) private pure returns (uint256, uint256) {
-        return (FullMath.mulDiv(grossQuote, platformBps, 10_000), FullMath.mulDiv(grossQuote, creatorBps, 10_000));
+    function _splitEth(bool buy, uint256 ethAmount, uint256 platformQuote, uint256 quoteAmount)
+        private
+        returns (uint256 platformEth, uint256 creatorEth)
+    {
+        platformEth = FullMath.mulDiv(ethAmount, platformQuote, quoteAmount);
+        // Carry this conversion's actual fractional platform entitlement, even when the quote ratio changes.
+        // Q128 truncation is strictly below 2^-128 wei per conversion; every received wei is allocated now.
+        uint256 fraction = FullMath.mulDiv(mulmod(ethAmount, platformQuote, quoteAmount), 1 << 128, quoteAmount)
+            + platformEthRemainderX128[buy];
+        platformEth += fraction >> 128;
+        platformEthRemainderX128[buy] = uint128(fraction);
+        creatorEth = ethAmount - platformEth;
+    }
+
+    function _validateFeeMarket() private view {
+        if (address(converter).codehash != converterCodeHash) revert InvalidConversion();
+        (uint256 minimumEth,,) = converter.quoteConversion(_context.quoteAsset, 1, feeConversionRoute);
+        if (minimumEth == 0) revert InvalidConversion();
+    }
+
+    function _fees(bool buy, uint256 grossQuote, uint16 platformBps, uint16 creatorBps)
+        private
+        returns (uint256 platformQuote, uint256 creatorQuote)
+    {
+        QuoteFeeRemainders storage remainder = quoteFeeRemainders[buy];
+        (platformQuote, remainder.platform) = _feeWithCarry(grossQuote, platformBps, remainder.platform);
+        (creatorQuote, remainder.creator) = _feeWithCarry(grossQuote, creatorBps, remainder.creator);
+    }
+
+    function _feeWithCarry(uint256 grossQuote, uint16 bps, uint16 previousRemainder)
+        private
+        pure
+        returns (uint256 amount, uint16 remainder)
+    {
+        // Exact modulo-10,000 carry shared by actors, isolated by launch/direction and fee recipient class.
+        uint256 numeratorRemainder = mulmod(grossQuote, bps, 10_000) + previousRemainder;
+        amount = FullMath.mulDiv(grossQuote, bps, 10_000) + numeratorRemainder / 10_000;
+        remainder = uint16(numeratorRemainder % 10_000);
     }
 
     function _transferOutputExactly(address asset, address recipient, uint256 amount) private {

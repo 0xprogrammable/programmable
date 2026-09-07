@@ -13,3 +13,7 @@ interface IModuleEngineFeeCollectorV1 {
     function feeTerms(bytes32 launchId, bool buy) external view returns (uint16 platformBps, uint16 creatorBps);
     function depositFees(uint256 platformFee, uint256 creatorFee) external payable;
 }
+
+interface IModuleEngineAdmissionV1 {
+    function fixedConfigurationHash(bytes32 launchId) external view returns (bytes32);
+}

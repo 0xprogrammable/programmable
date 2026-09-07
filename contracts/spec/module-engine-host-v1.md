@@ -98,7 +98,8 @@ runtime hash is trusted. Storage-constructor engines use an empty immutable map 
 The CREATE2 salt is `keccak256(abi.encode(actualCreator, suppliedEngineSalt, launchId))`; the complete initcode is
 `creationCode || abi.encode(context, configuration)`. The host stores constructor, initcode and concrete runtime
 hashes and checks the concrete runtime again before every operation. For the quote reference the BaseHook
-PoolManager immutable copies constructor byte offset 256, the first word inside `configuration`. Compiler AST IDs
+PoolManager immutable copies constructor byte offset 288. The dynamic Configuration tuple adds a 32-byte ABI
+offset before its first field inside `configuration`. Compiler AST IDs
 and runtime offsets are obtained from the actual artifact, not hand-maintained values.
 
 `fixedQuoteAsset != 0` is enforced by the host before construction, and the quote/escrow reference also rejects
@@ -106,7 +107,9 @@ an inconsistent fixed quote in its own configuration. `fixedConfigurationHash !=
 A free quote address lives in Context, so the same fixed infrastructure configuration supports later eligible
 quote CAs without another engine revision. Publish the quote reference with a **nonzero fixed configuration hash**:
 its PoolManager, PositionManager, planner, lock factory, converter, converter code hash and price convention are
-reviewed dependencies. Allowing arbitrary configuration would not constitute admission of arbitrary dependency code.
+reviewed dependencies. `host.fixedConfigurationHash(launchId)` returns the admitted revision's fixed hash; the
+quote engine's initialization compares it with its actual constructor configuration hash. An unfixed revision
+cannot initialize this profile. Allowing arbitrary configuration would not constitute admission of arbitrary dependency code.
 Fixed and free templates use the same contribution/approval/launch path.
 
 ## Reference quote market and fees
@@ -129,23 +132,74 @@ liquidity and pool ID. A correctly predeployed forwarder is reused, preventing a
 a later launch. LP fee pips are zero. Extra token dust remains under the existing lock behavior.
 
 The initial buy and each buy charge on gross quote input. A sell charges on actual gross quote output. Quote
-platform and creator amounts use separate floor calculations against 10,000. Platform rate is 10 bps for a
+platform and creator amounts use separate, **exact cumulative modulo-10,000 carries**, stored by launch and
+buy/sell direction, shared across actors. A trade receives the fee amount that its actual basis and the previous
+remainder make payable. Splitting across trades or wallets cannot discard fractional quote fees. The public
+`quoteFeeRemainders(bool buy)` getter returns the platform and creator numerators. If both carries mature on a
+tiny operation and the fees consume its entire input/output, it reverts atomically without changing carries,
+nonces or balances; reserves cannot subsidize the missing input. Platform rate is 10 bps for a
 revision without eligible families and 30 bps with eligible families. Creator rates are separate, 0..1000 bps in
 100-bps increments. The V2 ledger splits actually received platform ETH 10/0 or 10/20 with its existing cumulative
 rounding, author wallet, creator/CTO and historical-credit rules. Merely being an engine/helper/import creates no
 family reward slot.
 
-All quote fees are converted in the same successful operation. `TradeLimits` is encoded as
-`(uint256 minimumEthFees, uint160 sqrtPriceLimitX96, bytes conversionRoute)`. The reference converter uses the
-existing V3 exactInput ABI, verifies a bounded path from the chosen quote to WETH and real pools on the pinned
-factory, transfers exactly the operation's quote fees, resets router approval, receives real WETH, unwraps it and
-delivers actual ETH. WETH itself uses direct funded unwrap with an empty route. A positive quote fee requires a
-positive ETH floor. Existing converter balances cannot stand in for newly delivered output.
+The quote `Configuration` tuple has this exact order:
+
+```text
+(address poolManager, address positionManager, address positionPlanner,
+ address positionForwarderFactory, address converter, bytes32 converterCodeHash,
+ uint256 initialQuotePerTokenX18, address fixedQuoteAsset, bytes feeConversionRouteSuffix)
+```
+
+The fixed suffix is a single V3 fee tier plus WETH address (23 bytes). The engine prepends the actual Context
+quote CA and exposes `feeConversionRoute()`. Thus a new CA uses the same reviewed configuration and its own
+factory-derived direct Quote/WETH pool, without an address list or new per-CA source approval. WETH itself uses
+an empty execution route and a funded 1:1 unwrap. There is no trader-selected intermediate asset or fee tier.
+
+All payable quote fees are converted in the same successful operation. `TradeLimits` retains its ABI:
+`(uint256 minimumEthFees, uint160 sqrtPriceLimitX96, bytes conversionRoute)`. The provided route must equal the
+engine's configured route byte for byte, even when the quote carry has not yet produced a whole fee unit. A
+trader's ETH floor can only tighten the independently derived floor; it cannot replace or lower it.
+
+`ModuleV3FeeOracleV1` adapts V3's cumulative tick/liquidity interface, reusing the existing
+`LiquidityGrowthFullRangePolicyV3` time/deviation/impact constants and Uniswap TickMath. Existing local oracle
+contracts use V4 hook-specific interfaces and cannot read a V3 pool directly. The concrete V3 guard requires:
+
+- A direct pool from the pinned factory with matching factory, token ordering and fixed fee tier, at most 1% LP fee.
+- A successful `observe([1800,300,0])` proving real 30-minute and 5-minute history, populated cardinality at least 2,
+  and allocated observation capacity at least 192. Allocated capacity alone is not evidence of history.
+- The latest **written** observation is at most 300 seconds old. `observe(0)` extrapolation cannot refresh it.
+- Short/long averages differ by at most 50 ticks; pre-swap spot differs from the long average by at most 100 ticks.
+- At least 10 ETH of trusted depth: the minimum of actual WETH balance and virtual WETH depth calculated from the
+  smaller current/harmonic liquidity at both allowed price boundaries. Fee notional is capped at 10 bps of that depth.
+- After conversion, spot moves at most 25 integer ticks and remains within 125 ticks of the long average;
+  at least 10 WETH remains in the pool. A failure rolls back the swap and all claims.
+
+The minimum ETH output uses the adverse 125-tick boundary of that quote-specific long average, accounts for the
+fixed pool LP fee and rounds upward. It does not use a universal ETH price per quote unit. The converter exposes
+`quoteConversion(address quoteAsset,uint256 quoteAmount,bytes route)` returning
+`(uint256 minimumEth,uint256 twapEth,bytes32 observationHash)`. Execution recomputes those conditions from current
+pool state. `FeeConversionObserved` records the actual pool, observation hash, fee input, enforced minimum and ETH
+received. Initialization and zero-whole-fee operations also validate the market for one raw fee unit, so they
+cannot admit an unusable fee route through the rounding branch.
+
+This is a bounded same-pool historical price policy, not external fair value or an unmanipulable oracle. A new
+CA must acquire mature, recent and sufficiently deep direct liquidity; missing history, stale observations,
+insufficient depth, large fee-sale notional or excessive price movement fail closed. Historical manipulation
+within those economic assumptions remains a release-review consideration. The rate may differ arbitrarily
+between qualified quote CAs; no fixed ETH rate or per-CA review is required.
+
+The converter transfers precisely the operation's quote fees, resets router approval, receives real WETH,
+unwraps it and delivers actual ETH. Existing converter balances cannot stand in for newly delivered output.
 
 The engine proves the quote debit and the actual ETH balance increase, resets its converter approval and forwards
-all newly received ETH into `host.depositFees(platformEth, creatorEth)`. It divides converted ETH proportionally
-to the charged platform/creator quote amounts; the indivisible final wei remains with creator, while the V2 ledger
-handles the separate protocol/author accounting dust. No quote-denominated claim is presented as an ETH claim.
+all newly received ETH into `host.depositFees(platformEth, creatorEth)`. It divides converted ETH according to
+the actual charged platform/creator quote proportions. A separate Q128 fractional platform carry per direction
+preserves tiny ETH entitlements across conversions, including changing quote proportions. Its additional
+truncation is strictly less than `2^-128` wei per conversion; only the quote carry is mathematically exact.
+Every actually received wei is allocated in the same call and platform plus creator equals received ETH;
+the carry is a rounding accumulator, not an unfunded ETH claim. `platformEthRemainderX128(bool buy)` exposes it.
+The V2 ledger handles the separate protocol/author dust. No quote-denominated claim is presented as an ETH claim.
 Missing route, insufficient funded WETH/ETH, bad output reporting, fee slippage, pool partial fills or user output
 slippage revert the entire trade. External conversion costs affect actual ETH proceeds and need a real live route.
 
@@ -236,9 +290,14 @@ reconstruct a smart-wallet launch from its single canonical parameter event and 
 A 1,000-case round-trip fuzz test reconciles received ETH, ledger backing,
 unallocated rounding, engine/converter balances and cleared allowances with creator rates from 0% through 10%.
 
-The local V4 tests execute the real installed PoolManager/PositionManager implementations. Their funded V3 fixture
-uses deterministic exchange rates to prove accounting and rollback; it is not a mainnet route, external price,
-provider or independent-audit attestation. Salt-search gas in test helpers is offchain deployment preparation,
+The local V4 tests execute the real installed PoolManager/PositionManager implementations. Adversarial V3 fixtures
+cover bad history, stale observations, thin liquidity, different CA values, route substitution, low output, impact
+and rollback. `ModuleQuoteRealV3.t.sol` also deploys the unmodified `@uniswap/v3-core@1.0.1` factory bytecode and
+executes actual V3 pool mint/swap/observation logic through a narrow test caller. It proves two launches with the
+same revision/configuration and a later 6-decimal CA worth 1000 times less per whole unit, real insufficient
+history/freshness failures and rejection after a post-preview price manipulation. Upstream bytecode/source/license
+pins are in the test fixture; these local pools are not mainnet/provider or independent-audit evidence.
+Salt-search gas in test helpers is offchain deployment preparation,
 not a measured production launch transaction cost.
 
 Required downstream work remains: reviewed compiler/configuration receipts and deployment evidence; source/ABI
