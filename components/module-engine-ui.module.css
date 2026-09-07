@@ -1,0 +1,13 @@
+.root { min-width: 0; }
+.root h2 { font-size: 20px; font-weight: 500; line-height: 28px; margin-block: 0 16px; }
+.stack { display: grid; gap: 24px; min-width: 0; }
+.actions { align-items: center; display: flex; flex-wrap: wrap; gap: 12px; margin-block: 16px; }
+.review { margin-block: 24px; }
+.review dd, .root dd, .root code { overflow-wrap: anywhere; }
+.details { border-block-start: 1px solid var(--mm-line, #323232); margin-block: 24px; padding-block: 12px; }
+.details > summary { cursor: pointer; min-height: 44px; padding-block: 12px; }
+.calldata { background: var(--mm-control, #242424); display: block; font-size: 12px; line-height: 20px; max-height: 200px; overflow: auto; padding: 16px; white-space: pre-wrap; word-break: break-all; }
+.notice { background: var(--mm-control, #242424); border: 1px solid var(--mm-line, #323232); border-radius: 8px; line-height: 24px; margin-block: 16px; overflow-wrap: anywhere; padding: 16px; }
+.inlineCode { font-size: 13px; overflow-wrap: anywhere; }
+.root button:focus-visible, .root summary:focus-visible, .root a:focus-visible { outline: 2px solid #a1bfa9; outline-offset: 4px; }
+@media (max-width: 600px) { .actions { align-items: stretch; flex-direction: column; } .actions > button { width: 100%; } }
