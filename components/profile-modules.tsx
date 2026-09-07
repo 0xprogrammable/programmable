@@ -17,13 +17,13 @@ export function ProfileModuleCards({ items, onSelect }: { items: readonly Module
     {items.map(item => {
       const category = MODULE_CATEGORIES.find(candidate => candidate.id === item.category.split("/")[0]);
       const Icon = category ? categoryIcons[category.id] : Puzzle;
-      return <li key={`${item.packageId}:${item.manifestHash}`}>
+      return <li key={`${item.sourceKind ?? "native"}:${item.packageId}:${item.manifestHash}`}>
         <button type="button" className={styles.card} onClick={() => onSelect(item)} aria-label={`View module ${item.title}, version ${item.version}`}>
           <span className={styles.icon} aria-hidden="true"><Icon size={20} strokeWidth={1.7} /></span>
           <span className={styles.copy}>
             <strong>{item.title}</strong>
             <span className={styles.description}>{item.description}</span>
-            <span className={styles.meta}>{category?.label ?? "Experiments"}<span aria-hidden="true"> · </span>v{item.version}</span>
+            <span className={styles.meta}>{item.sourceKind === "module-engine-v1" ? "Template" : category?.label ?? "Experiments"}<span aria-hidden="true"> · </span>v{item.version}</span>
           </span>
           <ChevronRight className={styles.chevron} aria-hidden="true" size={18} strokeWidth={1.7} />
         </button>

@@ -11,6 +11,16 @@
 .facts dd { font-size: 14px; line-height: 20px; margin: 0; overflow-wrap: anywhere; text-align: right; }
 .facts a { color: inherit; display: inline-flex; align-items: center; min-height: 44px; text-decoration: underline; text-underline-offset: 4px; }
 .identity { margin-top: 16px; }
+.operations { margin-top: 24px; }
+.operations h3 { font-size: 14px; font-weight: 500; line-height: 20px; margin: 0; }
+.operations > p, .operations li > span, .operations dt { color: var(--webde-muted, #b7b7b3); font-size: 12px; line-height: 18px; }
+.operations > p { margin: 8px 0 16px; }
+.operations ul { display: grid; gap: 16px; list-style: none; margin: 0; padding: 0; }
+.operations li { border-top: 1px solid var(--webde-line, #323232); display: grid; gap: 4px; padding-top: 12px; }
+.operations strong { font-size: 14px; font-weight: 500; line-height: 20px; overflow-wrap: anywhere; }
+.operations dl { display: grid; gap: 8px; margin: 8px 0 0; }
+.operations dl > div { display: flex; gap: 16px; justify-content: space-between; }
+.operations dd { font-size: 12px; line-height: 18px; margin: 0; overflow-wrap: anywhere; text-align: right; }
 .identity summary { color: var(--webde-muted, #b7b7b3); cursor: pointer; font-size: 12px; line-height: 16px; min-height: 44px; padding-block: 14px; }
 .identity dl { display: grid; gap: 16px; margin: 8px 0 0; }
 .identity dd { font-size: 12px; line-height: 20px; margin: 4px 0 0; overflow-wrap: anywhere; }

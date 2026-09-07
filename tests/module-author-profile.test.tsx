@@ -6,10 +6,12 @@ import { readModuleAuthorProfileResponse } from "@/lib/profile/module-author-pro
 import { ProfileModuleCards, ProfileModules } from "@/components/profile-modules";
 import { GET } from "@/app/api/profile/modules/route";
 
-const mocks = vi.hoisted(() => ({ published: vi.fn(), releaseDigests: vi.fn() }));
+const mocks = vi.hoisted(() => ({ published: vi.fn(), releaseDigests: vi.fn(), enginePublished: vi.fn(), engineDigests: vi.fn() }));
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/server/module-mode/public-details", () => ({ readPublicModuleDetails: mocks.published }));
 vi.mock("@/lib/server/module-mode/catalog", () => ({ configuredModuleModeReleaseDigests: mocks.releaseDigests }));
+vi.mock("@/lib/server/module-engine/catalog", () => ({ configuredModuleEngineReleaseDigests: mocks.engineDigests }));
+vi.mock("@/lib/server/module-engine/public-details", () => ({ readPublicModuleEngineDetails: mocks.enginePublished }));
 
 const account = `0x${"a".repeat(40)}`;
 const other = `0x${"b".repeat(40)}`;
@@ -20,7 +22,7 @@ const item = (id = 1, author = account): ModulePublicDetails => ({
 });
 const published = (items = [item()]) => ({ releaseDigest: hash(999), items });
 
-beforeEach(() => { vi.clearAllMocks(); mocks.published.mockResolvedValue(published()); mocks.releaseDigests.mockReturnValue([hash(999)]); });
+beforeEach(() => { vi.clearAllMocks(); mocks.published.mockResolvedValue(published()); mocks.releaseDigests.mockReturnValue([hash(999)]); mocks.engineDigests.mockReturnValue([]); });
 
 describe("public modules authored by a wallet", () => {
   it("uses the publication reader's author and never treats a payout recipient as the author", async () => {
@@ -119,6 +121,20 @@ describe("profile module presentation", () => {
 });
 
 describe("supported historical contributor publications", () => {
+  it("reads Engine histories with explicit source bindings and preserves actual operations", async () => {
+    const engine = { ...item(7), sourceKind: "module-engine-v1" as const, engine: { interface: "escrow-v1" as const,
+      operations: [{ operationId: hash(8) as `0x${string}`, authorization: 0 as const, inputRoles: 2, outputRoles: 0 }] } };
+    mocks.engineDigests.mockReturnValue([hash(997), hash(996)]);
+    mocks.enginePublished.mockImplementation(async digest => digest === hash(997) ? { sourceKind: "module-engine-v1", releaseDigest: digest, items: [engine] } : null);
+    const profile = await readModuleAuthorProfile(account);
+    expect(mocks.enginePublished.mock.calls).toEqual([[hash(997)], [hash(996)]]);
+    expect(profile).toMatchObject({ status: "partial", unavailableReleaseDigests: [hash(996)], page: { totalItems: 2 } });
+    expect(profile.items.find(value => value.sourceKind === "module-engine-v1")).toEqual({ ...engine, sourceReleaseDigests: [hash(997)] });
+    expect(readModuleAuthorProfileResponse(profile, account)).toEqual(profile);
+    mocks.enginePublished.mockResolvedValue({ releaseDigest: hash(997), items: [item(7)] });
+    expect((await readModuleAuthorProfile(account)).items).toHaveLength(1);
+  });
+
   it("reads every configured release exactly and preserves healthy historical modules when the current read fails", async () => {
     mocks.releaseDigests.mockReturnValue([hash(999), hash(998), hash(998)]);
     mocks.published.mockImplementation(async digest => digest === hash(999) ? null : { releaseDigest: digest, items: [item(3)] });

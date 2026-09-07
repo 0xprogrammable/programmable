@@ -2,7 +2,8 @@ import { isModulePublicDetails, type ModulePublicDetails } from "@/lib/module-mo
 
 export const MODULE_AUTHOR_PROFILE_SCHEMA = "programmable.module-mode.author-profile.v1" as const;
 export const MODULE_AUTHOR_PROFILE_PAGE_SIZE = 12;
-export const MODULE_AUTHOR_PROFILE_MAX_RELEASES = 33;
+export const MODULE_AUTHOR_PROFILE_MAX_SOURCE_RELEASES = 33;
+export const MODULE_AUTHOR_PROFILE_MAX_RELEASES = MODULE_AUTHOR_PROFILE_MAX_SOURCE_RELEASES * 2;
 export type ModuleAuthorProfileItem = ModulePublicDetails & Readonly<{ sourceReleaseDigests: readonly string[] }>;
 export type ModuleAuthorProfile = Readonly<{
   schemaVersion: typeof MODULE_AUTHOR_PROFILE_SCHEMA;
@@ -38,7 +39,7 @@ export function readModuleAuthorProfileResponse(value: unknown, account: string)
     if (!isModulePublicDetails(item) || item.author !== account.toLowerCase() || !object(item)
       || !digests(item.sourceReleaseDigests) || item.sourceReleaseDigests.length === 0
       || item.sourceReleaseDigests.some(digest => !(value.releaseDigests as string[]).includes(digest))) throw new Error("Invalid authored module.");
-    const key = `${item.packageId.toLowerCase()}:${item.manifestHash.toLowerCase()}`;
+    const key = `${item.sourceKind ?? "native"}:${item.packageId.toLowerCase()}:${item.manifestHash.toLowerCase()}`;
     if (revisions.has(key)) throw new Error("Duplicate authored module revision.");
     revisions.add(key);
   }
