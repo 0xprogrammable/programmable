@@ -14,7 +14,8 @@ import { bindPositionMint, creationEvidence, engineBuild, ensurePublished, parse
 // All receipts, activation fields and review decisions below are isolated parser fixtures, never authority.
 const wire = await launchSourceWire(), nativeWire = await sharedValidators();
 const a = n => `0x${n.toString(16).padStart(40, '0')}`, h = n => `0x${n.toString(16).padStart(64, '0')}`;
-const native = JSON.parse(await readFile(new URL('../../../config/module-mode/robinhood.preview.json', import.meta.url)));
+const native = JSON.parse(await readFile(new URL('../../../config/module-mode/historical-releases.json', import.meta.url)))
+  .releases.find(entry => entry.release.sourceVersion === 'module-native-v1').release;
 const engine = JSON.parse(await readFile(new URL('../../../tests/fixtures/module-engine-index.json', import.meta.url))).cases[0].release;
 const frozen = JSON.parse(await readFile(new URL('../../../tests/fixtures/module-engine-review-build.json', import.meta.url)));
 const v2raw = { ...native, sourceVersion: 'module-native-v2', schemaVersion: 'programmable.module-mode-source.v2',
