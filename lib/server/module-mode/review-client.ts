@@ -104,7 +104,8 @@ export function createModuleReviewClient(input: {
         const raw = userInput(() => parsed(Buffer.from(text), 2 * 1024 * 1024));
         const manifest = reviewRecord(reviewRecord(raw).manifest);
         const binding = reviewRecord(manifest.runtimeBinding);
-        const nativeBinding = { familyId: binding.familyId, packageId: binding.packageId, factory: binding.factory, factoryCodeHash: binding.factoryCodeHash, moduleCodeHash: binding.moduleCodeHash, callbackGas: binding.callbackGas };
+        const nativeBinding = { familyId: binding.familyId, packageId: binding.packageId, factory: binding.factory, factoryCodeHash: binding.factoryCodeHash, moduleCodeHash: binding.moduleCodeHash, callbackGas: binding.callbackGas,
+          ...(Object.hasOwn(binding, "feeEligibility") ? { feeEligibility: binding.feeEligibility } : {}) };
         const artifact = detail.job.artifact;
         if (nativeBinding.familyId !== artifact.familyId || nativeBinding.packageId !== artifact.packageId || nativeBinding.factoryCodeHash !== artifact.factory.runtimeCodeHash || nativeBinding.moduleCodeHash !== artifact.program.runtimeCodeHash || nativeBinding.callbackGas !== artifact.callbackGas) fail(400, "MODULE_REVIEW_MANIFEST_BUILD_MISMATCH");
         const expected = userInput(() => createModuleModeHostManifest({ release: release as ModuleModeHostReleaseIdentity, definition: manifest.catalogDefinition as ModuleModeCatalogDefinition, nativeBinding: nativeBinding as Parameters<typeof createModuleModeHostManifest>[0]["nativeBinding"], descriptor: detail.source.descriptor }));

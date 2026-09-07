@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { NATIVE_ENGINE_PROFILE, PREVIEW_MODULE_CATALOG } from "../lib/module-mode/builder";
 import { referenceManagementManifest } from "../lib/module-mode/management-manifest";
 import type { ModuleModeAvailability, NativeModuleModeCatalogEntry } from "../lib/module-mode/native-catalog";
-import { bindActiveModuleModeRelease } from "../lib/module-mode/release";
+import { bindActiveModuleModeRelease, computeModuleModeReleaseDigest, MODULE_MODE_ECONOMICS_POLICY_V2 } from "../lib/module-mode/release";
 import {
   bindModuleModeCatalogFile, computeModuleModeHostManifestHash, createModuleModeAvailabilityReader,
   createModuleModeHostManifest, createModuleModeHistoricalAvailabilityReader, MODULE_MODE_CATALOG_SCHEMA, moduleModePublicationUrl,
@@ -21,8 +21,10 @@ import { a, h, moduleEvidenceFixture } from "./fixtures/module-mode-evidence";
 const pendingRelease = { ...configuredRelease, enabled: false, status: "preview", lifecycleEvidenceDigest: null };
 
 // Entirely synthetic parser/transport fixtures. These objects are never deployment, review or provider evidence.
-function fixture(options: { requiresHost?: string[]; managementCapabilities?: string[] } = {}) {
-  const release = bindActiveModuleModeRelease(moduleEvidenceFixture().release);
+function fixture(options: { requiresHost?: string[]; managementCapabilities?: string[]; v2?: boolean } = {}) {
+  const candidate = options.v2 ? { ...moduleEvidenceFixture().release, sourceVersion: "module-native-v2", schemaVersion: "programmable.module-mode-source.v2", economicsPolicyId: MODULE_MODE_ECONOMICS_POLICY_V2 } : moduleEvidenceFixture().release;
+  candidate.releaseDigest = computeModuleModeReleaseDigest(candidate);
+  const release = bindActiveModuleModeRelease(candidate);
   const files = [{ path: "README.md", text: "Synthetic catalogue fixture; never publish." },
     { path: "src/Program.sol", text: "// Synthetic parser test. No compiled or deployable program.\n" }].map(file => ({
     path: file.path, sha256: createHash("sha256").update(file.text).digest("hex"), encoding: "base64" as const, bytes: Buffer.from(file.text).toString("base64"),
@@ -44,7 +46,8 @@ function fixture(options: { requiresHost?: string[]; managementCapabilities?: st
     management: { ...referenceManagementManifest("cap"), ...(options.managementCapabilities ? { capabilities: options.managementCapabilities } : {}) },
     requiresHost: source.descriptor.requiresHost,
   };
-  const binding = { familyId: checked.familyId, packageId: checked.packageId, factory: a(800), factoryCodeHash: h(801), moduleCodeHash: h(802), callbackGas: 75_000 };
+  const binding = { familyId: checked.familyId, packageId: checked.packageId, factory: a(800), factoryCodeHash: h(801), moduleCodeHash: h(802), callbackGas: 75_000,
+    ...(options.v2 ? { feeEligibility: { eligible: true, reviewDigest: h(906) } } : {}) };
   const manifest = createModuleModeHostManifest({ release, definition, nativeBinding: binding, descriptor: source.descriptor });
   const manifestHash = computeModuleModeHostManifestHash(manifest);
   const reviewContent: Omit<ModuleReviewDecisionRecordV1, "decisionDigest"> = {
@@ -74,6 +77,17 @@ function fixture(options: { requiresHost?: string[]; managementCapabilities?: st
 }
 
 describe("Module Mode host publication identity", () => {
+  it("binds the V2 family eligibility review into publication and rejects generation substitution", () => {
+    const f = fixture({ v2: true });
+    expect(f.manifest.manifest.runtimeBinding.feeEligibility).toEqual(f.binding.feeEligibility);
+    expect(verifyModuleModePublication({ release: f.release, publication: f.publication, ...f.responses })).toEqual(f.publication.entry);
+    const changed = createModuleModeHostManifest({ ...f, nativeBinding: { ...f.binding, feeEligibility: { eligible: false, reviewDigest: h(907) } }, descriptor: f.source.descriptor });
+    expect(computeModuleModeHostManifestHash(changed)).not.toEqual(f.manifestHash);
+    const missing = structuredClone(f.catalog);
+    delete missing.entries[0].entry.nativeBinding.feeEligibility;
+    expect(() => bindModuleModeCatalogFile(missing, f.release)).toThrow("source generation");
+    expect(() => bindModuleModeCatalogFile(f.catalog, { releaseDigest: f.release.releaseDigest, sourceVersion: "module-native-v1" })).toThrow("source generation");
+  });
   it("constructs a manifest before activation and review without dummy proof fields", () => {
     const f = fixture();
     const identity = Object.fromEntries(Object.entries(f.release).filter(([key]) => !["enabled", "status", "deploymentEvidenceDigest", "sourceVerificationDigest", "lifecycleEvidenceDigest"].includes(key)));

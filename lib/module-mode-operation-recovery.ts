@@ -1,5 +1,5 @@
 import { decodeFunctionData, sha256, type Hex } from "viem";
-import { moduleNativeLaunchAbi } from "./module-mode/native-abi";
+import { moduleNativeLaunchAbiFor } from "./module-mode/native-abi";
 import { ModuleNativeTransactionRevertedError, readModuleNativeLaunch, type ModuleNativeClient, type ModuleNativeReceiptResult } from "./module-mode/native-client";
 import { parseModuleModeAvailability } from "./module-mode/native-catalog";
 import { bindActiveModuleModeRelease, moduleHash, type ModuleModeRelease } from "./module-mode/release";
@@ -44,7 +44,7 @@ export async function recoverModuleModeOperation(input: {
   // Reuse the native client's immutable source, bytecode, pool and token readback at the receipt block.
   const launch = await readModuleNativeLaunch({ client: input.client, release, token: operation.token, blockNumber: receipt.blockNumber });
   if (operation.kind === "launch" && operation.launch) {
-    const decoded = decodeFunctionData({ abi: moduleNativeLaunchAbi, data: tx.input });
+    const decoded = decodeFunctionData({ abi: moduleNativeLaunchAbiFor(release), data: tx.input });
     requireMatch(decoded.functionName === "launch", "launch function");
     const parameters = decoded.args[0];
     requireMatch(same(launch.token, operation.token) && same(launch.launchWallet, operation.account) && same(launch.poolId, operation.launch.poolId)

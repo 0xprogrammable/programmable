@@ -6,7 +6,7 @@ import historicalReleases from "@/config/module-mode/historical-releases.json";
 import { PREVIEW_MODULE_CATALOG, type ModuleModeCatalogEntry } from "@/lib/module-mode/builder";
 import { bindModuleManagementManifest, unsupportedManagementCapabilities, type ModuleManagementManifestV1 } from "@/lib/module-mode/management-manifest";
 import {
-  bindNativeCatalogEntry, MODULE_MODE_AVAILABILITY_SCHEMA, moduleNativeCatalogDigest,
+  bindNativeCatalogEntryForRelease, bindNativeFeeEligibility, MODULE_MODE_AVAILABILITY_SCHEMA, moduleNativeCatalogDigest,
   nativeJson, parseModuleModeAvailability, type ModuleModeAvailability,
   type ModuleModeNativeBinding, type NativeModuleModeCatalogEntry,
 } from "@/lib/module-mode/native-catalog";
@@ -31,7 +31,7 @@ const UNAVAILABLE = "Module Mode is temporarily unavailable. Please try again sh
 
 export type ModuleModeCatalogDefinition = Omit<NativeModuleModeCatalogEntry, "status" | "nativeBinding"> & { requiresHost: string[] };
 export type ModuleModeHostReleaseIdentity = Pick<ModuleModeRelease, "schemaVersion" | "sourceVersion" | "chainId" | "sourceCommit" |
-  "startBlock" | "minimumInitialBuyNative" | "tokenCreationCodeHash" | "finalityPolicy" | "contracts" | "releaseDigest">;
+  "startBlock" | "minimumInitialBuyNative" | "tokenCreationCodeHash" | "finalityPolicy" | "contracts" | "releaseDigest" | "economicsPolicyId">;
 export type ModuleModeHostRuntimeBinding = Omit<ModuleModeNativeBinding, "manifestHash" | "reviewDigest"> & {
   sourceReleaseDigest: Hex;
   registry: ModuleModeRelease["contracts"]["registry"];
@@ -103,7 +103,8 @@ export function createModuleModeHostManifest(input: {
     || (entry.discovery.author !== undefined && entry.discovery.author.toLowerCase() !== checked.descriptor.author.toLowerCase()))) {
     throw new Error("Module discovery must identify its source author.");
   }
-  const binding = moduleRecord(input.nativeBinding, ["familyId", "packageId", "factory", "factoryCodeHash", "moduleCodeHash", "callbackGas"], "host.nativeBinding");
+  const v2 = release.sourceVersion === "module-native-v2";
+  const binding = moduleRecord(input.nativeBinding, ["familyId", "packageId", "factory", "factoryCodeHash", "moduleCodeHash", "callbackGas", ...(v2 ? ["feeEligibility"] : [])], "host.nativeBinding");
   if (checked.packageId !== moduleHash(binding.packageId, "catalog.packageId")
     || checked.familyId !== moduleHash(binding.familyId, "catalog.familyId")) throw new Error("Module source identity differs.");
   if (entry.version !== checked.descriptor.version || !entry.programAbi || !entry.engine) throw new Error("Module configuration ABI or version is missing.");
@@ -128,6 +129,7 @@ export function createModuleModeHostManifest(input: {
         familyId: moduleHash(binding.familyId, "catalog.familyId"), packageId: moduleHash(binding.packageId, "catalog.packageId"),
         factory: moduleAddress(binding.factory, "catalog.factory"), factoryCodeHash: moduleHash(binding.factoryCodeHash, "catalog.factoryCodeHash"),
         moduleCodeHash: moduleHash(binding.moduleCodeHash, "catalog.moduleCodeHash"), callbackGas,
+        ...(v2 ? { feeEligibility: bindNativeFeeEligibility(binding.feeEligibility) } : {}),
       },
       catalogDefinition: entry,
     },
@@ -141,7 +143,7 @@ export function moduleModePublicationUrl(packageId: Hex, kind: PublicationKind):
 }
 
 /** The checked-in catalogue is the publication allowlist; private submissions are never discovered here. */
-export function bindModuleModeCatalogFile(value: unknown, release: Pick<ModuleModeRelease, "releaseDigest">): ModuleModeCatalogFile {
+export function bindModuleModeCatalogFile(value: unknown, release: Pick<ModuleModeRelease, "releaseDigest" | "sourceVersion">): ModuleModeCatalogFile {
   const raw = moduleRecord(nativeJson(value), ["schemaVersion", "sourceReleaseDigest", "entries"], "catalog");
   if (raw.schemaVersion !== MODULE_MODE_CATALOG_SCHEMA || !Array.isArray(raw.entries) || raw.entries.length > 1000) throw new Error("Invalid module catalogue.");
   // A verified engine can launch a plain coin before the first reviewed module exists.
@@ -150,7 +152,7 @@ export function bindModuleModeCatalogFile(value: unknown, release: Pick<ModuleMo
   const ids = new Set<string>(); const packages = new Set<string>();
   const entries = raw.entries.map(value => {
     const rawEntry = moduleRecord(value, ["entry", "requestDigest", "review"], "catalog.publication");
-    const entry = bindNativeCatalogEntry(rawEntry.entry);
+    const entry = bindNativeCatalogEntryForRelease(rawEntry.entry, release);
     const packageId = moduleHash(entry.nativeBinding.packageId, "catalog.packageId");
     if (ids.has(entry.id) || packages.has(packageId)) throw new Error("Duplicate module catalogue identity.");
     ids.add(entry.id); packages.add(packageId);

@@ -3,16 +3,18 @@ import { encodeFunctionData, type Hex } from "viem";
 import { beginModuleModeOperation, clearModuleModeOperation, moduleModeOperationPath, parseModuleModeOperation, rememberModuleModeTransactionHash } from "@/lib/module-mode-operation-store";
 import { fetchModuleModeOperationRelease, recoverModuleModeOperation } from "@/lib/module-mode-operation-recovery";
 import { ModuleNativeTransactionRevertedError, readModuleNativeLaunch, revalidateModuleNativeTransaction, type ModuleNativeClient, type ModuleNativeLaunchRecord, type PreparedModuleNativeLaunch, type PreparedModuleNativeManagement } from "@/lib/module-mode/native-client";
-import { moduleNativeLaunchAbi } from "@/lib/module-mode/native-abi";
+import { moduleNativeLaunchAbi, moduleNativeLaunchV2Abi } from "@/lib/module-mode/native-abi";
 import { MODULE_MODE_AVAILABILITY_SCHEMA } from "@/lib/module-mode/native-catalog";
-import { bindActiveModuleModeRelease } from "@/lib/module-mode/release";
+import { bindActiveModuleModeRelease, computeModuleModeReleaseDigest, MODULE_MODE_ECONOMICS_POLICY_V2 } from "@/lib/module-mode/release";
 import { a, h, moduleEvidenceFixture } from "./fixtures/module-mode-evidence";
 
 vi.mock("@/lib/module-mode/native-client", async original => ({ ...await original<typeof import("@/lib/module-mode/native-client")>(), readModuleNativeLaunch: vi.fn() }));
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
-function harness(kind: "launch" | "manage" = "manage") {
-  const release = bindActiveModuleModeRelease(moduleEvidenceFixture().release);
+function harness(kind: "launch" | "manage" = "manage", v2 = false) {
+  const candidate = v2 ? { ...moduleEvidenceFixture().release, sourceVersion: "module-native-v2", schemaVersion: "programmable.module-mode-source.v2", economicsPolicyId: MODULE_MODE_ECONOMICS_POLICY_V2 } : moduleEvidenceFixture().release;
+  candidate.releaseDigest = computeModuleModeReleaseDigest(candidate);
+  const release = bindActiveModuleModeRelease(candidate);
   const launch: ModuleNativeLaunchRecord = { launchId: h(10), launchWallet: a(90), token: a(21), poolId: h(22), recipeHash: h(23), launchKey: h(24),
     hook: release.contracts.hook.address, positionRecipient: a(25), positionTokenId: 1n, initialBuyNative: 1_000n, initialBuyTokens: 90_000n, runtime: release.contracts.runtime.address };
   const parameters = { name: "Recovery fixture", symbol: "REC", buyCreatorFeeBps: 0, sellCreatorFeeBps: 0, creatorSalt: h(26),
@@ -20,7 +22,8 @@ function harness(kind: "launch" | "manage" = "manage") {
     creatorWallets: [a(90)], creatorSharesBps: [10_000], modules: [], moduleFunding: [], initialBuyNative: 1_000n, minimumInitialTokenOut: 89_000n, deadline: 1_000_300n };
   const prepared = { kind, token: launch.token, account: a(90), releaseDigest: release.releaseDigest, blockNumber: 100n, expiresAt: 1_000_300n, gasEstimate: 100_000n,
     transaction: { chainId: 4663, from: a(90), to: kind === "launch" ? release.contracts.launcher.address : release.contracts.rewardLedger.address,
-      data: kind === "launch" ? encodeFunctionData({ abi: moduleNativeLaunchAbi, functionName: "launch", args: [parameters] }) : "0x12345678",
+      data: kind === "launch" ? v2 ? encodeFunctionData({ abi: moduleNativeLaunchV2Abi, functionName: "launch", args: [{ ...parameters, expectedRecipeHash: launch.recipeHash }] })
+        : encodeFunctionData({ abi: moduleNativeLaunchAbi, functionName: "launch", args: [parameters] }) : "0x12345678",
       value: kind === "launch" ? "0x3e8" : "0x0", action: kind, description: "Private draft description must never enter storage" },
     ...(kind === "launch" ? { draftId: h(27), predictedToken: launch.token, poolId: launch.poolId, recipeHash: launch.recipeHash, launchKey: launch.launchKey, quotedTokenOut: 90_000n, minimumTokenOut: 89_000n } : {}) } as PreparedModuleNativeManagement | PreparedModuleNativeLaunch;
   const data = new Map<string, string>();
@@ -92,8 +95,8 @@ describe("durable Module Mode wallet operations", () => {
 });
 
 describe("read-only Module Mode operation recovery", () => {
-  it("recovers the original launch with canonical readback and does not claim finality or indexing", async () => {
-    const f = harness("launch");
+  it.each([false, true])("recovers the original launch using its exact generation (V2=%s) without claiming finality or indexing", async v2 => {
+    const f = harness("launch", v2);
     await expect(f.recover()).resolves.toMatchObject({ kind: "launch", token: f.launch.token, status: "mined", finalized: false, indexed: false });
     expect(readModuleNativeLaunch).toHaveBeenLastCalledWith({ client: f.client, release: f.release, token: f.launch.token, blockNumber: 101n });
     expect(f.client.getBlock).toHaveBeenCalledTimes(2);

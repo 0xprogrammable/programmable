@@ -220,6 +220,7 @@ export function ModuleModeLaunchHost() {
   }
 
   return <ModuleModeBuilder
+    release={release}
     catalog={catalog}
     configurationContext={configurationContext}
     launchAction={launchAction}
