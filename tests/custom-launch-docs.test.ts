@@ -31,7 +31,7 @@ describe("Custom Launch API documentation", () => {
       "[Custom Launch API](developers/custom-launch.md)",
     );
     expect(websiteGuide).toContain(
-      'alternates: { canonical: "/docs/developers/custom-launch" }',
+      'alternates: { canonical: "/developer-reference/custom-launch" }',
     );
     expect(websiteGuide).toContain(
       'currentPath="/docs/developers/custom-launch"',

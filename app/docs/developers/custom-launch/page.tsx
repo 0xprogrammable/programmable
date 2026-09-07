@@ -15,7 +15,7 @@ export const metadata: Metadata = {
   title: "Custom Launch API · Programmable",
   description:
     "Package, submit and track live Ethereum V3 launches, and use verified Robinhood Chain V4 release discovery.",
-  alternates: { canonical: "/docs/developers/custom-launch" },
+  alternates: { canonical: "/developer-reference/custom-launch" },
 };
 
 const customLaunchSections = [
