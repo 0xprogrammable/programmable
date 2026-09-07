@@ -460,7 +460,7 @@ contract ProgrammableMultiRoleLaunchStampRouterV2 is
     ///      This linear scan rejects destruction and delegated execution in runtime code; it does not prove
     ///      constructor behavior, external CALL dependencies, initialization safety, or economic properties.
     ///      Trusted exact constructor/source admission remains required; this is not a post-transaction liveness proof.
-    function _validateRuntimeOpcodes(uint256 targetIndex, bytes memory runtimeCode) internal pure {
+    function _validateRuntimeOpcodes(uint256 targetIndex, bytes memory runtimeCode) internal pure virtual {
         uint256 length = runtimeCode.length;
         for (uint256 pc; pc < length;) {
             uint8 opcode = uint8(runtimeCode[pc]);

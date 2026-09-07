@@ -233,8 +233,12 @@ contract ProgrammableMultiRoleLaunchStampRouterV2Test is Test {
         authority = new RouterV2TestAuthority();
         graph = new Graph();
         manager = IPoolManager(address(new PoolManager(address(this))));
-        router = new Router(address(authority), IGraph(address(graph)), manager);
+        router = _newRouter(address(authority), IGraph(address(graph)), manager);
         vm.deal(WALLET, 100 ether);
+    }
+
+    function _newRouter(address authority_, IGraph graph_, IPoolManager manager_) internal virtual returns (Router) {
+        return new Router(authority_, graph_, manager_);
     }
 
     function test_combinedTokenHookDeploysOnceAndStampsAtomicGraph() public {

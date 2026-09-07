@@ -20,6 +20,7 @@ optimizer_runs = 1_000
 bytecode_hash = "none"
 cbor_metadata = false
 ffi = false
+fs_permissions = [{ access = "read", path = "./spec/runtime-instruction-policy" }]
 
 [profile.default.fuzz]
 runs = 1_000
