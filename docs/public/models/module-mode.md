@@ -9,11 +9,15 @@ Module Mode creates a coin with a bonding curve. You can launch it with the base
 ## Launch a coin
 
 1. Open [Module Mode](https://programmable.market/launch/modules) and connect your wallet.
-2. Enter the coin details, choose the creator fees and enter an initial buy.
+2. Enter the coin details, optional image and social links, creator fees and initial buy.
 3. Open **Modules** to search for optional modules. Select the ones you want and complete their configuration.
-4. Review the coin, total fees, required funding and wallet transaction. Confirm the launch with your wallet.
+4. Check the total fees and funding, select **Launch coin**, then confirm in your wallet.
 
 The builder uses the active release and module catalog. It checks the selected versions, required capabilities, configuration and compatibility. The wallet review shows the network and the actual transaction cost. Gas, the initial buy and any module funding are separate amounts.
+
+An image is optional. If you launch without choosing one, the transaction records the Programmable logo as the token image. A selected image is used instead. Add a website, X or Telegram link directly; **Add more links** opens Discord, GitHub and GitBook fields. These links are stored in the token metadata and displayed on its Explore card and coin page.
+
+After the transaction is confirmed, use **View token** or copy the contract address. Explore and profile discovery follow the verified index.
 
 ## Configuration and compatibility
 

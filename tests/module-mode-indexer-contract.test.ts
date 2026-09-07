@@ -32,6 +32,16 @@ describe("public Module Mode indexing contract", () => {
     }
   });
 
+  it("publishes the onchain metadata getter, compatible social fields and metadata commitment", () => {
+    expect(moduleModeIndexerContract.tokenMetadata.functionName).toBe("metadata");
+    expect(moduleModeIndexerContract.tokenMetadata.abi[0]).toMatchObject({ name: "metadata", type: "function", stateMutability: "view" });
+    expect(moduleModeIndexerContract.tokenMetadata.socialLinks.extraData).toMatchObject({ version: 1, versionField: "v", optionalKeys: ["x", "telegram", "discord", "github", "gitbook"] });
+    expect(moduleModeIndexerContract.tokenMetadata.socialLinks.mapping.x).toBe("twitter");
+    expect(moduleModeIndexerContract.tokenMetadata.socialLinks.limitsBytes.extraData).toBe(1_200);
+    expect(moduleModeIndexerContract.tokenMetadata.commitment).toContain("ModuleNativeConfigurationBound.metadataHash");
+    expect(moduleModeIndexerContract.tokenMetadata.image.defaultUrl).toBe("https://programmable.market/brand/loop/programmable-module-token-default-v1.png");
+  });
+
   it.each([0, 1, 3, 8])("keeps identity and opaque revisions for a coin with %i synthetic modules", count => {
     const { release, evidence } = moduleEvidenceFixture(0, count);
     // These package IDs are unrelated to the public catalog; historical availability is independent.

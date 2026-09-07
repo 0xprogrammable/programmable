@@ -1,0 +1,81 @@
+name: Verify Module Mode launch sources
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 * * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: module-mode-launch-source-publication
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    if: github.repository == 'programmablehq/PROGRAMMABLE' && github.ref == 'refs/heads/production'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out production
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24.14.0
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Install pinned Solidity compiler
+        run: |
+          curl --fail --silent --show-error --location --max-time 60 \
+            https://binaries.soliditylang.org/linux-amd64/solc-linux-amd64-v0.8.26+commit.8a97fa7a \
+            --output "$RUNNER_TEMP/module-mode-solc"
+          printf '%s  %s\n' d5f23436f443edb85d8e76906d12f0a86ce0490e7663a9e608efeb7a93f149ef "$RUNNER_TEMP/module-mode-solc" \
+            | sha256sum --check --status
+          chmod 755 "$RUNNER_TEMP/module-mode-solc"
+
+      - name: Restore verified block checkpoint
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .module-source-state
+          key: module-native-source-v1-${{ hashFiles('config/module-mode/robinhood.preview.json') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            module-native-source-v1-${{ hashFiles('config/module-mode/robinhood.preview.json') }}-
+
+      - name: Verify and publish finalized launch sources
+        run: |
+          set -o pipefail
+          node --test contracts/scripts/module-mode/verify-launch-source.test.mjs
+          node contracts/scripts/module-mode/verify-launch-source.mjs \
+            --publish \
+            --solc "$RUNNER_TEMP/module-mode-solc" \
+            --max-blocks 1000000 \
+            --max-launches 100 \
+            --state-file .module-source-state/checkpoint.json \
+            --output module-source-report.json 2>&1 | tee module-source-verification.log
+
+      - name: Save verified block checkpoint
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .module-source-state
+          key: module-native-source-v1-${{ hashFiles('config/module-mode/robinhood.preview.json') }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Preserve verification evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: module-launch-source-verification-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            module-source-report.json
+            module-source-verification.log
+            .module-source-state/checkpoint.json
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 30

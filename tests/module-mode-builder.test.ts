@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { decodeAbiParameters } from "viem";
+import { MODULE_DEFAULT_TOKEN_IMAGE } from "@/lib/module-mode/token-metadata";
 
 import {
   configurationFromForm,
@@ -273,8 +274,14 @@ describe("Native engine configuration", () => {
     if (initial.ok && changed.ok) expect(initial.draft.draftId).not.toBe(changed.draft.draftId);
   });
 
-  it("requires a real image choice and binds the local fingerprint without inventing a public URI", () => {
-    expect(validateBuilder({ ...validState(), tokenImage: { kind: "none" } }).ok).toBe(false);
+  it("uses the default image only in a prepared draft and preserves a selected image fingerprint", () => {
+    const state = { ...validState(), tokenImage: { kind: "none" as const } };
+    const defaultDraft = validateBuilder(state);
+    expect(defaultDraft.ok).toBe(true);
+    if (!defaultDraft.ok) throw new Error("Expected default image draft");
+    expect(defaultDraft.draft.token.image).toEqual({ kind: "uri", uri: MODULE_DEFAULT_TOKEN_IMAGE, contentVerified: false });
+    expect(state.tokenImage).toEqual({ kind: "none" });
+    expect(createModuleModeState().tokenImage).toEqual({ kind: "none" });
     const local = { kind: "local" as const, sha256: `0x${"1".repeat(64)}` as const, mimeType: "image/webp" as const, bytes: 2148 };
     const result = validateBuilder({ ...validState(), tokenImage: local });
     expect(result.ok).toBe(true);
@@ -294,5 +301,19 @@ describe("Native engine configuration", () => {
     expect(validateBuilder({ ...validState(), description: "a".repeat(281) }).ok).toBe(false);
     expect(validateBuilder({ ...validState(), name: "a".repeat(48), description: "a".repeat(280) }).ok).toBe(true);
     expect(nativeValueBreakdown(validState(), NATIVE_CATALOG)).toEqual({ initialBuy: "0.001", funding: "0", total: "0.001" });
+  });
+
+  it("normalizes social links into the draft digest and reports errors beside the matching field", () => {
+    const state = { ...validState(), socialLinks: { website: " https://example.com ", twitter: "https://x.com/example", discord: "https://discord.gg/example" } };
+    const result = validateBuilder(state);
+    if (!result.ok) throw new Error("Expected social metadata draft");
+    expect(result.draft.token.socialLinks).toEqual({ website: "https://example.com/", twitter: "https://x.com/example", discord: "https://discord.gg/example" });
+    expect(state.socialLinks.website).toBe(" https://example.com ");
+    const changed = validateBuilder({ ...state, socialLinks: { ...state.socialLinks, discord: "https://discord.gg/another" } });
+    if (!changed.ok) throw new Error("Expected changed social metadata draft");
+    expect(changed.draft.draftId).not.toBe(result.draft.draftId);
+    const invalid = validateBuilder({ ...state, socialLinks: { twitter: "https://example.com/pretend-x" } });
+    expect(invalid.ok).toBe(false);
+    if (!invalid.ok) expect(invalid.issues).toEqual([{ path: "/socialLinks/twitter", message: "Enter an HTTPS link to X." }]);
   });
 });

@@ -12,5 +12,6 @@ export const PROGRAMMABLE_MAIN_TOKEN_PRESENTATION = Object.freeze({
       kind: "discord" as const,
       url: "https://discord.com/invite/programmable",
     },
+    { kind: "gitbook" as const, url: "https://programmable.market/docs" },
   ],
 });

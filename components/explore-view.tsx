@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
+  BookOpen,
   Check,
   ChevronDown,
   ChevronLeft,
@@ -23,7 +24,7 @@ import {
 } from "react";
 
 import type { MarketCapMetric } from "@/components/animated-market-cap";
-import { XBrandIcon } from "@/components/brand-icons";
+import { DiscordBrandIcon, GitHubBrandIcon, XBrandIcon } from "@/components/brand-icons";
 import { ExploreChainSelector } from "@/components/explore-chain-selector";
 import { EXPLORE_PREVIEW_TOKENS } from "@/components/explore-preview-data";
 import {
@@ -867,6 +868,9 @@ const tokenLinkOrder: Record<TokenLink["kind"], number> = {
   website: 0,
   x: 1,
   telegram: 2,
+  discord: 3,
+  github: 4,
+  gitbook: 5,
 };
 
 function launchBlockNumber(token: LauncherToken) {
@@ -922,7 +926,10 @@ function parseTokenLink(value: unknown): TokenLink | null {
   if (
     value.kind !== "website" &&
     value.kind !== "x" &&
-    value.kind !== "telegram"
+    value.kind !== "telegram" &&
+    value.kind !== "discord" &&
+    value.kind !== "github" &&
+    value.kind !== "gitbook"
   ) {
     return null;
   }
@@ -3314,6 +3321,9 @@ export function getTokenCards(
 function getTokenLinkLabel(kind: TokenLink["kind"]) {
   if (kind === "website") return "Website";
   if (kind === "telegram") return "Telegram";
+  if (kind === "discord") return "Discord";
+  if (kind === "github") return "GitHub";
+  if (kind === "gitbook") return "GitBook";
   return "X";
 }
 
@@ -3331,6 +3341,9 @@ function TelegramBrandIcon() {
 function TokenLinkIcon({ kind }: { kind: TokenLink["kind"] }) {
   if (kind === "website") return <WebsiteLinkIcon />;
   if (kind === "telegram") return <TelegramBrandIcon />;
+  if (kind === "discord") return <DiscordBrandIcon />;
+  if (kind === "github") return <GitHubBrandIcon />;
+  if (kind === "gitbook") return <BookOpen aria-hidden="true" size={18} />;
   return <XBrandIcon />;
 }
 
