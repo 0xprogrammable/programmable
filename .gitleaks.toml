@@ -9,6 +9,8 @@ regexTarget = "line"
 paths = [
   '''^config/module-mode/robinhood\.preview\.json$''',
   '''^config/module-mode/historical-releases\.json$''',
+  '''^config/module-mode/review-release\.json$''',
+  '''^config/module-engine/review-release\.json$''',
 ]
 regexes = ['''^\s*"tokenCreationCodeHash": "0x445809d9f7a34e959de4a96dec1e1beddfb265755bf28c57c42744adea1128ef",\s*$''']
 
