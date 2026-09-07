@@ -5,16 +5,34 @@ import { compileOpenConfig } from "../../packages/classic-modules/src/open-confi
 import { nativeCanonicalJson, nativeJson } from "./native-catalog";
 import { encodeModuleEngineConfiguration, parseModuleEngineConfigurationAbi } from "../module-engine/configuration";
 import { reviewDigest as moduleReviewDigestV1, parseReviewSubject, type ReviewSubject as ModuleReviewSubjectV1 } from "./review-contract";
+import { MODULE_ENGINE_QUOTE_ENVIRONMENT_V1 } from "./review-engine-types";
 import { MODULE_ENGINE_BUILD_SCHEMA_V1, MODULE_ENGINE_PLAN_SCHEMA_V1, MODULE_ENGINE_PROFILE_V1, MODULE_ENGINE_CONFIGURATION_CODEC_V1, MODULE_ENGINE_CONTEXT_ABI_V1, MODULE_ENGINE_CONSTRUCTOR_ABI_V1, type ModuleEngineBuildArtifactV1, type ModuleEngineBuildPlanV1, type ModuleEngineContractArtifactV1, type ModuleEngineCompiledCaseV1, type ModuleEngineTestResultV1 } from "./review-engine-types";
 type ModuleDigestV1 = Hex;
 export const ENGINE_REVIEW_COMPILER = Object.freeze({version:"0.8.26+commit.8a97fa7a",binarySha256:"sha256:35ba6661f3bdaed995fc7af14c405502290cf681b3fd062fe8738cfdf6db14ed",imageDigest:"sha256:d8e448a56fc63242f70026718378bd4b00f8c82e78d20eefb199224a4d8e33d8"});
 const NATIVE_SETTINGS_V1 = {optimizer:{enabled:true,runs:1000},evmVersion:"cancun",viaIR:true,metadata:{bytecodeHash:"none"}};
 const MODULE_REVIEW_LIMITS_V1 = {sourceBytes:4*1024*1024,standardJsonBytes:5242880,creationBytes:49152,runtimeBytes:24576,configBytes:16384,artifactBytes:2*1024*1024};
+const ENGINE_SOURCE_ALIASES = [
+  ["dependencies/scoped/openzeppelin/contracts/", "@openzeppelin/contracts/"],
+  ["dependencies/scoped/openzeppelin/uniswap-hooks/", "@openzeppelin/uniswap-hooks/"],
+  ["dependencies/scoped/uniswap/blocknumberish/", "@uniswap/blocknumberish/"],
+  ["dependencies/scoped/uniswap/liquidity-launcher/", "@uniswap/liquidity-launcher/"],
+  ["dependencies/scoped/uniswap/uerc20-factory/", "@uniswap/uerc20-factory/"],
+  ["dependencies/scoped/uniswap/v4-core/", "@uniswap/v4-core/"],
+  ["dependencies/scoped/uniswap/v4-periphery/", "@uniswap/v4-periphery/"],
+  ["dependencies/scoped/solady/src/", "@solady/src/"],
+] as const;
 function soliditySources(files: readonly {path:string;bytes:string}[]): Record<string,{content:string}> {
   const sources: Record<string,{content:string}> = Object.create(null);
   for (const f of files) if (f.path.endsWith(".sol")) sources[f.path]={content:new TextDecoder("utf-8",{fatal:true}).decode(Uint8Array.from(atob(f.bytes),c=>c.charCodeAt(0)))};
   const prefix="dependencies/openzeppelin-contracts/contracts/";
   for(const [path,source] of Object.entries(sources)) if(path.startsWith(prefix)) {const alias=`@openzeppelin/contracts/${path.slice(prefix.length)}`;need(!Object.hasOwn(sources,alias),"MODULE_BUILD_SOURCE_ALIAS_COLLISION");sources[alias]=source;}
+  for(const [path,source] of Object.entries(sources)) {
+    const match=ENGINE_SOURCE_ALIASES.find(([prefix])=>path.startsWith(prefix));
+    if(!match) continue;
+    const alias=`${match[1]}${path.slice(match[0].length)}`;
+    need(!Object.hasOwn(sources,alias),"MODULE_BUILD_SOURCE_ALIAS_COLLISION");
+    sources[alias]=source; delete sources[path];
+  }
   return sources;
 }
 export const MODULE_ENGINE_INTERFACE_V1 = parseAbi([
@@ -62,7 +80,11 @@ function subjectValid(subject: ModuleReviewSubjectV1) {
 
 export function validateModuleEngineBuildPlanV1(value: unknown, subject: ModuleReviewSubjectV1): ModuleEngineBuildPlanV1 {
   subjectValid(subject);
-  const p = exact(value, ["schemaVersion", "submissionId", "requestDigest", "engineComponentId", "configurationCodec", "configurationAbi", "immutableBindings", "operationPermissions", "moneyRights", "coinRights", "testEconomics", "executionGas", "cases"]);
+  const p = exact(value, ["schemaVersion", "submissionId", "requestDigest", "engineComponentId", "configurationCodec", "configurationAbi", "immutableBindings", "operationPermissions", "moneyRights", "coinRights", "testEconomics", "executionGas", "cases", ...(Object.hasOwn(object(value), "testEnvironment") ? ["testEnvironment"] : [])]);
+  if(Object.hasOwn(p,"testEnvironment")) {
+    const environment=exact(p.testEnvironment,["profile","sourceDigest"]);
+    need(environment.profile===MODULE_ENGINE_QUOTE_ENVIRONMENT_V1.profile && environment.sourceDigest===MODULE_ENGINE_QUOTE_ENVIRONMENT_V1.sourceDigest,"MODULE_ENGINE_TEST_ENVIRONMENT_INVALID");
+  }
   need(p.schemaVersion === MODULE_ENGINE_PLAN_SCHEMA_V1 && p.submissionId === subject.submissionId && p.requestDigest === subject.requestDigest, "MODULE_ENGINE_SUBJECT_MISMATCH");
   need(p.configurationCodec === MODULE_ENGINE_CONFIGURATION_CODEC_V1, "MODULE_ENGINE_CODEC_UNSUPPORTED");
   parseModuleEngineConfigurationAbi(p.configurationAbi);
@@ -248,6 +270,7 @@ function artifactContents(subject: ModuleReviewSubjectV1, plan: ModuleEngineBuil
     sourceManifestHash: moduleReviewDigestV1("programmable.modules.source-manifest.v1", descriptor), planDigest,
     configurationSchemaHash: moduleReviewDigestV1("programmable.modules.configuration-schema.v1", descriptor.configuration),
     configurationCodec: plan.configurationCodec, configurationAbi: plan.configurationAbi,
+    ...(plan.testEnvironment === undefined ? {} : { testEnvironment: plan.testEnvironment }),
     compiler: compilerIdentity(source.standard), engine, executionGas: plan.executionGas, operationPermissions: plan.operationPermissions, moneyRights: plan.moneyRights, coinRights: plan.coinRights, testEconomics: plan.testEconomics, cases, tests,
     reviewRequired: MODULE_ENGINE_REVIEW_AREAS_V1, approved: false as const, registryApproved: false as const, available: false as const,
   };
@@ -289,6 +312,10 @@ export function parseEngineReviewArtifact(value: unknown, subject: ModuleReviewS
   need(json(raw.reviewRequired)===json(MODULE_ENGINE_REVIEW_AREAS_V1),"MODULE_ENGINE_REVIEW_COVERAGE_INVALID");
   need(raw.configurationCodec===MODULE_ENGINE_CONFIGURATION_CODEC_V1,"MODULE_ENGINE_CODEC_UNSUPPORTED"); parseModuleEngineConfigurationAbi(raw.configurationAbi);
   const artifact=raw as unknown as ModuleEngineBuildArtifactV1;
+  if(Object.hasOwn(raw,"testEnvironment")) {
+    const environment=exact(raw.testEnvironment,["profile","sourceDigest"]);
+    need(environment.profile===MODULE_ENGINE_QUOTE_ENVIRONMENT_V1.profile && environment.sourceDigest===MODULE_ENGINE_QUOTE_ENVIRONMENT_V1.sourceDigest,"MODULE_ENGINE_TEST_ENVIRONMENT_INVALID");
+  }
   need(Array.isArray(artifact.cases) && artifact.cases.length>0 && artifact.cases.length<=16,"MODULE_ENGINE_CASES_INVALID");
   const engine=artifact.engine;
   need(engine && engine.abiHash===moduleReviewDigestV1("programmable.modules.abi.v1",engine.abi),"MODULE_ENGINE_ABI_INVALID");
@@ -296,6 +323,7 @@ export function parseEngineReviewArtifact(value: unknown, subject: ModuleReviewS
   need(keccak256(engine.creationBytecode)===engine.creationCodeHash && keccak256(engine.runtimeTemplate)===engine.runtimeTemplateHash,"MODULE_ENGINE_CODE_INVALID");
   need(Array.isArray(engine.immutableReferences) && Array.isArray(engine.immutableRuntimeOffsets) && engine.immutableRuntimeOffsets.length<=128 && Array.isArray(engine.immutableConstructorOffsets),"MODULE_ENGINE_IMMUTABLE_RANGES_INVALID");
   if(plan) {
+    need(json(artifact.testEnvironment ?? null)===json(plan.testEnvironment ?? null),"MODULE_ENGINE_BUILD_PLAN_MISMATCH");
     need(artifact.planDigest===moduleReviewDigestV1(MODULE_ENGINE_PLAN_SCHEMA_V1,plan) && artifact.executionGas===plan.executionGas && artifact.moneyRights===plan.moneyRights && artifact.coinRights===plan.coinRights && json(artifact.operationPermissions)===json(plan.operationPermissions) && json(artifact.testEconomics)===json(plan.testEconomics) && json(artifact.configurationAbi)===json(plan.configurationAbi),"MODULE_ENGINE_BUILD_PLAN_MISMATCH");
     const rebuilt=contractArtifact({contracts:{[engine.sourcePath]:{[engine.contractName]:{abi:engine.abi,evm:{bytecode:{object:engine.creationBytecode.slice(2)},deployedBytecode:{object:engine.runtimeTemplate.slice(2),immutableReferences:Object.fromEntries(engine.immutableReferences.map(r=>[r.id,r.ranges]))}}}}}},{id:plan.engineComponentId,sourcePath:engine.sourcePath,entrypoint:engine.contractName},plan);
     need(json(engine)===json(rebuilt) && artifact.cases.length===plan.cases.length,"MODULE_ENGINE_BUILD_CONTRACT_MISMATCH");

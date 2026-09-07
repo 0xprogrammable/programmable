@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createHash } from "node:crypto";
+import { validateModuleSubmissionRequest } from "../packages/classic-modules/src/open-transport.mjs";
 import frozen from "./fixtures/module-engine-review-build.json";
 import configuredNativeRelease from "../config/module-mode/robinhood.preview.json";
 import { fixture as engineClientFixture } from "./module-engine-fixture";
@@ -7,7 +9,9 @@ import { WEBSITE_ADMIN_WALLET } from "../lib/admin-access";
 import { computeModuleEngineHostManifestHash, computeModuleEngineReleaseDigest, type ModuleEngineCatalogDefinition } from "../lib/module-engine/catalog";
 import { createReviewedModuleEngineManifest } from "../lib/module-mode/review-engine-manifest";
 import type { ModuleEngineBuildArtifactV1, ModuleEngineBuildPlanV1 } from "../lib/module-mode/review-engine-types";
-import { parseReviewSubject, type ReviewJob } from "../lib/module-mode/review-contract";
+import { MODULE_ENGINE_QUOTE_ENVIRONMENT_V1 } from "../lib/module-mode/review-engine-types";
+import { moduleEngineStandardInputV1, parseEngineReviewArtifact, validateModuleEngineBuildPlanV1, verifyModuleEngineBuildArtifactV1 } from "../lib/module-mode/review-engine-contract";
+import { parseReviewSubject, reviewDigest, type ReviewJob } from "../lib/module-mode/review-contract";
 import { computeModuleModeHostManifestHash, createModuleModeHostManifest, type ModuleModeHostReleaseIdentity } from "../lib/server/module-mode/catalog";
 import { computeModuleReviewDecisionDigestV1, type ModuleReviewDecisionCommandV1, type ModuleReviewDecisionRecordV1 } from "../lib/server/module-mode/review-decision-wire-v1";
 
@@ -20,6 +24,41 @@ vi.mock("@/lib/server/creator-article/wallet-principal.server", () => ({
 }));
 
 const reviewer = WEBSITE_ADMIN_WALLET.toLowerCase() as `0x${string}`;
+
+describe("source-bound Quote dependency environment", () => {
+  it("preserves the ordinary protected artifact and exact plan digest", () => {
+    const subject=parseReviewSubject(frozen.subject), plan=validateModuleEngineBuildPlanV1(frozen.plan,subject);
+    expect(reviewDigest("programmable.modules.engine-build-plan.v1",plan)).toBe(frozen.artifact.planDigest);
+    expect(reviewDigest("programmable.modules.compiler-input.v1",moduleEngineStandardInputV1(frozen.source,subject,plan))).toBe(frozen.artifact.compiler.completeInputHash);
+    expect(()=>verifyModuleEngineBuildArtifactV1(frozen.artifact as ModuleEngineBuildArtifactV1,subject,plan,frozen.source)).not.toThrow();
+    expect(validateModuleEngineBuildPlanV1({...plan,testEnvironment:MODULE_ENGINE_QUOTE_ENVIRONMENT_V1},subject).testEnvironment).toEqual(MODULE_ENGINE_QUOTE_ENVIRONMENT_V1);
+  });
+  it.each([null,undefined,{},"quote",{...MODULE_ENGINE_QUOTE_ENVIRONMENT_V1,profile:"other"},{...MODULE_ENGINE_QUOTE_ENVIRONMENT_V1,sourceDigest:`0x${"00".repeat(32)}`},{...MODULE_ENGINE_QUOTE_ENVIRONMENT_V1,rpcUrl:"https://caller.example.invalid"},{...MODULE_ENGINE_QUOTE_ENVIRONMENT_V1,bytecode:"0x00"},{...MODULE_ENGINE_QUOTE_ENVIRONMENT_V1,state:{}}])("rejects caller-controlled environment data %j",value=>{
+    expect(()=>validateModuleEngineBuildPlanV1({...frozen.plan,testEnvironment:value},parseReviewSubject(frozen.subject))).toThrow();
+  });
+  it("rejects an environment added to an otherwise valid artifact without matching the protected plan", () => {
+    const {artifactDigest: _digest,...contents}=frozen.artifact; void _digest;
+    const changed={...contents,testEnvironment:MODULE_ENGINE_QUOTE_ENVIRONMENT_V1};
+    const artifact={...changed,artifactDigest:reviewDigest("programmable.modules.engine-build.v1",changed)};
+    expect(()=>parseEngineReviewArtifact(artifact,parseReviewSubject(frozen.subject),frozen.plan as ModuleEngineBuildPlanV1)).toThrow("MODULE_ENGINE_BUILD_PLAN_MISMATCH");
+  });
+  it("publishes the same byte-preserving scoped source aliases and rejects collisions", () => {
+    const prefixes=["openzeppelin/contracts/","openzeppelin/uniswap-hooks/","uniswap/blocknumberish/","uniswap/liquidity-launcher/","uniswap/uerc20-factory/","uniswap/v4-core/","uniswap/v4-periphery/","solady/src/"];
+    const source=structuredClone(frozen.source),content="// exact source bytes\npragma solidity 0.8.26;\n";
+    const sha256=createHash("sha256").update(content).digest("hex");
+    const append=(path:string)=>{source.files.push({path,sha256,encoding:"base64",bytes:Buffer.from(content).toString("base64")});source.descriptor.source.files.push({path,sha256});};
+    for(const prefix of prefixes) append(`dependencies/scoped/${prefix}Probe.sol`);
+    const standard=()=>{
+      const checked=validateModuleSubmissionRequest(source);expect(checked.ok).toBe(true);if(!checked.ok)throw new Error("Invalid source fixture");
+      const subject=parseReviewSubject({...frozen.subject,requestDigest:checked.requestDigest});
+      return moduleEngineStandardInputV1(checked.request,subject,{...frozen.plan,requestDigest:checked.requestDigest});
+    };
+    const input=standard();
+    for(const prefix of prefixes){expect(input.sources[`@${prefix}Probe.sol`].content).toBe(content);expect(input.sources).not.toHaveProperty(`dependencies/scoped/${prefix}Probe.sol`);}
+    append("dependencies/openzeppelin-contracts/contracts/Probe.sol");
+    expect(standard).toThrow("MODULE_BUILD_SOURCE_ALIAS_COLLISION");
+  });
+});
 const serviceToken = `service_${"a".repeat(48)}`;
 
 // Existing synthetic compiler/parser fixtures only; no deployment, review or publication evidence.

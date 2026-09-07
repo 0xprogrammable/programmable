@@ -8,6 +8,11 @@ export const MODULE_ENGINE_PLAN_SCHEMA_V1 = "programmable.modules.engine-build-p
 export const MODULE_ENGINE_BUILD_SCHEMA_V1 = "programmable.modules.engine-build.v1" as const;
 export const MODULE_ENGINE_PROFILE_V1 = "programmable.module-engine-solidity@1" as const;
 export const MODULE_ENGINE_CONFIGURATION_CODEC_V1 = "programmable.engine-abi@1" as const;
+export const MODULE_ENGINE_QUOTE_ENVIRONMENT_V1 = Object.freeze({
+  profile: "programmable.engine-quote-v4-v3@1",
+  sourceDigest: "0xa0d03aa0af44d281907d91efb03805411b4f72831035b1fc3b4c63462ad0d39f",
+} as const);
+export type ModuleEngineTestEnvironmentV1 = typeof MODULE_ENGINE_QUOTE_ENVIRONMENT_V1;
 export const MODULE_ENGINE_CONTEXT_ABI_V1 = [
   { name: "host", type: "address" }, { name: "launchId", type: "bytes32" },
   { name: "token", type: "address" }, { name: "creator", type: "address" },
@@ -67,6 +72,7 @@ export interface ModuleEngineCaseV1 {
   readonly fixedConfiguration?: boolean;
 }
 export interface ModuleEngineBuildPlanV1 {
+  readonly testEnvironment?: ModuleEngineTestEnvironmentV1;
   readonly schemaVersion: typeof MODULE_ENGINE_PLAN_SCHEMA_V1;
   readonly submissionId: string;
   readonly requestDigest: ModuleDigestV1;
@@ -109,6 +115,7 @@ export interface ModuleEngineCompiledCaseV1 extends ModuleEngineCaseV1 {
   readonly runtimeCodeHash: ModuleDigestV1;
 }
 export interface ModuleEngineTestRequestV1 {
+  readonly testEnvironment?: ModuleEngineTestEnvironmentV1;
   readonly schemaVersion: "programmable.modules.engine-tests.v1";
   readonly packageId: ModuleDigestV1;
   readonly requestDigest: ModuleDigestV1;
@@ -151,6 +158,7 @@ export interface ModuleEngineTestExecutorV1 {
   execute(request: ModuleEngineTestRequestV1): Promise<ModuleEngineTestResultV1>;
 }
 export interface ModuleEngineBuildArtifactV1 {
+  readonly testEnvironment?: ModuleEngineTestEnvironmentV1;
   readonly schemaVersion: typeof MODULE_ENGINE_BUILD_SCHEMA_V1;
   readonly authority: "programmable.module-review.engine-build.v1";
   readonly subject: ModuleReviewSubjectV1;
