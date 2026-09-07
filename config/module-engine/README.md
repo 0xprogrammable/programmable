@@ -3,8 +3,8 @@
 `robinhood.json` is deliberately `null`: no Engine source is activated by this change. `catalog.json`
 has no templates or source digest. There are no placeholder contracts, deployment proofs or reviews.
 
-`review-release.json` is also deliberately `null`. The existing private Module review BFF reads this
-server configuration for Engine manifest checks and acceptance. It accepts only the closed
+`review-release.json` contains the deployed, source-verified Core host identity. The existing private
+Module review BFF reads this server configuration for Engine manifest checks and acceptance. It accepts only the closed
 `ModuleEngineReleaseIdentity` wire with its exact digest, source commit, chain, profile and contract
 pins. Browser requests and submitted manifests cannot supply or replace this installed identity.
 Null blocks Engine manifest checks and acceptance; Native review and source/build review remain

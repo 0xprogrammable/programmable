@@ -20,6 +20,11 @@ const TIME = "2026-09-06T02:00:00.000Z";
 const NONCE = "abcdefghijklmnopqrstuv";
 // Real immutable host pins with an explicit pending lifecycle, independent of production activation.
 const pendingRelease = { ...configuredRelease, enabled: false, status: "preview", lifecycleEvidenceDigest: null };
+function reviewIdentity(release: ModuleModeHostReleaseIdentity) {
+  return Object.fromEntries(["schemaVersion", "sourceVersion", "chainId", "sourceCommit", "startBlock",
+    "minimumInitialBuyNative", "tokenCreationCodeHash", "finalityPolicy", "contracts", "releaseDigest",
+    ...(release.sourceVersion === "module-native-v2" ? ["economicsPolicyId"] : [])].map(key => [key, release[key as keyof ModuleModeHostReleaseIdentity]]));
+}
 function setup(options: { wallet?: string; author?: `0x${string}`; release?: boolean | "pending" } = {}) {
   const f = moduleReviewAdminFixture(options.author); const wallet = options.wallet ?? f.reviewer;
   const authenticate = vi.fn(async () => ({ privyUserId: "did:privy:test-reviewer", privySessionId: "session-review", wallets: [wallet] }));
@@ -38,7 +43,7 @@ function setup(options: { wallet?: string; author?: `0x${string}`; release?: boo
     return Response.json(path.endsWith(f.subject.submissionId) ? detail : queue);
   });
   const client = createModuleReviewClient({ authenticator: { authenticate } as WalletPrincipalAuthenticatorV1, backendBaseUrl: "https://review.example.invalid", websiteToken: WEBSITE_TOKEN, bffAssertionKeyV2: ASSERTION_KEY, fetchBackend, now: () => new Date(TIME), nonce: () => NONCE,
-    releaseIdentity: options.release === "pending" ? pendingRelease : options.release === false ? { enabled: false, status: "preview", releaseDigest: null } : f.release });
+    releaseIdentity: options.release === false ? null : reviewIdentity(options.release === "pending" ? pendingRelease as ModuleModeHostReleaseIdentity : f.release) });
   const read = (suffix = "") => new Request(`https://programmable.example/api/admin/modules${suffix}?walletAddress=${wallet}`, { headers: { Authorization: "Bearer browser-private-token", "X-Programmable-Bff-Assertion-Signature": "forged-browser-value" } });
   const post = (suffix: string, body: object) => new Request(`https://programmable.example/api/admin/modules/${f.subject.submissionId}/${suffix}`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer browser-private-token" }, body: JSON.stringify({ walletAddress: wallet, ...body }) });
   const command = (outcome: ModuleReviewDecisionCommandV1["outcome"] = "accept"): ModuleReviewDecisionCommandV1 => ({ schemaVersion: "programmable.modules.review-command.v1", submissionId: f.subject.submissionId, requestDigest: f.subject.requestDigest, expectedReviewRevision: 2, outcome, reason: "Synthetic review test only. Do not publish this fixture.", artifactDigest: outcome === "accept" ? f.artifact.artifactDigest : null, hostManifestHash: outcome === "accept" ? f.manifestHash : null, acknowledgedReviewAreas: outcome === "accept" ? f.artifact.reviewRequired : [] });

@@ -61,6 +61,12 @@ function bindSource(job: ReviewJob, sourceBytes: Uint8Array): { source: ModuleSu
   need(artifact.packageId === checked.packageId && artifact.familyId === checked.familyId && artifact.rewardWallet === source.descriptor.rewardWallet.toLowerCase(), "Build package identity differs");
   need(artifact.sourceManifestHash === reviewDigest("programmable.modules.source-manifest.v1", source.descriptor)
     && artifact.configurationSchemaHash === reviewDigest("programmable.modules.configuration-schema.v1", source.descriptor.configuration), "Build source manifest differs");
+  if (artifact.schemaVersion === "programmable.modules.engine-build.v1") {
+    need(job.plan.schemaVersion === "programmable.modules.engine-build-plan.v1", "Engine build plan required");
+    // The Engine verifier binds the exact compiler/image/settings and its scoped source aliases.
+    verifyModuleEngineBuildArtifactV1(artifact, job.subject, job.plan, source);
+    return { source, artifact };
+  }
   const sources: Record<string, { content: string }> = Object.create(null);
   for (const file of source.files) if (file.path.endsWith(".sol")) sources[file.path] = { content: new TextDecoder("utf-8", { fatal: true }).decode(Buffer.from(file.bytes, "base64")) };
   // Must match the protected builder's fixed alias inventory; package build scripts/config are inert.
@@ -73,11 +79,6 @@ function bindSource(job: ReviewJob, sourceBytes: Uint8Array): { source: ModuleSu
   same(artifact.compiler, { ...NATIVE_COMPILER,
     settingsHash: reviewDigest("programmable.modules.compiler-settings.v1", NATIVE_SETTINGS),
     completeInputHash: reviewDigest("programmable.modules.compiler-input.v1", { language: "Solidity", sources, settings: NATIVE_SETTINGS }), reproducible: true }, "Pinned compiler/input");
-  if (artifact.schemaVersion === "programmable.modules.engine-build.v1") {
-    need(job.plan.schemaVersion === "programmable.modules.engine-build-plan.v1", "Engine build plan required");
-    verifyModuleEngineBuildArtifactV1(artifact, job.subject, job.plan, source);
-    return { source, artifact };
-  }
   need(job.plan.schemaVersion === "programmable.modules.native-build-plan.v1", "Native build plan required");
   const nativePlan = job.plan;
   for (const role of ["factory", "program"] as const) {

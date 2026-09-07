@@ -1,11 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { decodeFunctionData, encodeAbiParameters, encodeFunctionResult, encodeFunctionData, keccak256, parseAbi, parseAbiParameters } from 'viem';
+import { decodeFunctionData, encodeAbiParameters, encodeFunctionResult, encodeFunctionData, keccak256, parseAbi, parseAbiParameters, toHex } from 'viem';
 import { hexQuantity } from './core.mjs';
-import { createLifecyclePlan, assertLifecyclePlan, createLifecycleCollectorPlan, bindLifecycleLaunchReference } from './lifecycle-plan.mjs';
+import { createLifecyclePlan, assertLifecyclePlan, createLifecycleCollectorPlan, bindLifecycleLaunchReference, lifecycleLaunchCommitments } from './lifecycle-plan.mjs';
 import { publicationFixture, launchAction } from './publication-test-fixtures.mjs';
+import { publicationV2Fixture, nativeLaunchReference, lifecycleV2RpcFixture } from './lifecycle-v2-test-fixtures.mjs';
 import { publicationValidators } from './publication-shared.mjs';
-import { observePublicationOperation } from './publication-rpc.mjs';
+import { observePublicationOperation, preparePublicationRequest, observePublicationReceipt, revalidatePublicationRequest } from './publication-rpc.mjs';
 import { registryAbi } from './publication-plan.mjs';
 const h = n => `0x${n.toString(16).padStart(64, '0')}`;
 async function launchReference(f, selected = false, changes = {}) {
@@ -186,4 +187,136 @@ test('collector plan includes only actual bound distinct operation receipt recor
   canaries[1].buy.evidence.transaction.hash = canaries[0].buy.evidence.transaction.hash;
   assert.throws(() => createLifecycleCollectorPlan(f.identity, canaries), /Duplicate/);
   canaries[0].launch.evidence.status = 'pending'; assert.throws(() => createLifecycleCollectorPlan(f.identity, canaries), /Actual bound/);
+});
+
+const v2Ceilings = { maxGas: '2000000', maxFeePerGas: '1000', maxPriorityFeePerGas: '10', maxValue: '1000000000000000' };
+
+test('V2 plain launch uses the released selector and preview-bound 10/0 recipe, keeping contract source distinct', async () => {
+  const f = await publicationV2Fixture(), api = await publicationValidators(), action = launchAction(f);
+  const plan = await createLifecyclePlan({ ...f, modules: [], action, sourceState: { ...f.sourceState, sourceCommit: 'c'.repeat(40) } });
+  await assertLifecyclePlan(plan);
+  const step = plan.steps[0], call = decodeFunctionData({ abi: api.moduleNativeLaunchAbiFor(f.identity), data: step.data });
+  assert.equal(call.functionName, 'launch'); assert.equal(call.args[0].expectedRecipeHash, step.expectation.recipeHash);
+  assert.equal(step.expectation.platformFeeBps, 10); assert.equal(step.expectation.authorPoolFeeBps, 0);
+  assert.deepEqual(step.expectation.selectionEligibilityHashes, []); assert.deepEqual(step.expectation.families, []);
+  const expected = keccak256(encodeAbiParameters(parseAbiParameters('string,uint256,address,address,bytes32,bytes32[],uint16,uint16,bytes32[],(bytes32 packageId,address factory,bytes32 factoryCodeHash,bytes32 moduleCodeHash,uint32 callbackGas,bytes config)[]'),
+    ['programmable.module-mode.native-recipe.v2', 4663n, f.identity.contracts.hook.address, f.identity.contracts.registry.address,
+      keccak256(toHex('programmable.module-mode.native-economics.v2')), [], 0, 0, [], []]));
+  assert.equal(step.expectation.recipeHash, expected);
+  assert.equal(step.preReads.filter(read => read.functionName === 'previewRecipe').length, 1);
+  assert.equal(plan.sourceCommit, 'c'.repeat(40)); assert.equal(plan.identity.sourceCommit, f.identity.sourceCommit);
+  const legacy = await publicationFixture(), old = await createLifecyclePlan({ ...legacy, modules: [], action: launchAction(legacy) });
+  assert.notEqual(step.data.slice(0, 10), old.steps[0].data.slice(0, 10));
+  const changed = structuredClone(plan); changed.steps[0].arguments.expectedRecipeHash = h(99);
+  await assert.rejects(assertLifecyclePlan(changed), /plan differs/);
+});
+
+test('V2 module recipe commits the accepted eligibility digest and rejects an unaccepted or ineligible replacement', async () => {
+  const f = await publicationV2Fixture(), plan = await createLifecyclePlan({ ...f, modules: [f.module], action: launchAction(f, true) });
+  await assertLifecyclePlan(plan);
+  const step = plan.steps[0], review = f.module.manifest.manifest.runtimeBinding.feeEligibility;
+  assert.deepEqual(step.expectation.selectionEligible, [true]);
+  assert.deepEqual(step.expectation.selectionReviewDigests, [review.reviewDigest]);
+  assert.deepEqual(step.expectation.selectionEligibilityHashes, [keccak256(encodeAbiParameters(parseAbiParameters('bytes32,bool,bytes32'), [f.artifact.familyId, true, review.reviewDigest]))]);
+  assert.deepEqual(step.expectation.families, [f.artifact.familyId]); assert.equal(step.expectation.platformFeeBps, 30);
+  assert.equal(step.preReads.filter(read => read.functionName === 'familyFeeEligibility').length, 1);
+  const tampered = structuredClone(f.module); tampered.manifest.manifest.runtimeBinding.feeEligibility.reviewDigest = h(999);
+  await assert.rejects(createLifecyclePlan({ ...f, modules: [tampered], action: launchAction(f, true) }));
+  const changed = await publicationV2Fixture({ eligible: true, reviewDigest: h(908) });
+  const changedPlan = await createLifecyclePlan({ ...changed, modules: [changed.module], action: launchAction(changed, true) });
+  assert.notEqual(changedPlan.steps[0].expectation.recipeHash, step.expectation.recipeHash);
+  const rejected = await publicationV2Fixture({ eligible: false, reviewDigest: h(0) });
+  await assert.rejects(createLifecyclePlan({ ...rejected, modules: [rejected.module], action: launchAction(rejected, true) }), /eligible families/);
+});
+
+test('V2 per-selection reviews deduplicate eligible families without losing repeated-family commitments', async () => {
+  const f = await publicationV2Fixture(), launch = await nativeLaunchReference(f, true), step = launch.plan.steps[0];
+  const family = f.artifact.familyId, review = f.module.manifest.manifest.runtimeBinding.feeEligibility;
+  const selections = [step.expectation.selections[0], { ...step.expectation.selections[0], packageId: h(55), config: '0x1234' }];
+  const commitment = lifecycleLaunchCommitments(f.identity, f.owner, launch.plan.action, [family, family], selections, step.target, [review, review]);
+  assert.deepEqual(commitment.families, [family]); assert.deepEqual(commitment.selectionEligible, [true, true]);
+  assert.equal(commitment.selectionEligibilityHashes.length, 2); assert.equal(commitment.authorPoolFeeBps, 20);
+  assert.notEqual(commitment.recipeHash, step.expectation.recipeHash);
+  assert.throws(() => lifecycleLaunchCommitments(f.identity, f.owner, launch.plan.action, [family, family], selections, step.target,
+    [review, { eligible: false, reviewDigest: h(909) }]), /Same-family fee eligibility/);
+  assert.throws(() => lifecycleLaunchCommitments(f.identity, f.owner, launch.plan.action, [family], [selections[0]], step.target,
+    [{ eligible: true, reviewDigest: h(0) }]), /Invalid reviewed/);
+});
+
+test('V2 launch preparation and revalidation enforce independent policy and the same reviewed preview', async () => {
+  const fixture = await lifecycleV2RpcFixture('launch', true);
+  const prepared = await preparePublicationRequest(fixture.plan, 0, fixture.providers, v2Ceilings);
+  for (const [fault, message] of [['policy', /economics policy/], ['protocol', /economics rates/], ['authors', /economics rates/],
+    ['eligibility-pre', /familyFeeEligibility binding/], ['preview-recipe', /previewRecipe binding/]]) {
+    fixture.faults.add(fault);
+    await assert.rejects(revalidatePublicationRequest(fixture.plan, prepared, fixture.providers, v2Ceilings), message);
+    fixture.faults.delete(fault);
+  }
+  const api = await publicationValidators(), selector = encodeFunctionData({ abi: api.moduleNativeReadV2Abi, functionName: 'ECONOMICS_POLICY_ID' });
+  for (const role of ['launcher', 'hook', 'swapRouter', 'rewardLedger']) {
+    const calls = fixture.reads.filter(read => read.method === 'eth_call' && read.params[0].to === fixture.plan.identity.contracts[role].address && read.params[0].data === selector);
+    assert.ok(calls.length >= 2 && calls.every(call => call.params[1] === '0x110'));
+  }
+});
+
+for (const kind of ['buy', 'sell', 'buyExactOutput', 'sellExactOutput']) test(`V2 ${kind} binds funding, exact side, output bounds and actual trade receipt`, async () => {
+  const fixture = await lifecycleV2RpcFixture(kind), { plan, providers } = fixture, api = await publicationValidators();
+  const exactOutput = kind.endsWith('ExactOutput'), isBuy = kind.startsWith('buy');
+  const decoded = decodeFunctionData({ abi: api.moduleNativeRouterAbi, data: plan.steps[0].data });
+  assert.equal(decoded.args[1], isBuy); assert.equal(decoded.args[2], exactOutput ? 10000n : -10000n);
+  assert.equal(decoded.args[3], exactOutput ? 20000n : 20n); assert.equal(decoded.args[4].toLowerCase(), plan.owner);
+  assert.equal(plan.steps[0].value, isBuy ? exactOutput ? '20000' : '10000' : '0');
+  const prepared = await preparePublicationRequest(plan, 0, providers, v2Ceilings);
+  if (exactOutput) {
+    assert.equal(prepared.observation.simulatedResult.maximumInput, '20000');
+    assert.equal(prepared.observation.simulatedResult.refundNative, isBuy ? '5000' : '0');
+  }
+  const entry = fixture.include(prepared), evidence = await observePublicationReceipt(plan, entry, providers);
+  assert.equal(evidence.status, 'included-code-verified-unfinalized');
+  if (exactOutput) assert.equal(evidence.trade.refundNative, isBuy ? '5000' : '0');
+  for (const [paid, received] of exactOutput ? [[20001n, 10000n], [15000n, 9999n], [15000n, 10001n], [0n, 10000n]] : [[9999n, 100n], [10000n, 19n]]) {
+    fixture.setAmounts(paid, received);
+    await assert.rejects(observePublicationOperation(plan, 0, providers), /Swap amounts differ/);
+    await assert.rejects(observePublicationReceipt(plan, entry, providers), /Swap amounts differ/);
+  }
+  fixture.setAmounts(exactOutput ? 15000n : 10000n, exactOutput ? 10000n : 100n);
+  for (const fault of ['event-sign', 'event-side', 'event-recipient']) {
+    fixture.faults.add(fault); await assert.rejects(observePublicationReceipt(plan, entry, providers), /Trade event identity|Swap amounts differ/); fixture.faults.delete(fault);
+  }
+});
+
+test('V2 maximum input is explicit and bounded; V1 exact-output requests remain rejected', async () => {
+  const f = await publicationV2Fixture(), launch = await nativeLaunchReference(f);
+  const action = { kind: 'buyExactOutput', canaryKind: 'plain', token: launch.plan.steps[0].target, tokenCodeHash: h(7),
+    amount: '10000', maximumInput: '20000', deadline: launch.plan.action.deadline, launch };
+  for (const maximumInput of ['0', (1n << 127n).toString()]) await assert.rejects(createLifecyclePlan({ ...f, modules: [], action: { ...action, maximumInput } }), /maximum input|Maximum input/);
+  const wrongField = { ...action, minimumOut: '1' }; delete wrongField.maximumInput;
+  await assert.rejects(createLifecyclePlan({ ...f, modules: [], action: wrongField }), /Trade action/);
+  const legacy = await publicationFixture();
+  await assert.rejects(createLifecyclePlan({ ...legacy, modules: [], action }), /Unsupported native lifecycle/);
+});
+
+test('V2 receipt binds the exact eligibility event and immutable pool/ledger snapshot for both canaries', async () => {
+  for (const selected of [false, true]) {
+    const fixture = await lifecycleV2RpcFixture('launch', selected), { plan, providers } = fixture;
+    const prepared = await preparePublicationRequest(plan, 0, providers, v2Ceilings), entry = fixture.include(prepared);
+    assert.equal((await observePublicationReceipt(plan, entry, providers)).status, 'included-code-verified-unfinalized');
+    for (const [fault, message] of [['missing-economics', /exactly one NativeEconomicsBound/], ['duplicate-economics', /exactly one NativeEconomicsBound/],
+      ['event-policy', /economics event/], ['event-protocol', /economics event/], ['event-authors', /economics event/], ['event-families', /economics event/],
+      ['event-eligible', /economics event/], ['event-review', /economics event/], ['pool-fee', /pool or ledger fee/], ['ledger-fee', /pool or ledger fee/],
+      ['snapshot-eligible', /eligibility snapshot/], ['snapshot-review', /eligibility snapshot/], ['components', /fee components/], ['protocol-pips', /fee components/], ['lp-pips', /fee components/]]) {
+      fixture.faults.add(fault); await assert.rejects(observePublicationReceipt(plan, entry, providers), message); fixture.faults.delete(fault);
+    }
+  }
+});
+
+test('V2 subsequent trades keep the launch eligibility snapshot and exact sell approval', async () => {
+  const fixture = await lifecycleV2RpcFixture('approve', true), { plan, providers } = fixture, api = await publicationValidators();
+  const decoded = decodeFunctionData({ abi: api.moduleNativeApprovalAbi, data: plan.steps[0].data });
+  assert.deepEqual(decoded.args, [plan.identity.contracts.swapRouter.address, 10000n]);
+  assert.equal(plan.steps[0].value, '0');
+  assert.equal(plan.steps[0].preReads.filter(read => ['familyFeeEligibility', 'previewRecipe'].includes(read.functionName)).length, 0);
+  const prepared = await preparePublicationRequest(plan, 0, providers, v2Ceilings), entry = fixture.include(prepared);
+  assert.equal((await observePublicationReceipt(plan, entry, providers)).status, 'included-code-verified-unfinalized');
+  fixture.faults.add('snapshot-review'); await assert.rejects(observePublicationReceipt(plan, entry, providers), /eligibility snapshot/);
 });

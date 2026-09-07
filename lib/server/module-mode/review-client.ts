@@ -6,8 +6,9 @@ import { bindModuleEngineReleaseIdentity, computeModuleEngineHostManifestHash, t
 import { randomBytes } from "node:crypto";
 import { getAddress, isAddress } from "viem";
 import { isWebsiteAdminWallet } from "@/lib/admin-access";
-import configuredRelease from "@/config/module-mode/robinhood.preview.json";
+import configuredNativeReviewRelease from "@/config/module-mode/review-release.json";
 import configuredEngineReviewRelease from "@/config/module-engine/review-release.json";
+import { computeModuleModeReleaseDigest, moduleHash, moduleRecord, MODULE_MODE_SOURCE_VERSION_V2 } from "@/lib/module-mode/release";
 import { isReviewId, parseReviewAttempt, parseReviewJob, parseReviewPlan, reviewDigest, reviewRecord, parseReviewQueueItem, type ReviewDetail } from "@/lib/module-mode/review-contract";
 import { nativeCanonicalJson } from "@/lib/module-mode/native-catalog";
 import { unsupportedManagementCapabilities } from "@/lib/module-mode/management-manifest";
@@ -43,6 +44,18 @@ async function bytes(input: Request | Response, maximum: number) {
 }
 function parsed(value: Uint8Array, maximum: number) { return parseStrictJson(new TextDecoder("utf-8", { fatal: true }).decode(value), { maximumBytes: maximum, maximumDepth: 40 }); }
 function jsonHeader(input: Request | Response) { if (input.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() !== "application/json") fail(415, "MODULE_REVIEW_JSON_REQUIRED"); }
+
+/** Closed server identity only; installing it does not authorize review or public activation. */
+export function bindModuleModeReviewReleaseIdentity(value: unknown): ModuleModeHostReleaseIdentity {
+  // The existing digest binder validates both generations, every pin and the V2 economics policy.
+  // It also rejects accessors before the source-version read below.
+  const digest = computeModuleModeReleaseDigest(value);
+  const r = moduleRecord(value, ["schemaVersion", "sourceVersion", "chainId", "sourceCommit", "startBlock",
+    "minimumInitialBuyNative", "tokenCreationCodeHash", "finalityPolicy", "contracts", "releaseDigest",
+    ...((value as { sourceVersion: unknown }).sourceVersion === MODULE_MODE_SOURCE_VERSION_V2 ? ["economicsPolicyId"] : [])], "review.releaseIdentity");
+  if (moduleHash(r.releaseDigest, "review.releaseDigest") !== digest) throw new Error("Native review release identity differs.");
+  return r as unknown as ModuleModeHostReleaseIdentity;
+}
 
 export function createModuleReviewClient(input: {
   authenticator: WalletPrincipalAuthenticatorV1; backendBaseUrl: string; websiteToken: string; bffAssertionKeyV2: string;
@@ -120,8 +133,9 @@ export function createModuleReviewClient(input: {
           if (!same(raw, expected)) fail(400, "MODULE_REVIEW_MANIFEST_BUILD_MISMATCH");
           return computeModuleEngineHostManifestHash(expected);
         }
-        const release = input.releaseIdentity ?? configuredRelease;
-        if (!release || typeof release !== "object" || typeof (release as { releaseDigest?: unknown }).releaseDigest !== "string") fail(409, "MODULE_REVIEW_HOST_RELEASE_UNAVAILABLE");
+        if (input.releaseIdentity === null || input.releaseIdentity === undefined) fail(409, "MODULE_REVIEW_HOST_RELEASE_UNAVAILABLE");
+        // Keep Native configuration failures local to Native manifest checks and acceptance.
+        const release = bindModuleModeReviewReleaseIdentity(input.releaseIdentity);
         const raw = userInput(() => parsed(Buffer.from(text), 2 * 1024 * 1024));
         const manifest = reviewRecord(reviewRecord(raw).manifest);
         const binding = reviewRecord(manifest.runtimeBinding);
@@ -129,7 +143,7 @@ export function createModuleReviewClient(input: {
           ...(Object.hasOwn(binding, "feeEligibility") ? { feeEligibility: binding.feeEligibility } : {}) };
         const artifact = detail.job.artifact;
         if (nativeBinding.familyId !== artifact.familyId || nativeBinding.packageId !== artifact.packageId || nativeBinding.factoryCodeHash !== artifact.factory.runtimeCodeHash || nativeBinding.moduleCodeHash !== artifact.program.runtimeCodeHash || nativeBinding.callbackGas !== artifact.callbackGas) fail(400, "MODULE_REVIEW_MANIFEST_BUILD_MISMATCH");
-        const expected = userInput(() => createModuleModeHostManifest({ release: release as ModuleModeHostReleaseIdentity, definition: manifest.catalogDefinition as ModuleModeCatalogDefinition, nativeBinding: nativeBinding as Parameters<typeof createModuleModeHostManifest>[0]["nativeBinding"], descriptor: detail.source.descriptor }));
+        const expected = userInput(() => createModuleModeHostManifest({ release, definition: manifest.catalogDefinition as ModuleModeCatalogDefinition, nativeBinding: nativeBinding as Parameters<typeof createModuleModeHostManifest>[0]["nativeBinding"], descriptor: detail.source.descriptor }));
         const plan = detail.job.plan;
         if (!plan || plan.configurationCodec !== "programmable.native-abi@1" || artifact.configurationCodec !== plan.configurationCodec || !same(plan.programAbi, artifact.programAbi) || !same(expected.manifest.configuration.abiMapping, plan.programAbi) || !same(expected.manifest.catalogDefinition.programAbi, plan.programAbi)) fail(400, "MODULE_REVIEW_MANIFEST_ABI_MISMATCH");
         if (!same(raw, expected) || unsupportedManagementCapabilities(expected.manifest.management).length) fail(400, "MODULE_REVIEW_MANIFEST_INVALID");
@@ -186,7 +200,7 @@ export function createModuleReviewClient(input: {
 let client: ReturnType<typeof createModuleReviewClient> | undefined;
 export async function moduleReviewRoute(request: Request, operation: Operation, id?: string) {
   try {
-    client ??= createModuleReviewClient({ authenticator: createPrivyWalletPrincipalAuthenticatorV1(), backendBaseUrl: process.env.PROGRAMMABLE_CUSTOM_LAUNCH_API_BASE_URL ?? "", websiteToken: process.env.PROGRAMMABLE_CUSTOM_LAUNCH_WEBSITE_TOKEN ?? "", bffAssertionKeyV2: process.env.PROGRAMMABLE_CUSTOM_LAUNCH_BFF_ASSERTION_KEY_V2 ?? "", fetchBackend: fetch, engineReleaseIdentity: configuredEngineReviewRelease });
+    client ??= createModuleReviewClient({ authenticator: createPrivyWalletPrincipalAuthenticatorV1(), backendBaseUrl: process.env.PROGRAMMABLE_CUSTOM_LAUNCH_API_BASE_URL ?? "", websiteToken: process.env.PROGRAMMABLE_CUSTOM_LAUNCH_WEBSITE_TOKEN ?? "", bffAssertionKeyV2: process.env.PROGRAMMABLE_CUSTOM_LAUNCH_BFF_ASSERTION_KEY_V2 ?? "", fetchBackend: fetch, releaseIdentity: configuredNativeReviewRelease, engineReleaseIdentity: configuredEngineReviewRelease });
     return await client.handle(request, operation, id);
   } catch { return response(503, { error: { code: "MODULE_REVIEW_SERVICE_UNAVAILABLE" } }); }
 }

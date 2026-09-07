@@ -18,12 +18,33 @@ export function predictLifecycleToken(identity, owner, action) {
     [action.name, action.symbol, 18, identity.contracts.launcher.address, graffiti]));
   return { token: getCreate2Address({ from: identity.contracts.tokenFactory.address, salt, bytecodeHash: identity.tokenCreationCodeHash }).toLowerCase(), graffiti };
 }
-/** Exact 9a native-hook/runtime formulas. Configuration bytes and creator fee rates are inside the recipe. */
-export function lifecycleLaunchCommitments(identity, owner, action, families, selections, token) {
+/** Released hook/runtime formulas. V2 additionally commits each selection's reviewed eligibility. */
+export function lifecycleLaunchCommitments(identity, owner, action, families, selections, token, feeEligibility = []) {
   const pins = identity.contracts;
   const poolId = keccak256(encodeAbiParameters(parseAbiParameters('address,address,uint24,int24,address'),
     ['0x0000000000000000000000000000000000000000', token, 0, 200, pins.hook.address]));
-  const recipeHash = keccak256(encodeAbiParameters(parseAbiParameters(`string,uint256,address,address,uint16,uint16,bytes32[],${SELECTIONS}`),
+  let recipeHash, economics;
+  if (identity.sourceVersion === 'module-native-v2') {
+    need(feeEligibility.length === selections.length && families.length === selections.length, 'Reviewed eligibility for every V2 selection required');
+    const reviews = new Map();
+    const selectionEligibilityHashes = feeEligibility.map((review, index) => {
+      exactKeys(review, ['eligible', 'reviewDigest'], 'Reviewed V2 fee eligibility');
+      const reviewDigest = bytes(review.reviewDigest);
+      need(typeof review.eligible === 'boolean' && reviewDigest.length === 66 && (!review.eligible || BigInt(reviewDigest) !== 0n), 'Invalid reviewed V2 fee eligibility');
+      const family = hash(families[index]);
+      if (reviews.has(family)) same(reviews.get(family), review, 'Same-family fee eligibility');
+      reviews.set(family, review);
+      return keccak256(encodeAbiParameters(parseAbiParameters('bytes32,bool,bytes32'), [family, review.eligible, review.reviewDigest]));
+    });
+    families = [...reviews.entries()].filter(([, review]) => review.eligible).map(([family]) => family).sort();
+    need(families.length <= 8 && (action.canaryKind === 'plain' ? families.length === 0 : families.length > 0), 'V2 module canary requires one to eight eligible families');
+    economics = { economicsPolicyId: identity.economicsPolicyId, protocolFeeBps: 10, authorPoolFeeBps: families.length ? 20 : 0,
+      platformFeeBps: families.length ? 30 : 10, selectionEligibilityHashes,
+      selectionEligible: feeEligibility.map(review => review.eligible), selectionReviewDigests: feeEligibility.map(review => review.reviewDigest) };
+    recipeHash = keccak256(encodeAbiParameters(parseAbiParameters(`string,uint256,address,address,bytes32,bytes32[],uint16,uint16,bytes32[],${SELECTIONS}`),
+      ['programmable.module-mode.native-recipe.v2', 4663n, pins.hook.address, pins.registry.address, identity.economicsPolicyId,
+        selectionEligibilityHashes, action.creatorFeeBps, action.creatorFeeBps, families, selections]));
+  } else recipeHash = keccak256(encodeAbiParameters(parseAbiParameters(`string,uint256,address,address,uint16,uint16,bytes32[],${SELECTIONS}`),
     ['programmable.module-mode.native-recipe.v1', 4663n, pins.hook.address, pins.registry.address, action.creatorFeeBps, action.creatorFeeBps, families, selections]));
   const programHash = keccak256(encodeAbiParameters(parseAbiParameters(`bytes32,${SELECTIONS}`), [keccak256(toHex('programmable.module-mode.native-program.v1')), selections]));
   const launchKey = keccak256(encodeAbiParameters(parseAbiParameters('bytes32,uint256,address,address,(address source,address launchWallet,address token,address poolManager,bytes32 poolId,bytes32 recipeHash,bytes32 programHash)'),
@@ -33,7 +54,7 @@ export function lifecycleLaunchCommitments(identity, owner, action, families, se
   const creatorConfigurationHash = keccak256(encodeAbiParameters(parseAbiParameters('address[],uint16[]'), [action.creatorWallets, action.creatorSharesBps]));
   return { poolId, recipeHash, programHash, launchKey, metadataHash, creatorConfigurationHash, creatorFeeBps: action.creatorFeeBps,
     creatorWallets: action.creatorWallets.map(value => address(value)), creatorSharesBps: action.creatorSharesBps,
-    selections: jsonSafe(selections), families };
+    selections: jsonSafe(selections), families, ...(economics ? economics : {}) };
 }
 /** Local consistency checks never turn receipt JSON into chain authority; the live observer re-reads this hash. */
 export async function bindLifecycleLaunchReference(reference, identity, owner, modules, canaryKind, token) {
@@ -56,11 +77,13 @@ export async function bindLifecycleLaunchReference(reference, identity, owner, m
   return step.expectation;
 }
 export async function createLifecyclePlan({ identity, owner, modules = [], action, sourceState }) {
-  await bindIdentity(identity); owner = address(owner); need(Array.isArray(modules) && modules.length <= 8, 'At most eight reviewed modules per canary');
+  await bindIdentity(identity); owner = address(owner); const v2 = identity.sourceVersion === 'module-native-v2';
+  need(Array.isArray(modules) && modules.length <= (v2 ? 16 : 8), 'Reviewed module count exceeds the native source limit');
   const checked = []; for (const input of modules) checked.push(await bindPublicationModule(input, identity, owner));
-  need(new Set(checked.map(m => m.familyId)).size === checked.length, 'Duplicate module family');
-  checked.sort((a, b) => a.familyId.localeCompare(b.familyId));
+  need(new Set(checked.map(m => v2 ? m.packageId : m.familyId)).size === checked.length, v2 ? 'Duplicate module package' : 'Duplicate module family');
+  checked.sort((a, b) => a.familyId.localeCompare(b.familyId) || a.packageId.localeCompare(b.packageId));
   const api = await publicationValidators(), pins = identity.contracts;
+  const launchAbi = api.moduleNativeLaunchAbiFor(identity), readAbi = api.moduleNativeReadAbiFor(identity);
   const preReads = checked.map(module => readCondition(pins.registry.address, registryAbi, 'getRevision', [module.packageId], {
     familyId: module.familyId, factory: module.factory, factoryCodeHash: module.factoryCodeHash, moduleCodeHash: module.moduleCodeHash,
     manifestHash: module.manifestHash, callbackGas: module.callbackGas, enabled: true,
@@ -95,20 +118,29 @@ export async function createLifecyclePlan({ identity, owner, modules = [], actio
     need(BigInt(uint(action.initialBuyNative, 'initial buy', true)) >= BigInt(identity.minimumInitialBuyNative), 'Initial buy is below the released minimum');
     uint(action.minimumTokenOut, 'minimum token output', true); uint(action.deadline, 'deadline', true);
     const predicted = predictLifecycleToken(identity, owner, action);
-    const commitments = lifecycleLaunchCommitments(identity, owner, action, checked.map(item => item.familyId), selections, predicted.token);
+    const commitments = lifecycleLaunchCommitments(identity, owner, action, checked.map(item => item.familyId), selections, predicted.token, checked.map(item => item.feeEligibility));
+    if (v2) {
+      for (const family of new Set(checked.map(item => item.familyId))) {
+        const review = checked.find(item => item.familyId === family).feeEligibility;
+        preReads.push(readCondition(pins.registry.address, readAbi, 'familyFeeEligibility', [family], [review.eligible, review.reviewDigest]));
+      }
+      preReads.push(readCondition(pins.hook.address, readAbi, 'previewRecipe', [action.creatorFeeBps, action.creatorFeeBps, selections], [commitments.recipeHash, commitments.families]));
+    }
     const parameters = { name: action.name, symbol: action.symbol, buyCreatorFeeBps: action.creatorFeeBps, sellCreatorFeeBps: action.creatorFeeBps,
       creatorSalt: action.creatorSalt, metadata: action.metadata, creatorWallets: action.creatorWallets, creatorSharesBps: action.creatorSharesBps,
-      modules: selections, moduleFunding: funding, initialBuyNative: BigInt(action.initialBuyNative), minimumInitialTokenOut: BigInt(action.minimumTokenOut), deadline: BigInt(action.deadline) };
+      modules: selections, moduleFunding: funding, initialBuyNative: BigInt(action.initialBuyNative), minimumInitialTokenOut: BigInt(action.minimumTokenOut), deadline: BigInt(action.deadline),
+      ...(v2 ? { expectedRecipeHash: commitments.recipeHash } : {}) };
     step = { kind: 'launch', label: `Launch ${action.canaryKind} canary ${action.name}`, sender: owner, to: pins.launcher.address,
       value: (BigInt(action.initialBuyNative) + funding.reduce((a, b) => a + b, 0n)).toString(), target: predicted.token, functionName: 'launch', arguments: jsonSafe(parameters),
-      data: encodeFunctionData({ abi: api.moduleNativeLaunchAbi, functionName: 'launch', args: [parameters] }),
-      result: null, preReads: [...preReads, readCondition(pins.launcher.address, api.moduleNativeLaunchAbi, 'predictTokenAddress', [action.name, action.symbol, owner, action.creatorSalt], [predicted.token, predicted.graffiti])],
+      data: encodeFunctionData({ abi: launchAbi, functionName: 'launch', args: [parameters] }),
+      result: null, preReads: [...preReads, readCondition(pins.launcher.address, launchAbi, 'predictTokenAddress', [action.name, action.symbol, owner, action.creatorSalt], [predicted.token, predicted.graffiti])],
       postReads: [], newCode: [], requiredCode, deadline: action.deadline,
       expectation: { ...commitments, fundingHash: keccak256(encodeAbiParameters(parseAbiParameters('uint256[]'), [funding])), totalFunding: funding.reduce((a, b) => a + b, 0n).toString(), canaryKind: action.canaryKind, token: predicted.token, initialBuyNative: action.initialBuyNative, minimumTokenOut: action.minimumTokenOut } };
-  } else if (['buy', 'approve', 'sell'].includes(action.kind)) {
-    exactKeys(action, action.kind === 'approve' ? ['kind', 'canaryKind', 'token', 'amount', 'tokenCodeHash', 'launch'] : ['kind', 'canaryKind', 'token', 'amount', 'minimumOut', 'deadline', 'tokenCodeHash', 'launch'], 'Trade action');
+  } else if (['buy', 'approve', 'sell', ...(v2 ? ['buyExactOutput', 'sellExactOutput'] : [])].includes(action.kind)) {
+    const exactOutput = action.kind.endsWith('ExactOutput'), isBuy = action.kind.startsWith('buy');
+    exactKeys(action, action.kind === 'approve' ? ['kind', 'canaryKind', 'token', 'amount', 'tokenCodeHash', 'launch'] : ['kind', 'canaryKind', 'token', 'amount', exactOutput ? 'maximumInput' : 'minimumOut', 'deadline', 'tokenCodeHash', 'launch'], 'Trade action');
     need(['plain', 'modules'].includes(action.canaryKind) && (action.canaryKind === 'plain' ? checked.length === 0 : checked.length > 0), 'Trade canary kind differs from modules');
-    const token = address(action.token), amount = BigInt(uint(action.amount, 'exact input amount', true));
+    const token = address(action.token), amount = BigInt(uint(action.amount, exactOutput ? 'exact output amount' : 'exact input amount', true));
     const launchExpectation = await bindLifecycleLaunchReference(action.launch, identity, owner, modules, action.canaryKind, token);
     need(amount < 1n << 127n, 'Amount exceeds native engine amount bound'); requiredCode.push({ address: token, runtimeCodeHash: hash(action.tokenCodeHash) });
     if (action.kind === 'approve') {
@@ -116,16 +148,18 @@ export async function createLifecyclePlan({ identity, owner, modules = [], actio
       step = { kind: 'approve', label: `Approve exactly ${amount} token units for the native router`, sender: owner, to: token, value: '0', target: token,
         functionName: 'approve', arguments: jsonSafe(args), data: encodeFunctionData({ abi: api.moduleNativeApprovalAbi, functionName: 'approve', args }),
         result: encodeFunctionResult({ abi: api.moduleNativeApprovalAbi, functionName: 'approve', result: true }), preReads, requiredCode, newCode: [],
-        postReads: [readCondition(token, api.moduleNativeReadAbi, 'allowance', [owner, pins.swapRouter.address], amount)], expectation: { ...launchExpectation, token, canaryKind: action.canaryKind } };
+        postReads: [readCondition(token, readAbi, 'allowance', [owner, pins.swapRouter.address], amount)], expectation: { ...launchExpectation, token, canaryKind: action.canaryKind } };
     } else {
-      uint(action.minimumOut, 'minimum output', true); uint(action.deadline, 'deadline', true);
-      const args = [token, action.kind === 'buy', -amount, BigInt(action.minimumOut), owner, BigInt(action.deadline)];
-      step = { kind: action.kind, label: `${action.kind === 'buy' ? 'Buy' : 'Sell'} ${action.canaryKind} canary`, sender: owner, to: pins.swapRouter.address,
-        value: action.kind === 'buy' ? amount.toString() : '0', target: token, functionName: 'swap', arguments: jsonSafe(args),
+      const limit = uint(exactOutput ? action.maximumInput : action.minimumOut, exactOutput ? 'maximum input' : 'minimum output', true); uint(action.deadline, 'deadline', true);
+      if (exactOutput) need(BigInt(limit) < 1n << 127n, 'Maximum input exceeds native engine amount bound');
+      const args = [token, isBuy, exactOutput ? amount : -amount, BigInt(limit), owner, BigInt(action.deadline)];
+      step = { kind: action.kind, label: `${isBuy ? 'Buy' : 'Sell'} ${action.canaryKind} canary${exactOutput ? ' with exact output' : ''}`, sender: owner, to: pins.swapRouter.address,
+        value: isBuy ? (exactOutput ? limit : amount.toString()) : '0', target: token, functionName: 'swap', arguments: jsonSafe(args),
         data: encodeFunctionData({ abi: api.moduleNativeRouterAbi, functionName: 'swap', args }), result: null, preReads, postReads: [], newCode: [], requiredCode,
-        deadline: action.deadline, expectation: { ...launchExpectation, token, canaryKind: action.canaryKind, amount: amount.toString(), minimumOut: action.minimumOut } };
+        deadline: action.deadline, expectation: { ...launchExpectation, token, canaryKind: action.canaryKind, amount: amount.toString(),
+          ...(exactOutput ? { maximumInput: limit } : { minimumOut: action.minimumOut }) } };
     }
-  } else throw new Error('Only native launch, buy, exact approval and sell operations are supported');
+  } else throw new Error('Unsupported native lifecycle operation for this source version');
   const body = { schemaVersion: LIFECYCLE_OPERATOR_SCHEMA, chainId: 4663, sourceCommit: sourceState.sourceCommit, sourceTree: sourceState.sourceTree,
     sourceClean: sourceState.sourceClean, identity, owner, modules, action, steps: [step] };
   return { ...body, planDigest: digest(LIFECYCLE_OPERATOR_SCHEMA, body) };

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { validateModuleSubmissionRequest } from "../packages/classic-modules/src/open-transport.mjs";
 import frozen from "./fixtures/module-engine-review-build.json";
 import configuredNativeRelease from "../config/module-mode/robinhood.preview.json";
@@ -14,16 +15,23 @@ import { moduleEngineStandardInputV1, parseEngineReviewArtifact, validateModuleE
 import { parseReviewSubject, reviewDigest, type ReviewJob } from "../lib/module-mode/review-contract";
 import { computeModuleModeHostManifestHash, createModuleModeHostManifest, type ModuleModeHostReleaseIdentity } from "../lib/server/module-mode/catalog";
 import { computeModuleReviewDecisionDigestV1, type ModuleReviewDecisionCommandV1, type ModuleReviewDecisionRecordV1 } from "../lib/server/module-mode/review-decision-wire-v1";
+import { computeModuleModeReleaseDigest } from "../lib/module-mode/release";
 
-const installed = vi.hoisted(() => ({ engine: null as unknown, authenticate: vi.fn() }));
+const installed = vi.hoisted(() => ({ engine: null as unknown, native: null as unknown, authenticate: vi.fn() }));
 vi.mock("server-only", () => ({}));
 vi.mock("@/config/module-engine/review-release.json", () => ({ get default() { return installed.engine; } }));
+vi.mock("@/config/module-mode/review-release.json", () => ({ get default() { return installed.native; } }));
 vi.mock("@/lib/server/creator-article/wallet-principal.server", () => ({
   createPrivyWalletPrincipalAuthenticatorV1: () => ({ authenticate: installed.authenticate }),
   WalletPrincipalAuthenticationErrorV1: class extends Error {},
 }));
 
 const reviewer = WEBSITE_ADMIN_WALLET.toLowerCase() as `0x${string}`;
+const nativeIdentityKeys = ["schemaVersion", "sourceVersion", "chainId", "sourceCommit", "startBlock",
+  "minimumInitialBuyNative", "tokenCreationCodeHash", "finalityPolicy", "contracts", "releaseDigest"];
+const nativeV1Identity = Object.fromEntries(nativeIdentityKeys.map(key => [key, configuredNativeRelease[key as keyof typeof configuredNativeRelease]]));
+const nativeV2IdentityBytes = readFileSync(new URL("../config/module-mode/review-release.json", import.meta.url));
+const nativeV2Identity = JSON.parse(nativeV2IdentityBytes.toString()) as ModuleModeHostReleaseIdentity;
 
 describe("source-bound Quote dependency environment", () => {
   it("preserves the ordinary protected artifact and exact plan digest", () => {
@@ -107,7 +115,7 @@ function routeSetup(f: Pick<ReturnType<typeof engineReviewFixture>, "source" | "
 }
 
 beforeEach(() => {
-  vi.resetModules(); installed.engine = null;
+  vi.resetModules(); installed.engine = null; installed.native = structuredClone(nativeV1Identity);
   installed.authenticate.mockReset().mockResolvedValue({ privyUserId: "did:privy:test-reviewer", privySessionId: "test-session", wallets: [reviewer] });
   vi.stubEnv("PROGRAMMABLE_CUSTOM_LAUNCH_API_BASE_URL", "https://review.example.invalid");
   vi.stubEnv("PROGRAMMABLE_CUSTOM_LAUNCH_WEBSITE_TOKEN", serviceToken);
@@ -167,5 +175,113 @@ describe("installed Engine review identity at the actual admin BFF routes", () =
     const hash = computeModuleModeHostManifestHash(manifest);
     expect((await route.manifest(manifest)).status).toBe(200);
     expect((await route.accept(manifest, hash)).status).toBe(201);
+  });
+});
+
+describe("installed Native review identity at the actual admin BFF routes", () => {
+  function nativeReviewFixture(release = nativeV2Identity) {
+    const f = moduleReviewAdminFixture();
+    // Only the adopted host identity is actual. Source/build/eligibility are synthetic test inputs.
+    const binding = { ...f.binding, ...(release.sourceVersion === "module-native-v2"
+      ? { feeEligibility: { eligible: true, reviewDigest: `0x${"7".repeat(64)}` as const } } : {}) };
+    const manifest = createModuleModeHostManifest({ release, definition: f.definition, nativeBinding: binding, descriptor: f.source.descriptor });
+    return { ...f, manifest, manifestHash: computeModuleModeHostManifestHash(manifest) };
+  }
+
+  it("installs the exact adopted NativeV2 identity without public activation fields", async () => {
+    const { bindModuleModeReviewReleaseIdentity } = await import("../lib/server/module-mode/review-client");
+    expect(nativeV2IdentityBytes.byteLength).toBe(3401);
+    expect(createHash("sha256").update(nativeV2IdentityBytes).digest("hex")).toBe("36100920548506582be173ef0aeef392b413602fc7f4490c1c758829097aae1e");
+    expect(bindModuleModeReviewReleaseIdentity(nativeV2Identity)).toEqual(nativeV2Identity);
+    expect(nativeV2Identity.releaseDigest).toBe("0xe81f122e0bd21e0984e21c71ffce56f315e82f22e485cc19e0e490d4d5b7bd49");
+    expect(nativeV2Identity.sourceCommit).toBe("17b64b6613108dbc6ffdf767607bde6ea33343cd");
+    expect(nativeV2Identity).not.toHaveProperty("enabled");
+    expect(nativeV2Identity).not.toHaveProperty("lifecycleEvidenceDigest");
+    expect(bindModuleModeReviewReleaseIdentity(nativeV1Identity)).toEqual(nativeV1Identity);
+    expect(configuredNativeRelease.sourceVersion).toBe("module-native-v1");
+  });
+
+  it("uses the separately installed V2 identity for manifest checking and authenticated acceptance", async () => {
+    installed.native = nativeV2Identity;
+    const f = nativeReviewFixture(), route = routeSetup(f);
+    expect((await route.manifest(f.manifest)).status).toBe(200);
+    expect((await route.accept(f.manifest, f.manifestHash)).status).toBe(201);
+    const writes = route.backend.mock.calls.filter(([, init]) => init?.method === "POST");
+    expect(writes).toHaveLength(1);
+    expect(String(writes[0][0])).toBe(`https://review.example.invalid/v1/wallet-admin/module-review/${f.subject.submissionId}/decisions`);
+    const headers = new Headers(writes[0][1]?.headers);
+    expect(headers.get("Authorization")).toBe(`Bearer ${serviceToken}`);
+    expect(headers.get("X-Programmable-Bff-Assertion-Signature")).toMatch(/^hmac-sha256:[a-f0-9]{64}$/);
+    expect(installed.authenticate).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps an absent Native slot closed without blocking the original source download", async () => {
+    installed.native = null;
+    const f = nativeReviewFixture(), route = routeSetup(f);
+    for (const result of [await route.manifest(f.manifest), await route.accept(f.manifest, f.manifestHash)]) {
+      expect(result.status).toBe(409);
+      expect(await result.json()).toEqual({ error: { code: "MODULE_REVIEW_HOST_RELEASE_UNAVAILABLE" } });
+    }
+    const { GET } = await import("../app/api/admin/modules/[id]/source/route");
+    const result = await GET(new Request(`https://programmable.market/api/admin/modules/${f.subject.submissionId}/source?walletAddress=${reviewer}`), { params: Promise.resolve({ id: f.subject.submissionId }) });
+    expect(result.status).toBe(200); expect(await result.json()).toEqual(f.source);
+    expect(route.backend.mock.calls.every(([, init]) => init?.method === "GET")).toBe(true);
+  });
+
+  it.each(["sourceVersion", "schemaVersion", "sourceCommit", "chainId", "economicsPolicyId", "missingEconomics", "sourceUrl", "activation", "proof", "pin", "duplicatePin", "accessor"])("rejects invalid installed Native %s before acceptance", async field => {
+    const release = structuredClone(nativeV2Identity) as unknown as Record<string, unknown>;
+    if (field === "sourceVersion") release.sourceVersion = "module-native-v3";
+    if (field === "schemaVersion") release.schemaVersion = "programmable.module-mode-source.v1";
+    if (field === "sourceCommit") release.sourceCommit = "f".repeat(40);
+    if (field === "chainId") release.chainId = 1;
+    if (field === "economicsPolicyId") release.economicsPolicyId = `0x${"8".repeat(64)}`;
+    if (field === "missingEconomics") delete release.economicsPolicyId;
+    if (field === "sourceUrl") release.sourceUrl = "https://caller.example.invalid/source.json";
+    if (field === "activation") { release.enabled = true; release.status = "active"; }
+    if (field === "proof") release.lifecycleEvidenceDigest = `0x${"8".repeat(64)}`;
+    const pins = release.contracts as Record<string, { address: string; runtimeCodeHash: string }>;
+    if (field === "pin") pins.registry.runtimeCodeHash = `0x${"8".repeat(64)}`;
+    if (field === "duplicatePin") pins.registry.address = pins.hook.address;
+    const accessor = vi.fn(() => "module-native-v2");
+    if (field === "accessor") Object.defineProperty(release, "sourceVersion", { enumerable: true, get: accessor });
+    installed.native = release;
+    const f = nativeReviewFixture(), route = routeSetup(f);
+    for (const result of [await route.manifest(f.manifest), await route.accept(f.manifest, f.manifestHash)]) {
+      expect(result.status).toBe(503);
+      expect(await result.json()).toEqual({ error: { code: "MODULE_REVIEW_SERVICE_UNAVAILABLE" } });
+    }
+    expect(accessor).not.toHaveBeenCalled();
+    expect(route.backend.mock.calls.every(([, init]) => init?.method === "GET")).toBe(true);
+  });
+
+  it("rejects V1 manifests, caller release overrides and a correctly rehashed alternate V2 source", async () => {
+    installed.native = nativeV2Identity;
+    const f = nativeReviewFixture(), route = routeSetup(f);
+    const v1 = nativeReviewFixture(nativeV1Identity as ModuleModeHostReleaseIdentity);
+    expect((await route.manifest(v1.manifest)).status).toBe(400);
+    expect((await route.manifest(f.manifest, { releaseIdentity: nativeV2Identity })).status).toBe(400);
+    const changedRelease = { ...nativeV2Identity, sourceCommit: "e".repeat(40) };
+    changedRelease.releaseDigest = computeModuleModeReleaseDigest(changedRelease);
+    const changed = nativeReviewFixture(changedRelease);
+    expect((await route.manifest(changed.manifest)).status).toBe(400);
+    expect((await route.accept(changed.manifest, changed.manifestHash)).status).toBe(400);
+    expect(route.backend.mock.calls.every(([, init]) => init?.method === "GET")).toBe(true);
+  });
+
+  it("rechecks the exact V2 fee-eligibility tuple on acceptance", async () => {
+    installed.native = nativeV2Identity;
+    const f = nativeReviewFixture(), route = routeSetup(f), changed = structuredClone(f.manifest);
+    expect((await route.manifest(f.manifest)).status).toBe(200);
+    changed.manifest.runtimeBinding.feeEligibility = { eligible: false, reviewDigest: `0x${"0".repeat(64)}` };
+    expect((await route.accept(changed, f.manifestHash)).status).toBe(400);
+    expect(route.backend.mock.calls.every(([, init]) => init?.method === "GET")).toBe(true);
+  });
+
+  it.each([null, { sourceVersion: "invalid" }])("preserves Engine checking and acceptance when Native configuration is %j", async native => {
+    installed.native = native;
+    const f = engineReviewFixture(); installed.engine = f.release;
+    const route = routeSetup(f);
+    expect((await route.manifest(f.manifest)).status).toBe(200);
+    expect((await route.accept(f.manifest, f.manifestHash)).status).toBe(201);
   });
 });

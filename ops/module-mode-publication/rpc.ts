@@ -1,6 +1,7 @@
 import { decodeEventLog, decodeFunctionResult, encodeFunctionData, keccak256, type Address, type Hex } from "viem";
 import { moduleAddress, moduleBytes, moduleHash } from "../../lib/module-mode/release";
-import { CREATE2_DEPLOYER, REGISTRY_ABI, assertPublicationPlan, type PublicationPlan, type PublicationCall } from "./core";
+import { CREATE2_DEPLOYER, REGISTRY_ABI, REGISTRY_V2_ABI, assertPublicationPlan, type PublicationPlan, type PublicationCall } from "./core";
+import { bindNativeFeeEligibility } from "../../lib/module-mode/native-catalog";
 import { need, same, exactJson, acceptedDecision, type AuthenticatedReview } from "./review";
 
 export interface PublicationProvider { providerId: string; trustDomain: string; endpointCommitment: string; rpc(method: string, parameters: unknown[]): Promise<unknown> }
@@ -35,9 +36,9 @@ export async function code(providers: PublicationProvider[], address: Address, b
   const value = moduleBytes(await equalRead(providers, "eth_getCode", [address, block]), "publication.code");
   need(value !== "0x" && keccak256(value) === hash, "Runtime code differs from the pinned reviewed artifact");
 }
-async function getter(providers: PublicationProvider[], target: Address, name: "owner" | "families" | "getRevision", args: readonly Hex[], block: Hex) {
-  const data = encodeFunctionData({ abi: REGISTRY_ABI, functionName: name, args: args as never });
-  return decodeFunctionResult({ abi: REGISTRY_ABI, functionName: name, data: moduleBytes(await equalRead(providers, "eth_call", [{ to: target, data }, block]), "publication.getter", 4096) });
+async function getter(providers: PublicationProvider[], target: Address, name: "owner" | "families" | "getRevision" | "familyFeeEligibility", args: readonly Hex[], block: Hex): Promise<unknown> {
+  const data = encodeFunctionData({ abi: REGISTRY_V2_ABI, functionName: name, args: args as never });
+  return decodeFunctionResult({ abi: REGISTRY_V2_ABI, functionName: name, data: moduleBytes(await equalRead(providers, "eth_call", [{ to: target, data }, block]), "publication.getter", 4096) });
 }
 export async function snapshot(providers: PublicationProvider[]) {
   quorum(providers);
@@ -102,10 +103,25 @@ async function checkReceipt(plan: PublicationPlan, call: PublicationCall, txHash
     });
     need(matches.length === 1, "Exact Registry admission event missing");
   }
+  if (call.action === "setFamilyFeeEligibility") {
+    need(Array.isArray(receipt.logs), "Fee eligibility review event missing");
+    const binding = plan.publication.entry.nativeBinding;
+    const matches = receipt.logs.filter(raw => {
+      const log = record(raw); if (String(log.address).toLowerCase() !== call.to || log.removed === true) return false;
+      try {
+        const parsed = decodeEventLog({ abi: REGISTRY_V2_ABI, eventName: "FamilyFeeEligibilityReviewed", data: log.data as Hex, topics: log.topics as [Hex, ...Hex[]], strict: true });
+        return parsed.args.familyId === binding.familyId && parsed.args.eligible === binding.feeEligibility?.eligible
+          && parsed.args.reviewDigest === binding.feeEligibility.reviewDigest && moduleAddress(parsed.args.reviewer, "eligibility.reviewer") === call.from;
+      } catch { return false; }
+    });
+    need(matches.length === 1, "Exact Registry fee eligibility review event missing");
+  }
   return { action: call.action, transaction: tx, receipt };
 }
-export async function observePublicationReadback(plan: PublicationPlan, review: AuthenticatedReview, providers: PublicationProvider[], transactions: { factory: Hex; family: Hex | null; revision: Hex }) {
+export async function observePublicationReadback(plan: PublicationPlan, review: AuthenticatedReview, providers: PublicationProvider[], transactions: { factory: Hex; family: Hex | null; revision: Hex; feeEligibility?: Hex | null }) {
   assertPublicationPlan(plan, review); acceptedDecision(review); const block = await snapshot(providers);
+  const v2 = plan.release.sourceVersion === "module-native-v2";
+  need(Object.hasOwn(transactions, "feeEligibility") === v2, "Fee eligibility transaction field differs from the native generation");
   for (const pin of Object.values(plan.release.contracts)) await code(providers, pin.address, block.number, pin.runtimeCodeHash);
   await code(providers, CREATE2_DEPLOYER.address, block.number, CREATE2_DEPLOYER.runtimeCodeHash);
   need(moduleAddress(await getter(providers, plan.release.contracts.registry.address, "owner", [], block.number), "publication.owner") === plan.reviewAuthority, "Registry authority changed");
@@ -116,9 +132,16 @@ export async function observePublicationReadback(plan: PublicationPlan, review: 
     [moduleAddress(review.source.descriptor.author, "author"), moduleAddress(review.source.descriptor.rewardWallet, "reward")], "Registered family author/reward wallet");
   const revision = await getter(providers, plan.release.contracts.registry.address, "getRevision", [binding.packageId], block.number);
   same(normalizedRevision(revision), expectedRevision(plan), "Current immutable Registry revision");
-  const selected = [[plan.calls[0], moduleHash(transactions.factory, "factory.transaction")],
-    ...(transactions.family === null ? [] : [[plan.calls[1], moduleHash(transactions.family, "family.transaction")]]),
-    [plan.calls[2], moduleHash(transactions.revision, "revision.transaction")]] as [PublicationCall, Hex][];
+  if (v2) {
+    const value = await getter(providers, plan.release.contracts.registry.address, "familyFeeEligibility", [binding.familyId], block.number) as readonly unknown[];
+    same(bindNativeFeeEligibility({ eligible: value[0], reviewDigest: value[1] }), binding.feeEligibility, "Current Registry family fee eligibility");
+    if (BigInt(binding.feeEligibility!.reviewDigest) === 0n) need(transactions.feeEligibility === null, "Untouched fee eligibility has no setter transaction");
+  }
+  const operation = (action: PublicationCall["action"]) => { const call = plan.calls.find(item => item.action === action); need(call, "Publication operation missing"); return call; };
+  const selected: [PublicationCall, Hex][] = [[operation("deployFactory"), moduleHash(transactions.factory, "factory.transaction")],
+    ...(transactions.family === null ? [] : [[operation("registerReviewedFamily"), moduleHash(transactions.family, "family.transaction")] as [PublicationCall, Hex]]),
+    ...(v2 && transactions.feeEligibility !== null ? [[operation("setFamilyFeeEligibility"), moduleHash(transactions.feeEligibility, "feeEligibility.transaction")] as [PublicationCall, Hex]] : []),
+    [operation("approveRevision"), moduleHash(transactions.revision, "revision.transaction")]];
   need(new Set(selected.map(([, hash]) => hash)).size === selected.length, "Repeated publication transaction");
   const receipts = [];
   for (const [call, hash] of selected) receipts.push(await checkReceipt(plan, call, hash, providers, block.number));
@@ -126,5 +149,6 @@ export async function observePublicationReadback(plan: PublicationPlan, review: 
   return { schemaVersion: "programmable.module-mode-publication-readback.v1" as const, status: "canonical-inclusion-verified" as const,
     finality: "separate-robinhood-ethereum-finality-proof-required" as const, chainId: 4663, releaseDigest: plan.release.releaseDigest, planDigest: plan.planDigest,
     packageId: binding.packageId, reviewDigest: plan.reviewDigest, block, factory: { address: binding.factory, runtimeCodeHash: binding.factoryCodeHash },
+    ...(v2 ? { feeEligibility: binding.feeEligibility } : {}),
     revision: expectedRevision(plan), receipts, providers: providers.map(p => ({ providerId: p.providerId, trustDomain: p.trustDomain, endpointCommitment: p.endpointCommitment })), observedAt: new Date().toISOString() };
 }

@@ -19,6 +19,11 @@ real Registry, contract-code, transaction and receipt checks pass on both review
   `programAbi` must exactly equal the tested plan and build artifact. Both declare
   `configurationCodec: "programmable.native-abi@1"`; no alphabetically ordered generic encoding
   is silently substituted for the program's reviewed argument order.
+- `--fee-eligibility`: required only for a `module-native-v2` identity. Supply a JSON file containing
+  exactly `{ "eligible": true, "reviewDigest": "0x…" }`, using the actual family review digest.
+  The reviewer chooses this tuple before manifest acceptance. The complete manifest hash covers it;
+  `prepare` and `export` require the same accepted value. The operator creates no eligibility or digest
+  default. NativeV1 and Engine publication reject this option.
 - `--submission`: the UUID returned by module submission.
 - `--session-file`: an existing administrator's Privy session in a local owner-only regular file:
   `{ "walletAddress": "0x…", "accessToken": "…", "identityToken": "…" }`.
@@ -26,6 +31,16 @@ real Registry, contract-code, transaction and receipt checks pass on both review
   A contributor API key cannot approve or publish a module.
 - `--output`: a new directory under an existing private `0700` parent outside the repository.
   The operator never overwrites an earlier result.
+
+Use the normal wallet login at `https://programmable.market/admin/modules`. With the authenticated
+admin wallet connected, select **Download publication session**. The explicit action downloads
+`module-publication-session.json` in the format above using the current wallet session. A session
+change during token retrieval cancels the download. This file contains login tokens; keep it outside
+the repository, do not share it, and delete it when finished. Browsers cannot set the operator's
+required owner-only filesystem permissions. Move the download into your existing private operator
+directory and run `chmod 600 /private/operator/module-publication-session.json` before passing that
+path to `--session-file`. Use your actual local path. If the session expires, reconnect normally and
+download a fresh file. The download grants no additional role, accepts no review, and signs no transaction.
 
 The fixed-origin website BFF `/api/admin/modules/<id>` and `/source` authenticate the current session,
 bind its linked wallet and use the existing signed BFF-v2 request to the private review API. The backend
@@ -94,6 +109,16 @@ operator; it never prints endpoints or credentials.
    is absent. For an existing family, verify its author and current reward wallet; do not overwrite it.
 3. Admit the immutable package revision with its factory/code/manifest/callback pins.
 
+NativeV2 inserts `setFamilyFeeEligibility(familyId, eligible, reviewDigest)` between family registration
+and revision admission when the reviewed digest is nonzero. The call uses the existing Registry owner,
+zero ETH value and exactly the eligibility covered by the accepted manifest. It cannot choose fee rates.
+The explicit `false`/zero-digest tuple retains the untouched RegistryV2 default without a setter call;
+the contract rejects zero digests in that setter. An explicit `false` with a nonzero review digest is
+recorded as reviewed ineligibility. Reuse an existing exact family review instead of overwriting it.
+The owner-plan command in `contracts/scripts/module-mode/publication-plan.mjs` derives the same tuple
+from the accepted manifest, checks the default before a new eligibility write, and checks the exact
+getter before and after revision admission.
+
 These are unsigned operation templates, not armed wallet requests. Simulate each operation immediately
 before signing, check the connected wallet and chain, and inspect the actual gas quote. Do not replay a
 transaction whose submission outcome is unknown. An existing revision is never overwritten or
@@ -109,6 +134,11 @@ Create a private transaction file with the actual hashes:
 ```
 
 Use `family: null` only when the family already existed with the exact author and current reward wallet.
+For NativeV2, the transaction file also requires `feeEligibility`: the actual setter transaction hash,
+or `null` for an existing exact review or the untouched false/zero default. Export always checks the
+current `familyFeeEligibility` getter on both providers. A supplied setter hash must match the exact
+owner, calldata, canonical successful receipt and `FamilyFeeEligibilityReviewed` event. A changed
+eligibility or review digest stops export. NativeV1 retains its original three transaction fields.
 Run the same command with `export`, a new output directory, and
 `--transactions /private/operator/transactions.json`.
 
@@ -149,7 +179,7 @@ submitted Solidity is treated only as data and is never executed by this publica
 ## Executable Engine profile
 
 The same `manifest`, `prepare`, and `export` commands also handle an authenticated
-`programmable.modules.engine-build.v1` result. Native publication keeps its existing
+`programmable.modules.engine-build.v1` result. NativeV1 publication keeps its existing
 wire, compiler profile, command arguments, session handling and registry calls.
 There is no additional intake, publisher identity, or source-selected host command.
 

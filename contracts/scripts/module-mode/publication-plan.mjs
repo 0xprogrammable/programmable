@@ -8,6 +8,8 @@ import { repositoryState } from './build.mjs';
 import { exactJson } from './source-readback.mjs';
 import { publicationValidators } from './publication-shared.mjs';
 
+import { isEngineOperationPlan, assertAuthenticatedEngineOperationPlan } from '../module-engine/publication-plan.mjs';
+
 export const PUBLICATION_PLAN_SCHEMA = 'programmable.module-mode-publication-owner-plan.v1';
 export const registryAbi = parseAbi([
   'function owner() view returns (address)',
@@ -16,7 +18,12 @@ export const registryAbi = parseAbi([
   'function approveRevision(bytes32 packageId,bytes32 familyId,address factory,bytes32 moduleCodeHash,bytes32 manifestHash,uint32 callbackGas)',
   'function getRevision(bytes32 packageId) view returns ((bytes32 familyId,address factory,bytes32 factoryCodeHash,bytes32 moduleCodeHash,bytes32 manifestHash,uint32 callbackGas,bool enabled))',
 ]);
+export const registryV2Abi = [...registryAbi, ...parseAbi([
+  'function familyFeeEligibility(bytes32 familyId) view returns (bool eligible,bytes32 reviewDigest)',
+  'function setFamilyFeeEligibility(bytes32 familyId,bool eligible,bytes32 reviewDigest)',
+])];
 export const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
+const ZERO_HASH = `0x${'0'.repeat(64)}`;
 function equal(a, b, name) { need(canonicalJson(a) === canonicalJson(b), `${name} differs`); }
 export function readCondition(to, abi, functionName, args, result) {
   return { to, functionName, data: encodeFunctionData({ abi, functionName, args }), result: encodeFunctionResult({ abi, functionName, result }) };
@@ -30,15 +37,16 @@ export async function bindPublicationModule(input, identity, owner) {
   exactKeys(input, ['source', 'manifest', 'review', 'artifact', 'factorySalt'], 'Module publication input');
   const api = await publicationValidators(), source = api.validateModuleSubmissionRequest(input.source);
   need(source.ok, 'Source package is invalid');
-  const { manifest, review, artifact } = input, binding = manifest?.manifest?.runtimeBinding;
+  const { manifest, review, artifact } = input, binding = manifest?.manifest?.runtimeBinding, v2 = identity.sourceVersion === 'module-native-v2';
   need(binding && review?.command?.outcome === 'accept', 'Actual accepted review record and host manifest are required');
   need(address(review.reviewerWallet) === owner, 'Accepted reviewer differs from the owner publishing this plan');
   const manifestHash = api.computeModuleModeHostManifestHash(manifest);
   const entry = { ...manifest.manifest.catalogDefinition, status: 'available', nativeBinding: {
     ...Object.fromEntries(['familyId', 'packageId', 'factory', 'factoryCodeHash', 'moduleCodeHash', 'callbackGas'].map(key => [key, binding[key]])),
+    ...(v2 ? { feeEligibility: binding.feeEligibility } : {}),
     manifestHash, reviewDigest: review.decisionDigest,
   } };
-  api.verifyModuleModePublication({ release: identity, publication: { entry, requestDigest: source.requestDigest, review }, ...input });
+  const verified = api.verifyModuleModePublication({ release: identity, publication: { entry, requestDigest: source.requestDigest, review }, ...input });
   const { artifactDigest, ...contents } = artifact;
   need(artifact.schemaVersion === 'programmable.modules.native-build.v1' && artifact.authority === 'programmable.module-review.native-build.v1'
     && artifactDigest === `0x${sha256(canonicalJson({ domain: artifact.schemaVersion, value: contents }))}`
@@ -66,6 +74,7 @@ export async function bindPublicationModule(input, identity, owner) {
   return { title: manifest.manifest.catalogDefinition.title, packageId: source.packageId, familyId: source.familyId, author: address(descriptor.author), familySalt: hash(descriptor.familySalt),
     rewardWallet: address(descriptor.rewardWallet), requestDigest: source.requestDigest, manifestHash, reviewDigest: review.decisionDigest, artifactDigest,
     factory: predicted, factorySalt: hash(input.factorySalt), factoryCodeHash: factory.runtimeCodeHash, moduleCodeHash: program.runtimeCodeHash, callbackGas: binding.callbackGas,
+    ...(v2 ? { feeEligibility: verified.nativeBinding.feeEligibility } : {}),
     factoryCreationBytecode: factory.creationBytecode, factoryRuntimeBytecode: factory.runtimeBytecode };
 }
 export async function createPublicationPlan({ identity, owner, modules, sourceState }) {
@@ -85,13 +94,23 @@ export async function createPublicationPlan({ identity, owner, modules, sourceSt
       result: encodeFunctionResult({ abi: registryAbi, functionName: 'registerReviewedFamily', result: item.familyId }),
       preReads: [readCondition(registry, registryAbi, 'families', [item.familyId], [ZERO_ADDRESS, ZERO_ADDRESS])],
       postReads: [readCondition(registry, registryAbi, 'families', [item.familyId], [item.author, item.rewardWallet])], newCode: [] });
+    const feeReads = item.feeEligibility ? [readCondition(registry, registryV2Abi, 'familyFeeEligibility', [item.familyId],
+      [item.feeEligibility.eligible, item.feeEligibility.reviewDigest])] : [];
+    if (item.feeEligibility && item.feeEligibility.reviewDigest !== ZERO_HASH) {
+      const feeArgs = [item.familyId, item.feeEligibility.eligible, item.feeEligibility.reviewDigest];
+      steps.push({ kind: 'feeEligibility', label: `Record ${item.title} reviewed family fee eligibility`, sender: owner, to: registry, value: '0', target: registry, packageId: item.packageId,
+        functionName: 'setFamilyFeeEligibility', arguments: jsonSafe(feeArgs), data: encodeFunctionData({ abi: registryV2Abi, functionName: 'setFamilyFeeEligibility', args: feeArgs }), result: '0x',
+        preReads: [readCondition(registry, registryAbi, 'families', [item.familyId], [item.author, item.rewardWallet]),
+          readCondition(registry, registryV2Abi, 'familyFeeEligibility', [item.familyId], [false, ZERO_HASH])],
+        postReads: feeReads, newCode: [] });
+    }
     const revision = { familyId: item.familyId, factory: item.factory, factoryCodeHash: item.factoryCodeHash, moduleCodeHash: item.moduleCodeHash,
       manifestHash: item.manifestHash, callbackGas: item.callbackGas, enabled: true };
     const revisionArgs = [item.packageId, item.familyId, item.factory, item.moduleCodeHash, item.manifestHash, item.callbackGas];
     steps.push({ kind: 'revision', label: `Admit ${item.title} revision`, sender: owner, to: registry, value: '0', target: registry, packageId: item.packageId,
       functionName: 'approveRevision', arguments: jsonSafe(revisionArgs), data: encodeFunctionData({ abi: registryAbi, functionName: 'approveRevision', args: revisionArgs }), result: '0x',
-      preReads: [readCondition(registry, registryAbi, 'families', [item.familyId], [item.author, item.rewardWallet])],
-      postReads: [readCondition(registry, registryAbi, 'getRevision', [item.packageId], revision)], newCode: [] });
+      preReads: [readCondition(registry, registryAbi, 'families', [item.familyId], [item.author, item.rewardWallet]), ...feeReads],
+      postReads: [readCondition(registry, registryAbi, 'getRevision', [item.packageId], revision), ...feeReads], newCode: [] });
   }
   const body = { schemaVersion: PUBLICATION_PLAN_SCHEMA, chainId: 4663, sourceCommit: sourceState.sourceCommit, sourceTree: sourceState.sourceTree,
     sourceClean: sourceState.sourceClean, identity, owner, modules, steps };
@@ -103,6 +122,7 @@ export async function assertPublicationPlan(plan) {
 }
 /** The existing fixed-origin private BFF reader is the only runtime review authority. Local JSON is a consistency input. */
 export async function assertAuthenticatedOperationPlan(plan, sessionFile) {
+  if (isEngineOperationPlan(plan)) return assertAuthenticatedEngineOperationPlan(plan, sessionFile);
   if (!plan.modules.length) return;
   need(typeof sessionFile === 'string' && sessionFile.length > 0, 'Private reviewer session file required for module operations');
   const api = await publicationValidators(), session = await api.readOperatorSession(sessionFile);
@@ -112,7 +132,7 @@ export async function assertAuthenticatedOperationPlan(plan, sessionFile) {
     const current = await reader.read(input.review.subject.submissionId), decision = api.acceptedDecision(current);
     equal(decision, input.review, 'Current authenticated review decision');
     equal(current.source, input.source, 'Current authenticated source'); equal(current.artifact, input.artifact, 'Current protected worker artifact');
-    const host = api.createHostPreparation(current, plan.identity, input.manifest.manifest.catalogDefinition);
+    const host = api.createHostPreparation(current, plan.identity, input.manifest.manifest.catalogDefinition, input.manifest.manifest.runtimeBinding.feeEligibility);
     equal(host.manifest, input.manifest, 'Canonical authenticated host manifest'); equal(host.salt, input.factorySalt, 'Canonical factory salt');
   }
 }

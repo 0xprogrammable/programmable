@@ -8,7 +8,7 @@ import { REPOSITORY_ROOT } from './build.mjs';
 import { OFFICIAL, canonicalJson, sha256 } from './core.mjs';
 import { publicationValidators } from './publication-shared.mjs';
 let fixtureModule;
-export async function publicationFixture() {
+export async function publicationFixture(feeEligibility) {
   if (!fixtureModule) {
     const result = await build({ absWorkingDir: REPOSITORY_ROOT, stdin: { contents: "export { moduleReviewAdminFixture } from './tests/fixtures/module-review-admin';", resolveDir: REPOSITORY_ROOT, loader: 'ts' },
       write: false, bundle: true, platform: 'node', target: 'node24', format: 'esm', packages: 'external', treeShaking: true, tsconfig: path.join(REPOSITORY_ROOT, 'tsconfig.json'), logLevel: 'silent' });
@@ -18,10 +18,11 @@ export async function publicationFixture() {
   }
   const f = fixtureModule.moduleReviewAdminFixture(), api = await publicationValidators();
   const identity = { ...f.release, contracts: { ...f.release.contracts, poolManager: OFFICIAL.poolManager, positionManager: OFFICIAL.positionManager } };
+  if (feeEligibility) Object.assign(identity, { schemaVersion: 'programmable.module-mode-source.v2', sourceVersion: 'module-native-v2', economicsPolicyId: keccak256(toHex('programmable.module-mode.native-economics.v2')) });
   identity.releaseDigest = api.computeModuleModeReleaseDigest(identity);
   const factorySalt = keccak256(toHex('synthetic-test-factory-salt'));
   const factory = getCreate2Address({ from: OFFICIAL.deterministicDeployer.address, salt: factorySalt, bytecode: f.artifact.factory.creationBytecode }).toLowerCase();
-  const manifest = api.createModuleModeHostManifest({ release: identity, definition: f.definition, nativeBinding: { ...f.binding, factory }, descriptor: f.source.descriptor });
+  const manifest = api.createModuleModeHostManifest({ release: identity, definition: f.definition, nativeBinding: { ...f.binding, factory, ...(feeEligibility ? { feeEligibility } : {}) }, descriptor: f.source.descriptor });
   const contents = { schemaVersion: 'programmable.modules.review-decision.v1', reviewerWallet: f.reviewer, policyDigest: f.policyDigest, subject: f.subject,
     command: { schemaVersion: 'programmable.modules.review-command.v1', submissionId: f.subject.submissionId, requestDigest: f.subject.requestDigest, expectedReviewRevision: 2,
       outcome: 'accept', reason: 'Synthetic operator test only. Never reviewer authority.', artifactDigest: f.artifact.artifactDigest,

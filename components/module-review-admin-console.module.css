@@ -7,6 +7,9 @@
 .textLink:hover { color: var(--text); }
 .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin: 22px 0; }
 .toolbar p { font-size: 14px; margin: 0; }
+.sessionExport { margin: 22px 0; }
+.sessionExport p { max-width: 66ch; margin: 8px 0 0; }
+.sessionExport [role=status]:empty { margin: 0; }
 .primary, .secondary, .iconButton, .textButton, .fileButton { font: inherit; cursor: pointer; display: inline-flex; justify-content: center; align-items: center; gap: 8px; min-height: 44px; }
 .primary, .secondary { border: 1px solid var(--review-line); border-radius: 8px; font-size: 14px; font-weight: 550; padding: 10px 15px; }
 .primary { background: var(--text); color: var(--canvas); border-color: var(--text); }

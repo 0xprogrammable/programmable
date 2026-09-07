@@ -3,7 +3,7 @@ import path from 'node:path';
 import { address, canonicalJson, hash, need } from '../module-mode/core.mjs';
 import { journalEntry } from '../module-mode/journal.mjs';
 import { evidenceBytes, evidenceDigest, sourcifyVerificationRequests } from '../module-mode/evidence.mjs';
-import { SOURCIFY_BASE, boundedPublicJson, exactJson, sourcifyNeedsRecompilation, sourcifyPreflight, validateSourcifySource } from '../module-mode/source-readback.mjs';
+import { SOURCIFY_BASE, SOURCIFY_QUOTE_PLANNER_AUXDATA_PROFILE, boundedPublicJson, exactJson, sourcifyNeedsRecompilation, sourcifyPreflight, validateSourcifySource } from '../module-mode/source-readback.mjs';
 import { recompileSourcifyInput } from '../module-mode/source-recompile.mjs';
 import { assertQuoteProfile, QUOTE_DEPLOYMENT_SCHEMA, QUOTE_ROLES, quoteInfrastructureIdentity } from './quote-core.mjs';
 import { assertQuoteWethProxyObservation, observeQuoteReceipt } from './quote-rpc.mjs';
@@ -100,7 +100,8 @@ export async function collectQuoteSource(plan, build, deployment, previousRaw, f
     const creation = quoteSourceCreation(plan, role, deployment), url = `${SOURCIFY_BASE}/v2/contract/4663/${plan.contracts[role].address}?fields=all`;
     const { raw, value } = await boundedPublicJson(url, fetchImpl);
     const recompilation = sourcifyNeedsRecompilation(build.standardInputs[role], value) ? await recompileSourcifyInput(value, build.standardInputs[role]) : undefined;
-    const verified = validateSourcifySource({ plan, build, role, constructorArguments: quoteConstructorArguments(plan, role), creation, recompilation }, value);
+    const verified = validateSourcifySource({ plan, build, role, constructorArguments: quoteConstructorArguments(plan, role), creation, recompilation,
+      ...(role === 'positionPlanner' ? { compilerAuxdataProfile: SOURCIFY_QUOTE_PLANNER_AUXDATA_PROFILE } : {}) }, value);
     records.push({ ...verified, url, responseBytesDigest: evidenceDigest(raw) });
   }
   return { schemaVersion: QUOTE_SOURCE_SCHEMA, chainId: 4663, sourceVersion: plan.identityCandidate.sourceVersion,

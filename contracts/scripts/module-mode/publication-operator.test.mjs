@@ -1,8 +1,9 @@
+import '../module-engine/wallet-operator.test.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { encodeFunctionResult, keccak256, parseAbi } from 'viem';
+import { decodeFunctionData, encodeFunctionResult, keccak256, parseAbi } from 'viem';
 import { hexQuantity } from './core.mjs';
-import { createPublicationPlan, assertPublicationPlan, bindPublicationModule, assertAuthenticatedOperationPlan, registryAbi } from './publication-plan.mjs';
+import { createPublicationPlan, assertPublicationPlan, bindPublicationModule, assertAuthenticatedOperationPlan, registryAbi, registryV2Abi } from './publication-plan.mjs';
 import { publicationFixture } from './publication-test-fixtures.mjs';
 import { publicationWalletRequest, assertPublicationRequest, observePublicationOperation, preparePublicationRequest, revalidatePublicationRequest, observePublicationReceipt, preparePublicationRetry } from './publication-rpc.mjs';
 import { startPublicationOperator } from './publication-operator.mjs';
@@ -45,6 +46,34 @@ test('missing acceptance, changed artifact and supplied salt fail closed', async
     const changed = structuredClone(f.module); mutate(changed); await assert.rejects(bindPublicationModule(changed, f.identity, f.owner));
   }
   await assert.rejects(assertAuthenticatedOperationPlan({ modules: [f.module], owner: f.owner }, undefined), /session file/);
+});
+test('NativeV2 owner plan records exactly the accepted family fee review and verifies its getter before admission', async () => {
+  const feeEligibility = { eligible: true, reviewDigest: h(101) }, f = await publicationFixture(feeEligibility);
+  const checked = await bindPublicationModule(f.module, f.identity, f.owner);
+  assert.deepEqual(checked.feeEligibility, feeEligibility);
+  const plan = await createPublicationPlan({ ...f, modules: [f.module] });
+  assert.deepEqual(plan.steps.map(step => step.kind), ['factory', 'family', 'feeEligibility', 'revision']);
+  const fee = plan.steps[2];
+  assert.equal(fee.sender, f.owner); assert.equal(fee.to, f.identity.contracts.registry.address); assert.equal(fee.value, '0');
+  assert.deepEqual(decodeFunctionData({ abi: registryV2Abi, data: fee.data }), { functionName: 'setFamilyFeeEligibility', args: [checked.familyId, true, feeEligibility.reviewDigest] });
+  assert.equal(fee.preReads[1].result, encodeFunctionResult({ abi: registryV2Abi, functionName: 'familyFeeEligibility', result: [false, h(0)] }));
+  assert.equal(fee.postReads[0].result, encodeFunctionResult({ abi: registryV2Abi, functionName: 'familyFeeEligibility', result: [true, feeEligibility.reviewDigest] }));
+  assert.deepEqual(plan.steps[3].preReads.at(-1), fee.postReads[0]);
+  assert.deepEqual(plan.steps[3].postReads.at(-1), fee.postReads[0]); await assertPublicationPlan(plan);
+  for (const change of [b => { b.feeEligibility.eligible = false; }, b => { b.feeEligibility.reviewDigest = h(102); }, b => { delete b.feeEligibility; }]) {
+    const changed = structuredClone(f.module); change(changed.manifest.manifest.runtimeBinding);
+    await assert.rejects(bindPublicationModule(changed, f.identity, f.owner));
+  }
+  const tampered = structuredClone(plan); tampered.steps[2].postReads = [];
+  await assert.rejects(assertPublicationPlan(tampered), /plan differs/);
+});
+test('NativeV2 false/zero keeps the untouched default and NativeV1 cannot adopt an eligibility field', async () => {
+  const f = await publicationFixture({ eligible: false, reviewDigest: h(0) });
+  const plan = await createPublicationPlan({ ...f, modules: [f.module] });
+  assert.deepEqual(plan.steps.map(step => step.kind), ['factory', 'family', 'revision']);
+  assert.equal(plan.steps[2].postReads.at(-1).functionName, 'familyFeeEligibility'); await assertPublicationPlan(plan);
+  const v1 = await publicationFixture(); v1.module.manifest.manifest.runtimeBinding.feeEligibility = { eligible: false, reviewDigest: h(0) };
+  await assert.rejects(bindPublicationModule(v1.module, v1.identity, v1.owner));
 });
 test('wallet ceilings include ETH value and gas, with no automatic fee raise', () => {
   const f = rpcFixture(); f.step.value = '1000'; const observation = { state: 'operation-simulated', stepIndex: 0, gasLimit: '100000', baseFeePerGas: '1', minimumBalance: '100001000', nonce: '1' };

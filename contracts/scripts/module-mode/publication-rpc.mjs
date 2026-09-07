@@ -2,12 +2,16 @@ import { decodeEventLog, decodeFunctionResult, encodeAbiParameters, encodeFuncti
 import { OFFICIAL, address, bytes, canonicalJson, digest, exactKeys, hash, hexQuantity, jsonSafe, need, uint } from './core.mjs';
 import { registryAbi, ZERO_ADDRESS } from './publication-plan.mjs';
 import { publicationValidators } from './publication-shared.mjs';
+import { isEngineOperationPlan } from '../module-engine/publication-plan.mjs';
+import { assertEngineOperationPreflight, bindEngineSimulation, equalEngineSimulation, finishEngineReceipt } from '../module-engine/operation-rpc.mjs';
 const canaryStateAbi = parseAbi([
   'function creatorRecipients(bytes32 poolId) view returns (address[] wallets,uint16[] sharesBps,uint256 adminRevision)',
   'function instances(bytes32 launchKey) view returns ((bytes32 instanceId,bytes32 packageId,bytes32 configHash,address factory,bytes32 factoryCodeHash,address module,bytes32 moduleCodeHash,uint32 callbackGas)[])',
   'function launchBinding(bytes32 launchKey) view returns ((address source,address launchWallet,address token,address poolManager,bytes32 poolId,bytes32 recipeHash,bytes32 programHash))',
 ]);
 const REQUEST_DOMAIN = 'programmable.module-mode-publication-owner-request.v1';
+const TRADES = ['buy', 'sell', 'buyExactOutput', 'sellExactOutput'];
+const isV2 = plan => plan.identity.sourceVersion === 'module-native-v2';
 export function operationQuantity(value) { need(typeof value === 'string' && /^0x(?:0|[1-9a-f][0-9a-f]*)$/i.test(value), 'Invalid RPC quantity'); return BigInt(value); }
 const pair = (providers, method, params) => Promise.all(providers.map(provider => provider.rpc(method, params)));
 function same(values, label) { need(canonicalJson(values[0]) === canonicalJson(values[1]), `Provider disagreement: ${label}`); return values[0]; }
@@ -30,6 +34,30 @@ async function readConditions(providers, reads, block) {
 }
 async function read(providers, target, abi, functionName, args, block) {
   return decodeFunctionResult({ abi, functionName, data: bytes(same(await pair(providers, 'eth_call', [{ to: target, data: encodeFunctionData({ abi, functionName, args }) }, block]), functionName)) });
+}
+async function assertV2Policy(plan, providers, block) {
+  if (!isV2(plan)) return;
+  const api = await publicationValidators(), abi = api.moduleNativeReadV2Abi, pins = plan.identity.contracts;
+  for (const role of ['launcher', 'hook', 'swapRouter', 'rewardLedger']) need(
+    await read(providers, pins[role].address, abi, 'ECONOMICS_POLICY_ID', [], block) === plan.identity.economicsPolicyId,
+    `Native V2 ${role} economics policy differs`);
+  for (const role of ['hook', 'rewardLedger']) need(
+    await read(providers, pins[role].address, abi, 'PROTOCOL_FEE_BPS', [], block) === 10
+    && await read(providers, pins[role].address, abi, 'AUTHOR_POOL_FEE_BPS', [], block) === 20,
+    `Native V2 ${role} economics rates differ`);
+}
+/** Amount/refund semantics of the exact runtime-pinned router, shared by simulation and receipt checks. */
+function bindTradeAmounts(plan, step, nativeAmount, tokenAmount, specified) {
+  const isBuy = step.kind === 'launch' || step.kind.startsWith('buy'), exactOutput = step.kind.endsWith('ExactOutput');
+  need(!exactOutput || isV2(plan), 'Exact-output lifecycle requires Native V2');
+  const amount = BigInt(step.kind === 'launch' ? step.expectation.initialBuyNative : step.expectation.amount);
+  const limit = BigInt(step.kind === 'launch' ? step.expectation.minimumTokenOut : exactOutput ? step.expectation.maximumInput : step.expectation.minimumOut);
+  const paid = isBuy ? nativeAmount : tokenAmount, received = isBuy ? tokenAmount : nativeAmount;
+  need(nativeAmount > 0n && tokenAmount > 0n && (specified === undefined || specified === (exactOutput ? amount : -amount))
+    && (exactOutput ? received === amount && paid <= limit : paid === amount && received >= limit), 'Swap amounts differ from reviewed input/output bounds');
+  // Launch additionally funds its explicitly reviewed module budgets; router trades do not.
+  if (step.kind !== 'launch') need(BigInt(step.value) === (isBuy ? exactOutput ? limit : amount : 0n), 'Swap ETH funding differs from the reviewed bound');
+  return { nativeAmount, tokenAmount, ...(exactOutput ? { maximumInput: limit, refundNative: isBuy ? limit - nativeAmount : 0n } : {}) };
 }
 function poolId(plan, token) { return keccak256(encodeAbiParameters(parseAbiParameters('address,address,uint24,int24,address'), [ZERO_ADDRESS, token, 0, 200, plan.identity.contracts.hook.address])); }
 function bindLaunchRecord(plan, step, result, initial = false) {
@@ -62,12 +90,26 @@ async function assertLaunchReference(plan, providers, block) {
 async function assertCanaryToken(plan, step, providers, block) {
   const api = await publicationValidators(), pins = plan.identity.contracts, expected = step.expectation;
   await assertLaunchReference(plan, providers, block);
-  const result = await read(providers, pins.launcher.address, api.moduleNativeLaunchAbi, 'getLaunch', [step.target], block);
+  const result = await read(providers, pins.launcher.address, api.moduleNativeLaunchAbiFor(plan.identity), 'getLaunch', [step.target], block);
   bindLaunchRecord(plan, step, result, step.kind === 'launch');
-  const config = await read(providers, pins.hook.address, api.moduleNativeReadAbi, 'poolConfig', [result.poolId], block);
+  const readAbi = api.moduleNativeReadAbiFor(plan.identity);
+  const config = await read(providers, pins.hook.address, readAbi, 'poolConfig', [result.poolId], block);
   need(address(config[0]) === pins.launcher.address && address(config[1]) === plan.owner && address(config[2]) === pins.swapRouter.address
     && config[3] === pins.swapRouter.runtimeCodeHash && Number(config[4]) === expected.creatorFeeBps && Number(config[5]) === expected.creatorFeeBps
     && config[6] === expected.recipeHash && config[7] === expected.launchKey, 'Canary pool fees or recipe differ');
+  if (isV2(plan)) {
+    need(config[8] === expected.platformFeeBps
+      && await read(providers, pins.rewardLedger.address, readAbi, 'platformFeeBps', [result.poolId], block) === expected.platformFeeBps,
+    'Native V2 pool or ledger fee differs from the launch snapshot');
+    const snapshot = await read(providers, pins.hook.address, readAbi, 'eligibilitySnapshot', [result.poolId], block);
+    need(canonicalJson(snapshot[0]) === canonicalJson(expected.selectionEligible)
+      && canonicalJson(snapshot[1]) === canonicalJson(expected.selectionReviewDigests), 'Native V2 selection eligibility snapshot differs');
+    if (step.kind === 'launch' || TRADES.includes(step.kind)) {
+      const components = await read(providers, pins.hook.address, readAbi, 'feeComponents', [result.poolId, step.kind === 'launch' || step.kind.startsWith('buy')], block);
+      need(components[0] === expected.creatorFeeBps && components[1] === expected.platformFeeBps
+        && components[2] >= 0 && components[2] <= 1000 && components[3] === 0, 'Native V2 fee components differ');
+    }
+  }
   const binding = await read(providers, pins.runtime.address, canaryStateAbi, 'launchBinding', [expected.launchKey], block);
   need(address(binding.source) === pins.launcher.address && address(binding.launchWallet) === plan.owner && address(binding.token) === step.target
     && address(binding.poolManager) === pins.poolManager.address && binding.poolId === expected.poolId && binding.recipeHash === expected.recipeHash
@@ -89,19 +131,23 @@ async function assertCanaryToken(plan, step, providers, block) {
 export async function observePublicationOperation(plan, stepIndex, providers) {
   const step = plan.steps[stepIndex]; need(step, 'Unknown operation step'); const block = await blockSnapshot(providers);
   await Promise.all(Object.values(plan.identity.contracts).map(pin => code(providers, pin, block.number)));
-  if (step.kind === 'factory') await code(providers, OFFICIAL.deterministicDeployer, block.number);
-  const owner = await read(providers, plan.identity.contracts.registry.address, registryAbi, 'owner', [], block.number);
-  need(address(owner) === plan.owner, 'Registry review authority differs');
-  for (const previous of plan.steps.slice(0, stepIndex)) {
-    for (const pin of previous.newCode) await code(providers, pin, block.number);
-    await readConditions(providers, previous.postReads, block.number);
+  if (isEngineOperationPlan(plan)) await assertEngineOperationPreflight(plan, stepIndex, providers, block, engineRpcContext());
+  else {
+    await assertV2Policy(plan, providers, block.number);
+    if (step.kind === 'factory') await code(providers, OFFICIAL.deterministicDeployer, block.number);
+    const owner = await read(providers, plan.identity.contracts.registry.address, registryAbi, 'owner', [], block.number);
+    need(address(owner) === plan.owner, 'Registry review authority differs');
+    for (const previous of plan.steps.slice(0, stepIndex)) {
+      for (const pin of previous.newCode) await code(providers, pin, block.number);
+      await readConditions(providers, previous.postReads, block.number);
+    }
+    for (const pin of step.requiredCode ?? []) await code(providers, pin, block.number);
+    await readConditions(providers, step.preReads, block.number);
+    if (['factory', 'launch'].includes(step.kind)) {
+      need(same(await pair(providers, 'eth_getCode', [step.target, block.number]), 'target vacancy') === '0x', 'Target is already deployed; reconcile its actual receipt');
+      need(operationQuantity(same(await pair(providers, 'eth_getTransactionCount', [step.target, block.number]), 'target nonce')) === 0n, 'CREATE2 target has a nonzero nonce');
+    } else if (TRADES.includes(step.kind) || step.kind === 'approve') await assertCanaryToken(plan, step, providers, block.number);
   }
-  for (const pin of step.requiredCode ?? []) await code(providers, pin, block.number);
-  await readConditions(providers, step.preReads, block.number);
-  if (['factory', 'launch'].includes(step.kind)) {
-    need(same(await pair(providers, 'eth_getCode', [step.target, block.number]), 'target vacancy') === '0x', 'Target is already deployed; reconcile its actual receipt');
-    need(operationQuantity(same(await pair(providers, 'eth_getTransactionCount', [step.target, block.number]), 'target nonce')) === 0n, 'CREATE2 target has a nonzero nonce');
-  } else if (['buy', 'approve', 'sell'].includes(step.kind)) await assertCanaryToken(plan, step, providers, block.number);
   if (step.deadline) {
     const remaining = BigInt(step.deadline) - operationQuantity(block.timestamp); need(remaining >= 120n && remaining <= 3600n, 'Canary deadline must be between two minutes and one hour from the observed block');
   }
@@ -112,14 +158,14 @@ export async function observePublicationOperation(plan, stepIndex, providers) {
   const call = { from: plan.owner, to: step.to, value: hexQuantity(step.value), data: step.data };
   const simulation = bytes(same(await pair(providers, 'eth_call', [call, block.number]), 'operation simulation'));
   const api = await publicationValidators(); let decoded = null;
-  if (step.result !== null) need(simulation === step.result, 'Operation simulation returned an unexpected result');
-  else if (step.kind === 'launch') decoded = jsonSafe(bindLaunchRecord(plan, step, decodeFunctionResult({ abi: api.moduleNativeLaunchAbi, functionName: 'launch', data: simulation }), true));
+  if (isEngineOperationPlan(plan)) decoded = await bindEngineSimulation(plan, step, simulation);
+  else if (step.result !== null) need(simulation === step.result, 'Operation simulation returned an unexpected result');
+  else if (step.kind === 'launch') decoded = jsonSafe(bindLaunchRecord(plan, step, decodeFunctionResult({ abi: api.moduleNativeLaunchAbiFor(plan.identity), functionName: 'launch', data: simulation }), true));
   else {
     const amounts = decodeFunctionResult({ abi: api.moduleNativeRouterAbi, functionName: 'swap', data: simulation });
-    need(amounts[step.kind === 'buy' ? 0 : 1] === BigInt(step.expectation.amount) && amounts[step.kind === 'buy' ? 1 : 0] >= BigInt(step.expectation.minimumOut), 'Swap simulation differs from exact input or minimum output');
-    decoded = jsonSafe({ nativeAmount: amounts[0], tokenAmount: amounts[1] });
+    decoded = jsonSafe(bindTradeAmounts(plan, step, amounts[0], amounts[1]));
   }
-  const estimates = (await pair(providers, 'eth_estimateGas', [call])).map(operationQuantity), high = estimates[0] > estimates[1] ? estimates[0] : estimates[1], low = estimates[0] < estimates[1] ? estimates[0] : estimates[1];
+  const estimates = (await pair(providers, 'eth_estimateGas', isEngineOperationPlan(plan) ? [call, block.number] : [call])).map(operationQuantity), high = estimates[0] > estimates[1] ? estimates[0] : estimates[1], low = estimates[0] < estimates[1] ? estimates[0] : estimates[1];
   need(high - low <= 1000n + high / 10000n, 'Provider gas estimates disagree');
   need((await pair(providers, 'eth_getBlockByNumber', [block.number, false])).every(value => value?.hash === block.hash), 'Snapshot was reorganized');
   return { state: 'operation-simulated', stepIndex, blockNumber: operationQuantity(block.number).toString(), blockHash: block.hash,
@@ -155,6 +201,7 @@ export async function revalidatePublicationRequest(plan, prepared, providers, ce
   assertPublicationRequest(plan, prepared);
   need(Date.now() >= prepared.issuedAt && prepared.expiresAt - Date.now() >= 60000, 'Owner request has expired');
   const fresh = await observePublicationOperation(plan, prepared.stepIndex, providers), next = publicationWalletRequest(plan, fresh, ceilings);
+  if (isEngineOperationPlan(plan)) equalEngineSimulation(plan, prepared.stepIndex, fresh.simulatedResult, prepared.observation.simulatedResult);
   for (const key of Object.keys(next).filter(key => key !== 'gas')) need(canonicalJson(next[key]) === canonicalJson(prepared.request[key]), `Owner request changed: ${key}`);
   need(BigInt(next.gas) <= BigInt(prepared.request.gas), 'Fresh gas estimate exceeds the reviewed request');
   need(BigInt(fresh.minimumBalance) >= BigInt(prepared.request.value) + BigInt(prepared.request.gas) * BigInt(prepared.request.maxFeePerGas), 'Owner balance fell below value and maximum gas cost'); return fresh;
@@ -166,7 +213,9 @@ function receiptLogs(logs) {
     transactionIndex: log.transactionIndex, logIndex: log.logIndex, removed: log.removed ?? false }));
 }
 export async function observePublicationReceipt(plan, entry, providers) {
-  requirePair(providers); assertPublicationRequest(plan, entry); const step = plan.steps[entry.stepIndex], transactionHash = hash(entry.transactionHash);
+  requirePair(providers); assertPublicationRequest(plan, entry);
+  if (isEngineOperationPlan(plan)) need((await pair(providers, 'eth_chainId', [])).every(value => operationQuantity(value) === 4663n), 'Wrong Engine receipt chain');
+  const step = plan.steps[entry.stepIndex], transactionHash = hash(entry.transactionHash);
   const txs = await pair(providers, 'eth_getTransactionByHash', [transactionHash]); need(txs.every(Boolean), 'Transaction is not observed by both providers');
   const tx = same(txs.map(transactionView), 'transaction');
   for (const key of ['from', 'to', 'value', 'nonce', 'chainId', 'type', 'gas', 'maxFeePerGas', 'maxPriorityFeePerGas']) need(tx[key] === entry.request[key], `Wallet changed ${key}`);
@@ -178,12 +227,14 @@ export async function observePublicationReceipt(plan, entry, providers) {
   need((await pair(providers, 'eth_getBlockByNumber', [receipt.blockNumber, false])).every(b => b?.hash === receipt.blockHash && b.transactions.includes(transactionHash)), 'Receipt is not canonical');
   const pins = [...Object.values(plan.identity.contracts), ...plan.steps.slice(0, entry.stepIndex + 1).flatMap(s => s.newCode), ...(step.requiredCode ?? [])];
   await Promise.all(pins.map(pin => code(providers, pin, receipt.blockNumber))); await readConditions(providers, step.postReads, receipt.blockNumber);
+  if (isEngineOperationPlan(plan)) return finishEngineReceipt(plan, entry, providers, receipt, tx, pins, engineRpcContext());
+  await assertV2Policy(plan, providers, receipt.blockNumber);
   let canary = null;
-  if (['launch', 'buy', 'approve', 'sell'].includes(step.kind)) canary = jsonSafe(await assertCanaryToken(plan, step, providers, receipt.blockNumber));
+  if (step.kind === 'launch' || step.kind === 'approve' || TRADES.includes(step.kind)) canary = jsonSafe(await assertCanaryToken(plan, step, providers, receipt.blockNumber));
   if (step.kind === 'launch') {
     const api = await publicationValidators(), events = [];
     for (const log of receipt.logs.filter(log => log.address === plan.identity.contracts.launcher.address)) {
-      try { events.push(decodeEventLog({ abi: api.moduleNativeLaunchAbi, data: log.data, topics: log.topics, strict: true })); } catch { /* Unrelated launcher events are not configuration evidence. */ }
+      try { events.push(decodeEventLog({ abi: api.moduleNativeLaunchAbiFor(plan.identity), data: log.data, topics: log.topics, strict: true })); } catch { /* Unrelated launcher events are not configuration evidence. */ }
     }
     const one = name => { const found = events.filter(event => event.eventName === name); need(found.length === 1, `Expected exactly one ${name} event`); return found[0].args; };
     const configuration = one('ModuleNativeConfigurationBound'), program = one('ModuleNativeProgramBound');
@@ -191,22 +242,34 @@ export async function observePublicationReceipt(plan, entry, providers) {
       && configuration.creatorConfigurationHash === step.expectation.creatorConfigurationHash, 'Canary metadata or creator allocation event differs');
     need(program.launchId === canary.launchId && program.launchKey === step.expectation.launchKey && address(program.runtime) === plan.identity.contracts.runtime.address
       && program.fundingHash === step.expectation.fundingHash && program.totalFunding === BigInt(step.expectation.totalFunding), 'Canary funding event differs');
+    if (isV2(plan)) {
+      const economics = receipt.logs.filter(log => log.address === plan.identity.contracts.hook.address).flatMap(log => {
+        try { const event = decodeEventLog({ abi: api.moduleNativeReadV2Abi, data: log.data, topics: log.topics, strict: true });
+          return event.eventName === 'NativeEconomicsBound' ? [event.args] : []; } catch { return []; }
+      });
+      need(economics.length === 1, 'Expected exactly one NativeEconomicsBound event');
+      const event = economics[0], expected = step.expectation;
+      need(event.poolId === expected.poolId && event.economicsPolicyId === expected.economicsPolicyId
+        && event.protocolFeeBps === 10 && event.authorPoolFeeBps === expected.authorPoolFeeBps
+        && canonicalJson(event.eligibleFamilies) === canonicalJson(expected.families)
+        && canonicalJson(event.selectionEligible) === canonicalJson(expected.selectionEligible)
+        && canonicalJson(event.selectionReviewDigests) === canonicalJson(expected.selectionReviewDigests), 'Native V2 economics event differs from the reviewed recipe');
+    }
   }
-  if (['launch', 'buy', 'sell'].includes(step.kind)) {
+  let trade;
+  if (step.kind === 'launch' || TRADES.includes(step.kind)) {
     const api = await publicationValidators(), events = [];
     need(Array.isArray(receipt.logs) && receipt.logs.length <= 4096, 'Receipt logs are unavailable or exceed bounds');
     for (const log of receipt.logs.filter(log => log.address?.toLowerCase() === plan.identity.contracts.swapRouter.address)) {
       try { const event = decodeEventLog({ abi: api.moduleNativeRouterAbi, data: log.data, topics: log.topics, strict: true }); if (event.eventName === 'NativeTradeCompleted') events.push(event.args); } catch { /* Other router events are not trade evidence. */ }
     }
-    need(events.length === 1, 'Expected exactly one native trade event'); const event = events[0], isBuy = step.kind !== 'sell';
+    need(events.length === 1, 'Expected exactly one native trade event'); const event = events[0], isBuy = step.kind === 'launch' || step.kind.startsWith('buy');
     need(event.poolId === poolId(plan, step.target) && address(event.actor) === plan.owner && address(event.recipient) === plan.owner && event.isBuy === isBuy, 'Trade event identity differs');
-    const amount = BigInt(step.kind === 'launch' ? step.expectation.initialBuyNative : step.expectation.amount);
-    const minimum = BigInt(step.kind === 'launch' ? step.expectation.minimumTokenOut : step.expectation.minimumOut);
-    need(event.amountSpecified === -amount && (isBuy ? event.nativeAmount : event.tokenAmount) === amount && (isBuy ? event.tokenAmount : event.nativeAmount) >= minimum, 'Trade event amounts differ');
+    trade = jsonSafe(bindTradeAmounts(plan, step, event.nativeAmount, event.tokenAmount, event.amountSpecified));
   }
   need((await pair(providers, 'eth_getBlockByNumber', [receipt.blockNumber, false])).every(b => b?.hash === receipt.blockHash), 'Receipt anchor changed during verification');
   return { status: 'included-code-verified-unfinalized', chainId: 4663, planDigest: plan.planDigest, releaseDigest: plan.identity.releaseDigest, stepIndex: entry.stepIndex,
-    kind: step.kind, transaction: tx, receipt, contracts: pins, canary, providers: publicBindings(providers) };
+    kind: step.kind, transaction: tx, receipt, contracts: pins, canary, providers: publicBindings(providers), ...(isV2(plan) && trade ? { trade } : {}) };
 }
 
 export async function preparePublicationRetry(plan, entry, providers, ceilings, reviewedRequestDigest, retryAttempt) {
@@ -214,6 +277,7 @@ export async function preparePublicationRetry(plan, entry, providers, ceilings, 
     && Number.isSafeInteger(retryAttempt) && retryAttempt > 0, 'An explicit unresolved same-request retry is required');
   assertPublicationRequest(plan, entry);
   const observation = await observePublicationOperation(plan, entry.stepIndex, providers), next = publicationWalletRequest(plan, observation, ceilings);
+  if (isEngineOperationPlan(plan)) equalEngineSimulation(plan, entry.stepIndex, observation.simulatedResult, entry.observation.simulatedResult);
   for (const key of Object.keys(next).filter(key => key !== 'gas')) need(canonicalJson(next[key]) === canonicalJson(entry.request[key]), `Retry wallet field changed: ${key}`);
   need(BigInt(next.gas) <= BigInt(entry.request.gas), 'Retry estimate exceeds the original reviewed gas');
   need(BigInt(observation.minimumBalance) >= BigInt(entry.request.value) + BigInt(entry.request.gas) * BigInt(entry.request.maxFeePerGas), 'Retry is not funded for original gas plus value');
@@ -221,3 +285,6 @@ export async function preparePublicationRetry(plan, entry, providers, ceilings, 
     issuedAt, expiresAt: issuedAt + 300000, retryAttempt, originalRequestDigest: entry.requestDigest };
   return { ...body, requestDigest: digest('programmable.module-mode-owner-retry.v1', body) };
 }
+
+// Reuse the existing quorum and receipt transport; Engine contributes only its closed contract semantics.
+function engineRpcContext() { return { pair, same, code, read, readConditions, publicBindings, quantity: operationQuantity, observeReceipt: observePublicationReceipt }; }
