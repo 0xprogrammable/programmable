@@ -5,7 +5,7 @@ import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from 
 import { ArrowLeft, ArrowUpRight, RefreshCw } from "lucide-react";
 import { formatUnits, isAddress, type Address, type Hex } from "viem";
 import { useWallet } from "@/components/wallet-provider";
-import { switchModuleModeNetwork } from "@/components/module-mode-wallet-state";
+import { moduleModeSubmissionIsUncertain, switchModuleModeNetwork, useModuleModeOperation } from "@/components/module-mode-wallet-state";
 import { ModuleSchemaField } from "@/components/module-mode-fields";
 import { ROBINHOOD_BLOCK_EXPLORER_URL } from "@/lib/chains";
 import { configurationFromForm, defaultSchemaValue, parseExactUnits, type FormValue } from "@/lib/module-mode/builder";
@@ -14,6 +14,8 @@ import { parseModuleModeAvailability, type ModuleModeAvailability } from "@/lib/
 import { managementActionProblem, moduleManagementChainMatches, readModuleManagementSnapshot,
   type ManagementValue, type ModuleManagedInstance, type ModuleManagementIntent, type ModuleManagementSnapshot } from "@/lib/module-mode/management";
 import type { ManagementAction, ManagementRead } from "@/lib/module-mode/management-manifest";
+import { beginModuleModeOperation, clearModuleModeOperation, moduleModeOperationPath, rememberModuleModeTransactionHash, type ModuleModeOperation } from "@/lib/module-mode-operation-store";
+import { fetchModuleModeOperationRelease, recoverModuleModeOperation } from "@/lib/module-mode-operation-recovery";
 import styles from "./module-coin-console.module.css";
 
 type Phase = "idle" | "preparing" | "review" | "wallet" | "pending" | "unconfirmed" | "checking" | "mined" | "reverted";
@@ -51,6 +53,8 @@ export function ModuleCoinConsole({ token }: { token: Address }) {
   const generation = useRef(0);
   const operation = useRef(false);
   const account = wallet.wallet?.account ?? null;
+  const saved = useModuleModeOperation(account ?? undefined);
+  const activeOperation = useRef<ModuleModeOperation | null>(null);
   const actor = account?.toLowerCase() as Address | undefined;
   const walletReady = !!account && wallet.authenticated && wallet.sessionReady;
   const onChain = moduleManagementChainMatches(wallet.wallet?.chainId);
@@ -77,7 +81,7 @@ export function ModuleCoinConsole({ token }: { token: Address }) {
   }, [refresh]);
 
   const prepare = async (intent: ModuleManagementIntent) => {
-    if (operation.current || ["wallet", "pending", "unconfirmed", "checking"].includes(phase)) return;
+    if (operation.current || saved.blocked || ["wallet", "pending", "unconfirmed", "checking"].includes(phase)) return;
     if (!walletReady || !onChain || !account || !availability?.release) { setError("Connect your wallet on Robinhood Chain before reviewing an action."); return; }
     operation.current = true; setError(""); setPrepared(null); setHash(null); setPhase("preparing");
     try {
@@ -89,41 +93,64 @@ export function ModuleCoinConsole({ token }: { token: Address }) {
     finally { operation.current = false; }
   };
   const confirm = async () => {
-    if (!prepared || phase !== "review" || operation.current) return;
+    if (!prepared || phase !== "review" || operation.current || saved.blocked) return;
     operation.current = true; setError(""); setPhase("wallet");
     let submittedHash: Hex | null = null;
+    let durableOperation: ModuleModeOperation | null = null;
+    let providerCalled = false;
     try {
+      durableOperation = await beginModuleModeOperation(prepared);
+      activeOperation.current = durableOperation;
       // The provider revalidates the branded operation and owns the shared wallet request lock.
+      providerCalled = true;
       const sentHash: Hex = await wallet.sendModuleModeTransaction(prepared);
       submittedHash = sentHash; setHash(sentHash); setPhase("pending");
+      try { durableOperation = rememberModuleModeTransactionHash(durableOperation, sentHash); activeOperation.current = durableOperation; } catch { /* The original durable record still prevents a resend. */ }
       await waitForModuleNativeReceipt({ client, prepared, transactionHash: sentHash });
+      clearModuleModeOperation(durableOperation); activeOperation.current = null;
       setPhase("mined"); setPrepared(null); setLoading(true); await refresh();
     } catch (caught) {
       setError(errorMessage(caught));
       // Uncertain wallet/RPC responses retain the prepared request only for receipt verification.
-      if (caught instanceof ModuleNativeTransactionRevertedError) { setPhase("reverted"); setPrepared(null); }
+      if (caught instanceof ModuleNativeTransactionRevertedError && caught.transactionHash === submittedHash) {
+        if (durableOperation) { try { clearModuleModeOperation(durableOperation); activeOperation.current = null; } catch { /* Retain the record until storage is available. */ } }
+        setPhase("reverted"); setPrepared(null);
+      }
       else if (submittedHash) setPhase("pending");
-      else if (caught && typeof caught === "object" && "walletRequestAttempted" in caught && caught.walletRequestAttempted
-        && !("walletRequestRejected" in caught && caught.walletRequestRejected)) setPhase("unconfirmed");
-      else { setPhase("idle"); setPrepared(null); }
+      else if (moduleModeSubmissionIsUncertain(caught, providerCalled)) setPhase("unconfirmed");
+      else {
+        if (durableOperation) { try { clearModuleModeOperation(durableOperation); activeOperation.current = null; } catch { /* Failed cleanup must continue to block another send. */ } }
+        setPhase("idle"); setPrepared(null);
+      }
     } finally { operation.current = false; }
   };
   const checkReceipt = async (transactionHash: Hex) => {
-    if (!prepared || operation.current || !["pending", "unconfirmed"].includes(phase)) return;
-    operation.current = true; setError(""); setHash(transactionHash); setPhase("checking");
+    const record = activeOperation.current ?? saved.operation;
+    if (!record || record.kind !== "manage" || record.token.toLowerCase() !== token.toLowerCase() || operation.current) return;
+    operation.current = true; setError(""); setPhase("checking");
     try {
-      await waitForModuleNativeReceipt({ client, prepared, transactionHash });
+      if (prepared && activeOperation.current?.id === record.id) await waitForModuleNativeReceipt({ client, prepared, transactionHash });
+      else {
+        const originalRelease = await fetchModuleModeOperationRelease(record.releaseDigest);
+        await recoverModuleModeOperation({ client, operation: record, release: originalRelease, transactionHash });
+      }
+      clearModuleModeOperation(record); activeOperation.current = null; setHash(transactionHash);
       setPhase("mined"); setPrepared(null); setLoading(true); await refresh();
     } catch (caught) {
       setError(errorMessage(caught));
-      if (caught instanceof ModuleNativeTransactionRevertedError) { setPhase("reverted"); setPrepared(null); }
-      else setPhase("pending");
+      if (caught instanceof ModuleNativeTransactionRevertedError && caught.transactionHash === transactionHash) {
+        try { clearModuleModeOperation(record); activeOperation.current = null; } catch { /* Keep the record available for another read. */ }
+        setHash(transactionHash); setPhase("reverted"); setPrepared(null);
+      } else setPhase(hash || record.transactionHash ? "pending" : "unconfirmed");
     } finally { operation.current = false; }
   };
   const currentSnapshot = snapshot && snapshot.actor === (actor ?? null) ? snapshot : null;
+  const recoveryHere = saved.operation?.kind === "manage" && saved.operation.token.toLowerCase() === token.toLowerCase();
+  const displayPhase = saved.blocked && !["preparing", "wallet", "checking", "pending", "unconfirmed"].includes(phase) ? "unconfirmed" : phase;
   return <ModuleCoinConsoleView token={token} snapshot={currentSnapshot} loading={loading}
     unavailable={!loading && !error && availability?.release === null} walletReady={walletReady} onChain={onChain}
-    phase={phase} prepared={prepared} hash={hash} error={error}
+    phase={displayPhase} prepared={prepared} hash={hash ?? (recoveryHere ? saved.operation?.transactionHash ?? null : null)} error={error || saved.error || ""}
+    recoveryOperation={saved.operation && !recoveryHere ? saved.operation : undefined} recoveryBlocked={saved.blocked}
     onPrepare={intent => { void prepare(intent); }} onConfirm={() => { void confirm(); }}
     onCheckReceipt={transactionHash => { void checkReceipt(transactionHash); }}
     onCancel={() => { if (phase === "review") { setPrepared(null); setPhase("idle"); } }} onRefresh={() => { setLoading(true); void refresh(); }}
@@ -137,12 +164,14 @@ export interface ModuleCoinConsoleViewProps {
   onPrepare: Prepare; onConfirm: () => void; onCancel: () => void; onRefresh: () => void;
   onCheckReceipt: (transactionHash: Hex) => void;
   onWallet: () => void; onSwitch: () => void;
+  recoveryOperation?: ModuleModeOperation;
+  recoveryBlocked?: boolean;
 }
 
 /** Separate presentation lets browser QA supply clearly labelled fixtures without a production bypass. */
 export function ModuleCoinConsoleView(props: ModuleCoinConsoleViewProps) {
   const { snapshot, loading, phase, prepared } = props;
-  const busy = ["preparing", "wallet", "pending", "unconfirmed", "checking"].includes(phase);
+  const busy = props.recoveryBlocked || ["preparing", "wallet", "pending", "unconfirmed", "checking"].includes(phase);
   const disabled = busy || loading || !props.walletReady || !props.onChain || phase === "review";
   return <section className={styles.console} aria-labelledby="module-coin-console-title">
     <div className={styles.topline}>
@@ -163,8 +192,9 @@ export function ModuleCoinConsoleView(props: ModuleCoinConsoleViewProps) {
     {props.unavailable ? <section className={styles.empty}><h2>Module management is not available yet</h2><p>Controls will become available when the Module Mode release is ready. Refresh to check again.</p><Link href="/docs/developers/module-mode" className={styles.textLink}>Read the Module Mode guide</Link></section> : null}
     {loading && !snapshot ? <section className={styles.empty} aria-busy="true"><h2>Loading coin controls</h2><p>Checking this coin and your available balances.</p></section> : null}
 
-    {prepared && phase === "review" ? <PreparedReview prepared={prepared} onConfirm={props.onConfirm} onCancel={props.onCancel} /> : null}
-    {props.hash || phase === "unconfirmed" ? <ReceiptStatus key={`${props.hash ?? "unknown"}:${phase === "mined"}`} phase={phase} hash={props.hash} onCheckReceipt={props.onCheckReceipt} /> : null}
+    {prepared && phase === "review" && !props.recoveryBlocked ? <PreparedReview prepared={prepared} onConfirm={props.onConfirm} onCancel={props.onCancel} /> : null}
+    {props.recoveryOperation ? <section className={styles.receipt} aria-label="Previous transaction"><strong>Previous transaction needs confirmation</strong><p>Check the previous transaction before starting another action.</p><Link className={styles.secondaryButton} href={moduleModeOperationPath(props.recoveryOperation)}>Open transaction recovery</Link></section>
+      : props.hash || phase === "unconfirmed" ? <ReceiptStatus key={`${props.hash ?? "unknown"}:${phase === "mined"}`} phase={phase} hash={props.hash} onCheckReceipt={props.onCheckReceipt} /> : null}
 
     {snapshot ? <div className={styles.layout}>
       <section className={styles.modules} aria-labelledby="coin-modules-heading">
@@ -210,7 +240,7 @@ function ReceiptStatus({ phase, hash, onCheckReceipt }: { phase: Phase; hash: He
   return <section className={styles.receipt} aria-label="Transaction status">
     <strong>{phase === "mined" ? "Transaction mined" : phase === "reverted" ? "Transaction reverted" : "Confirmation not verified"}</strong>
     {hash ? <a href={`${ROBINHOOD_BLOCK_EXPLORER_URL}/tx/${hash}`} target="_blank" rel="noreferrer">View transaction<ArrowUpRight size={14} aria-hidden="true" /></a> : null}
-    {unresolved ? <><p>Check your wallet activity before doing anything else. Checking confirmation only reads the chain and never sends another transaction.</p>
+    {unresolved ? <><p>Your request is saved in this browser so you can return after a reload. Checking confirmation only reads the chain and never sends another transaction.</p>
       <form onSubmit={check} className={styles.receiptForm}>
         <label className={styles.field}>Transaction hash<input ref={input} value={candidate} onChange={event => setCandidate(event.target.value)} placeholder="0x…" spellCheck={false} autoComplete="off" aria-invalid={!!error} aria-describedby={error ? inputId : undefined} /></label>
         {error ? <p id={inputId} className={styles.fieldError} role="alert">{error}</p> : null}

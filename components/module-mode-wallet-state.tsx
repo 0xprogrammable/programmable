@@ -1,8 +1,21 @@
 import { sha256, type Hex } from "viem";
+import { useCallback, useMemo, useSyncExternalStore } from "react";
 
 import { ROBINHOOD_CHAIN_ID } from "@/lib/chains";
 import type { ModuleModeDraft } from "@/lib/module-mode/builder";
 import { isProgrammableTokenImageUrl, readTokenImageUploadResponse } from "@/lib/token-image";
+import { moduleModeOperationSnapshot, parseModuleModeOperation, subscribeToModuleModeOperation, type ModuleModeOperation } from "@/lib/module-mode-operation-store";
+
+export function useModuleModeOperation(account: string | undefined): { operation: ModuleModeOperation | null; blocked: boolean; error: string | null } {
+  const subscribe = useCallback((listener: () => void) => subscribeToModuleModeOperation(account, listener), [account]);
+  const snapshot = useCallback(() => moduleModeOperationSnapshot(account), [account]);
+  const raw = useSyncExternalStore(subscribe, snapshot, () => null);
+  return useMemo(() => {
+    if (raw === null || !account) return { operation: null, blocked: false, error: null };
+    try { return { operation: parseModuleModeOperation(raw, account), blocked: true, error: null }; }
+    catch { return { operation: null, blocked: true, error: "Your saved transaction record cannot be read. Check your wallet activity before continuing. Another transaction will not be sent." }; }
+  }, [raw, account]);
+}
 
 export interface ModuleModeWalletSnapshot {
   account?: string;
