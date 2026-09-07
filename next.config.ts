@@ -98,6 +98,16 @@ const nextConfig: NextConfig = {
   async redirects() {
     return [
       {
+        source: "/docs/developers/custom-launch.md",
+        destination: "/developers/custom-launch-api-v1.md",
+        permanent: false,
+      },
+      {
+        source: "/docs/developers/custom-launch",
+        destination: "/developer-reference/custom-launch",
+        permanent: false,
+      },
+      {
         source: "/:path*",
         has: [{ type: "host", value: "www.programmable.market" }],
         destination: "https://programmable.market/:path*",

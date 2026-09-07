@@ -15,11 +15,6 @@
   ],
   "redirects": [
     {
-      "source": "/docs/developers/custom-launch",
-      "destination": "/developer-reference/custom-launch",
-      "permanent": false
-    },
-    {
       "source": "/docs/developers/module-mode",
       "destination": "/developer-reference/module-mode",
       "permanent": false

@@ -32,8 +32,11 @@ describe("programmable.market website origin", () => {
 
   it("redirects only the new www host to the apex", async () => {
     const redirects = await nextConfig.redirects?.();
+    const hostRedirects = redirects?.filter(({ has }) =>
+      has?.some(({ type }) => type === "host"),
+    );
 
-    expect(redirects).toEqual([
+    expect(hostRedirects).toEqual([
       {
         source: "/:path*",
         has: [{ type: "host", value: "www.programmable.market" }],
