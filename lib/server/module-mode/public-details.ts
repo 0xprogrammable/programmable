@@ -1,9 +1,8 @@
-import configuredCatalog from "@/config/module-mode/catalog.json";
 import { moduleDiscovery } from "@/lib/module-mode/library";
 import { bindNativeCatalogEntry, moduleNativeCatalogDigest, type ModuleModeAvailability } from "@/lib/module-mode/native-catalog";
 import { moduleAddress } from "@/lib/module-mode/release";
 import type { PublicModuleDetails } from "@/lib/module-mode/public-details";
-import { bindModuleModeCatalogFile, readModuleModeAvailability } from "./catalog";
+import { bindModuleModeCatalogFile, configuredModuleModeCatalog, readModuleModeAvailability } from "./catalog";
 import type { ModuleReviewDecisionRecordV1 } from "./review-decision-wire-v1";
 
 /** Only authenticated publications are described. Payout wallets never determine authorship. */
@@ -32,6 +31,8 @@ export function resolvePublicModuleDetails(availability: ModuleModeAvailability,
   } catch { return null; }
 }
 
-export async function readPublicModuleDetails(): Promise<PublicModuleDetails | null> {
-  return resolvePublicModuleDetails(await readModuleModeAvailability(), configuredCatalog);
+export async function readPublicModuleDetails(releaseDigest?: string): Promise<PublicModuleDetails | null> {
+  try {
+    return resolvePublicModuleDetails(await readModuleModeAvailability(releaseDigest), configuredModuleModeCatalog(releaseDigest));
+  } catch { return null; }
 }

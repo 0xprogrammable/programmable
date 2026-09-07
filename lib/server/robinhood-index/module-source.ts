@@ -1,10 +1,23 @@
 import preview from "@/config/module-mode/robinhood.preview.json";
+import { bindActiveModuleEngineRelease, type ModuleEngineRelease } from "@/lib/module-engine/catalog";
 import { bindActiveModuleModeRelease, moduleHash, moduleRecord, moduleUint, type ModuleModeRelease } from "@/lib/module-mode/release";
-import { normalizeModuleModeLaunches, type ModuleModeProvenance } from "@/lib/module-mode/provenance";
-import type { RobinhoodModuleLaunch } from "@/lib/robinhood-launches";
+import type { ModuleModeProvenance } from "@/lib/module-mode/provenance";
+import type { ModuleModeProvenanceV2 } from "@/lib/module-mode/provenance-v2";
+import { normalizeSupportedModuleModeLaunches } from "@/lib/module-mode/source-adapters";
+import type { RobinhoodNativeModuleLaunch, RobinhoodEngineLaunch } from "@/lib/robinhood-launches";
+import { normalizeModuleEngineLaunchesV1, type ModuleEngineProvenanceV1 } from "@/lib/module-engine/index/provenance-v1";
 import { IndexRangeTooWide, type ModuleModeIndexSource } from "./sync";
 import type { Checkpoint } from "./model";
-import { parseStrictJson } from "../projection-target/canonical-json";
+import { canonicalizeJson, parseStrictJson } from "../projection-target/canonical-json";
+
+export type SupportedModuleModeRelease = ModuleModeRelease | ModuleEngineRelease;
+function bindSupportedRelease(value: unknown): SupportedModuleModeRelease {
+  return value && typeof value === "object" && Object.getOwnPropertyDescriptor(value, "sourceVersion")?.value === "module-engine-v1"
+    ? bindActiveModuleEngineRelease(value) : bindActiveModuleModeRelease(value);
+}
+function sourceAddress(release: SupportedModuleModeRelease): string {
+  return release.sourceVersion === "module-engine-v1" ? release.contracts.host.address : release.contracts.launcher.address;
+}
 
 const COLLECTOR_SCHEMA = "programmable.module-mode-index.v1";
 const MAX_COLLECTOR_BYTES = 16 * 1024 * 1024;
@@ -16,34 +29,67 @@ const MAX_COLLECTOR_BYTES = 16 * 1024 * 1024;
  * before the common two-provider Ethereum finalized checkpoint. No flag or digest substitutes for that work.
  */
 export interface ModuleModeFinalizedCollector {
-  authenticateRelease(release: ModuleModeRelease): Promise<void>;
-  finalizedBoundary(release: ModuleModeRelease): Promise<{
+  authenticateRelease(release: SupportedModuleModeRelease): Promise<void>;
+  finalizedBoundary(release: SupportedModuleModeRelease): Promise<{
     chainId: 4663; sourceReleaseDigest: string; blockNumber: string; blockHash: string; verificationDigest: string;
   }>;
-  canonicalBlock(release: ModuleModeRelease, number: bigint): Promise<{
+  canonicalBlock(release: SupportedModuleModeRelease, number: bigint): Promise<{
     chainId: 4663; blockNumber: string; blockHash: string;
   }>;
-  collectRange(release: ModuleModeRelease, from: bigint, to: bigint): Promise<{
+  collectRange(release: SupportedModuleModeRelease, from: bigint, to: bigint): Promise<{
     sourceReleaseDigest: string; fromBlock: string; toBlock: string; complete: true;
     launches: readonly { evidence: unknown; launchedAt: string | null }[];
   }>;
 }
+export interface ModuleModeReleaseCollector extends ModuleModeFinalizedCollector {
+  listAuthorizedSources(): Promise<ModuleModeReleaseInventory>;
+}
+export type ModuleModeUnavailableSource = {
+  releaseId: string;
+  reasonCode: "MODULE_MODE_RELEASE_UNAVAILABLE" | "MODULE_MODE_RELEASE_COLLISION" | "MODULE_MODE_SOURCE_REGISTRY_UNAVAILABLE" | "MODULE_MODE_RELEASE_DISABLED";
+};
+export type ModuleModeReleaseInventory = {
+  releases: readonly SupportedModuleModeRelease[];
+  unavailableSources: readonly ModuleModeUnavailableSource[];
+};
+export type ModuleModeSourceLane = {
+  releaseDigest: string;
+  source: (signal?: AbortSignal) => Promise<ModuleModeIndexSource>;
+};
 
-export function moduleModePublicLaunch(row: ModuleModeProvenance, launchedAt: string | null): RobinhoodModuleLaunch {
+export function moduleModePublicLaunch(row: ModuleModeProvenance | ModuleModeProvenanceV2, launchedAt: string | null): RobinhoodNativeModuleLaunch {
   if (launchedAt !== null && (typeof launchedAt !== "string" || !Number.isFinite(Date.parse(launchedAt)))) throw new Error("Module Mode launch timestamp is invalid");
-  return Object.freeze({ sourceKind: "module-native-v1", sourceAddress: row.sourceAddress,
+  return Object.freeze({ sourceKind: row.sourceVersion, sourceAddress: row.sourceAddress,
     sourceReleaseDigest: row.sourceReleaseDigest, routerAddress: null, stampHash: null,
     launchId: row.launchId, tokenAddress: row.token, hookAddress: row.hook, creator: row.launchWallet,
     poolManager: row.poolManager, poolId: row.poolId, recipeHash: row.recipeHash, runtime: row.runtime, launchKey: row.launchKey,
     verificationDigest: row.verification.verificationDigest,
     modulePackageIds: Object.freeze(row.revisions.map(revision => revision.packageId)),
     moduleFamilyIds: Object.freeze(row.revisions.map(revision => revision.familyId)),
+    ...(row.sourceVersion === "module-native-v2" ? { economicsPolicyId: row.economicsPolicyId, protocolFeeBps: row.protocolFeeBps,
+      authorPoolFeeBps: row.authorPoolFeeBps, platformFeeBps: row.platformFeeBps as 10 | 30, feeEligibleFamilyIds: row.eligibleFamilies } : {}),
     transactionHash: row.transactionHash, blockNumber: row.blockNumber, blockHash: row.blockHash, logIndex: row.logIndex,
     launchedAt, name: row.tokenIdentity.name, symbol: row.tokenIdentity.symbol, decimals: row.tokenIdentity.decimals });
 }
 
+export function moduleEnginePublicLaunch(row: ModuleEngineProvenanceV1, launchedAt: string | null): RobinhoodEngineLaunch {
+  if (launchedAt !== null && (typeof launchedAt !== "string" || !Number.isFinite(Date.parse(launchedAt)))) throw new Error("Engine launch timestamp is invalid");
+  return Object.freeze({ sourceKind: row.sourceVersion, sourceAddress: row.host, sourceReleaseDigest: row.sourceReleaseDigest,
+    routerAddress: null, stampHash: null, launchId: row.launchId, tokenAddress: row.token, creator: row.creator,
+    hookAddress: row.primaryMarket?.hook ?? null, poolManager: row.primaryMarket?.poolManager ?? null, poolId: row.primaryMarket?.poolId ?? null,
+    engineAddress: row.engine, engineRevisionId: row.revisionId, engineFamilyId: row.familyId, engineManifestHash: row.manifestHash,
+    engineRuntimeCodeHash: row.engineCodeHash, tokenRuntimeCodeHash: row.tokenRuntimeCodeHash, quoteAsset: row.quoteAsset, quoteDecimals: row.quoteDecimals,
+    configurationHash: row.configurationHash, constructorHash: row.constructorHash, initCodeHash: row.initCodeHash, planHash: row.planHash,
+    resourcesHash: row.resourcesHash, verificationDigest: row.verificationDigest, primaryMarket: row.primaryMarket,
+    economicsPolicyId: row.economicsPolicyId, protocolFeeBps: 10, authorPoolFeeBps: row.authorPoolFeeBps as 0 | 20,
+    platformFeeBps: row.platformFeeBps as 10 | 30, feeEligibleFamilyIds: row.eligibleFamilies,
+    modulePackageIds: Object.freeze([row.revisionId]), moduleFamilyIds: Object.freeze([row.familyId]),
+    transactionHash: row.transactionHash, blockNumber: row.blockNumber, blockHash: row.blockHash, logIndex: row.logIndex,
+    launchedAt, name: row.name, symbol: row.symbol, decimals: 18 });
+}
+
 export async function moduleModeSource(profile: unknown, collector: ModuleModeFinalizedCollector): Promise<ModuleModeIndexSource> {
-  const release = bindActiveModuleModeRelease(profile);
+  const release = bindSupportedRelease(profile);
   if (!collector || ["authenticateRelease", "finalizedBoundary", "canonicalBlock", "collectRange"]
     .some(method => typeof collector[method as keyof ModuleModeFinalizedCollector] !== "function")) {
     throw new Error("Module Mode requires the authenticated rollup-finality collector");
@@ -66,7 +112,7 @@ export async function moduleModeSource(profile: unknown, collector: ModuleModeFi
   };
   if ((await block(BigInt(finalized.number))).hash !== finalized.hash) throw new Error("Module Mode finalized boundary changed");
   return {
-    sourceKind: "module-native-v1", sourceAddress: release.contracts.launcher.address,
+    sourceKind: release.sourceVersion, sourceAddress: sourceAddress(release),
     releaseDigest: release.releaseDigest, startBlock: BigInt(release.startBlock), finalized, block,
     async launches(from, to) {
       if (from < BigInt(release.startBlock) || to < from || to > BigInt(finalized.number)) throw new Error("Module Mode scan is outside verified bounds");
@@ -76,9 +122,11 @@ export async function moduleModeSource(profile: unknown, collector: ModuleModeFi
       if (moduleHash(raw.sourceReleaseDigest, "collector.range.release") !== release.releaseDigest
         || raw.fromBlock !== from.toString() || raw.toBlock !== to.toString() || raw.complete !== true
         || !Array.isArray(raw.launches)) throw new Error("Module Mode collector range is incomplete or unbound");
-      if (raw.launches.length > 1000) throw new IndexRangeTooWide("Module Mode launch range exceeds verification budget");
+      if (raw.launches.length > (release.sourceVersion === "module-engine-v1" ? 32 : 1000)) throw new IndexRangeTooWide("Module Mode launch range exceeds verification budget");
       const entries = raw.launches.map(value => moduleRecord(value, ["evidence", "launchedAt"], "collector.launch"));
-      const rows = normalizeModuleModeLaunches(entries.map(entry => entry.evidence), release);
+      const rows = release.sourceVersion === "module-engine-v1"
+        ? normalizeModuleEngineLaunchesV1(entries.map(entry => entry.evidence), release)
+        : normalizeSupportedModuleModeLaunches(entries.map(entry => entry.evidence), release);
       const canonical = new Map<string, string>();
       for (const row of rows) {
         if (!canonical.has(row.blockNumber)) canonical.set(row.blockNumber, (await block(BigInt(row.blockNumber))).hash);
@@ -88,7 +136,7 @@ export async function moduleModeSource(profile: unknown, collector: ModuleModeFi
         if (BigInt(row.blockNumber) < from || BigInt(row.blockNumber) > to) throw new Error("Module Mode launch is outside scan range");
         const timestamp = entries[index].launchedAt;
         if (timestamp !== null && typeof timestamp !== "string") throw new Error("Module Mode launch timestamp is invalid");
-        return moduleModePublicLaunch(row, timestamp);
+        return row.sourceVersion === "module-engine-v1" ? moduleEnginePublicLaunch(row, timestamp) : moduleModePublicLaunch(row, timestamp);
       });
     },
   };
@@ -107,17 +155,57 @@ export async function configuredModuleModeSource(collector?: ModuleModeFinalized
   }));
 }
 
+/** Discover installed source generations, then authenticate and collect each one independently. */
+export async function configuredModuleModeSources(collector?: ModuleModeReleaseCollector, signal?: AbortSignal, primaryProfile: unknown = preview): Promise<{
+  lanes: ModuleModeSourceLane[]; unavailableSources: readonly ModuleModeUnavailableSource[];
+}> {
+  const installed = collector ?? createModuleModeHttpCollector({
+    backendBaseUrl: process.env.PROGRAMMABLE_CUSTOM_LAUNCH_API_BASE_URL ?? "",
+    websiteToken: process.env.PROGRAMMABLE_CUSTOM_LAUNCH_WEBSITE_TOKEN ?? "", fetchBackend: fetch, signal,
+  });
+  const { releases, unavailableSources: unavailable } = await installed.listAuthorizedSources();
+  const unavailableSources = [...unavailable];
+  const byDigest = new Map<string, SupportedModuleModeRelease>();
+  const bySource = new Map<string, string>();
+  // Launch availability is independent from the inventory of supported historical sources.
+  // A broken current profile is visible but does not stop discovery or collection of other generations.
+  try {
+    const descriptors = primaryProfile && typeof primaryProfile === "object" ? Object.getOwnPropertyDescriptors(primaryProfile) : {};
+    const intentionallyDisabled = descriptors.enabled?.value === false && descriptors.status?.value === "preview";
+    if (!intentionallyDisabled) {
+      const primary = bindActiveModuleModeRelease(primaryProfile);
+      byDigest.set(primary.releaseDigest, primary);
+      bySource.set(primary.contracts.launcher.address, primary.releaseDigest);
+    }
+  } catch { unavailableSources.push({ releaseId: "module-mode-current", reasonCode: "MODULE_MODE_RELEASE_UNAVAILABLE" }); }
+  for (const release of releases) {
+    const existing = byDigest.get(release.releaseDigest);
+    if (existing && canonicalizeJson(existing) !== canonicalizeJson(release)) throw new Error("Module Mode release authorization changed");
+    const sourceDigest = bySource.get(sourceAddress(release));
+    if (sourceDigest && sourceDigest !== release.releaseDigest) throw new Error("Module Mode source identity collides");
+    byDigest.set(release.releaseDigest, release); bySource.set(sourceAddress(release), release.releaseDigest);
+  }
+  const lanes = [...byDigest.values()].map(release => ({ releaseDigest: release.releaseDigest,
+    source: (laneSignal?: AbortSignal) => moduleModeSource(release, collector ?? createModuleModeHttpCollector({
+      backendBaseUrl: process.env.PROGRAMMABLE_CUSTOM_LAUNCH_API_BASE_URL ?? "",
+      websiteToken: process.env.PROGRAMMABLE_CUSTOM_LAUNCH_WEBSITE_TOKEN ?? "", fetchBackend: fetch,
+      signal: signal && laneSignal ? AbortSignal.any([signal, laneSignal]) : signal ?? laneSignal,
+    })),
+  }));
+  return { lanes, unavailableSources: Object.freeze(unavailableSources) };
+}
+
 /** Server-held service credentials only. Contributor keys and client-supplied profiles never enter this route. */
 export function createModuleModeHttpCollector(input: {
   backendBaseUrl: string; websiteToken: string; fetchBackend: typeof fetch; signal?: AbortSignal;
-}): ModuleModeFinalizedCollector {
+}): ModuleModeReleaseCollector {
   let base: URL;
   try { base = new URL(input.backendBaseUrl); } catch { throw new Error("Module Mode collector origin is not configured"); }
   if (base.protocol !== "https:" || base.username || base.password || base.search || base.hash
     || base.pathname !== "/" || !base.hostname || base.port) throw new Error("Module Mode collector origin is invalid");
   if (typeof input.websiteToken !== "string" || input.websiteToken.length < 32 || input.websiteToken.length > 1024
     || /[\s\u0000-\u001f\u007f]/u.test(input.websiteToken)) throw new Error("Module Mode service credential is not configured");
-  const request = async (operation: "release" | "boundary" | "block" | "range", body: Record<string, string>): Promise<unknown> => {
+  const request = async (operation: "sources" | "release" | "boundary" | "block" | "range", body: Record<string, string>): Promise<unknown> => {
     let response: Response;
     try {
       response = await input.fetchBackend(new URL(`/internal/module-mode-index/v1/${operation}`, base), {
@@ -162,9 +250,30 @@ export function createModuleModeHttpCollector(input: {
     return envelope.result;
   };
   return {
+    async listAuthorizedSources() {
+      const result = moduleRecord(await request("sources", {}), ["releases", "unavailableSources"], "collector.sources");
+      if (!Array.isArray(result.releases) || result.releases.length > 32) throw new Error("Module Mode source inventory exceeds its budget");
+      const releases = result.releases.map(bindSupportedRelease);
+      if (new Set(releases.map(release => release.releaseDigest)).size !== releases.length
+        || new Set(releases.map(release => sourceAddress(release))).size !== releases.length) throw new Error("Module Mode sources contain duplicate identities");
+      if (!Array.isArray(result.unavailableSources) || result.unavailableSources.length > 33) throw new Error("Module Mode unavailable source inventory exceeds its budget");
+      const unavailableSources = result.unavailableSources.map(value => {
+        const entry = moduleRecord(value, ["releaseId", "reasonCode"], "collector.sources.unavailable");
+        if (typeof entry.releaseId !== "string" || entry.releaseId.length > 96 || !/^module-mode-[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(entry.releaseId)
+          || !["MODULE_MODE_RELEASE_UNAVAILABLE", "MODULE_MODE_RELEASE_COLLISION", "MODULE_MODE_SOURCE_REGISTRY_UNAVAILABLE", "MODULE_MODE_RELEASE_DISABLED"].includes(entry.reasonCode as string)
+          || (entry.releaseId === "module-mode-sources") !== (entry.reasonCode === "MODULE_MODE_SOURCE_REGISTRY_UNAVAILABLE")) {
+          throw new Error("Module Mode unavailable source identity is invalid");
+        }
+        return Object.freeze({ releaseId: entry.releaseId, reasonCode: entry.reasonCode as ModuleModeUnavailableSource["reasonCode"] });
+      });
+      if (new Set(unavailableSources.map(entry => entry.releaseId)).size !== unavailableSources.length) throw new Error("Module Mode unavailable sources contain duplicate identities");
+      if (releases.length === 0 && unavailableSources.length === 0) throw new Error("Module Mode source inventory is unavailable");
+      return { releases: Object.freeze(releases), unavailableSources: Object.freeze(unavailableSources) };
+    },
     async authenticateRelease(release) {
-      const actual = bindActiveModuleModeRelease(await request("release", { sourceReleaseDigest: release.releaseDigest }));
-      if (JSON.stringify(actual) !== JSON.stringify(release)) throw new Error("Module Mode collector active release differs");
+      const value = await request("release", { sourceReleaseDigest: release.releaseDigest });
+      const actual = release.sourceVersion === "module-engine-v1" ? bindActiveModuleEngineRelease(value) : bindActiveModuleModeRelease(value);
+      if (canonicalizeJson(actual) !== canonicalizeJson(release)) throw new Error("Module Mode collector active release differs");
     },
     async finalizedBoundary(release) {
       return await request("boundary", { sourceReleaseDigest: release.releaseDigest }) as Awaited<ReturnType<ModuleModeFinalizedCollector["finalizedBoundary"]>>;

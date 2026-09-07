@@ -18,14 +18,14 @@ If the creator sets their fee to 0%, they earn no creator fees from those trades
 
 ## Module Mode
 
-Coin creators choose their own trading fee, up to **10%**, and keep that fee. Our Module Mode fee policy adds **0.30% (30 bps)**, divided as follows:
+Coin creators choose their own trading fee, up to **10%**, and keep that fee. Native V2 and the Engine V1 quote trading profile add **0.10% (10 bps)** for Programmable. When a coin uses eligible module families, the total becomes **0.30% (30 bps)**, divided as follows:
 
 | Recipient | Share of each trade |
 | --- | --- |
 | Programmable | 0.10% (10 bps) |
 | Authors of the modules used by the coin | 0.20% (20 bps) in total |
 
-The author share is divided between the eligible module families used by the coin. Adding more modules does not increase the total 0.20% author fee. Authors earn when their modules are used in coins that trade.
+The author share is divided equally between the distinct eligible module families used by the coin. Adding more modules does not increase the total 0.20% author fee. Authors earn when their modules are used in coins that trade. Without eligible families, these versions charge only the 0.10% Programmable fee. Escrow deposits, settlement requests and refunds do not create trading fees.
 
 For example, under this model, a **1% creator fee** plus the **0.30% platform and author fee** gives a **1.30% combined fee**. Any separate pool fee is additional.
 

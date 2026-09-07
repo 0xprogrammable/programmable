@@ -3,6 +3,9 @@ import { describe, expect, it, vi } from "vitest";
 
 import { ModuleModeBuilder } from "@/components/module-mode-builder";
 import { ModuleModeLaunchResult } from "@/components/module-mode-launch-host";
+import { ModuleSchemaField } from "@/components/module-mode-fields";
+import { bindActiveModuleModeRelease, computeModuleModeReleaseDigest, MODULE_MODE_ECONOMICS_POLICY_V2 } from "@/lib/module-mode/release";
+import { moduleEvidenceFixture, a } from "./fixtures/module-mode-evidence";
 
 vi.mock("@/components/view-chain", () => ({ useViewChain: () => ({ hydrated: true, viewChainId: 4663, setViewChainId: vi.fn() }) }));
 vi.mock("@/components/wallet-provider", () => ({ useWallet: vi.fn() }));
@@ -11,6 +14,24 @@ const token = `0x${"12".repeat(20)}` as const;
 const transactionHash = `0x${"34".repeat(32)}` as const;
 
 describe("Module Mode launch presentation", () => {
+  it("renders the released plain fee for each generation and no V2 fee under a V1 release", () => {
+    const v1 = bindActiveModuleModeRelease(moduleEvidenceFixture().release);
+    const identity = { ...v1, schemaVersion: "programmable.module-mode-source.v2", sourceVersion: "module-native-v2", economicsPolicyId: MODULE_MODE_ECONOMICS_POLICY_V2 };
+    const v2 = bindActiveModuleModeRelease({ ...identity, releaseDigest: computeModuleModeReleaseDigest(identity) });
+    const legacy = renderToStaticMarkup(<ModuleModeBuilder release={v1} catalog={[]} />);
+    const current = renderToStaticMarkup(<ModuleModeBuilder release={v2} catalog={[]} />);
+    expect(legacy).toContain("+ 0.20%"); expect(legacy).not.toContain("+ 0.10%");
+    expect(current).toContain("+ 0.10%"); expect(current).not.toContain("0.20%");
+    expect(current).toContain("No author fee applies without an eligible module family");
+  });
+  it("shows complete fixed asset values and suppresses every child edit of a fixed template", () => {
+    const schema = { type: "record", required: ["asset", "amount"], binding: { mode: "fixed", value: { asset: { chainId: "4663", address: a(99), decimals: 18 }, amount: "1000000000000000" } }, fields: {
+      asset: { type: "asset", label: "Paired asset" }, amount: { type: "uint", label: "Amount" },
+    } } as const;
+    const html = renderToStaticMarkup(<ModuleSchemaField schema={schema as never} value={{}} onChange={vi.fn()} path="/module/template" fields={{ "/amount": { decimals: 18, suffix: "ETH" } }} />);
+    expect(html).toContain("Fixed by template"); expect(html).toContain(a(99)); expect(html).toContain("Chain 4663"); expect(html).toContain("0.001 ETH");
+    expect(html).not.toMatch(/<input|<select|<button/);
+  });
   it("starts with an empty image picker and named optional social fields", () => {
     const html = renderToStaticMarkup(<ModuleModeBuilder catalog={[]} launchAction={{ label: "Launch coin", description: "", onContinue: vi.fn() }} />);
     expect(html).toContain("Choose image");

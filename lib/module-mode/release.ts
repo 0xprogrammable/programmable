@@ -2,6 +2,9 @@ import { isAddress, keccak256, toHex, type Address, type Hex } from "viem";
 
 export const MODULE_MODE_SOURCE_VERSION = "module-native-v1" as const;
 export const MODULE_MODE_RELEASE_SCHEMA = "programmable.module-mode-source.v1" as const;
+export const MODULE_MODE_SOURCE_VERSION_V2 = "module-native-v2" as const;
+export const MODULE_MODE_RELEASE_SCHEMA_V2 = "programmable.module-mode-source.v2" as const;
+export const MODULE_MODE_ECONOMICS_POLICY_V2 = keccak256(toHex("programmable.module-mode.native-economics.v2"));
 export const MODULE_MODE_FINALITY_POLICY = "robinhood-ethereum-finalized-v1" as const;
 export const MODULE_MODE_DEPENDENCIES = [
   "launcher", "hook", "runtime", "registry", "poolManager", "tokenFactory", "swapRouter",
@@ -10,9 +13,7 @@ export const MODULE_MODE_DEPENDENCIES = [
 ] as const;
 export type ModuleModeDependency = typeof MODULE_MODE_DEPENDENCIES[number];
 export type ModuleModeContractPin = Readonly<{ address: Address; runtimeCodeHash: Hex }>;
-export type ModuleModeRelease = Readonly<{
-  schemaVersion: typeof MODULE_MODE_RELEASE_SCHEMA;
-  sourceVersion: typeof MODULE_MODE_SOURCE_VERSION;
+type ModuleModeReleaseFields = Readonly<{
   chainId: 4663;
   enabled: true;
   status: "active";
@@ -27,6 +28,24 @@ export type ModuleModeRelease = Readonly<{
   finalityPolicy: typeof MODULE_MODE_FINALITY_POLICY;
   contracts: Readonly<Record<ModuleModeDependency, ModuleModeContractPin>>;
 }>;
+export type ModuleModeReleaseV1 = ModuleModeReleaseFields & Readonly<{
+  schemaVersion: typeof MODULE_MODE_RELEASE_SCHEMA;
+  sourceVersion: typeof MODULE_MODE_SOURCE_VERSION;
+  economicsPolicyId?: never;
+}>;
+export type ModuleModeReleaseV2 = ModuleModeReleaseFields & Readonly<{
+  schemaVersion: typeof MODULE_MODE_RELEASE_SCHEMA_V2;
+  sourceVersion: typeof MODULE_MODE_SOURCE_VERSION_V2;
+  economicsPolicyId: Hex;
+}>;
+export type ModuleModeRelease = ModuleModeReleaseV1 | ModuleModeReleaseV2;
+
+/** Historical native validators must retain their V1-only interpretation boundary. */
+export function bindActiveModuleModeReleaseV1(value: unknown): ModuleModeReleaseV1 {
+  const release = bindActiveModuleModeRelease(value);
+  if (release.sourceVersion !== MODULE_MODE_SOURCE_VERSION) rejectModuleEvidence("releaseV1.sourceVersion");
+  return release;
+}
 
 export class ModuleModeProvenanceError extends Error {
   constructor(readonly code: string) {
@@ -91,30 +110,42 @@ function canonicalJson(value: unknown): string {
   return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonicalJson((value as Record<string, unknown>)[key])}`).join(",")}}`;
 }
 
+function releaseGeneration(record: Record<string, unknown>, label: string) {
+  if (record.sourceVersion === MODULE_MODE_SOURCE_VERSION_V2) {
+    moduleEqual(record.schemaVersion, MODULE_MODE_RELEASE_SCHEMA_V2, `${label}.schemaVersion`);
+    moduleEqual(moduleHash(record.economicsPolicyId, `${label}.economicsPolicyId`), MODULE_MODE_ECONOMICS_POLICY_V2, `${label}.economicsPolicyId`);
+    return { schemaVersion: MODULE_MODE_RELEASE_SCHEMA_V2, sourceVersion: MODULE_MODE_SOURCE_VERSION_V2, economicsPolicyId: MODULE_MODE_ECONOMICS_POLICY_V2 } as const;
+  }
+  moduleEqual(record.schemaVersion, MODULE_MODE_RELEASE_SCHEMA, `${label}.schemaVersion`);
+  moduleEqual(record.sourceVersion, MODULE_MODE_SOURCE_VERSION, `${label}.sourceVersion`);
+  return { schemaVersion: MODULE_MODE_RELEASE_SCHEMA, sourceVersion: MODULE_MODE_SOURCE_VERSION } as const;
+}
+
 /** Immutable identity only. Activation and lifecycle evidence remain separate, avoiding a proof/hash cycle. */
 export function computeModuleModeReleaseDigest(value: unknown): Hex {
   if (!value || typeof value !== "object" || Array.isArray(value)) rejectModuleEvidence("releaseIdentity.object");
   const r = moduleRecord(value, Object.keys(value), "releaseIdentity");
-  moduleEqual(r.schemaVersion, MODULE_MODE_RELEASE_SCHEMA, "releaseIdentity.schemaVersion");
-  moduleEqual(r.sourceVersion, MODULE_MODE_SOURCE_VERSION, "releaseIdentity.sourceVersion");
+  const generation = releaseGeneration(r, "releaseIdentity");
   moduleEqual(r.chainId, 4663, "releaseIdentity.chainId");
   moduleEqual(r.finalityPolicy, MODULE_MODE_FINALITY_POLICY, "releaseIdentity.finalityPolicy");
   if (typeof r.sourceCommit !== "string" || !/^[0-9a-f]{40}$/u.test(r.sourceCommit)) rejectModuleEvidence("releaseIdentity.sourceCommit");
-  const profile = { schemaVersion: MODULE_MODE_RELEASE_SCHEMA, sourceVersion: MODULE_MODE_SOURCE_VERSION,
+  const profile = { ...generation,
     chainId: 4663, sourceCommit: r.sourceCommit, startBlock: moduleUint(r.startBlock, "releaseIdentity.startBlock", true),
     minimumInitialBuyNative: moduleUint(r.minimumInitialBuyNative, "releaseIdentity.minimumInitialBuyNative", true),
     tokenCreationCodeHash: moduleHash(r.tokenCreationCodeHash, "releaseIdentity.tokenCreationCodeHash"),
     finalityPolicy: MODULE_MODE_FINALITY_POLICY, contracts: contractPins(r.contracts) };
-  return keccak256(toHex(canonicalJson({ domain: "programmable.module-mode-release-identity.v1", profile })));
+  return keccak256(toHex(canonicalJson({ domain: generation.sourceVersion === MODULE_MODE_SOURCE_VERSION_V2
+    ? "programmable.module-mode-release-identity.v2" : "programmable.module-mode-release-identity.v1", profile })));
 }
 
 /** Configuration is not release authorization. The caller must authenticate the approved release artifact. */
 export function bindActiveModuleModeRelease(value: unknown): ModuleModeRelease {
+  if (!value || typeof value !== "object" || Array.isArray(value)) rejectModuleEvidence("release.object");
+  const generation = releaseGeneration(moduleRecord(value, Object.keys(value), "release"), "release");
   const r = moduleRecord(value, ["schemaVersion", "sourceVersion", "chainId", "enabled", "status",
     "releaseDigest", "sourceCommit", "deploymentEvidenceDigest", "sourceVerificationDigest", "lifecycleEvidenceDigest",
-    "startBlock", "minimumInitialBuyNative", "tokenCreationCodeHash", "finalityPolicy", "contracts"], "release");
-  moduleEqual(r.schemaVersion, MODULE_MODE_RELEASE_SCHEMA, "release.schemaVersion");
-  moduleEqual(r.sourceVersion, MODULE_MODE_SOURCE_VERSION, "release.sourceVersion");
+    "startBlock", "minimumInitialBuyNative", "tokenCreationCodeHash", "finalityPolicy", "contracts",
+    ...(generation.sourceVersion === MODULE_MODE_SOURCE_VERSION_V2 ? ["economicsPolicyId"] : [])], "release");
   moduleEqual(r.chainId, 4663, "release.chainId");
   moduleEqual(r.enabled, true, "release.enabled");
   moduleEqual(r.status, "active", "release.status");
@@ -123,7 +154,7 @@ export function bindActiveModuleModeRelease(value: unknown): ModuleModeRelease {
   const contracts = contractPins(r.contracts);
   const releaseDigest = moduleHash(r.releaseDigest, "release.releaseDigest");
   moduleEqual(releaseDigest, computeModuleModeReleaseDigest(r), "release.computedDigest");
-  return Object.freeze({ schemaVersion: MODULE_MODE_RELEASE_SCHEMA, sourceVersion: MODULE_MODE_SOURCE_VERSION,
+  return Object.freeze({ ...generation,
     chainId: 4663, enabled: true, status: "active", finalityPolicy: MODULE_MODE_FINALITY_POLICY,
     releaseDigest, sourceCommit: r.sourceCommit,
     deploymentEvidenceDigest: moduleHash(r.deploymentEvidenceDigest, "release.deploymentEvidenceDigest"),

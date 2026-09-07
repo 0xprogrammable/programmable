@@ -6,7 +6,40 @@ A GitHub repository is not required. The descriptor always pins `source.files` w
 
 The source-intake wire contract stays `programmable.modules.api.v0.1`, with source requests in `programmable.modules.submission.v0.1`. Its receipt is a historical record of the saved source. The separate `programmable.modules.review-status.v1` response reports the current build and reviewer workflow; neither response grants onchain admission.
 
-Use the immutable **1.0.0-development.3** standalone CLI for the review commands. Download its [manifest](https://programmable.market/developers/module-mode-cli/v1.0.0-development.3/manifest.json) and [CLI file](https://programmable.market/developers/module-mode-cli/v1.0.0-development.3/programmable-module-mode-1.0.0-development.3.mjs), and verify the file's SHA-256 against `artifact.sha256` in the manifest before running it. It needs Node.js, with no npm install or repository checkout. The older development.1 file remains unchanged and supports intake receipts only. These are development distribution versions; the live API capabilities determine which operations are enabled.
+Use the immutable **1.0.0-development.4** standalone CLI for the review commands. Download its [manifest](https://programmable.market/developers/module-mode-cli/v1.0.0-development.4/manifest.json) and [CLI file](https://programmable.market/developers/module-mode-cli/v1.0.0-development.4/programmable-module-mode-1.0.0-development.4.mjs), and verify the file's SHA-256 against `artifact.sha256` in the manifest before running it. It needs Node.js, with no npm install or repository checkout. The older development.1 file remains unchanged and supports intake receipts only. These are development distribution versions; the live API capabilities determine which operations are enabled.
+
+## Native and Engine source profiles
+
+The same source request accepts reusable Native programs and Engine contributions. A Native component uses `runtime: "programmable.module-native-runtime@1"`; an Engine component uses `runtime: "programmable.module-engine-solidity@1"` with its real Solidity `sourcePath` and `entrypoint`. Listing a capability in `requiresHost` does not implement it. No second Engine intake or signing endpoint is introduced.
+
+The operator chooses `programmable.native-solidity@1` or `programmable.module-engine-solidity@1` in the existing review plan. Engine builds bind the complete compiler input, creation code, canonical `constructor(Context,bytes)` arguments, runtime template and compiler-derived immutable patches, then execute the declared operations in the isolated test harness. Contributor plans and local results cannot assign a protected review job or approve a revision.
+
+The [Engine starter manifest](https://programmable.market/developers/module-mode-starters/engine-program/v0.1.0-development.1/manifest.json) identifies the [source archive](https://programmable.market/developers/module-mode-starters/engine-program/v0.1.0-development.1/engine-program-0.1.0-development.1.tar.gz). Verify its hash before extracting it. Follow its `README.md`, supply your own author/reward wallets and family salt, run the local build, then use `prepare-module-submission` and `submit-module` below. The starter implements funded, creator-attested settlement with expiry refunds. It has no deployed host, approved revision or public availability claim.
+
+SDK development.4 configuration fields can declare `binding: {mode: "input", default?: value}` or `binding: {mode: "fixed", value}`. Fixed values may be omitted or repeated exactly; an override fails with `OPEN_CONFIG_FIXED_OVERRIDE`. A general quote address is a launch input in one reusable package. A fixed quote also requires the reviewed host revision and constructor to enforce that address against direct onchain calls. General quote trading still requires a nonzero fixed infrastructure configuration hash. See [Build a module](https://programmable.market/developer-reference/module-mode) for profile limits, fee versions and website-independent recovery.
+
+### Packaged Engine dependencies
+
+Keep dependency bytes in the submitted source inventory and include their hashes. For scoped Solidity imports, Engine review supports these fixed aliases from SDK-safe file paths to compiler source names:
+
+| Submitted path prefix | Solidity import prefix |
+| --- | --- |
+| `dependencies/scoped/openzeppelin/contracts/` | `@openzeppelin/contracts/` |
+| `dependencies/scoped/openzeppelin/uniswap-hooks/` | `@openzeppelin/uniswap-hooks/` |
+| `dependencies/scoped/uniswap/blocknumberish/` | `@uniswap/blocknumberish/` |
+| `dependencies/scoped/uniswap/liquidity-launcher/` | `@uniswap/liquidity-launcher/` |
+| `dependencies/scoped/uniswap/uerc20-factory/` | `@uniswap/uerc20-factory/` |
+| `dependencies/scoped/uniswap/v4-core/` | `@uniswap/v4-core/` |
+| `dependencies/scoped/uniswap/v4-periphery/` | `@uniswap/v4-periphery/` |
+| `dependencies/scoped/solady/src/` | `@solady/src/` |
+
+For example, package `dependencies/scoped/uniswap/v4-core/src/interfaces/IPoolManager.sol` for an unchanged import of `@uniswap/v4-core/src/interfaces/IPoolManager.sol`. The worker preserves file contents and rejects duplicate compiler source names with `MODULE_BUILD_SOURCE_ALIAS_COLLISION`. It does not fetch imports or accept contributor-selected remappings. These aliases apply only to Engine compilation; the Native profile keeps its existing source rules.
+
+### Quote review environment
+
+The operator can select `testEnvironment` in the existing Engine build plan with `profile: "programmable.engine-quote-v4-v3@1"` and the exact `sourceDigest` supplied by the deployed worker's reviewed service profile. This selects a fixed isolated V4/V3 environment, including archived dependency artifacts and service-owned test assets. The digest binds its recipe, Solidity fixture and dependency archive. A plan cannot supply a different genesis, deployment script, compiler command or external endpoint.
+
+Plans without this field retain the existing Engine environment. The selected profile and digest remain bound through the saved plan, worker job and build artifact. Tests of fixed templates must still use the exact configuration admitted for publication. Successful fixture execution does not establish live token eligibility, production market liquidity or public launch availability.
 
 ## Author and reward wallet
 
@@ -26,7 +59,7 @@ Use Node.js 24.14 or newer within the supported Node 24 release line. Set `MODUL
 The standalone CLI works from your own module directory:
 
 ```bash
-MODULE_CLI=/absolute/path/to/programmable-module-mode-1.0.0-development.3.mjs
+MODULE_CLI=/absolute/path/to/programmable-module-mode-1.0.0-development.4.mjs
 MODULE_API_ORIGIN=https://api.programmable.market
 
 node "$MODULE_CLI" module-capabilities \
@@ -150,7 +183,7 @@ Public capabilities do not require `apiKey`. Authenticated methods require a key
 
 Each request contains the descriptor and exactly its pinned source files, encoded as canonical base64. Local limits are 128 files, 4 MiB per file, 16 MiB total raw source and 24 MiB serialized HTTP request bytes. Base64 expansion is included in the HTTP limit. The deployment may publish lower limits; the client checks those before uploading. A source hash match proves the received bytes match the descriptor. It does not prove source ownership, repository history, a successful build, runtime safety or approval.
 
-Build profiles have separate limits. The first `programmable.native-solidity@1` reviewer-selected profile supports at most 4 MiB of total submitted source bytes, including packaged dependencies and documentation, and 16 KiB of encoded configuration. An intake receipt for a larger package does not promise that this profile can build it. `MODULE_BUILD_PROFILE_CAPACITY_EXCEEDED` identifies that mismatch; a different host/profile requires its own supported review path. The open intake format and contributor source identity remain unchanged.
+Build profiles have separate limits. The reviewer-selected `programmable.native-solidity@1` and `programmable.module-engine-solidity@1` profiles each support at most 4 MiB of total submitted source bytes, including packaged dependencies and documentation, and 16 KiB of encoded configuration. Engine initialization and operation data each have a 16 KiB ceiling; the reviewed execution budget is at most 3,000,000 gas. An intake receipt for a larger package does not promise that a profile can build it. `MODULE_BUILD_PROFILE_CAPACITY_EXCEEDED` identifies a source-size mismatch; a different host/profile requires its own supported review path. The open intake format and contributor source identity remain unchanged.
 
 CLI failures return a nonzero exit code and structured JSON on stderr. Codes and safe field paths are retained; arbitrary server messages, raw response bodies and credential echoes are not printed. Relevant failures include:
 

@@ -15,7 +15,7 @@
   gap: 16px;
   justify-content: space-between;
 }
-.topline { margin-bottom: 24px; }
+.topline { flex-wrap: wrap; margin-bottom: 24px; }
 .back, .tokenLink, .textLink, .receipt a { align-items: center; display: inline-flex; gap: 8px; min-height: 44px; text-decoration: none; }
 .back, .tokenLink { color: var(--mc-muted); }
 .textLink, .receipt a { color: var(--mc-ink); }

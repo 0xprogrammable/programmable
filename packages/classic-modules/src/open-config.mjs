@@ -150,16 +150,24 @@ function uintRange(schema, path) {
   return { bits, minimum, maximum };
 }
 
-export function assertOpenConfigSchema(schema) {
+function checkedSchema(schema) {
   inspectJson(schema, '/schema', OPEN_CONFIG_LIMITS.schemaBytes);
   let nodes = 0;
+  const boundNodes = [];
   function visit(node, path, depth) {
     need(depth <= OPEN_CONFIG_LIMITS.schemaDepth, 'OPEN_CONFIG_SCHEMA_DEPTH', path, 'Schema nesting is too deep');
     need(++nodes <= OPEN_CONFIG_LIMITS.schemaNodes, 'OPEN_CONFIG_SCHEMA_NODES', path, 'Schema has too many nodes');
     need(plain(node) && typeof node.type === 'string', 'OPEN_CONFIG_SCHEMA_TYPE', path, 'Every schema node needs a type');
-    const metadata = ['label', 'help'];
+    const metadata = ['label', 'help', 'binding'];
     if (Object.hasOwn(node, 'label')) dataString(node.label, at(path, 'label'), 120, false);
     if (Object.hasOwn(node, 'help')) dataString(node.help, at(path, 'help'), 2000, false);
+    if (Object.hasOwn(node, 'binding')) {
+      const location = at(path, 'binding');
+      need(plain(node.binding), 'OPEN_CONFIG_BINDING', location, 'Expected an input or fixed binding');
+      need(['input', 'fixed'].includes(node.binding.mode), 'OPEN_CONFIG_BINDING', at(location, 'mode'), 'Binding mode must be input or fixed');
+      keysOnly(node.binding, node.binding.mode === 'fixed' ? ['mode', 'value'] : ['mode'],
+        node.binding.mode === 'input' ? ['default'] : [], location);
+    }
     if (node.type === 'record') {
       keysOnly(node, ['type', 'fields', 'required'], metadata, path);
       need(plain(node.fields), 'OPEN_CONFIG_SCHEMA_FIELDS', at(path, 'fields'), 'Record fields must be an object');
@@ -204,8 +212,26 @@ export function assertOpenConfigSchema(schema) {
         need(!Object.hasOwn(node.variants[branch].fields, node.tag), 'OPEN_CONFIG_VARIANT_TAG', location, 'Branch fields cannot contain the discriminator');
       }
     } else fail('OPEN_CONFIG_SCHEMA_TYPE', at(path, 'type'), 'Unsupported schema type');
+    if (hasBoundValue(node)) boundNodes.push({ node, path });
   }
   visit(schema, '/schema', 0);
+  // Validate author values using the same typed resolver as launch input. Fixed
+  // subtrees cannot depend on a caller-rebindable role, asset or component name.
+  for (const { node, path } of boundNodes) {
+    const fixed = node.binding.mode === 'fixed';
+    resolveConfigValue(node, node.binding[fixed ? 'value' : 'default'], { roles: {}, assets: {}, components: {} }, {
+      path: at(at(path, 'binding'), fixed ? 'value' : 'default'), skipRootBinding: true,
+      allowUnresolved: !fixed, fixedScope: fixed, boundExpansion: true,
+    });
+  }
+  return boundNodes.length > 0;
+}
+
+export function assertOpenConfigSchema(schema) { checkedSchema(schema); }
+
+function hasBoundValue(node) {
+  return node.binding?.mode === 'fixed'
+    || (node.binding?.mode === 'input' && Object.hasOwn(node.binding, 'default'));
 }
 
 const ZERO_ADDRESS = `0x${'0'.repeat(40)}`;
@@ -213,6 +239,14 @@ function address(value, path) {
   need(typeof value === 'string' && isAddress(value), 'OPEN_CONFIG_ADDRESS', path,
     'Expected an EVM address with a valid checksum when mixed case');
   return value.toLowerCase();
+}
+
+function assetLiteral(value, path) {
+  keysOnly(value, ['chainId', 'address', 'decimals'], [], path);
+  const chainId = uint(value.chainId, at(path, 'chainId'));
+  need(chainId > 0n, 'OPEN_CONFIG_CHAIN_ID', at(path, 'chainId'), 'Asset chainId must be positive');
+  integerBound(value.decimals, at(path, 'decimals'), 255);
+  return { chainId: chainId.toString(), address: address(value.address, at(path, 'address')), decimals: value.decimals };
 }
 
 function checkedContext(context) {
@@ -227,14 +261,7 @@ function checkedContext(context) {
     for (const key of Object.keys(map).sort()) {
       const location = at(path, key); name(key, location, true);
       if (kind !== 'assets') output[kind][key] = address(map[key], location);
-      else {
-        const asset = map[key];
-        keysOnly(asset, ['chainId', 'address', 'decimals'], [], location);
-        const chainId = uint(asset.chainId, at(location, 'chainId'));
-        need(chainId > 0n, 'OPEN_CONFIG_CHAIN_ID', at(location, 'chainId'), 'Asset chainId must be positive');
-        integerBound(asset.decimals, at(location, 'decimals'), 255);
-        output.assets[key] = { chainId: chainId.toString(), address: address(asset.address, at(location, 'address')), decimals: asset.decimals };
-      }
+      else output.assets[key] = assetLiteral(map[key], location);
     }
   }
   return output;
@@ -319,6 +346,8 @@ function encodeChecked(parameters, values, path) {
   return encoded;
 }
 
+const MISSING = Symbol('missing configuration input');
+
 /**
  * Compile one root ABI parameter. Records sort field names; arrays retain input order.
  * Optional record fields use tuple(bool present, T value), with type-level zero T
@@ -341,14 +370,16 @@ function encodeChecked(parameters, values, path) {
  * Inputs must be inert JSON data. The direct JavaScript API is not a sandbox for
  * executable JavaScript objects such as Proxies; parse JSON at untrusted boundaries.
  */
-export function compileOpenConfig(schema, values, context = { roles: {}, assets: {}, components: {} }) {
-  assertOpenConfigSchema(schema);
-  inspectJson(values, '', OPEN_CONFIG_LIMITS.valueBytes);
-  const references = checkedContext(context);
+function resolveConfigValue(schema, values, references, options = {}) {
   const bindings = [];
+  let nodes = 0;
 
-  function reference(kind, referenceName, path) {
+  function reference(kind, referenceName, path, fixedScope) {
     name(referenceName, path, true);
+    need(!fixedScope, 'OPEN_CONFIG_FIXED_REFERENCE', path,
+      'Fixed values require literal addresses and asset metadata, not caller-supplied reference names');
+    if (options.allowUnresolved) return kind === 'asset'
+      ? { chainId: '1', address: ZERO_ADDRESS, decimals: 0 } : ZERO_ADDRESS;
     const map = references[kind === 'account' ? 'roles' : kind === 'asset' ? 'assets' : 'components'];
     need(Object.hasOwn(map, referenceName), 'OPEN_CONFIG_UNRESOLVED_REFERENCE', path, `No ${kind} binding exists for ${referenceName}`);
     const resolved = kind === 'asset' ? { ...map[referenceName] } : map[referenceName];
@@ -356,24 +387,44 @@ export function compileOpenConfig(schema, values, context = { roles: {}, assets:
     return resolved;
   }
 
-  function record(node, input, path) {
-    keysOnly(input, node.required, Object.keys(node.fields).filter((key) => !node.required.includes(key)), path);
+  function record(node, input, path, fixedScope) {
+    const suppliedRequired = node.required.filter((key) => !hasBoundValue(node.fields[key]));
+    keysOnly(input, suppliedRequired, Object.keys(node.fields).filter((key) => !suppliedRequired.includes(key)), path);
     const value = {}; const abi = Object.keys(node.fields).length === 0 ? [false] : []; const required = new Set(node.required);
     for (const field of Object.keys(node.fields).sort()) {
-      if (Object.hasOwn(input, field)) {
-        const compiled = visit(node.fields[field], input[field], at(path, field));
+      if (Object.hasOwn(input, field) || hasBoundValue(node.fields[field])) {
+        const compiled = visit(node.fields[field], Object.hasOwn(input, field) ? input[field] : MISSING, at(path, field), fixedScope);
         value[field] = compiled.value;
         abi.push(required.has(field) ? compiled.abi : [true, compiled.abi]);
       } else abi.push([false, absentAbiValue(node.fields[field])]);
     }
     return { value, abi };
   }
-  function visit(node, input, path) {
-    if (node.type === 'record') return record(node, input, path);
+  function visit(node, input, path, fixedScope = false, skipBinding = false) {
+    // Bound work introduced by expanding defaults and comparing fixed subtrees.
+    // Historical unbound schemas retain their original input/output limits.
+    if (options.boundExpansion) need(++nodes <= OPEN_CONFIG_LIMITS.jsonNodes * 2,
+      'OPEN_CONFIG_JSON_NODES', path, 'Resolved configuration has too many values');
+    if (!skipBinding && node.binding?.mode === 'fixed') {
+      const start = bindings.length;
+      const expected = visit(node, node.binding.value, path, true, true);
+      if (input !== MISSING) {
+        const boundary = bindings.length;
+        const supplied = visit(node, input, path, fixedScope, true);
+        const suppliedBindings = bindings.splice(boundary);
+        need(canonicalJson(supplied.value) === canonicalJson(expected.value)
+          && canonicalJson(suppliedBindings) === canonicalJson(bindings.slice(start)),
+        'OPEN_CONFIG_FIXED_OVERRIDE', path, 'Launch input cannot override a package-bound fixed value');
+      }
+      return expected;
+    }
+    if (!skipBinding && input === MISSING && hasBoundValue(node)) input = node.binding.default;
+    need(input !== MISSING, 'OPEN_CONFIG_REQUIRED', path, 'Required field is missing');
+    if (node.type === 'record') return record(node, input, path, fixedScope);
     if (node.type === 'array') {
       need(Array.isArray(input), 'OPEN_CONFIG_TYPE', path, 'Expected an array');
       need(input.length >= (node.minItems ?? 0) && input.length <= node.maxItems, 'OPEN_CONFIG_ARRAY_LIMIT', path, 'Array length is outside its declared bounds');
-      const entries = input.map((value, index) => visit(node.items, value, at(path, index)));
+      const entries = input.map((value, index) => visit(node.items, value, at(path, index), fixedScope));
       return { value: entries.map((entry) => entry.value), abi: entries.map((entry) => entry.abi) };
     }
     if (node.type === 'variant') {
@@ -384,7 +435,7 @@ export function compileOpenConfig(schema, values, context = { roles: {}, assets:
         'OPEN_CONFIG_VARIANT_TAG', at(path, node.tag), 'Unknown variant branch');
       const branch = node.variants[branchName];
       const branchInput = Object.fromEntries(Object.entries(input).filter(([key]) => key !== node.tag));
-      const result = record(branch, branchInput, path);
+      const result = visit(branch, branchInput, path, fixedScope);
       const bytes = encodeChecked([abiParameter(branch)], [result.abi], path);
       return { value: { [node.tag]: branchName, ...result.value }, abi: [BigInt(Object.keys(node.variants).sort().indexOf(branchName)), bytes] };
     }
@@ -415,28 +466,59 @@ export function compileOpenConfig(schema, values, context = { roles: {}, assets:
       need(plain(input), 'OPEN_CONFIG_TYPE', path, 'Expected an account role or explicit address');
       if (Object.hasOwn(input, 'role')) {
         keysOnly(input, ['role'], [], path);
-        return { value: { role: input.role }, abi: reference('account', input.role, path) };
+        return { value: { role: input.role }, abi: reference('account', input.role, path, fixedScope) };
       }
       keysOnly(input, ['address'], [], path);
       const normalized = address(input.address, at(path, 'address'));
       return { value: { address: normalized }, abi: normalized };
     }
     if (node.type === 'asset') {
-      keysOnly(input, ['asset'], [], path);
-      const resolved = reference('asset', input.asset, path);
-      return { value: { asset: input.asset }, abi: resolved.address };
+      need(plain(input), 'OPEN_CONFIG_TYPE', path, 'Expected an asset reference or explicit asset metadata');
+      if (Object.hasOwn(input, 'asset')) {
+        keysOnly(input, ['asset'], [], path);
+        const resolved = reference('asset', input.asset, path, fixedScope);
+        return { value: { asset: input.asset }, abi: resolved.address };
+      }
+      const resolved = assetLiteral(input, path);
+      bindings.push({ path, kind: 'asset', reference: null, resolved: { ...resolved } });
+      return { value: resolved, abi: resolved.address };
+    }
+    need(plain(input), 'OPEN_CONFIG_TYPE', path, 'Expected a component reference or explicit address');
+    if (Object.hasOwn(input, 'address')) {
+      keysOnly(input, ['address'], [], path);
+      const normalized = address(input.address, at(path, 'address'));
+      return { value: { address: normalized }, abi: normalized };
     }
     keysOnly(input, ['component'], [], path);
-    return { value: { component: input.component }, abi: reference('component', input.component, path) };
+    return { value: { component: input.component }, abi: reference('component', input.component, path, fixedScope) };
   }
 
-  const result = visit(schema, values, '');
+  const result = visit(schema, values, options.path ?? '', options.fixedScope, options.skipRootBinding);
+  // Defaults may expand tiny inputs. Apply the same value budget after resolution.
+  const value = JSON.parse(options.boundExpansion
+    ? inspectJson(result.value, options.path ?? '', OPEN_CONFIG_LIMITS.valueBytes) : canonicalJson(result.value));
+  canonicalJson(bindings);
+  return { value, abi: result.abi, bindings };
+}
+
+function resolveCheckedConfig(schema, values, context) {
+  const boundExpansion = checkedSchema(schema);
+  if (values !== undefined) inspectJson(values, '', OPEN_CONFIG_LIMITS.valueBytes);
+  return resolveConfigValue(schema, values === undefined ? MISSING : values, checkedContext(context), { boundExpansion });
+}
+
+/** Resolve typed launch input using package-bound fixed values and editable defaults. */
+export function resolveOpenConfigBindings(schema, values, context = {}) {
+  const { value, bindings } = resolveCheckedConfig(schema, values, context);
+  return { value, bindings };
+}
+
+export function compileOpenConfig(schema, values, context = {}) {
+  const result = resolveCheckedConfig(schema, values, context);
   const abiParameters = [abiParameter(schema)];
   const abiValues = [result.abi];
   const encoded = encodeChecked(abiParameters, abiValues, '');
   // Canonical JSON also establishes that normalized values/bindings can be committed
   // without serializing abiValues, which deliberately contain full-width BigInts.
-  const value = JSON.parse(canonicalJson(result.value));
-  canonicalJson(bindings);
-  return { value, abiParameters, abiValues, encoded, bindings };
+  return { value: result.value, abiParameters, abiValues, encoded, bindings: result.bindings };
 }

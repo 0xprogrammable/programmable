@@ -2,7 +2,7 @@ import { sha256, toHex, type Address, type Hex } from "viem";
 import { assertOpenConfigSchema } from "@/packages/classic-modules/src/open-config.mjs";
 import { assertOpenConstraints } from "@/packages/classic-modules/src/open-constraints.mjs";
 import { NATIVE_ENGINE_PROFILE, type ModuleModeCatalogEntry } from "./builder";
-import { bindActiveModuleModeRelease, moduleAddress, moduleHash, moduleInteger, moduleRecord, type ModuleModeRelease } from "./release";
+import { bindActiveModuleModeRelease, moduleAddress, moduleBytes, moduleHash, moduleInteger, moduleRecord, type ModuleModeRelease } from "./release";
 
 import { isModuleDiscovery } from "./library";
 
@@ -15,6 +15,16 @@ export const MODULE_NATIVE_HOST_CAPABILITIES = [
 export interface ModuleModeNativeBinding {
   familyId: Hex; packageId: Hex; factory: Address; factoryCodeHash: Hex; moduleCodeHash: Hex;
   callbackGas: number; manifestHash: Hex; reviewDigest: Hex;
+  /** Current RegistryV2 review snapshot, independently rechecked before a new launch. */
+  feeEligibility?: ModuleModeFeeEligibility;
+}
+export interface ModuleModeFeeEligibility { eligible: boolean; reviewDigest: Hex }
+export function bindNativeFeeEligibility(value: unknown): ModuleModeFeeEligibility {
+  const raw = moduleRecord(value, ["eligible", "reviewDigest"], "feeEligibility");
+  const reviewDigest = moduleBytes(raw.reviewDigest, "feeEligibility.reviewDigest", 32);
+  if (typeof raw.eligible !== "boolean" || reviewDigest.length !== 66 || (raw.eligible && BigInt(reviewDigest) === 0n)) throw new Error("Invalid family fee eligibility review.");
+  // The registry's untouched default is false/zero. An eligible family always needs an actual review.
+  return { eligible: raw.eligible, reviewDigest };
 }
 export type NativeModuleModeCatalogEntry = ModuleModeCatalogEntry & {
   status: "available"; nativeBinding: ModuleModeNativeBinding; management?: unknown; requiresHost?: string[];
@@ -85,15 +95,22 @@ export function bindNativeCatalogEntry(value: unknown): NativeModuleModeCatalogE
   assertOpenConstraints(entry.constraints ?? []);
   if (entry.legacyUint256Order) throw new Error("A native module cannot use a legacy configuration codec.");
   if (entry.programAbi && (!Array.isArray(entry.programAbi) || entry.programAbi.length > 128 || entry.programAbi.some(arg => !Array.isArray(arg.path) || arg.path.length > 16 || arg.path.some(key => typeof key !== "string") || typeof arg.type !== "string" || arg.type.length > 128))) throw new Error("Invalid native program ABI.");
-  const raw = moduleRecord(entry.nativeBinding, ["familyId", "packageId", "factory", "factoryCodeHash", "moduleCodeHash", "callbackGas", "manifestHash", "reviewDigest"], "nativeBinding");
+  const hasEligibility = Boolean(entry.nativeBinding && Object.hasOwn(entry.nativeBinding, "feeEligibility"));
+  const raw = moduleRecord(entry.nativeBinding, ["familyId", "packageId", "factory", "factoryCodeHash", "moduleCodeHash", "callbackGas", "manifestHash", "reviewDigest", ...(hasEligibility ? ["feeEligibility"] : [])], "nativeBinding");
   const nativeBinding: ModuleModeNativeBinding = {
     familyId: moduleHash(raw.familyId, "nativeBinding.familyId"), packageId: moduleHash(raw.packageId, "nativeBinding.packageId"),
     factory: moduleAddress(raw.factory, "nativeBinding.factory"), factoryCodeHash: moduleHash(raw.factoryCodeHash, "nativeBinding.factoryCodeHash"),
     moduleCodeHash: moduleHash(raw.moduleCodeHash, "nativeBinding.moduleCodeHash"), callbackGas: moduleInteger(raw.callbackGas, "nativeBinding.callbackGas", 500_000),
     manifestHash: moduleHash(raw.manifestHash, "nativeBinding.manifestHash"), reviewDigest: moduleHash(raw.reviewDigest, "nativeBinding.reviewDigest"),
+    ...(hasEligibility ? { feeEligibility: bindNativeFeeEligibility(raw.feeEligibility) } : {}),
   };
   if (nativeBinding.callbackGas < 25_000) throw new Error("Invalid native callback gas budget.");
   // Preserve original JSON bytes/casing for the already published whole-entry digest.
+  return entry;
+}
+export function bindNativeCatalogEntryForRelease(value: unknown, release: Pick<ModuleModeRelease, "sourceVersion">): NativeModuleModeCatalogEntry {
+  const entry = bindNativeCatalogEntry(value);
+  if (Object.hasOwn(entry.nativeBinding, "feeEligibility") !== (release.sourceVersion === "module-native-v2")) throw new Error("Module fee eligibility does not match its source generation.");
   return entry;
 }
 export function parseModuleModeAvailability(value: unknown): ModuleModeAvailability {
@@ -104,12 +121,20 @@ export function parseModuleModeAvailability(value: unknown): ModuleModeAvailabil
   const catalog = raw.catalog.map(entry => {
     if ((entry as ModuleModeCatalogEntry)?.status === "available") {
       if (!release) throw new Error("An available module requires an active release.");
-      return bindNativeCatalogEntry(entry);
+      return bindNativeCatalogEntryForRelease(entry, release);
     }
     if ((entry as ModuleModeCatalogEntry)?.status !== "preview") throw new Error("Invalid module catalog state.");
     validateCatalogBase(entry as ModuleModeCatalogEntry);
     return entry as ModuleModeCatalogEntry;
   });
   if (new Set(catalog.map(entry => entry.id)).size !== catalog.length) throw new Error("Duplicate module catalog IDs.");
+  const eligibility = new Map<string, string>();
+  for (const entry of catalog) if (entry.status === "available") {
+    const binding = (entry as NativeModuleModeCatalogEntry).nativeBinding;
+    if (!binding.feeEligibility) continue;
+    const family = binding.familyId.toLowerCase(); const review = nativeCanonicalJson(bindNativeFeeEligibility(binding.feeEligibility));
+    if (eligibility.has(family) && eligibility.get(family) !== review) throw new Error("Conflicting fee eligibility for the same module family.");
+    eligibility.set(family, review);
+  }
   return { schemaVersion: MODULE_MODE_AVAILABILITY_SCHEMA, release, catalog, reason: raw.reason as string | null };
 }

@@ -3,7 +3,7 @@ import { moduleAddress, computeModuleModeReleaseDigest } from "../../lib/module-
 import { nativeJson, type NativeModuleModeCatalogEntry } from "../../lib/module-mode/native-catalog";
 import { createModuleModeHostManifest, computeModuleModeHostManifestHash, verifyModuleModePublication, type ModuleModeCatalogDefinition, type ModuleModeHostReleaseIdentity, type ModuleModeCatalogPublication } from "../../lib/server/module-mode/catalog";
 import { validateModuleSubmissionRequest } from "../../packages/classic-modules/src/open-transport.mjs";
-import { acceptedDecision, need, requireAuthenticatedReview, reviewDigest, same, type AuthenticatedReview } from "./review";
+import { acceptedDecision, need, requireNativeReview, reviewDigest, same, type AuthenticatedReview } from "./review";
 import { reviewRecord } from "../../lib/module-mode/review-contract";
 
 export const CREATE2_DEPLOYER = Object.freeze({ address: "0x4e59b44847b379578588920ca78fbf26c0b4956c" as Address,
@@ -18,7 +18,7 @@ export const REGISTRY_ABI = parseAbi([
 ]);
 export interface PublicationCall { action: "deployFactory" | "registerReviewedFamily" | "approveRevision"; chainId: 4663; from: Address; to: Address; value: "0x0"; data: Hex }
 export function createHostPreparation(review: AuthenticatedReview, releaseValue: ModuleModeHostReleaseIdentity, definition: ModuleModeCatalogDefinition) {
-  requireAuthenticatedReview(review);
+  requireNativeReview(review);
   const release = nativeJson(releaseValue) as ModuleModeHostReleaseIdentity;
   need(release.releaseDigest === computeModuleModeReleaseDigest(release), "Release identity digest differs");
   const source = validateModuleSubmissionRequest(review.source); need(source.ok, "Invalid source submission");
@@ -38,6 +38,7 @@ export function createHostPreparation(review: AuthenticatedReview, releaseValue:
     manifestHash: computeModuleModeHostManifestHash(manifest) };
 }
 export function prepareModulePublication(review: AuthenticatedReview, release: ModuleModeHostReleaseIdentity, definition: ModuleModeCatalogDefinition, reviewAuthority: Address) {
+  requireNativeReview(review);
   const host = createHostPreparation(review, release, definition), decision = acceptedDecision(review);
   const owner = moduleAddress(reviewAuthority, "registry.owner");
   need(decision.command.hostManifestHash === host.manifestHash, "Acceptance covers another host manifest");

@@ -126,6 +126,24 @@ function request(
 }
 
 describe("production wallet request lock", () => {
+  it("routes native and engine preparations through one account lock and the same wallet authority checks", () => {
+    const provider = readFileSync(join(process.cwd(), "components/wallet-provider.tsx"), "utf8");
+    const start = provider.indexOf("const sendModuleModeTransaction = useCallback");
+    const entrypoint = provider.slice(start, provider.indexOf("const signPredictionPermit = useCallback", start));
+    expect(entrypoint).toContain("prepared: PreparedModuleModeTransaction");
+    expect(entrypoint.match(/runWithBrowserWalletRequestLock\(/g)).toHaveLength(1);
+    expect(entrypoint.match(/method: "eth_sendTransaction"/g)).toHaveLength(1);
+    expect(entrypoint.match(/await sendPrivyTransaction\(/g)).toHaveLength(1);
+    const lock = entrypoint.indexOf("runWithBrowserWalletRequestLock({");
+    const authority = entrypoint.indexOf("await assertAuthority();", lock);
+    const validation = entrypoint.indexOf("await revalidateModuleModeTransaction(prepared, account)", authority);
+    const refreshedAuthority = entrypoint.indexOf("await assertAuthority();", validation);
+    expect(authority).toBeGreaterThan(lock); expect(validation).toBeGreaterThan(authority);
+    expect(refreshedAuthority).toBeGreaterThan(validation); expect(entrypoint.indexOf('method: "eth_sendTransaction"')).toBeGreaterThan(refreshedAuthority);
+    expect(entrypoint).toContain("current.walletCapability !== boundWallet"); expect(entrypoint).toContain("walletRequestAttempted: false");
+    expect(entrypoint).not.toContain("switchChain(");
+  });
+
   it("gates every production transaction and permit entrypoint before wallet I/O", () => {
     const provider = readFileSync(
       join(process.cwd(), "components/wallet-provider.tsx"),

@@ -1,3 +1,4 @@
+import { runEnginePublication } from "./main-engine";
 import { readFile, mkdir, writeFile, lstat, realpath } from "node:fs/promises";
 import path from "node:path";
 import { moduleHash } from "../../lib/module-mode/release";
@@ -22,12 +23,16 @@ export async function run(args: string[], context: Context) {
   const definition = await read("definition") as ModuleModeCatalogDefinition;
   const reader = createAuthenticatedReviewReader(await readOperatorSession(options["session-file"]));
   const review = await reader.read(options.submission);
-  const host = createHostPreparation(review, identity, definition);
   const output = path.resolve(options.output);
   const physicalParent = await realpath(path.dirname(output));
   const parentStat = await lstat(physicalParent);
   need(physicalParent === path.dirname(output) && parentStat.isDirectory() && parentStat.uid === process.getuid?.() && (parentStat.mode & 0o077) === 0, "Output parent must be a private owner-only real directory");
   need(!output.startsWith(path.resolve(context.repositoryRoot) + path.sep), "Write operator evidence outside the source checkout");
+  if (review.artifact.schemaVersion === "programmable.modules.engine-build.v1") {
+    return runEnginePublication({command:command!,identity,definition,review,reader,output,providers:context.providers,
+      readTransactions:()=>read("transactions",16_384)});
+  }
+  const host = createHostPreparation(review, identity, definition);
   let plan: ReturnType<typeof prepareModulePublication> | undefined;
   let evidence: Awaited<ReturnType<typeof observePublicationReadback>> | undefined;
   if (command !== "manifest") {

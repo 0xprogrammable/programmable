@@ -4,10 +4,10 @@ import { describe, expect, it, vi } from "vitest";
 import { NATIVE_ENGINE_PROFILE, PREVIEW_MODULE_CATALOG } from "../lib/module-mode/builder";
 import { referenceManagementManifest } from "../lib/module-mode/management-manifest";
 import type { ModuleModeAvailability, NativeModuleModeCatalogEntry } from "../lib/module-mode/native-catalog";
-import { bindActiveModuleModeRelease } from "../lib/module-mode/release";
+import { bindActiveModuleModeRelease, computeModuleModeReleaseDigest, MODULE_MODE_ECONOMICS_POLICY_V2 } from "../lib/module-mode/release";
 import {
   bindModuleModeCatalogFile, computeModuleModeHostManifestHash, createModuleModeAvailabilityReader,
-  createModuleModeHostManifest, MODULE_MODE_CATALOG_SCHEMA, moduleModePublicationUrl,
+  createModuleModeHostManifest, createModuleModeHistoricalAvailabilityReader, MODULE_MODE_CATALOG_SCHEMA, moduleModePublicationUrl,
   verifyModuleModePublication, type ModuleModeAvailabilityDependencies, type ModuleModeCatalogDefinition, type ModuleModeHostReleaseIdentity,
 } from "../lib/server/module-mode/catalog";
 import { computeModuleReviewDecisionDigestV1, type ModuleReviewDecisionRecordV1 } from "../lib/server/module-mode/review-decision-wire-v1";
@@ -21,8 +21,10 @@ import { a, h, moduleEvidenceFixture } from "./fixtures/module-mode-evidence";
 const pendingRelease = { ...configuredRelease, enabled: false, status: "preview", lifecycleEvidenceDigest: null };
 
 // Entirely synthetic parser/transport fixtures. These objects are never deployment, review or provider evidence.
-function fixture(options: { requiresHost?: string[]; managementCapabilities?: string[] } = {}) {
-  const release = bindActiveModuleModeRelease(moduleEvidenceFixture().release);
+function fixture(options: { requiresHost?: string[]; managementCapabilities?: string[]; v2?: boolean } = {}) {
+  const candidate = options.v2 ? { ...moduleEvidenceFixture().release, sourceVersion: "module-native-v2", schemaVersion: "programmable.module-mode-source.v2", economicsPolicyId: MODULE_MODE_ECONOMICS_POLICY_V2 } : moduleEvidenceFixture().release;
+  candidate.releaseDigest = computeModuleModeReleaseDigest(candidate);
+  const release = bindActiveModuleModeRelease(candidate);
   const files = [{ path: "README.md", text: "Synthetic catalogue fixture; never publish." },
     { path: "src/Program.sol", text: "// Synthetic parser test. No compiled or deployable program.\n" }].map(file => ({
     path: file.path, sha256: createHash("sha256").update(file.text).digest("hex"), encoding: "base64" as const, bytes: Buffer.from(file.text).toString("base64"),
@@ -44,7 +46,8 @@ function fixture(options: { requiresHost?: string[]; managementCapabilities?: st
     management: { ...referenceManagementManifest("cap"), ...(options.managementCapabilities ? { capabilities: options.managementCapabilities } : {}) },
     requiresHost: source.descriptor.requiresHost,
   };
-  const binding = { familyId: checked.familyId, packageId: checked.packageId, factory: a(800), factoryCodeHash: h(801), moduleCodeHash: h(802), callbackGas: 75_000 };
+  const binding = { familyId: checked.familyId, packageId: checked.packageId, factory: a(800), factoryCodeHash: h(801), moduleCodeHash: h(802), callbackGas: 75_000,
+    ...(options.v2 ? { feeEligibility: { eligible: true, reviewDigest: h(906) } } : {}) };
   const manifest = createModuleModeHostManifest({ release, definition, nativeBinding: binding, descriptor: source.descriptor });
   const manifestHash = computeModuleModeHostManifestHash(manifest);
   const reviewContent: Omit<ModuleReviewDecisionRecordV1, "decisionDigest"> = {
@@ -74,6 +77,17 @@ function fixture(options: { requiresHost?: string[]; managementCapabilities?: st
 }
 
 describe("Module Mode host publication identity", () => {
+  it("binds the V2 family eligibility review into publication and rejects generation substitution", () => {
+    const f = fixture({ v2: true });
+    expect(f.manifest.manifest.runtimeBinding.feeEligibility).toEqual(f.binding.feeEligibility);
+    expect(verifyModuleModePublication({ release: f.release, publication: f.publication, ...f.responses })).toEqual(f.publication.entry);
+    const changed = createModuleModeHostManifest({ ...f, nativeBinding: { ...f.binding, feeEligibility: { eligible: false, reviewDigest: h(907) } }, descriptor: f.source.descriptor });
+    expect(computeModuleModeHostManifestHash(changed)).not.toEqual(f.manifestHash);
+    const missing = structuredClone(f.catalog);
+    delete missing.entries[0].entry.nativeBinding.feeEligibility;
+    expect(() => bindModuleModeCatalogFile(missing, f.release)).toThrow("source generation");
+    expect(() => bindModuleModeCatalogFile(f.catalog, { releaseDigest: f.release.releaseDigest, sourceVersion: "module-native-v1" })).toThrow("source generation");
+  });
   it("constructs a manifest before activation and review without dummy proof fields", () => {
     const f = fixture();
     const identity = Object.fromEntries(Object.entries(f.release).filter(([key]) => !["enabled", "status", "deploymentEvidenceDigest", "sourceVerificationDigest", "lifecycleEvidenceDigest"].includes(key)));
@@ -195,6 +209,20 @@ describe("Reviewed starter publication bytes", () => {
 });
 
 describe("Read-only Module Mode availability", () => {
+  it("resolves exact historical release/catalogue bindings without substituting the current generation", async () => {
+    const f = fixture();
+    const read = createModuleModeHistoricalAvailabilityReader({ historical: {
+      schemaVersion: "programmable.module-mode-historical-releases.v1", releases: [{ release: f.release, catalog: f.catalog }],
+    }, dependencies: f.dependencies });
+    expect(await read(h(9999))).toMatchObject({ release: null, catalog: [] });
+    expect(f.authenticateRelease).not.toHaveBeenCalled();
+    expect(await read(f.release.releaseDigest)).toMatchObject({ release: f.release, catalog: [f.publication.entry] });
+    expect(f.authenticateRelease).toHaveBeenCalledWith(f.release);
+    const rejected = createModuleModeHistoricalAvailabilityReader({ historical: {
+      schemaVersion: "programmable.module-mode-historical-releases.v1", releases: [{ release: f.release, catalog: f.catalog }],
+    }, dependencies: { ...f.dependencies, collector: () => ({ authenticateRelease: async () => { throw new Error("Unavailable authority"); } }) } });
+    expect(await rejected(f.release.releaseDigest)).toMatchObject({ release: null, catalog: [] });
+  });
   it("keeps the reviewed starter catalogue unavailable while the release is disabled", async () => {
     expect(catalogFile.schemaVersion).toBe(MODULE_MODE_CATALOG_SCHEMA);
     expect(catalogFile.sourceReleaseDigest).toBe(configuredRelease.releaseDigest);
@@ -283,7 +311,7 @@ describe("Read-only Module Mode availability", () => {
     expect(f.fetchPublic).not.toHaveBeenCalled();
   });
   it("keeps the public route read-only and uncached at the browser boundary", async () => {
-    const readAvailability = vi.fn<() => Promise<ModuleModeAvailability>>();
+    const readAvailability = vi.fn<(releaseDigest?: string) => Promise<ModuleModeAvailability>>();
     vi.resetModules();
     vi.doMock("../lib/server/module-mode/catalog", async importOriginal => ({
       ...await importOriginal<typeof import("../lib/server/module-mode/catalog")>(),
@@ -299,11 +327,20 @@ describe("Read-only Module Mode availability", () => {
       ];
       for (const { availability, status } of cases) {
         readAvailability.mockResolvedValueOnce(availability);
-        const response = await route.GET();
+        const response = await route.GET(new Request("http://localhost/api/module-mode"));
         expect(response.status).toBe(status); expect(response.headers.get("cache-control")).toBe("no-store");
         expect(await response.json()).toEqual(availability);
       }
       expect(readAvailability).toHaveBeenCalledTimes(cases.length);
+      const digest = fixture().release.releaseDigest;
+      readAvailability.mockResolvedValueOnce(cases[0].availability);
+      expect((await route.GET(new Request(`https://programmable.market/api/module-mode?releaseDigest=${digest}`))).status).toBe(200);
+      expect(readAvailability).toHaveBeenLastCalledWith(digest);
+      readAvailability.mockClear();
+      for (const query of ["releaseDigest=not-a-digest", `releaseDigest=${h(0)}`, `releaseDigest=${digest}&releaseDigest=${digest}`, "sourceUrl=https://example.com"]) {
+        expect((await route.GET(new Request(`https://programmable.market/api/module-mode?${query}`))).status).toBe(400);
+      }
+      expect(readAvailability).not.toHaveBeenCalled();
       expect(Object.keys(route)).not.toContain("POST");
     } finally {
       vi.doUnmock("../lib/server/module-mode/catalog");

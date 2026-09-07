@@ -1,4 +1,5 @@
 import type { RobinhoodLaunch, RobinhoodModuleLaunch, RobinhoodLaunchList, RobinhoodProfileLaunchList } from "@/lib/robinhood-launches";
+import { isRobinhoodModuleLaunch, isRobinhoodModuleSourceKind } from "@/lib/robinhood-launches";
 import { DEFAULT_EXPLORE_FILTERS, type RobinhoodExploreFilters } from "@/lib/robinhood-explore-filters";
 import { isPinnedRobinhoodToken, isVisibleRobinhoodToken } from "@/lib/robinhood-explore-policy";
 
@@ -16,11 +17,13 @@ export type RobinhoodSnapshot = {
   items: RobinhoodLaunch[];
   pending?: { block: Checkpoint; items: RobinhoodLaunch[] } | null;
   moduleMode?: ModuleModeSnapshot | null;
+  /** Additional exact releases. The original lane keeps its stored identity and checkpoint. */
+  moduleModeSources?: ModuleModeSnapshot[];
 };
 
 export type ModuleModeSnapshot = {
   version: 1;
-  sourceKind: "module-native-v1";
+  sourceKind: RobinhoodModuleLaunch["sourceKind"];
   chainId: 4663;
   sourceAddress: string;
   releaseDigest: string;
@@ -62,7 +65,7 @@ export function parseSnapshot(value: unknown): RobinhoodSnapshot {
       || String(row.routerAddress).toLowerCase() !== value.routerAddress.toLowerCase()
       || !matches(row.blockNumber, BLOCK) || !Number.isSafeInteger(row.logIndex) || Number(row.logIndex) < 0
       || !(row.launchedAt === null || date(row.launchedAt))
-      || !["name", "symbol"].every((key) => row[key] === null || (typeof row[key] === "string" && row[key].length <= 128))
+      || !(["name", "symbol"] as const).every((key) => row[key] === null || (typeof row[key] === "string" && row[key].length <= 128))
       || !(row.decimals === null || (Number.isInteger(row.decimals) && Number(row.decimals) >= 0 && Number(row.decimals) <= 255))
       || value.cursor === null || BigInt(row.blockNumber) > BigInt(value.cursor.number)
       || BigInt(row.blockNumber) < BigInt(value.startBlock)) throw new Error("Invalid Robinhood launch");
@@ -85,19 +88,31 @@ export function parseSnapshot(value: unknown): RobinhoodSnapshot {
     }
     parseSnapshot({ ...value, pending: null, cursor: pending.block, checkpoints: [], items: pending.items });
   }
-  if (value.moduleMode != null) {
-    const modules = parseModuleModeSnapshot(value.moduleMode);
-    const pools = new Set((value.items as RobinhoodLaunch[]).map(row => `${row.poolManager.toLowerCase()}:${row.poolId.toLowerCase()}`));
+  if (value.moduleModeSources !== undefined && (!Array.isArray(value.moduleModeSources) || value.moduleModeSources.length > 32)) {
+    throw new Error("Invalid Module Mode sources");
+  }
+  const sources = [value.moduleMode, ...(value.moduleModeSources as unknown[] ?? [])].filter(source => source != null);
+  const sourceAddresses = new Set<string>();
+  const sourceReleases = new Set<string>();
+  const poolIdentity = (row: RobinhoodLaunch) => row.poolManager && row.poolId ? `${row.poolManager.toLowerCase()}:${row.poolId.toLowerCase()}` : null;
+  const pools = new Set((value.items as RobinhoodLaunch[]).flatMap(row => { const pool = poolIdentity(row); return pool ? [pool] : []; }));
+  for (const source of sources) {
+    const modules = parseModuleModeSnapshot(source);
+    const address = modules.sourceAddress.toLowerCase();
+    const digest = modules.releaseDigest.toLowerCase();
+    if (sourceAddresses.has(address) || sourceReleases.has(digest)) throw new Error("Duplicate Module Mode source");
+    sourceAddresses.add(address); sourceReleases.add(digest);
     for (const row of modules.items) {
-      const pool = `${row.poolManager.toLowerCase()}:${row.poolId.toLowerCase()}`;
-      if (tokens.has(row.tokenAddress.toLowerCase()) || pools.has(pool)) throw new Error("Duplicate cross-source Robinhood launch");
+      const pool = poolIdentity(row);
+      if (tokens.has(row.tokenAddress.toLowerCase()) || (pool && pools.has(pool))) throw new Error("Duplicate cross-source Robinhood launch");
+      tokens.add(row.tokenAddress.toLowerCase()); if (pool) pools.add(pool);
     }
   }
   return value as RobinhoodSnapshot;
 }
 
 export function parseModuleModeSnapshot(value: unknown): ModuleModeSnapshot {
-  if (!isObject(value) || value.version !== 1 || value.sourceKind !== "module-native-v1" || value.chainId !== 4663
+  if (!isObject(value) || value.version !== 1 || !isRobinhoodModuleSourceKind(value.sourceKind) || value.chainId !== 4663
     || !matches(value.sourceAddress, ADDRESS) || /^0x0{40}$/i.test(value.sourceAddress)
     || !matches(value.releaseDigest, HASH) || /^0x0{64}$/i.test(value.releaseDigest)
     || !matches(value.startBlock, BLOCK) || !matches(value.finalizedBlock, BLOCK) || !date(value.updatedAt)
@@ -106,25 +121,15 @@ export function parseModuleModeSnapshot(value: unknown): ModuleModeSnapshot {
     || !Array.isArray(value.items) || value.items.length > 10_000) throw new Error("Invalid Module Mode index");
   const identities = [new Set<string>(), new Set<string>(), new Set<string>(), new Set<string>()];
   for (const row of value.items) {
-    if (!isObject(row) || row.sourceKind !== "module-native-v1" || row.routerAddress !== null || row.stampHash !== null
-      || !["sourceAddress", "tokenAddress", "hookAddress", "creator", "poolManager", "runtime"].every(key => matches(row[key], ADDRESS) && !/^0x0{40}$/i.test(String(row[key])))
-      || !["sourceReleaseDigest", "launchId", "poolId", "recipeHash", "launchKey", "transactionHash", "blockHash", "verificationDigest"].every(key => matches(row[key], HASH) && !/^0x0{64}$/i.test(String(row[key])))
-      || String(row.sourceAddress).toLowerCase() !== value.sourceAddress.toLowerCase()
-      || String(row.sourceReleaseDigest).toLowerCase() !== value.releaseDigest.toLowerCase()
-      || !matches(row.blockNumber, BLOCK) || !Number.isSafeInteger(row.logIndex) || Number(row.logIndex) < 0
-      || !(row.launchedAt === null || date(row.launchedAt))
-      || !["name", "symbol"].every(key => typeof row[key] === "string" && String(row[key]).length > 0 && String(row[key]).length <= 128)
-      || row.decimals !== 18 || value.cursor === null || BigInt(row.blockNumber) > BigInt(value.cursor.number)
-      || BigInt(row.blockNumber) < BigInt(value.startBlock)
-      || !Array.isArray(row.modulePackageIds) || !Array.isArray(row.moduleFamilyIds)
-      || row.modulePackageIds.length > 16 || row.modulePackageIds.length !== row.moduleFamilyIds.length
-      || ![...row.modulePackageIds, ...row.moduleFamilyIds].every(id => matches(id, HASH) && !/^0x0{64}$/i.test(id))
-      || new Set(row.modulePackageIds.map(id => id.toLowerCase())).size !== row.modulePackageIds.length
-      || row.moduleFamilyIds.some((id, index, ids) => index > 0 && id.toLowerCase() <= ids[index - 1].toLowerCase())) {
+    if (!isObject(row) || !isRobinhoodModuleLaunch(row) || row.sourceKind !== value.sourceKind
+      || row.sourceAddress.toLowerCase() !== value.sourceAddress.toLowerCase()
+      || row.sourceReleaseDigest.toLowerCase() !== value.releaseDigest.toLowerCase()
+      || !matches(row.blockNumber, BLOCK) || value.cursor === null || BigInt(row.blockNumber) > BigInt(value.cursor.number)
+      || BigInt(row.blockNumber) < BigInt(value.startBlock)) {
       throw new Error("Invalid Module Mode launch");
     }
-    const keys = [String(row.launchId), String(row.tokenAddress), `${row.poolManager}:${row.poolId}`, `${row.transactionHash}:${row.logIndex}`];
-    keys.forEach((key, index) => { const id = key.toLowerCase(); if (identities[index].has(id)) throw new Error("Duplicate Module Mode launch"); identities[index].add(id); });
+    const keys = [String(row.launchId), String(row.tokenAddress), row.poolManager && row.poolId ? `${row.poolManager}:${row.poolId}` : null, `${row.transactionHash}:${row.logIndex}`];
+    keys.forEach((key, index) => { if (key === null) return; const id = key.toLowerCase(); if (identities[index].has(id)) throw new Error("Duplicate Module Mode launch"); identities[index].add(id); });
   }
   const cursor = value.cursor as Checkpoint | null;
   if (cursor && (BigInt(cursor.number) > BigInt(value.finalizedBlock)
@@ -139,18 +144,21 @@ export function parseModuleModeSnapshot(value: unknown): ModuleModeSnapshot {
 }
 
 export function snapshotLaunches(snapshot: RobinhoodSnapshot | null): readonly RobinhoodLaunch[] {
-  return [...(snapshot?.items ?? []), ...(snapshot?.moduleMode?.items ?? [])];
+  return [...(snapshot?.items ?? []), ...moduleModeSnapshots(snapshot).flatMap(source => source.items)];
+}
+export function moduleModeSnapshots(snapshot: RobinhoodSnapshot | null): readonly ModuleModeSnapshot[] {
+  return [...(snapshot?.moduleMode ? [snapshot.moduleMode] : []), ...(snapshot?.moduleModeSources ?? [])];
 }
 function snapshotStatus(snapshot: RobinhoodSnapshot | null, now: number): RobinhoodLaunchList["status"] {
   if (!snapshot) return "unavailable";
-  const sources = [snapshot, ...(snapshot.moduleMode ? [snapshot.moduleMode] : [])];
+  const sources = [snapshot, ...moduleModeSnapshots(snapshot)];
   if (sources.some(source => now - Date.parse(source.updatedAt) > 300_000)) return "stale";
   return sources.some(source => source.pending || source.cursor?.number !== source.finalizedBlock) ? "syncing" : "ready";
 }
 function snapshotUpdatedAt(snapshot: RobinhoodSnapshot | null): string | null {
   if (!snapshot) return null;
-  return snapshot.moduleMode && Date.parse(snapshot.moduleMode.updatedAt) < Date.parse(snapshot.updatedAt)
-    ? snapshot.moduleMode.updatedAt : snapshot.updatedAt;
+  return moduleModeSnapshots(snapshot).reduce((oldest, source) =>
+    Date.parse(source.updatedAt) < Date.parse(oldest) ? source.updatedAt : oldest, snapshot.updatedAt);
 }
 
 function asPending(value: unknown) {
@@ -169,7 +177,7 @@ export function launchList(snapshot: RobinhoodSnapshot | null, page = 1, query =
     return value != null && Number.isFinite(value) && value >= 0 ? value : null;
   };
   const items = visible.filter((row) => row !== pinned
-    && (filters.mode === "module" ? row.sourceKind === "module-native-v1"
+    && (filters.mode === "module" ? isRobinhoodModuleSourceKind(row.sourceKind)
       : filters.mode === "custom" ? row.sourceKind === undefined : true) && (!q
     || [row.name, row.symbol, row.tokenAddress, row.hookAddress].some((value) => value?.toLowerCase().includes(q))))
     .toSorted((a, b) => {

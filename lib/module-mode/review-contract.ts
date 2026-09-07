@@ -3,7 +3,11 @@ import { nativeCanonicalJson, nativeJson } from "./native-catalog";
 import type { OpenSourcePackage } from "@/packages/classic-modules/src/open-packages.mjs";
 import type { ModuleReviewDecisionCommandV1, ModuleReviewDecisionRecordV1 } from "@/lib/server/module-mode/review-decision-wire-v1";
 
+import { parseEngineReviewArtifact, validateModuleEngineBuildPlanV1 } from "./review-engine-contract";
+import type { ModuleEngineBuildArtifactV1, ModuleEngineBuildPlanV1 } from "./review-engine-types";
 export type { ModuleReviewDecisionCommandV1, ModuleReviewDecisionRecordV1 };
+export type AnyReviewPlan = ReviewPlan | ModuleEngineBuildPlanV1;
+export type AnyReviewBuildArtifact = ReviewBuildArtifact | ModuleEngineBuildArtifactV1;
 export const MODULE_REVIEW_STATES = ["awaiting_plan", "queued", "running", "built", "build_failed", "changes_requested", "accepted", "rejected"] as const;
 export type ModuleReviewState = typeof MODULE_REVIEW_STATES[number];
 export interface ReviewSubject { submissionId: string; principalId: string; author: string; requestDigest: Hex }
@@ -18,7 +22,7 @@ export interface ReviewBuildArtifact {
   tests: { schemaVersion: "programmable.modules.native-test-results.v1"; requestDigest: Hex; planDigest: Hex; harnessDigest: Hex; execution: "isolated-docker-anvil"; cases: Record<string, unknown>[]; allRequiredChecksPassed: boolean };
   reviewRequired: string[]; approved: false; registryApproved: false; available: false; artifactDigest: Hex;
 }
-export interface ReviewJob { subject: ReviewSubject; state: ModuleReviewState; reviewRevision: number; plan: ReviewPlan | null; planDigest: Hex | null; artifact: ReviewBuildArtifact | null; attempt: number; lastError: string | null; createdAt: string; updatedAt: string }
+export interface ReviewJob { subject: ReviewSubject; state: ModuleReviewState; reviewRevision: number; plan: AnyReviewPlan | null; planDigest: Hex | null; artifact: AnyReviewBuildArtifact | null; attempt: number; lastError: string | null; createdAt: string; updatedAt: string }
 export interface ReviewQueueItem extends Omit<ReviewJob, "artifact" | "plan" | "planDigest"> { build: { artifactDigest: Hex; programName: string; testsPassed: boolean; caseCount: number } | null }
 export interface ReviewQueue { schemaVersion: "programmable.modules.website-review-queue.v1"; jobs: ReviewQueueItem[]; nextCursor: string | null }
 export interface ReviewSourceInfo { descriptor: OpenSourcePackage; packageId: Hex; familyId: Hex; files: { path: string; sha256: string; bytes: number }[] }
@@ -67,7 +71,11 @@ export function parseReviewProgramAbi(value: unknown): ReviewProgramArgument[] {
   }
   return value as ReviewProgramArgument[];
 }
-export function parseReviewPlan(value: unknown, subject: ReviewSubject): ReviewPlan {
+export function parseReviewPlan(value: unknown, subject: ReviewSubject): AnyReviewPlan {
+  return reviewRecord(value).schemaVersion === "programmable.modules.engine-build-plan.v1"
+    ? validateModuleEngineBuildPlanV1(nativeJson(value), subject) : parseNativeReviewPlan(value, subject);
+}
+export function parseNativeReviewPlan(value: unknown, subject: ReviewSubject): ReviewPlan {
   const p = reviewRecord(nativeJson(value), ["schemaVersion", "submissionId", "requestDigest", "programComponentId", "factoryComponentId", "configurationCodec", "programAbi", "callbackGas", "cases"]);
   requireValue(p.schemaVersion === "programmable.modules.native-build-plan.v1" && p.submissionId === subject.submissionId && p.requestDigest === subject.requestDigest, "plan subject");
   requireValue(p.configurationCodec === "programmable.native-abi@1", "configuration codec");
@@ -88,7 +96,11 @@ export function parseReviewPlan(value: unknown, subject: ReviewSubject): ReviewP
   requireValue(positive, "positive test coverage");
   return p as unknown as ReviewPlan;
 }
-export function parseReviewArtifact(value: unknown, subject: ReviewSubject): ReviewBuildArtifact {
+export function parseReviewArtifact(value: unknown, subject: ReviewSubject): AnyReviewBuildArtifact {
+  return reviewRecord(value).schemaVersion === "programmable.modules.engine-build.v1"
+    ? parseEngineReviewArtifact(value, subject) : parseNativeReviewArtifact(value, subject);
+}
+export function parseNativeReviewArtifact(value: unknown, subject: ReviewSubject): ReviewBuildArtifact {
   const r = reviewRecord(nativeJson(value));
   const { artifactDigest, ...contents } = r;
   requireValue(r.schemaVersion === "programmable.modules.native-build.v1" && r.authority === "programmable.module-review.native-build.v1" && isReviewDigest(artifactDigest) && reviewDigest("programmable.modules.native-build.v1", contents) === artifactDigest, "build digest");
@@ -127,10 +139,14 @@ export function parseReviewJob(value: unknown): ReviewJob {
   const subject = parseReviewSubject(r.subject);
   jobState(r);
   const plan = r.plan === null ? null : parseReviewPlan(r.plan, subject);
-  requireValue(plan === null ? r.planDigest === null : r.planDigest === reviewDigest("programmable.modules.native-build-plan.v1", plan), "plan digest");
-  const artifact = r.artifact === null ? null : parseReviewArtifact(r.artifact, subject);
+  requireValue(plan === null ? r.planDigest === null : r.planDigest === reviewDigest(plan.schemaVersion, plan), "plan digest");
+  const artifact = r.artifact === null ? null : plan?.schemaVersion === "programmable.modules.engine-build-plan.v1"
+    ? parseEngineReviewArtifact(r.artifact, subject, plan) : parseReviewArtifact(r.artifact, subject);
   requireValue(!artifact || artifact.planDigest === r.planDigest, "build plan binding");
-  requireValue(!artifact || (plan !== null && artifact.configurationCodec === plan.configurationCodec && nativeCanonicalJson(artifact.programAbi) === nativeCanonicalJson(plan.programAbi)), "build configuration ABI binding");
+  requireValue(!artifact || (plan !== null && artifact.configurationCodec === plan.configurationCodec &&
+    (artifact.schemaVersion === "programmable.modules.native-build.v1" && plan.schemaVersion === "programmable.modules.native-build-plan.v1"
+      ? nativeCanonicalJson(artifact.programAbi) === nativeCanonicalJson(plan.programAbi)
+      : artifact.schemaVersion === "programmable.modules.engine-build.v1" && plan.schemaVersion === "programmable.modules.engine-build-plan.v1" && nativeCanonicalJson(artifact.configurationAbi) === nativeCanonicalJson(plan.configurationAbi))), "build configuration ABI binding");
   requireValue(!["built", "accepted"].includes(String(r.state)) || artifact !== null, "required build");
   return { ...(r as unknown as ReviewJob), subject, plan, artifact };
 }
@@ -144,7 +160,7 @@ export function parseReviewAttempt(value: unknown, subject: ReviewSubject): Revi
   return r as unknown as ReviewAttempt;
 }
 export function summarizeReviewJob(job: ReviewJob): ReviewQueueItem {
-  return { subject: job.subject, state: job.state, reviewRevision: job.reviewRevision, attempt: job.attempt, lastError: job.lastError, createdAt: job.createdAt, updatedAt: job.updatedAt, build: job.artifact ? { artifactDigest: job.artifact.artifactDigest, programName: job.artifact.program.contractName, testsPassed: job.artifact.tests.allRequiredChecksPassed, caseCount: job.artifact.tests.cases.length } : null };
+  return { subject: job.subject, state: job.state, reviewRevision: job.reviewRevision, attempt: job.attempt, lastError: job.lastError, createdAt: job.createdAt, updatedAt: job.updatedAt, build: job.artifact ? { artifactDigest: job.artifact.artifactDigest, programName: job.artifact.schemaVersion === "programmable.modules.engine-build.v1" ? job.artifact.engine.contractName : job.artifact.program.contractName, testsPassed: job.artifact.tests.allRequiredChecksPassed, caseCount: job.artifact.tests.cases.length } : null };
 }
 export function parseReviewQueueItem(value: unknown): ReviewQueueItem {
   const r = reviewRecord(value, JOB_KEYS); jobState(r);

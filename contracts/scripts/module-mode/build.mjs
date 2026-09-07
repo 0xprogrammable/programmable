@@ -32,16 +32,18 @@ function walk(node, fn) {
 }
 
 /** Always builds afresh. Candidate mode is explicitly unusable by the wallet operator. */
-export async function sealBuild({ root = REPOSITORY_ROOT, output = path.join(root, 'contracts/out/module-mode-deployment/build'), candidate = false, environment = process.env } = {}) {
+export async function sealBuild({ root = REPOSITORY_ROOT, output = path.join(root, 'contracts/out/module-mode-deployment/build'), candidate = false, environment = process.env,
+  sourcePaths = ['src/module-mode/engine/ModuleNativeLaunchV1.sol', 'src/module-mode/modules/EveryNthBuyRewardV1.sol', 'src/module-mode/modules/TimedWalletBuyCapV1.sol'],
+  artifactPaths = ARTIFACTS } = {}) {
   const before = await repositoryState(root);
   need(candidate || before.sourceClean, 'Clean reviewed source is required; --candidate emits unusable preparation only');
   const contractsRoot = path.join(root, 'contracts'); await mkdir(output, { recursive: true });
-  const sources = ['src/module-mode/engine/ModuleNativeLaunchV1.sol', 'src/module-mode/modules/EveryNthBuyRewardV1.sol', 'src/module-mode/modules/TimedWalletBuyCapV1.sol'];
+  need(Array.isArray(sourcePaths) && sourcePaths.length > 0 && sourcePaths.every(source => /^src\/[A-Za-z0-9_/-]+\.sol$/.test(source)), 'Explicit first-party Solidity entrypoints required');
   const forge = environment.MODULE_MODE_FORGE ?? 'forge';
   const version = (await exec(forge, ['--version'], { maxBuffer: 4096 })).stdout;
   need(version.includes('Version: 1.7.1') && version.includes('4072e48705af9d93e3c0f6e29e93b5e9a40caed8'), 'Pinned Foundry v1.7.1 is required; set MODULE_MODE_FORGE to its executable');
   await exec(forge, ['build', '--force', '--offline', '--use', '0.8.26', '--evm-version', 'cancun', '--optimize', 'true', '--optimizer-runs', '1000', '--no-metadata', '--ast', '--build-info',
-    '--root', contractsRoot, '--config-path', path.join(contractsRoot, 'foundry.toml'), '--out', output, '--cache-path', path.join(output, 'cache'), '--build-info-path', path.join(output, 'build-info'), ...sources],
+    '--root', contractsRoot, '--config-path', path.join(contractsRoot, 'foundry.toml'), '--out', output, '--cache-path', path.join(output, 'cache'), '--build-info-path', path.join(output, 'build-info'), ...sourcePaths],
   { cwd: contractsRoot, env: controlledEnvironment(environment), maxBuffer: 16 * 1024 * 1024 });
   const astNames = new Map();
   // AST ids are build-local. Resolve the exact compiled variable names, never hardcode numeric ids.
@@ -56,7 +58,7 @@ export async function sealBuild({ root = REPOSITORY_ROOT, output = path.join(roo
     }
   }
   const artifacts = {}, sourceHashes = new Map(), standardInputs = {}, compilerMetadata = {};
-  for (const [role, relative] of Object.entries(ARTIFACTS)) {
+  for (const [role, relative] of Object.entries(artifactPaths)) {
     const artifact = JSON.parse(await readFile(path.join(output, relative), 'utf8'));
     const metadata = typeof artifact.metadata === 'string' ? JSON.parse(artifact.metadata) : artifact.metadata;
     // Foundry's typed metadata drops some NatSpec fields and normalizes remappings.

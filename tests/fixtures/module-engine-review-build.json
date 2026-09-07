@@ -1,0 +1,1074 @@
+{
+  "evidenceClass": "synthetic-parser-fixture-not-review-or-publication-authority",
+  "source": {
+    "format": "programmable.modules.submission.v0.1",
+    "descriptor": {
+      "author": "0x1111111111111111111111111111111111111111",
+      "components": [
+        {
+          "entrypoint": "TestEngine",
+          "id": "engine",
+          "runtime": "programmable.module-engine-solidity@1",
+          "sourcePath": "TestEngine.sol"
+        }
+      ],
+      "configuration": {
+        "fields": {
+          "cap": {
+            "bits": 64,
+            "max": "999",
+            "min": "1",
+            "type": "uint"
+          }
+        },
+        "required": [
+          "cap"
+        ],
+        "type": "record"
+      },
+      "constraints": [],
+      "documentation": "README.md",
+      "familySalt": "0x4141414141414141414141414141414141414141414141414141414141414141",
+      "format": "programmable.classic.source-package.v0.1",
+      "management": {
+        "actions": [],
+        "reads": [],
+        "summary": "Explicit pre-settlement, resources and fulfillment vectors."
+      },
+      "name": "engine-review-fixture",
+      "ports": {
+        "inputs": {},
+        "outputs": {}
+      },
+      "requiresHost": [
+        "programmable.module-engine-solidity@1"
+      ],
+      "rewardWallet": "0x2222222222222222222222222222222222222222",
+      "source": {
+        "files": [
+          {
+            "path": "TestEngine.sol",
+            "sha256": "191f2b362ce56b88810a53981e47c10a5f03274ef872a341cf1a4fa81c4a6c32"
+          },
+          {
+            "path": "README.md",
+            "sha256": "981249674c359c75001a76bd6627be611bc00c16d1dd11036c515705bf71febb"
+          }
+        ]
+      },
+      "version": "1.0.0"
+    },
+    "files": [
+      {
+        "path": "README.md",
+        "sha256": "981249674c359c75001a76bd6627be611bc00c16d1dd11036c515705bf71febb",
+        "encoding": "base64",
+        "bytes": "U2VydmljZS1vd25lZCBlbmdpbmUgcmVncmVzc2lvbi4gTm90IGFwcHJvdmVkIG9yIHB1YmxpYy4="
+      },
+      {
+        "path": "TestEngine.sol",
+        "sha256": "191f2b362ce56b88810a53981e47c10a5f03274ef872a341cf1a4fa81c4a6c32",
+        "encoding": "base64",
+        "bytes": "Ly8gU1BEWC1MaWNlbnNlLUlkZW50aWZpZXI6IE1JVApwcmFnbWEgc29saWRpdHkgMC44LjI2OwpsaWJyYXJ5IFQgewogc3RydWN0IENvbnRleHQge2FkZHJlc3MgaG9zdDtieXRlczMyIGxhdW5jaElkO2FkZHJlc3MgdG9rZW47YWRkcmVzcyBjcmVhdG9yO2FkZHJlc3MgcXVvdGVBc3NldDthZGRyZXNzIGZlZUNvbGxlY3Rvcjt9CiBzdHJ1Y3QgT3BlcmF0aW9uIHtieXRlczMyIG9wZXJhdGlvbklkO2FkZHJlc3MgYWN0b3I7YWRkcmVzcyByZWNpcGllbnQ7YWRkcmVzcyBpbnB1dEFzc2V0O3VpbnQyNTYgaW5wdXRBbW91bnQ7YWRkcmVzcyBvdXRwdXRBc3NldDt1aW50MjU2IG1pbmltdW1PdXRwdXQ7dWludDI1NiBkZWFkbGluZTt1aW50MjU2IG5vbmNlO2J5dGVzIGRhdGE7fQp9CmludGVyZmFjZSBBc3NldCB7ZnVuY3Rpb24gYmFsYW5jZU9mKGFkZHJlc3MgYWNjb3VudCkgZXh0ZXJuYWwgdmlldyByZXR1cm5zKHVpbnQyNTYpO2Z1bmN0aW9uIHRyYW5zZmVyKGFkZHJlc3MgcmVjaXBpZW50LHVpbnQyNTYgYW1vdW50KSBleHRlcm5hbCByZXR1cm5zKGJvb2wpO30KaW50ZXJmYWNlIEZlZUhvc3Qge2Z1bmN0aW9uIGZlZVRlcm1zKGJ5dGVzMzIgbGF1bmNoSWQsYm9vbCBidXkpIGV4dGVybmFsIHZpZXcgcmV0dXJucyh1aW50MTYsdWludDE2KTtmdW5jdGlvbiBkZXBvc2l0RmVlcyh1aW50MjU2IHBsYXRmb3JtLHVpbnQyNTYgY3JlYXRvcikgZXh0ZXJuYWwgcGF5YWJsZTt9CmNvbnRyYWN0IFRlc3RFbmdpbmUgewogYWRkcmVzcyBwcml2YXRlIGltbXV0YWJsZSBob3N0OwogYWRkcmVzcyBwdWJsaWMgaW1tdXRhYmxlIHF1b3RlQXNzZXQ7CiB1aW50NjQgcHVibGljIGltbXV0YWJsZSBjYXA7CiBieXRlczMyIHB1YmxpYyBjb250ZXh0SGFzaDsKIGJvb2wgcHJpdmF0ZSBpbml0aWFsaXplZDsKIHVpbnQyNTYgcHVibGljIGxhc3RRdW90ZTsKIHVpbnQyNTYgcHVibGljIHJlc291cmNlczsKIHVpbnQyNTYgcHVibGljIHBlbmRpbmc7CiB1aW50MjU2IHB1YmxpYyBmdWxmaWxsZWQ7CiB1aW50MjU2IHB1YmxpYyBmZWVzUGFpZDsKIGJ5dGVzMzIgcHJpdmF0ZSBsYXVuY2hJZDsKIGNvbnN0cnVjdG9yKFQuQ29udGV4dCBtZW1vcnkgY29udGV4dCxieXRlcyBtZW1vcnkgY29uZmlndXJhdGlvbikgewogICByZXF1aXJlKGNvbmZpZ3VyYXRpb24ubGVuZ3RoPT0zMik7IHVpbnQ2NCBsaW1pdD1hYmkuZGVjb2RlKGNvbmZpZ3VyYXRpb24sKHVpbnQ2NCkpOyByZXF1aXJlKGxpbWl0PjAgJiYgbGltaXQ8MTAwMCk7CiAgIGhvc3Q9Y29udGV4dC5ob3N0OyBsYXVuY2hJZD1jb250ZXh0LmxhdW5jaElkOyBxdW90ZUFzc2V0PWNvbnRleHQucXVvdGVBc3NldDsgY2FwPWxpbWl0OyBjb250ZXh0SGFzaD1rZWNjYWsyNTYoYWJpLmVuY29kZShjb250ZXh0KSk7CiB9CiBmdW5jdGlvbiBpbml0aWFsaXplKGJ5dGVzIGNhbGxkYXRhIGRhdGEpIGV4dGVybmFsIHJldHVybnMoYnl0ZXMzMikge3JlcXVpcmUobXNnLnNlbmRlcj09aG9zdCAmJiAhaW5pdGlhbGl6ZWQpO2luaXRpYWxpemVkPXRydWU7cmV0dXJuIGtlY2NhazI1NihkYXRhKTt9CiBmdW5jdGlvbiBleGVjdXRlKFQuT3BlcmF0aW9uIGNhbGxkYXRhIG9wKSBleHRlcm5hbCBwYXlhYmxlIHJldHVybnMoYnl0ZXMgbWVtb3J5KSB7CiAgIHJlcXVpcmUobXNnLnNlbmRlcj09aG9zdCAmJiBpbml0aWFsaXplZCk7IHVpbnQyNTYgYW1vdW50PWFiaS5kZWNvZGUob3AuZGF0YSwodWludDI1NikpOwogICBpZihvcC5vcGVyYXRpb25JZD09a2VjY2FrMjU2KCJiZWZvcmUtc2V0dGxlbWVudCIpKSB7cmVxdWlyZShhbW91bnQ8PWNhcCk7bGFzdFF1b3RlPWFtb3VudCtjYXA7cmV0dXJuIGFiaS5lbmNvZGUobGFzdFF1b3RlKTt9CiAgIGlmKG9wLm9wZXJhdGlvbklkPT1rZWNjYWsyNTYoImNyZWF0ZS1yZXNvdXJjZXMiKSkge3JlcXVpcmUoYW1vdW50PD1jYXApO3Jlc291cmNlcys9YW1vdW50O3JldHVybiBhYmkuZW5jb2RlKHJlc291cmNlcyk7fQogICBpZihvcC5vcGVyYXRpb25JZD09a2VjY2FrMjU2KCJxdWV1ZS1mdWxmaWxsbWVudCIpKSB7cmVxdWlyZShvcC5pbnB1dEFzc2V0PT1xdW90ZUFzc2V0ICYmIG9wLmlucHV0QW1vdW50PT1hbW91bnQgJiYgQXNzZXQocXVvdGVBc3NldCkuYmFsYW5jZU9mKGFkZHJlc3ModGhpcykpPj1wZW5kaW5nK2Ftb3VudCk7cGVuZGluZys9YW1vdW50O3JldHVybiBhYmkuZW5jb2RlKHBlbmRpbmcpO30KICAgaWYob3Aub3BlcmF0aW9uSWQ9PWtlY2NhazI1NigiZnVsZmlsbCIpKSB7cmVxdWlyZShhbW91bnQ8PXBlbmRpbmcpO3BlbmRpbmctPWFtb3VudDtmdWxmaWxsZWQrPWFtb3VudDtyZXF1aXJlKEFzc2V0KHF1b3RlQXNzZXQpLnRyYW5zZmVyKG9wLnJlY2lwaWVudCxhbW91bnQpKTtyZXR1cm4gYWJpLmVuY29kZShmdWxmaWxsZWQpO30KICAgaWYob3Aub3BlcmF0aW9uSWQ9PWtlY2NhazI1NigicGF5LWZlZXMiKSkge3JlcXVpcmUob3AuaW5wdXRBc3NldD09YWRkcmVzcygwKSAmJiBvcC5pbnB1dEFtb3VudD09YW1vdW50ICYmIG1zZy52YWx1ZT09YW1vdW50KTsodWludDE2IHBsYXRmb3JtLHVpbnQxNiBjcmVhdG9yKT1GZWVIb3N0KGhvc3QpLmZlZVRlcm1zKGxhdW5jaElkLHRydWUpO3VpbnQyNTYgcD1hbW91bnQqcGxhdGZvcm0vMTAwMDA7dWludDI1NiBjPWFtb3VudCpjcmVhdG9yLzEwMDAwO2ZlZXNQYWlkKz1wK2M7RmVlSG9zdChob3N0KS5kZXBvc2l0RmVlc3t2YWx1ZTpwK2N9KHAsYyk7KGJvb2wgb2ssKT1vcC5yZWNpcGllbnQuY2FsbHt2YWx1ZTphbW91bnQtcC1jfSgiIik7cmVxdWlyZShvayk7cmV0dXJuIGFiaS5lbmNvZGUocCxjKTt9CiAgIHJldmVydCgpOwogfQp9Cg=="
+      }
+    ]
+  },
+  "subject": {
+    "submissionId": "00000000-0000-4000-8000-000000000041",
+    "principalId": "00000000-0000-4000-8000-000000000042",
+    "author": "0x1111111111111111111111111111111111111111",
+    "requestDigest": "0xfc39594d3f5481dc5110dad099b60699239a0f1b61a234215cf7ddffb4680f16"
+  },
+  "plan": {
+    "schemaVersion": "programmable.modules.engine-build-plan.v1",
+    "submissionId": "00000000-0000-4000-8000-000000000041",
+    "requestDigest": "0xfc39594d3f5481dc5110dad099b60699239a0f1b61a234215cf7ddffb4680f16",
+    "engineComponentId": "engine",
+    "configurationCodec": "programmable.engine-abi@1",
+    "configurationAbi": [
+      {
+        "path": [
+          "cap"
+        ],
+        "type": "uint64"
+      }
+    ],
+    "immutableBindings": [
+      {
+        "id": "74",
+        "constructorOffset": 0
+      },
+      {
+        "id": "76",
+        "constructorOffset": 128
+      },
+      {
+        "id": "78",
+        "constructorOffset": 256
+      }
+    ],
+    "executionGas": 500000,
+    "moneyRights": 6,
+    "coinRights": 0,
+    "testEconomics": {
+      "platformBps": 30,
+      "buyCreatorBps": 20,
+      "sellCreatorBps": 30
+    },
+    "operationPermissions": [
+      {
+        "operationId": "0x2909c71a31a3d4dadb782fffd974183db29b07796e99d77079d3447bfec8a485",
+        "inputRoles": 0,
+        "outputRoles": 0,
+        "authorization": 0
+      },
+      {
+        "operationId": "0x934c95debda763bafbb11e205affceb51624290edebdc4e7412d982b5f5376b9",
+        "inputRoles": 0,
+        "outputRoles": 0,
+        "authorization": 0
+      },
+      {
+        "operationId": "0x9eca922e9490b0bd366a141e808694490d908d4ddbabfc195d607c5df0a10d08",
+        "inputRoles": 2,
+        "outputRoles": 0,
+        "authorization": 0
+      },
+      {
+        "operationId": "0x7b724520a67052ae2d04f27f3a71baa9d8b0a335f82b4ac8d873d0aef6a3a74f",
+        "inputRoles": 0,
+        "outputRoles": 2,
+        "authorization": 1
+      },
+      {
+        "operationId": "0x2b361487a9bd786d0ef78b12623e14f31499f2a03572d8ff1542d46eabbb26ae",
+        "inputRoles": 4,
+        "outputRoles": 4,
+        "authorization": 0
+      }
+    ],
+    "cases": [
+      {
+        "token": "0x0000000000000000000000000000000000001001",
+        "quoteAsset": "0x0000000000000000000000000000000000001002",
+        "launchData": "0x1234",
+        "expectedResourcesHash": "0x56570de287d73cd1cb6092bb8fdee6173974955fdef345ae579ee9f475ea7432",
+        "id": "first-quote-and-lifecycles",
+        "parameters": {
+          "cap": "5"
+        },
+        "expectedDeployment": "success",
+        "operations": [
+          {
+            "id": "before-settlement",
+            "actor": "creator",
+            "operationId": "0x2909c71a31a3d4dadb782fffd974183db29b07796e99d77079d3447bfec8a485",
+            "recipient": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+            "inputAsset": "0x0000000000000000000000000000000000000000",
+            "inputAmount": "0",
+            "outputAsset": "0x0000000000000000000000000000000000000000",
+            "minimumOutput": "0",
+            "data": "0x0000000000000000000000000000000000000000000000000000000000000002",
+            "expectedOutcome": "success",
+            "expectedResult": "0x0000000000000000000000000000000000000000000000000000000000000007",
+            "assertions": [
+              {
+                "callData": "0x3a7e0aca",
+                "expectedData": "0x0000000000000000000000000000000000000000000000000000000000000007"
+              }
+            ]
+          },
+          {
+            "id": "create-resources",
+            "actor": "creator",
+            "operationId": "0x934c95debda763bafbb11e205affceb51624290edebdc4e7412d982b5f5376b9",
+            "recipient": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+            "inputAsset": "0x0000000000000000000000000000000000000000",
+            "inputAmount": "0",
+            "outputAsset": "0x0000000000000000000000000000000000000000",
+            "minimumOutput": "0",
+            "data": "0x0000000000000000000000000000000000000000000000000000000000000003",
+            "expectedOutcome": "success",
+            "expectedResult": "0x0000000000000000000000000000000000000000000000000000000000000003",
+            "assertions": [
+              {
+                "callData": "0xf03906f5",
+                "expectedData": "0x0000000000000000000000000000000000000000000000000000000000000003"
+              }
+            ]
+          },
+          {
+            "id": "queue-fulfillment",
+            "actor": "creator",
+            "operationId": "0x9eca922e9490b0bd366a141e808694490d908d4ddbabfc195d607c5df0a10d08",
+            "recipient": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+            "inputAsset": "0x0000000000000000000000000000000000001002",
+            "inputAmount": "2",
+            "outputAsset": "0x0000000000000000000000000000000000000000",
+            "minimumOutput": "0",
+            "data": "0x0000000000000000000000000000000000000000000000000000000000000002",
+            "expectedOutcome": "success",
+            "expectedResult": "0x0000000000000000000000000000000000000000000000000000000000000002",
+            "assertions": [
+              {
+                "callData": "0xe20ccec3",
+                "expectedData": "0x0000000000000000000000000000000000000000000000000000000000000002"
+              }
+            ]
+          },
+          {
+            "id": "forbidden-user-fulfillment",
+            "actor": "user",
+            "operationId": "0x7b724520a67052ae2d04f27f3a71baa9d8b0a335f82b4ac8d873d0aef6a3a74f",
+            "recipient": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+            "inputAsset": "0x0000000000000000000000000000000000000000",
+            "inputAmount": "0",
+            "outputAsset": "0x0000000000000000000000000000000000001002",
+            "minimumOutput": "1",
+            "data": "0x0000000000000000000000000000000000000000000000000000000000000001",
+            "expectedOutcome": "revert",
+            "expectedResult": "0x",
+            "assertions": [
+              {
+                "callData": "0xe20ccec3",
+                "expectedData": "0x0000000000000000000000000000000000000000000000000000000000000002"
+              }
+            ]
+          },
+          {
+            "id": "fulfill",
+            "actor": "creator",
+            "operationId": "0x7b724520a67052ae2d04f27f3a71baa9d8b0a335f82b4ac8d873d0aef6a3a74f",
+            "recipient": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+            "inputAsset": "0x0000000000000000000000000000000000000000",
+            "inputAmount": "0",
+            "outputAsset": "0x0000000000000000000000000000000000001002",
+            "minimumOutput": "1",
+            "data": "0x0000000000000000000000000000000000000000000000000000000000000001",
+            "expectedOutcome": "success",
+            "expectedResult": "0x0000000000000000000000000000000000000000000000000000000000000001",
+            "assertions": [
+              {
+                "callData": "0xe2d46f98",
+                "expectedData": "0x0000000000000000000000000000000000000000000000000000000000000001"
+              }
+            ]
+          },
+          {
+            "id": "pay-fees",
+            "actor": "creator",
+            "operationId": "0x2b361487a9bd786d0ef78b12623e14f31499f2a03572d8ff1542d46eabbb26ae",
+            "recipient": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+            "inputAsset": "0x0000000000000000000000000000000000000000",
+            "inputAmount": "10000",
+            "outputAsset": "0x0000000000000000000000000000000000000000",
+            "minimumOutput": "9950",
+            "data": "0x0000000000000000000000000000000000000000000000000000000000002710",
+            "expectedOutcome": "success",
+            "expectedResult": "0x000000000000000000000000000000000000000000000000000000000000001e0000000000000000000000000000000000000000000000000000000000000014",
+            "assertions": [
+              {
+                "callData": "0xa2879e72",
+                "expectedData": "0x0000000000000000000000000000000000000000000000000000000000000032"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "token": "0x0000000000000000000000000000000000001001",
+        "quoteAsset": "0x0000000000000000000000000000000000002002",
+        "launchData": "0x1234",
+        "expectedResourcesHash": "0x56570de287d73cd1cb6092bb8fdee6173974955fdef345ae579ee9f475ea7432",
+        "id": "second-quote-same-source",
+        "parameters": {
+          "cap": "7"
+        },
+        "expectedDeployment": "success",
+        "operations": [
+          {
+            "id": "before-settlement",
+            "actor": "creator",
+            "operationId": "0x2909c71a31a3d4dadb782fffd974183db29b07796e99d77079d3447bfec8a485",
+            "recipient": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+            "inputAsset": "0x0000000000000000000000000000000000000000",
+            "inputAmount": "0",
+            "outputAsset": "0x0000000000000000000000000000000000000000",
+            "minimumOutput": "0",
+            "data": "0x0000000000000000000000000000000000000000000000000000000000000002",
+            "expectedOutcome": "success",
+            "expectedResult": "0x0000000000000000000000000000000000000000000000000000000000000009",
+            "assertions": [
+              {
+                "callData": "0x3a7e0aca",
+                "expectedData": "0x0000000000000000000000000000000000000000000000000000000000000009"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "token": "0x0000000000000000000000000000000000001001",
+        "quoteAsset": "0x0000000000000000000000000000000000001002",
+        "launchData": "0x1234",
+        "expectedResourcesHash": "0x56570de287d73cd1cb6092bb8fdee6173974955fdef345ae579ee9f475ea7432",
+        "id": "constructor-rejects-zero",
+        "parameters": {},
+        "rawConfigBytes": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "expectedDeployment": "revert",
+        "operations": []
+      }
+    ]
+  },
+  "artifact": {
+    "schemaVersion": "programmable.modules.engine-build.v1",
+    "authority": "programmable.module-review.engine-build.v1",
+    "subject": {
+      "submissionId": "00000000-0000-4000-8000-000000000041",
+      "principalId": "00000000-0000-4000-8000-000000000042",
+      "author": "0x1111111111111111111111111111111111111111",
+      "requestDigest": "0xfc39594d3f5481dc5110dad099b60699239a0f1b61a234215cf7ddffb4680f16"
+    },
+    "packageId": "0xf7fab05d64073a2713d9086bb0773a9f05b8428765c81336107fbc67904dc5f3",
+    "familyId": "0x1c19032e9d97021617b2fbc54e72e5ec4abaf045cf96158093309d7288122d33",
+    "rewardWallet": "0x2222222222222222222222222222222222222222",
+    "sourceManifestHash": "0x9aee9502e4483ae244d33835e81afafcf8cc6c1354ed66eb63cf50c710058e5b",
+    "planDigest": "0x9c885b896a93cc02181565401b86c155d40911a38b44b51782cad80a8377667c",
+    "configurationSchemaHash": "0x90dc345a929446297602ce2bc70a3077c93d1d94ccee060c50fdb2535335ce0d",
+    "configurationCodec": "programmable.engine-abi@1",
+    "configurationAbi": [
+      {
+        "path": [
+          "cap"
+        ],
+        "type": "uint64"
+      }
+    ],
+    "compiler": {
+      "version": "0.8.26+commit.8a97fa7a",
+      "binarySha256": "sha256:35ba6661f3bdaed995fc7af14c405502290cf681b3fd062fe8738cfdf6db14ed",
+      "imageDigest": "sha256:d8e448a56fc63242f70026718378bd4b00f8c82e78d20eefb199224a4d8e33d8",
+      "settingsHash": "0x2640938cf2656386ae53837737f6a7db28ea93b4484b829787ce691a7b97c35e",
+      "completeInputHash": "0x62f2f6adb84902ef61f8a75f32a11abc5a4f5598648769f7a7448bcd4d03f3a8",
+      "reproducible": true
+    },
+    "engine": {
+      "componentId": "engine",
+      "sourcePath": "TestEngine.sol",
+      "contractName": "TestEngine",
+      "abi": [
+        {
+          "inputs": [
+            {
+              "components": [
+                {
+                  "internalType": "address",
+                  "name": "host",
+                  "type": "address"
+                },
+                {
+                  "internalType": "bytes32",
+                  "name": "launchId",
+                  "type": "bytes32"
+                },
+                {
+                  "internalType": "address",
+                  "name": "token",
+                  "type": "address"
+                },
+                {
+                  "internalType": "address",
+                  "name": "creator",
+                  "type": "address"
+                },
+                {
+                  "internalType": "address",
+                  "name": "quoteAsset",
+                  "type": "address"
+                },
+                {
+                  "internalType": "address",
+                  "name": "feeCollector",
+                  "type": "address"
+                }
+              ],
+              "internalType": "struct T.Context",
+              "name": "context",
+              "type": "tuple"
+            },
+            {
+              "internalType": "bytes",
+              "name": "configuration",
+              "type": "bytes"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "type": "constructor"
+        },
+        {
+          "inputs": [],
+          "name": "cap",
+          "outputs": [
+            {
+              "internalType": "uint64",
+              "name": "",
+              "type": "uint64"
+            }
+          ],
+          "stateMutability": "view",
+          "type": "function"
+        },
+        {
+          "inputs": [],
+          "name": "contextHash",
+          "outputs": [
+            {
+              "internalType": "bytes32",
+              "name": "",
+              "type": "bytes32"
+            }
+          ],
+          "stateMutability": "view",
+          "type": "function"
+        },
+        {
+          "inputs": [
+            {
+              "components": [
+                {
+                  "internalType": "bytes32",
+                  "name": "operationId",
+                  "type": "bytes32"
+                },
+                {
+                  "internalType": "address",
+                  "name": "actor",
+                  "type": "address"
+                },
+                {
+                  "internalType": "address",
+                  "name": "recipient",
+                  "type": "address"
+                },
+                {
+                  "internalType": "address",
+                  "name": "inputAsset",
+                  "type": "address"
+                },
+                {
+                  "internalType": "uint256",
+                  "name": "inputAmount",
+                  "type": "uint256"
+                },
+                {
+                  "internalType": "address",
+                  "name": "outputAsset",
+                  "type": "address"
+                },
+                {
+                  "internalType": "uint256",
+                  "name": "minimumOutput",
+                  "type": "uint256"
+                },
+                {
+                  "internalType": "uint256",
+                  "name": "deadline",
+                  "type": "uint256"
+                },
+                {
+                  "internalType": "uint256",
+                  "name": "nonce",
+                  "type": "uint256"
+                },
+                {
+                  "internalType": "bytes",
+                  "name": "data",
+                  "type": "bytes"
+                }
+              ],
+              "internalType": "struct T.Operation",
+              "name": "op",
+              "type": "tuple"
+            }
+          ],
+          "name": "execute",
+          "outputs": [
+            {
+              "internalType": "bytes",
+              "name": "",
+              "type": "bytes"
+            }
+          ],
+          "stateMutability": "payable",
+          "type": "function"
+        },
+        {
+          "inputs": [],
+          "name": "feesPaid",
+          "outputs": [
+            {
+              "internalType": "uint256",
+              "name": "",
+              "type": "uint256"
+            }
+          ],
+          "stateMutability": "view",
+          "type": "function"
+        },
+        {
+          "inputs": [],
+          "name": "fulfilled",
+          "outputs": [
+            {
+              "internalType": "uint256",
+              "name": "",
+              "type": "uint256"
+            }
+          ],
+          "stateMutability": "view",
+          "type": "function"
+        },
+        {
+          "inputs": [
+            {
+              "internalType": "bytes",
+              "name": "data",
+              "type": "bytes"
+            }
+          ],
+          "name": "initialize",
+          "outputs": [
+            {
+              "internalType": "bytes32",
+              "name": "",
+              "type": "bytes32"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "type": "function"
+        },
+        {
+          "inputs": [],
+          "name": "lastQuote",
+          "outputs": [
+            {
+              "internalType": "uint256",
+              "name": "",
+              "type": "uint256"
+            }
+          ],
+          "stateMutability": "view",
+          "type": "function"
+        },
+        {
+          "inputs": [],
+          "name": "pending",
+          "outputs": [
+            {
+              "internalType": "uint256",
+              "name": "",
+              "type": "uint256"
+            }
+          ],
+          "stateMutability": "view",
+          "type": "function"
+        },
+        {
+          "inputs": [],
+          "name": "quoteAsset",
+          "outputs": [
+            {
+              "internalType": "address",
+              "name": "",
+              "type": "address"
+            }
+          ],
+          "stateMutability": "view",
+          "type": "function"
+        },
+        {
+          "inputs": [],
+          "name": "resources",
+          "outputs": [
+            {
+              "internalType": "uint256",
+              "name": "",
+              "type": "uint256"
+            }
+          ],
+          "stateMutability": "view",
+          "type": "function"
+        }
+      ],
+      "abiHash": "0x614aba86f8f9ecbd8c09fca4b406b058580cb1cda2a339b040149cbe63f6c6d4",
+      "creationBytecode": "0x60e0806040523461021557610ca2803803809161001c8285610239565b8339810181810360e081126102155760c013610215576040519160c083016001600160401b03811184821017610225576040526100588161025c565b8352602081015191602084019283526100736040830161025c565b604085019081526100866060840161025c565b906060860191825261009a6080850161025c565b92608087019384526100ae60a0860161025c565b60a0880190815260c086015190956001600160401b038211610215570181601f820112156102155780516001600160401b03811161022557604051916100fe601f8301601f191660200184610239565b81835260208301936020838301011161021557815f926020809301865e8301015280519060208203610215576020918101031261021557516001600160401b038116808203610215578015159081610219575b50156102155786516001600160a01b03908116608090815287516007558551821660a090815260c0938452604080519a51841660208c019081529951908b01529351821660608a0152935181169388019390935292518216908601529151909116838201528252906101c460e082610239565b5190205f55604051610a319081610271823960805181818161022301526103c1015260a05181818160a9015281816107b4015261085e015260c0518181816102dc0152818161096d01526109cc0152f35b5f80fd5b6103e89150105f610151565b634e487b7160e01b5f52604160045260245ffd5b601f909101601f19168101906001600160401b0382119082101761022557604052565b51906001600160a01b03821682036102155756fe6080806040526004361015610012575f80fd5b5f3560e01c908163355274ea146102be575080633a7e0aca146102a1578063439fab91146101ca5780634f93249314610161578063a2879e7214610144578063c6053b2914610128578063e20ccec31461010b578063e2d46f98146100ee578063f03906f5146100d15763fdf262b71461008a575f80fd5b346100cd575f3660031901126100cd5760206040516001600160a01b037f0000000000000000000000000000000000000000000000000000000000000000168152f35b5f80fd5b346100cd575f3660031901126100cd576020600354604051908152f35b346100cd575f3660031901126100cd576020600554604051908152f35b346100cd575f3660031901126100cd576020600454604051908152f35b346100cd575f3660031901126100cd5760205f54604051908152f35b346100cd575f3660031901126100cd576020600654604051908152f35b60203660031901126100cd5760043567ffffffffffffffff81116100cd5761014060031982360301126100cd57604061019e6020926004016103b6565b815192839181835280519182918282860152018484015e5f828201840152601f01601f19168101030190f35b346100cd5760203660031901126100cd5760043567ffffffffffffffff81116100cd57366023820112156100cd5780600401359067ffffffffffffffff82116100cd5736602483830101116100cd576001600160a01b037f000000000000000000000000000000000000000000000000000000000000000016331480610294575b156100cd57602091600160ff19815416176001555f8361026a83610336565b926102786040519485610300565b8084528060248386019601863783010152519020604051908152f35b5060ff600154161561024b565b346100cd575f3660031901126100cd576020600254604051908152f35b346100cd575f3660031901126100cd5760209067ffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000168152f35b90601f8019910116810190811067ffffffffffffffff82111761032257604052565b634e487b7160e01b5f52604160045260245ffd5b67ffffffffffffffff811161032257601f01601f191660200190565b9190820180921161035f57565b634e487b7160e01b5f52601160045260245ffd5b356001600160a01b03811681036100cd5790565b9190820391821161035f57565b519061ffff821682036100cd57565b8181029291811591840414171561035f57565b906001600160a01b037f00000000000000000000000000000000000000000000000000000000000000001680331480610a18575b156100cd575f92610120810135601e19823603018112156100cd57810180359067ffffffffffffffff82116100cd57602081019180360383136100cd57602090820191909103126100cd573581357f2909c71a31a3d4dadb782fffd974183db29b07796e99d77079d3447bfec8a48581146109bb577f934c95debda763bafbb11e205affceb51624290edebdc4e7412d982b5f5376b9811461095c577f9eca922e9490b0bd366a141e808694490d908d4ddbabfc195d607c5df0a10d088114610840577f7b724520a67052ae2d04f27f3a71baa9d8b0a335f82b4ac8d873d0aef6a3a74f8114610730577f2b361487a9bd786d0ef78b12623e14f31499f2a03572d8ff1542d46eabbb26ae146104fe578480fd5b6001600160a01b036105166060849596979401610373565b161580610723575b8061071a575b156100cd5760075493604051947f3d4b7d8f000000000000000000000000000000000000000000000000000000008652600486015260016024860152604085604481845afa9485156106b4575f905f966106bf575b5061059961ffff61271061059082829516876103a3565b049716846103a3565b04936105b06105a88688610352565b600654610352565b6006556105bd8587610352565b91803b156100cd575f906044604051809581937f078c0b760000000000000000000000000000000000000000000000000000000083528b60048401528a60248401525af19081156106b4578592879261068f575b5084936106368594610631869561062b6040889701610373565b94610387565b610387565b905af13d1561068a573d61064981610336565b906106576040519283610300565b81528260203d92013e5b156106875750604051916020830152604082015260408152610684606082610300565b90565b80fd5b610661565b610631955061062b9350936106a75f60409496610300565b5f95509386935091610611565b6040513d5f823e3d90fd5b9550506040853d604011610712575b816106db60409383610300565b810103126100cd5761271061059961ffff826105908261070660206106ff8d610394565b9c01610394565b9a955050505050610579565b3d91506106ce565b50803414610524565b508060808401351461051e565b5092935090506004548083116100cd576107689161075084604093610387565b60045561075f84600554610352565b60055501610373565b906001600160a01b03604051927fa9059cbb00000000000000000000000000000000000000000000000000000000845216600483015260248201526020816044815f6001600160a01b037f0000000000000000000000000000000000000000000000000000000000000000165af19081156106b4575f91610805575b50156100cd5760055460405190602082015260208152610684604082610300565b90506020813d602011610838575b8161082060209383610300565b810103126100cd575180151581036100cd575f6107e4565b3d9150610813565b5092935090506001600160a01b038261085b60608401610373565b827f0000000000000000000000000000000000000000000000000000000000000000169283911614928361094e575b5050816108c0575b50156100cd576108a490600454610352565b8060045560405190602082015260208152610684604082610300565b60249150602090604051928380927f70a082310000000000000000000000000000000000000000000000000000000082523060048301525afa9081156106b4575f9161091c575b5061091482600454610352565b11155f610892565b90506020813d602011610946575b8161093760209383610300565b810103126100cd57515f610907565b3d915061092a565b60800135149150825f61088a565b50929350505067ffffffffffffffff7f00000000000000000000000000000000000000000000000000000000000000001681116100cd5761099f90600354610352565b8060035560405190602082015260208152610684604082610300565b50929350505067ffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000168082116100cd576109fc91610352565b8060025560405190602082015260208152610684604082610300565b5060ff600154166103ea56fea164736f6c634300081a000a",
+      "creationCodeHash": "0x7b7547baba5ed42c6f9b0f2d061c76a40bc602ac21654e73ef2b452551c0a842",
+      "runtimeTemplate": "0x6080806040526004361015610012575f80fd5b5f3560e01c908163355274ea146102be575080633a7e0aca146102a1578063439fab91146101ca5780634f93249314610161578063a2879e7214610144578063c6053b2914610128578063e20ccec31461010b578063e2d46f98146100ee578063f03906f5146100d15763fdf262b71461008a575f80fd5b346100cd575f3660031901126100cd5760206040516001600160a01b037f0000000000000000000000000000000000000000000000000000000000000000168152f35b5f80fd5b346100cd575f3660031901126100cd576020600354604051908152f35b346100cd575f3660031901126100cd576020600554604051908152f35b346100cd575f3660031901126100cd576020600454604051908152f35b346100cd575f3660031901126100cd5760205f54604051908152f35b346100cd575f3660031901126100cd576020600654604051908152f35b60203660031901126100cd5760043567ffffffffffffffff81116100cd5761014060031982360301126100cd57604061019e6020926004016103b6565b815192839181835280519182918282860152018484015e5f828201840152601f01601f19168101030190f35b346100cd5760203660031901126100cd5760043567ffffffffffffffff81116100cd57366023820112156100cd5780600401359067ffffffffffffffff82116100cd5736602483830101116100cd576001600160a01b037f000000000000000000000000000000000000000000000000000000000000000016331480610294575b156100cd57602091600160ff19815416176001555f8361026a83610336565b926102786040519485610300565b8084528060248386019601863783010152519020604051908152f35b5060ff600154161561024b565b346100cd575f3660031901126100cd576020600254604051908152f35b346100cd575f3660031901126100cd5760209067ffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000168152f35b90601f8019910116810190811067ffffffffffffffff82111761032257604052565b634e487b7160e01b5f52604160045260245ffd5b67ffffffffffffffff811161032257601f01601f191660200190565b9190820180921161035f57565b634e487b7160e01b5f52601160045260245ffd5b356001600160a01b03811681036100cd5790565b9190820391821161035f57565b519061ffff821682036100cd57565b8181029291811591840414171561035f57565b906001600160a01b037f00000000000000000000000000000000000000000000000000000000000000001680331480610a18575b156100cd575f92610120810135601e19823603018112156100cd57810180359067ffffffffffffffff82116100cd57602081019180360383136100cd57602090820191909103126100cd573581357f2909c71a31a3d4dadb782fffd974183db29b07796e99d77079d3447bfec8a48581146109bb577f934c95debda763bafbb11e205affceb51624290edebdc4e7412d982b5f5376b9811461095c577f9eca922e9490b0bd366a141e808694490d908d4ddbabfc195d607c5df0a10d088114610840577f7b724520a67052ae2d04f27f3a71baa9d8b0a335f82b4ac8d873d0aef6a3a74f8114610730577f2b361487a9bd786d0ef78b12623e14f31499f2a03572d8ff1542d46eabbb26ae146104fe578480fd5b6001600160a01b036105166060849596979401610373565b161580610723575b8061071a575b156100cd5760075493604051947f3d4b7d8f000000000000000000000000000000000000000000000000000000008652600486015260016024860152604085604481845afa9485156106b4575f905f966106bf575b5061059961ffff61271061059082829516876103a3565b049716846103a3565b04936105b06105a88688610352565b600654610352565b6006556105bd8587610352565b91803b156100cd575f906044604051809581937f078c0b760000000000000000000000000000000000000000000000000000000083528b60048401528a60248401525af19081156106b4578592879261068f575b5084936106368594610631869561062b6040889701610373565b94610387565b610387565b905af13d1561068a573d61064981610336565b906106576040519283610300565b81528260203d92013e5b156106875750604051916020830152604082015260408152610684606082610300565b90565b80fd5b610661565b610631955061062b9350936106a75f60409496610300565b5f95509386935091610611565b6040513d5f823e3d90fd5b9550506040853d604011610712575b816106db60409383610300565b810103126100cd5761271061059961ffff826105908261070660206106ff8d610394565b9c01610394565b9a955050505050610579565b3d91506106ce565b50803414610524565b508060808401351461051e565b5092935090506004548083116100cd576107689161075084604093610387565b60045561075f84600554610352565b60055501610373565b906001600160a01b03604051927fa9059cbb00000000000000000000000000000000000000000000000000000000845216600483015260248201526020816044815f6001600160a01b037f0000000000000000000000000000000000000000000000000000000000000000165af19081156106b4575f91610805575b50156100cd5760055460405190602082015260208152610684604082610300565b90506020813d602011610838575b8161082060209383610300565b810103126100cd575180151581036100cd575f6107e4565b3d9150610813565b5092935090506001600160a01b038261085b60608401610373565b827f0000000000000000000000000000000000000000000000000000000000000000169283911614928361094e575b5050816108c0575b50156100cd576108a490600454610352565b8060045560405190602082015260208152610684604082610300565b60249150602090604051928380927f70a082310000000000000000000000000000000000000000000000000000000082523060048301525afa9081156106b4575f9161091c575b5061091482600454610352565b11155f610892565b90506020813d602011610946575b8161093760209383610300565b810103126100cd57515f610907565b3d915061092a565b60800135149150825f61088a565b50929350505067ffffffffffffffff7f00000000000000000000000000000000000000000000000000000000000000001681116100cd5761099f90600354610352565b8060035560405190602082015260208152610684604082610300565b50929350505067ffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000168082116100cd576109fc91610352565b8060025560405190602082015260208152610684604082610300565b5060ff600154166103ea56fea164736f6c634300081a000a",
+      "runtimeTemplateHash": "0x453715e1f5f9ec51f43df51c865c9d1caf5dad6c226391e31abeab82aa5536e3",
+      "immutableReferences": [
+        {
+          "id": "74",
+          "ranges": [
+            {
+              "start": 547,
+              "length": 32
+            },
+            {
+              "start": 961,
+              "length": 32
+            }
+          ]
+        },
+        {
+          "id": "76",
+          "ranges": [
+            {
+              "start": 169,
+              "length": 32
+            },
+            {
+              "start": 1972,
+              "length": 32
+            },
+            {
+              "start": 2142,
+              "length": 32
+            }
+          ]
+        },
+        {
+          "id": "78",
+          "ranges": [
+            {
+              "start": 732,
+              "length": 32
+            },
+            {
+              "start": 2413,
+              "length": 32
+            },
+            {
+              "start": 2508,
+              "length": 32
+            }
+          ]
+        }
+      ],
+      "immutableRuntimeOffsets": [
+        169,
+        547,
+        732,
+        961,
+        1972,
+        2142,
+        2413,
+        2508
+      ],
+      "immutableConstructorOffsets": [
+        128,
+        0,
+        256,
+        0,
+        128,
+        128,
+        256,
+        256
+      ],
+      "externalSelectors": [
+        "0x355274ea",
+        "0x3a7e0aca",
+        "0x439fab91",
+        "0x4f932493",
+        "0xa2879e72",
+        "0xc6053b29",
+        "0xe20ccec3",
+        "0xe2d46f98",
+        "0xf03906f5",
+        "0xfdf262b7"
+      ]
+    },
+    "executionGas": 500000,
+    "operationPermissions": [
+      {
+        "authorization": 0,
+        "inputRoles": 0,
+        "operationId": "0x2909c71a31a3d4dadb782fffd974183db29b07796e99d77079d3447bfec8a485",
+        "outputRoles": 0
+      },
+      {
+        "authorization": 0,
+        "inputRoles": 0,
+        "operationId": "0x934c95debda763bafbb11e205affceb51624290edebdc4e7412d982b5f5376b9",
+        "outputRoles": 0
+      },
+      {
+        "authorization": 0,
+        "inputRoles": 2,
+        "operationId": "0x9eca922e9490b0bd366a141e808694490d908d4ddbabfc195d607c5df0a10d08",
+        "outputRoles": 0
+      },
+      {
+        "authorization": 1,
+        "inputRoles": 0,
+        "operationId": "0x7b724520a67052ae2d04f27f3a71baa9d8b0a335f82b4ac8d873d0aef6a3a74f",
+        "outputRoles": 2
+      },
+      {
+        "authorization": 0,
+        "inputRoles": 4,
+        "operationId": "0x2b361487a9bd786d0ef78b12623e14f31499f2a03572d8ff1542d46eabbb26ae",
+        "outputRoles": 4
+      }
+    ],
+    "moneyRights": 6,
+    "coinRights": 0,
+    "testEconomics": {
+      "buyCreatorBps": 20,
+      "platformBps": 30,
+      "sellCreatorBps": 30
+    },
+    "cases": [
+      {
+        "expectedDeployment": "success",
+        "expectedResourcesHash": "0x56570de287d73cd1cb6092bb8fdee6173974955fdef345ae579ee9f475ea7432",
+        "id": "first-quote-and-lifecycles",
+        "launchData": "0x1234",
+        "operations": [
+          {
+            "actor": "creator",
+            "assertions": [
+              {
+                "callData": "0x3a7e0aca",
+                "expectedData": "0x0000000000000000000000000000000000000000000000000000000000000007"
+              }
+            ],
+            "data": "0x0000000000000000000000000000000000000000000000000000000000000002",
+            "expectedOutcome": "success",
+            "expectedResult": "0x0000000000000000000000000000000000000000000000000000000000000007",
+            "id": "before-settlement",
+            "inputAmount": "0",
+            "inputAsset": "0x0000000000000000000000000000000000000000",
+            "minimumOutput": "0",
+            "operationId": "0x2909c71a31a3d4dadb782fffd974183db29b07796e99d77079d3447bfec8a485",
+            "outputAsset": "0x0000000000000000000000000000000000000000",
+            "recipient": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266"
+          },
+          {
+            "actor": "creator",
+            "assertions": [
+              {
+                "callData": "0xf03906f5",
+                "expectedData": "0x0000000000000000000000000000000000000000000000000000000000000003"
+              }
+            ],
+            "data": "0x0000000000000000000000000000000000000000000000000000000000000003",
+            "expectedOutcome": "success",
+            "expectedResult": "0x0000000000000000000000000000000000000000000000000000000000000003",
+            "id": "create-resources",
+            "inputAmount": "0",
+            "inputAsset": "0x0000000000000000000000000000000000000000",
+            "minimumOutput": "0",
+            "operationId": "0x934c95debda763bafbb11e205affceb51624290edebdc4e7412d982b5f5376b9",
+            "outputAsset": "0x0000000000000000000000000000000000000000",
+            "recipient": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266"
+          },
+          {
+            "actor": "creator",
+            "assertions": [
+              {
+                "callData": "0xe20ccec3",
+                "expectedData": "0x0000000000000000000000000000000000000000000000000000000000000002"
+              }
+            ],
+            "data": "0x0000000000000000000000000000000000000000000000000000000000000002",
+            "expectedOutcome": "success",
+            "expectedResult": "0x0000000000000000000000000000000000000000000000000000000000000002",
+            "id": "queue-fulfillment",
+            "inputAmount": "2",
+            "inputAsset": "0x0000000000000000000000000000000000001002",
+            "minimumOutput": "0",
+            "operationId": "0x9eca922e9490b0bd366a141e808694490d908d4ddbabfc195d607c5df0a10d08",
+            "outputAsset": "0x0000000000000000000000000000000000000000",
+            "recipient": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266"
+          },
+          {
+            "actor": "user",
+            "assertions": [
+              {
+                "callData": "0xe20ccec3",
+                "expectedData": "0x0000000000000000000000000000000000000000000000000000000000000002"
+              }
+            ],
+            "data": "0x0000000000000000000000000000000000000000000000000000000000000001",
+            "expectedOutcome": "revert",
+            "expectedResult": "0x",
+            "id": "forbidden-user-fulfillment",
+            "inputAmount": "0",
+            "inputAsset": "0x0000000000000000000000000000000000000000",
+            "minimumOutput": "1",
+            "operationId": "0x7b724520a67052ae2d04f27f3a71baa9d8b0a335f82b4ac8d873d0aef6a3a74f",
+            "outputAsset": "0x0000000000000000000000000000000000001002",
+            "recipient": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266"
+          },
+          {
+            "actor": "creator",
+            "assertions": [
+              {
+                "callData": "0xe2d46f98",
+                "expectedData": "0x0000000000000000000000000000000000000000000000000000000000000001"
+              }
+            ],
+            "data": "0x0000000000000000000000000000000000000000000000000000000000000001",
+            "expectedOutcome": "success",
+            "expectedResult": "0x0000000000000000000000000000000000000000000000000000000000000001",
+            "id": "fulfill",
+            "inputAmount": "0",
+            "inputAsset": "0x0000000000000000000000000000000000000000",
+            "minimumOutput": "1",
+            "operationId": "0x7b724520a67052ae2d04f27f3a71baa9d8b0a335f82b4ac8d873d0aef6a3a74f",
+            "outputAsset": "0x0000000000000000000000000000000000001002",
+            "recipient": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266"
+          },
+          {
+            "actor": "creator",
+            "assertions": [
+              {
+                "callData": "0xa2879e72",
+                "expectedData": "0x0000000000000000000000000000000000000000000000000000000000000032"
+              }
+            ],
+            "data": "0x0000000000000000000000000000000000000000000000000000000000002710",
+            "expectedOutcome": "success",
+            "expectedResult": "0x000000000000000000000000000000000000000000000000000000000000001e0000000000000000000000000000000000000000000000000000000000000014",
+            "id": "pay-fees",
+            "inputAmount": "10000",
+            "inputAsset": "0x0000000000000000000000000000000000000000",
+            "minimumOutput": "9950",
+            "operationId": "0x2b361487a9bd786d0ef78b12623e14f31499f2a03572d8ff1542d46eabbb26ae",
+            "outputAsset": "0x0000000000000000000000000000000000000000",
+            "recipient": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266"
+          }
+        ],
+        "parameters": {
+          "cap": "5"
+        },
+        "quoteAsset": "0x0000000000000000000000000000000000001002",
+        "token": "0x0000000000000000000000000000000000001001",
+        "context": {
+          "host": "0x5fbdb2315678afecb367f032d93f642f64180aa3",
+          "launchId": "0x44129e99f97896fbfcd3b55d98e3aa6fa92e2438ee669a9dd100be0ace657344",
+          "token": "0x0000000000000000000000000000000000001001",
+          "creator": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+          "quoteAsset": "0x0000000000000000000000000000000000001002",
+          "feeCollector": "0x5fbdb2315678afecb367f032d93f642f64180aa3"
+        },
+        "contextHash": "0x24e457308754205660da589661ceb8646769d2d21d0e1b8ef50a3c8e7c6a9a57",
+        "configBytes": "0x0000000000000000000000000000000000000000000000000000000000000005",
+        "configHash": "0x036b6384b5eca791c62761152d0c79bb0604c104a5fb6f4eb0703f3154bb3db0",
+        "constructorArgs": "0x0000000000000000000000005fbdb2315678afecb367f032d93f642f64180aa344129e99f97896fbfcd3b55d98e3aa6fa92e2438ee669a9dd100be0ace6573440000000000000000000000000000000000000000000000000000000000001001000000000000000000000000f39fd6e51aad88f6f4ce6ab8827279cfffb9226600000000000000000000000000000000000000000000000000000000000010020000000000000000000000005fbdb2315678afecb367f032d93f642f64180aa300000000000000000000000000000000000000000000000000000000000000e000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000005",
+        "constructorHash": "0xe154c9d94caf9930304e4770fffdb8515a736b1075ded292587cfa9ed3b55986",
+        "initCodeHash": "0x55ec222ae146cb67b1462b99d8c1d1f0d276ffed7335b2d37e183439ff4ff6ec",
+        "runtimeBytecode": "0x6080806040526004361015610012575f80fd5b5f3560e01c908163355274ea146102be575080633a7e0aca146102a1578063439fab91146101ca5780634f93249314610161578063a2879e7214610144578063c6053b2914610128578063e20ccec31461010b578063e2d46f98146100ee578063f03906f5146100d15763fdf262b71461008a575f80fd5b346100cd575f3660031901126100cd5760206040516001600160a01b037f0000000000000000000000000000000000000000000000000000000000001002168152f35b5f80fd5b346100cd575f3660031901126100cd576020600354604051908152f35b346100cd575f3660031901126100cd576020600554604051908152f35b346100cd575f3660031901126100cd576020600454604051908152f35b346100cd575f3660031901126100cd5760205f54604051908152f35b346100cd575f3660031901126100cd576020600654604051908152f35b60203660031901126100cd5760043567ffffffffffffffff81116100cd5761014060031982360301126100cd57604061019e6020926004016103b6565b815192839181835280519182918282860152018484015e5f828201840152601f01601f19168101030190f35b346100cd5760203660031901126100cd5760043567ffffffffffffffff81116100cd57366023820112156100cd5780600401359067ffffffffffffffff82116100cd5736602483830101116100cd576001600160a01b037f0000000000000000000000005fbdb2315678afecb367f032d93f642f64180aa316331480610294575b156100cd57602091600160ff19815416176001555f8361026a83610336565b926102786040519485610300565b8084528060248386019601863783010152519020604051908152f35b5060ff600154161561024b565b346100cd575f3660031901126100cd576020600254604051908152f35b346100cd575f3660031901126100cd5760209067ffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000005168152f35b90601f8019910116810190811067ffffffffffffffff82111761032257604052565b634e487b7160e01b5f52604160045260245ffd5b67ffffffffffffffff811161032257601f01601f191660200190565b9190820180921161035f57565b634e487b7160e01b5f52601160045260245ffd5b356001600160a01b03811681036100cd5790565b9190820391821161035f57565b519061ffff821682036100cd57565b8181029291811591840414171561035f57565b906001600160a01b037f0000000000000000000000005fbdb2315678afecb367f032d93f642f64180aa31680331480610a18575b156100cd575f92610120810135601e19823603018112156100cd57810180359067ffffffffffffffff82116100cd57602081019180360383136100cd57602090820191909103126100cd573581357f2909c71a31a3d4dadb782fffd974183db29b07796e99d77079d3447bfec8a48581146109bb577f934c95debda763bafbb11e205affceb51624290edebdc4e7412d982b5f5376b9811461095c577f9eca922e9490b0bd366a141e808694490d908d4ddbabfc195d607c5df0a10d088114610840577f7b724520a67052ae2d04f27f3a71baa9d8b0a335f82b4ac8d873d0aef6a3a74f8114610730577f2b361487a9bd786d0ef78b12623e14f31499f2a03572d8ff1542d46eabbb26ae146104fe578480fd5b6001600160a01b036105166060849596979401610373565b161580610723575b8061071a575b156100cd5760075493604051947f3d4b7d8f000000000000000000000000000000000000000000000000000000008652600486015260016024860152604085604481845afa9485156106b4575f905f966106bf575b5061059961ffff61271061059082829516876103a3565b049716846103a3565b04936105b06105a88688610352565b600654610352565b6006556105bd8587610352565b91803b156100cd575f906044604051809581937f078c0b760000000000000000000000000000000000000000000000000000000083528b60048401528a60248401525af19081156106b4578592879261068f575b5084936106368594610631869561062b6040889701610373565b94610387565b610387565b905af13d1561068a573d61064981610336565b906106576040519283610300565b81528260203d92013e5b156106875750604051916020830152604082015260408152610684606082610300565b90565b80fd5b610661565b610631955061062b9350936106a75f60409496610300565b5f95509386935091610611565b6040513d5f823e3d90fd5b9550506040853d604011610712575b816106db60409383610300565b810103126100cd5761271061059961ffff826105908261070660206106ff8d610394565b9c01610394565b9a955050505050610579565b3d91506106ce565b50803414610524565b508060808401351461051e565b5092935090506004548083116100cd576107689161075084604093610387565b60045561075f84600554610352565b60055501610373565b906001600160a01b03604051927fa9059cbb00000000000000000000000000000000000000000000000000000000845216600483015260248201526020816044815f6001600160a01b037f0000000000000000000000000000000000000000000000000000000000001002165af19081156106b4575f91610805575b50156100cd5760055460405190602082015260208152610684604082610300565b90506020813d602011610838575b8161082060209383610300565b810103126100cd575180151581036100cd575f6107e4565b3d9150610813565b5092935090506001600160a01b038261085b60608401610373565b827f0000000000000000000000000000000000000000000000000000000000001002169283911614928361094e575b5050816108c0575b50156100cd576108a490600454610352565b8060045560405190602082015260208152610684604082610300565b60249150602090604051928380927f70a082310000000000000000000000000000000000000000000000000000000082523060048301525afa9081156106b4575f9161091c575b5061091482600454610352565b11155f610892565b90506020813d602011610946575b8161093760209383610300565b810103126100cd57515f610907565b3d915061092a565b60800135149150825f61088a565b50929350505067ffffffffffffffff7f00000000000000000000000000000000000000000000000000000000000000051681116100cd5761099f90600354610352565b8060035560405190602082015260208152610684604082610300565b50929350505067ffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000005168082116100cd576109fc91610352565b8060025560405190602082015260208152610684604082610300565b5060ff600154166103ea56fea164736f6c634300081a000a",
+        "runtimeCodeHash": "0xc991a2a7026505128733d0056dae4cf3d6ecd8d970babac8d2d60d702c6d0d11"
+      },
+      {
+        "expectedDeployment": "success",
+        "expectedResourcesHash": "0x56570de287d73cd1cb6092bb8fdee6173974955fdef345ae579ee9f475ea7432",
+        "id": "second-quote-same-source",
+        "launchData": "0x1234",
+        "operations": [
+          {
+            "actor": "creator",
+            "assertions": [
+              {
+                "callData": "0x3a7e0aca",
+                "expectedData": "0x0000000000000000000000000000000000000000000000000000000000000009"
+              }
+            ],
+            "data": "0x0000000000000000000000000000000000000000000000000000000000000002",
+            "expectedOutcome": "success",
+            "expectedResult": "0x0000000000000000000000000000000000000000000000000000000000000009",
+            "id": "before-settlement",
+            "inputAmount": "0",
+            "inputAsset": "0x0000000000000000000000000000000000000000",
+            "minimumOutput": "0",
+            "operationId": "0x2909c71a31a3d4dadb782fffd974183db29b07796e99d77079d3447bfec8a485",
+            "outputAsset": "0x0000000000000000000000000000000000000000",
+            "recipient": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266"
+          }
+        ],
+        "parameters": {
+          "cap": "7"
+        },
+        "quoteAsset": "0x0000000000000000000000000000000000002002",
+        "token": "0x0000000000000000000000000000000000001001",
+        "context": {
+          "host": "0x5fbdb2315678afecb367f032d93f642f64180aa3",
+          "launchId": "0x3dea252818006403d75bc7183535cc2de61084151f83debbf0d8a2cfff091184",
+          "token": "0x0000000000000000000000000000000000001001",
+          "creator": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+          "quoteAsset": "0x0000000000000000000000000000000000002002",
+          "feeCollector": "0x5fbdb2315678afecb367f032d93f642f64180aa3"
+        },
+        "contextHash": "0xdd34f2265d15f0aa31ef11f49af65149d17fcd3912363272f085b9f7675fe1ed",
+        "configBytes": "0x0000000000000000000000000000000000000000000000000000000000000007",
+        "configHash": "0xa66cc928b5edb82af9bd49922954155ab7b0942694bea4ce44661d9a8736c688",
+        "constructorArgs": "0x0000000000000000000000005fbdb2315678afecb367f032d93f642f64180aa33dea252818006403d75bc7183535cc2de61084151f83debbf0d8a2cfff0911840000000000000000000000000000000000000000000000000000000000001001000000000000000000000000f39fd6e51aad88f6f4ce6ab8827279cfffb9226600000000000000000000000000000000000000000000000000000000000020020000000000000000000000005fbdb2315678afecb367f032d93f642f64180aa300000000000000000000000000000000000000000000000000000000000000e000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000007",
+        "constructorHash": "0xb12b3a646de358c38839366927f59c49eb5ae239c1cd9a1dbfe9757ef669f056",
+        "initCodeHash": "0x64ecdca45e7d7648c004535b1c90be7c17f8fbd57d42d9d40b52b7c0c6d0d271",
+        "runtimeBytecode": "0x6080806040526004361015610012575f80fd5b5f3560e01c908163355274ea146102be575080633a7e0aca146102a1578063439fab91146101ca5780634f93249314610161578063a2879e7214610144578063c6053b2914610128578063e20ccec31461010b578063e2d46f98146100ee578063f03906f5146100d15763fdf262b71461008a575f80fd5b346100cd575f3660031901126100cd5760206040516001600160a01b037f0000000000000000000000000000000000000000000000000000000000002002168152f35b5f80fd5b346100cd575f3660031901126100cd576020600354604051908152f35b346100cd575f3660031901126100cd576020600554604051908152f35b346100cd575f3660031901126100cd576020600454604051908152f35b346100cd575f3660031901126100cd5760205f54604051908152f35b346100cd575f3660031901126100cd576020600654604051908152f35b60203660031901126100cd5760043567ffffffffffffffff81116100cd5761014060031982360301126100cd57604061019e6020926004016103b6565b815192839181835280519182918282860152018484015e5f828201840152601f01601f19168101030190f35b346100cd5760203660031901126100cd5760043567ffffffffffffffff81116100cd57366023820112156100cd5780600401359067ffffffffffffffff82116100cd5736602483830101116100cd576001600160a01b037f0000000000000000000000005fbdb2315678afecb367f032d93f642f64180aa316331480610294575b156100cd57602091600160ff19815416176001555f8361026a83610336565b926102786040519485610300565b8084528060248386019601863783010152519020604051908152f35b5060ff600154161561024b565b346100cd575f3660031901126100cd576020600254604051908152f35b346100cd575f3660031901126100cd5760209067ffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000007168152f35b90601f8019910116810190811067ffffffffffffffff82111761032257604052565b634e487b7160e01b5f52604160045260245ffd5b67ffffffffffffffff811161032257601f01601f191660200190565b9190820180921161035f57565b634e487b7160e01b5f52601160045260245ffd5b356001600160a01b03811681036100cd5790565b9190820391821161035f57565b519061ffff821682036100cd57565b8181029291811591840414171561035f57565b906001600160a01b037f0000000000000000000000005fbdb2315678afecb367f032d93f642f64180aa31680331480610a18575b156100cd575f92610120810135601e19823603018112156100cd57810180359067ffffffffffffffff82116100cd57602081019180360383136100cd57602090820191909103126100cd573581357f2909c71a31a3d4dadb782fffd974183db29b07796e99d77079d3447bfec8a48581146109bb577f934c95debda763bafbb11e205affceb51624290edebdc4e7412d982b5f5376b9811461095c577f9eca922e9490b0bd366a141e808694490d908d4ddbabfc195d607c5df0a10d088114610840577f7b724520a67052ae2d04f27f3a71baa9d8b0a335f82b4ac8d873d0aef6a3a74f8114610730577f2b361487a9bd786d0ef78b12623e14f31499f2a03572d8ff1542d46eabbb26ae146104fe578480fd5b6001600160a01b036105166060849596979401610373565b161580610723575b8061071a575b156100cd5760075493604051947f3d4b7d8f000000000000000000000000000000000000000000000000000000008652600486015260016024860152604085604481845afa9485156106b4575f905f966106bf575b5061059961ffff61271061059082829516876103a3565b049716846103a3565b04936105b06105a88688610352565b600654610352565b6006556105bd8587610352565b91803b156100cd575f906044604051809581937f078c0b760000000000000000000000000000000000000000000000000000000083528b60048401528a60248401525af19081156106b4578592879261068f575b5084936106368594610631869561062b6040889701610373565b94610387565b610387565b905af13d1561068a573d61064981610336565b906106576040519283610300565b81528260203d92013e5b156106875750604051916020830152604082015260408152610684606082610300565b90565b80fd5b610661565b610631955061062b9350936106a75f60409496610300565b5f95509386935091610611565b6040513d5f823e3d90fd5b9550506040853d604011610712575b816106db60409383610300565b810103126100cd5761271061059961ffff826105908261070660206106ff8d610394565b9c01610394565b9a955050505050610579565b3d91506106ce565b50803414610524565b508060808401351461051e565b5092935090506004548083116100cd576107689161075084604093610387565b60045561075f84600554610352565b60055501610373565b906001600160a01b03604051927fa9059cbb00000000000000000000000000000000000000000000000000000000845216600483015260248201526020816044815f6001600160a01b037f0000000000000000000000000000000000000000000000000000000000002002165af19081156106b4575f91610805575b50156100cd5760055460405190602082015260208152610684604082610300565b90506020813d602011610838575b8161082060209383610300565b810103126100cd575180151581036100cd575f6107e4565b3d9150610813565b5092935090506001600160a01b038261085b60608401610373565b827f0000000000000000000000000000000000000000000000000000000000002002169283911614928361094e575b5050816108c0575b50156100cd576108a490600454610352565b8060045560405190602082015260208152610684604082610300565b60249150602090604051928380927f70a082310000000000000000000000000000000000000000000000000000000082523060048301525afa9081156106b4575f9161091c575b5061091482600454610352565b11155f610892565b90506020813d602011610946575b8161093760209383610300565b810103126100cd57515f610907565b3d915061092a565b60800135149150825f61088a565b50929350505067ffffffffffffffff7f00000000000000000000000000000000000000000000000000000000000000071681116100cd5761099f90600354610352565b8060035560405190602082015260208152610684604082610300565b50929350505067ffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000007168082116100cd576109fc91610352565b8060025560405190602082015260208152610684604082610300565b5060ff600154166103ea56fea164736f6c634300081a000a",
+        "runtimeCodeHash": "0xb38febb2c56c79728dcc484c39b88303f3883e5e983569f6b293dc31082b7835"
+      },
+      {
+        "expectedDeployment": "revert",
+        "expectedResourcesHash": "0x56570de287d73cd1cb6092bb8fdee6173974955fdef345ae579ee9f475ea7432",
+        "id": "constructor-rejects-zero",
+        "launchData": "0x1234",
+        "operations": [],
+        "parameters": {},
+        "quoteAsset": "0x0000000000000000000000000000000000001002",
+        "rawConfigBytes": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "token": "0x0000000000000000000000000000000000001001",
+        "context": {
+          "host": "0x5fbdb2315678afecb367f032d93f642f64180aa3",
+          "launchId": "0xa11e27460aaa85986f8b3496ab881ddd0f0d43214fa4590f71c2972a17a1a1c7",
+          "token": "0x0000000000000000000000000000000000001001",
+          "creator": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+          "quoteAsset": "0x0000000000000000000000000000000000001002",
+          "feeCollector": "0x5fbdb2315678afecb367f032d93f642f64180aa3"
+        },
+        "contextHash": "0x22684682e976de01ecce255a1e2ea664740ce954b8fe3d0037afc56566a9aaf9",
+        "configBytes": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "configHash": "0x290decd9548b62a8d60345a988386fc84ba6bc95484008f6362f93160ef3e563",
+        "constructorArgs": "0x0000000000000000000000005fbdb2315678afecb367f032d93f642f64180aa3a11e27460aaa85986f8b3496ab881ddd0f0d43214fa4590f71c2972a17a1a1c70000000000000000000000000000000000000000000000000000000000001001000000000000000000000000f39fd6e51aad88f6f4ce6ab8827279cfffb9226600000000000000000000000000000000000000000000000000000000000010020000000000000000000000005fbdb2315678afecb367f032d93f642f64180aa300000000000000000000000000000000000000000000000000000000000000e000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000000",
+        "constructorHash": "0x5a0f38a294d15cb96c915623e591191e5853a882476b189f9ad8ae269e5d4995",
+        "initCodeHash": "0xf3125e7f1b42d0ac33d9d7a7d28fcffd1dcecbe3e69b617e3abc40483a41812b",
+        "runtimeBytecode": "0x6080806040526004361015610012575f80fd5b5f3560e01c908163355274ea146102be575080633a7e0aca146102a1578063439fab91146101ca5780634f93249314610161578063a2879e7214610144578063c6053b2914610128578063e20ccec31461010b578063e2d46f98146100ee578063f03906f5146100d15763fdf262b71461008a575f80fd5b346100cd575f3660031901126100cd5760206040516001600160a01b037f0000000000000000000000000000000000000000000000000000000000001002168152f35b5f80fd5b346100cd575f3660031901126100cd576020600354604051908152f35b346100cd575f3660031901126100cd576020600554604051908152f35b346100cd575f3660031901126100cd576020600454604051908152f35b346100cd575f3660031901126100cd5760205f54604051908152f35b346100cd575f3660031901126100cd576020600654604051908152f35b60203660031901126100cd5760043567ffffffffffffffff81116100cd5761014060031982360301126100cd57604061019e6020926004016103b6565b815192839181835280519182918282860152018484015e5f828201840152601f01601f19168101030190f35b346100cd5760203660031901126100cd5760043567ffffffffffffffff81116100cd57366023820112156100cd5780600401359067ffffffffffffffff82116100cd5736602483830101116100cd576001600160a01b037f0000000000000000000000005fbdb2315678afecb367f032d93f642f64180aa316331480610294575b156100cd57602091600160ff19815416176001555f8361026a83610336565b926102786040519485610300565b8084528060248386019601863783010152519020604051908152f35b5060ff600154161561024b565b346100cd575f3660031901126100cd576020600254604051908152f35b346100cd575f3660031901126100cd5760209067ffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000168152f35b90601f8019910116810190811067ffffffffffffffff82111761032257604052565b634e487b7160e01b5f52604160045260245ffd5b67ffffffffffffffff811161032257601f01601f191660200190565b9190820180921161035f57565b634e487b7160e01b5f52601160045260245ffd5b356001600160a01b03811681036100cd5790565b9190820391821161035f57565b519061ffff821682036100cd57565b8181029291811591840414171561035f57565b906001600160a01b037f0000000000000000000000005fbdb2315678afecb367f032d93f642f64180aa31680331480610a18575b156100cd575f92610120810135601e19823603018112156100cd57810180359067ffffffffffffffff82116100cd57602081019180360383136100cd57602090820191909103126100cd573581357f2909c71a31a3d4dadb782fffd974183db29b07796e99d77079d3447bfec8a48581146109bb577f934c95debda763bafbb11e205affceb51624290edebdc4e7412d982b5f5376b9811461095c577f9eca922e9490b0bd366a141e808694490d908d4ddbabfc195d607c5df0a10d088114610840577f7b724520a67052ae2d04f27f3a71baa9d8b0a335f82b4ac8d873d0aef6a3a74f8114610730577f2b361487a9bd786d0ef78b12623e14f31499f2a03572d8ff1542d46eabbb26ae146104fe578480fd5b6001600160a01b036105166060849596979401610373565b161580610723575b8061071a575b156100cd5760075493604051947f3d4b7d8f000000000000000000000000000000000000000000000000000000008652600486015260016024860152604085604481845afa9485156106b4575f905f966106bf575b5061059961ffff61271061059082829516876103a3565b049716846103a3565b04936105b06105a88688610352565b600654610352565b6006556105bd8587610352565b91803b156100cd575f906044604051809581937f078c0b760000000000000000000000000000000000000000000000000000000083528b60048401528a60248401525af19081156106b4578592879261068f575b5084936106368594610631869561062b6040889701610373565b94610387565b610387565b905af13d1561068a573d61064981610336565b906106576040519283610300565b81528260203d92013e5b156106875750604051916020830152604082015260408152610684606082610300565b90565b80fd5b610661565b610631955061062b9350936106a75f60409496610300565b5f95509386935091610611565b6040513d5f823e3d90fd5b9550506040853d604011610712575b816106db60409383610300565b810103126100cd5761271061059961ffff826105908261070660206106ff8d610394565b9c01610394565b9a955050505050610579565b3d91506106ce565b50803414610524565b508060808401351461051e565b5092935090506004548083116100cd576107689161075084604093610387565b60045561075f84600554610352565b60055501610373565b906001600160a01b03604051927fa9059cbb00000000000000000000000000000000000000000000000000000000845216600483015260248201526020816044815f6001600160a01b037f0000000000000000000000000000000000000000000000000000000000001002165af19081156106b4575f91610805575b50156100cd5760055460405190602082015260208152610684604082610300565b90506020813d602011610838575b8161082060209383610300565b810103126100cd575180151581036100cd575f6107e4565b3d9150610813565b5092935090506001600160a01b038261085b60608401610373565b827f0000000000000000000000000000000000000000000000000000000000001002169283911614928361094e575b5050816108c0575b50156100cd576108a490600454610352565b8060045560405190602082015260208152610684604082610300565b60249150602090604051928380927f70a082310000000000000000000000000000000000000000000000000000000082523060048301525afa9081156106b4575f9161091c575b5061091482600454610352565b11155f610892565b90506020813d602011610946575b8161093760209383610300565b810103126100cd57515f610907565b3d915061092a565b60800135149150825f61088a565b50929350505067ffffffffffffffff7f00000000000000000000000000000000000000000000000000000000000000001681116100cd5761099f90600354610352565b8060035560405190602082015260208152610684604082610300565b50929350505067ffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000168082116100cd576109fc91610352565b8060025560405190602082015260208152610684604082610300565b5060ff600154166103ea56fea164736f6c634300081a000a",
+        "runtimeCodeHash": "0x139d7be4f29c056cf6d7137096c2561b98da234a12762bf7e8d9f623b498bb92"
+      }
+    ],
+    "tests": {
+      "schemaVersion": "programmable.modules.engine-test-results.v1",
+      "requestDigest": "0xfc39594d3f5481dc5110dad099b60699239a0f1b61a234215cf7ddffb4680f16",
+      "planDigest": "0x9c885b896a93cc02181565401b86c155d40911a38b44b51782cad80a8377667c",
+      "harnessDigest": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+      "execution": "isolated-docker-anvil",
+      "cases": [
+        {
+          "id": "first-quote-and-lifecycles",
+          "constructorHash": "0xe154c9d94caf9930304e4770fffdb8515a736b1075ded292587cfa9ed3b55986",
+          "runtimeCodeHash": "0xc991a2a7026505128733d0056dae4cf3d6ecd8d970babac8d2d60d702c6d0d11",
+          "deploymentMatched": true,
+          "codeHashMatched": true,
+          "contextMatched": true,
+          "resourcesMatched": true,
+          "unauthorizedInitializeReverted": true,
+          "unauthorizedExecuteReverted": true,
+          "operations": [
+            {
+              "id": "before-settlement",
+              "outcomeMatched": true,
+              "resultMatched": true,
+              "stateMatched": true,
+              "inputOutputBound": true,
+              "replayReverted": true,
+              "feesBacked": true
+            },
+            {
+              "id": "create-resources",
+              "outcomeMatched": true,
+              "resultMatched": true,
+              "stateMatched": true,
+              "inputOutputBound": true,
+              "replayReverted": true,
+              "feesBacked": true
+            },
+            {
+              "id": "queue-fulfillment",
+              "outcomeMatched": true,
+              "resultMatched": true,
+              "stateMatched": true,
+              "inputOutputBound": true,
+              "replayReverted": true,
+              "feesBacked": true
+            },
+            {
+              "id": "forbidden-user-fulfillment",
+              "outcomeMatched": true,
+              "resultMatched": true,
+              "stateMatched": true,
+              "inputOutputBound": true,
+              "replayReverted": true,
+              "feesBacked": true
+            },
+            {
+              "id": "fulfill",
+              "outcomeMatched": true,
+              "resultMatched": true,
+              "stateMatched": true,
+              "inputOutputBound": true,
+              "replayReverted": true,
+              "feesBacked": true
+            },
+            {
+              "id": "pay-fees",
+              "outcomeMatched": true,
+              "resultMatched": true,
+              "stateMatched": true,
+              "inputOutputBound": true,
+              "replayReverted": true,
+              "feesBacked": true
+            }
+          ]
+        },
+        {
+          "id": "second-quote-same-source",
+          "constructorHash": "0xb12b3a646de358c38839366927f59c49eb5ae239c1cd9a1dbfe9757ef669f056",
+          "runtimeCodeHash": "0xb38febb2c56c79728dcc484c39b88303f3883e5e983569f6b293dc31082b7835",
+          "deploymentMatched": true,
+          "codeHashMatched": true,
+          "contextMatched": true,
+          "resourcesMatched": true,
+          "unauthorizedInitializeReverted": true,
+          "unauthorizedExecuteReverted": true,
+          "operations": [
+            {
+              "id": "before-settlement",
+              "outcomeMatched": true,
+              "resultMatched": true,
+              "stateMatched": true,
+              "inputOutputBound": true,
+              "replayReverted": true,
+              "feesBacked": true
+            }
+          ]
+        },
+        {
+          "id": "constructor-rejects-zero",
+          "constructorHash": "0x5a0f38a294d15cb96c915623e591191e5853a882476b189f9ad8ae269e5d4995",
+          "runtimeCodeHash": "0x139d7be4f29c056cf6d7137096c2561b98da234a12762bf7e8d9f623b498bb92",
+          "deploymentMatched": true,
+          "codeHashMatched": null,
+          "contextMatched": null,
+          "resourcesMatched": null,
+          "unauthorizedInitializeReverted": null,
+          "unauthorizedExecuteReverted": null,
+          "operations": []
+        }
+      ],
+      "allRequiredChecksPassed": true
+    },
+    "reviewRequired": [
+      "complete-constructor-accepted-configuration-range",
+      "immutable-constructor-word-mapping",
+      "external-chain-dependencies-and-asset-behavior",
+      "operation-authority-funding-and-resource-conservation",
+      "asynchronous-lifecycle-recovery-and-liveness",
+      "composition-with-other-packages"
+    ],
+    "approved": false,
+    "registryApproved": false,
+    "available": false,
+    "artifactDigest": "0xdc5299616e9f21143c9adfd9cf01f8926a65c4f19c76221376a2c810ca937599"
+  }
+}

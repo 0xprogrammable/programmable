@@ -1,0 +1,32 @@
+.root { max-width: 1000px; min-width: 0; }
+.root h2 { font-size: 20px; font-weight: 500; line-height: 28px; margin-block: 0 16px; }
+.stack { display: grid; gap: 24px; min-width: 0; }
+.actions { align-items: center; display: flex; flex-wrap: wrap; gap: 12px; margin-block: 16px; }
+.review { margin-block: 24px; }
+.review dd, .root dd, .root code { overflow-wrap: anywhere; }
+.details { border-block-start: 1px solid var(--mm-line, #323232); margin-block: 24px; padding-block: 12px; }
+.details > summary { cursor: pointer; min-height: 44px; padding-block: 12px; }
+.calldata { background: var(--mm-control, #242424); display: block; font-size: 12px; line-height: 20px; max-height: 200px; overflow: auto; padding: 16px; white-space: pre-wrap; word-break: break-all; }
+.notice { background: var(--mm-control, #242424); border: 1px solid var(--mm-line, #323232); border-radius: 8px; line-height: 24px; margin-block: 16px; overflow-wrap: anywhere; padding: 16px; }
+.inlineCode { font-size: 13px; overflow-wrap: anywhere; }
+.fixedSettings > summary { cursor: pointer; min-height: 44px; padding-block: 12px; }
+.fixedSettings > p { margin-bottom: 16px; }
+.launchSummary { border-bottom: 1px solid var(--mm-line, #323232); margin-bottom: 24px; padding-bottom: 24px; overflow-wrap: anywhere; }
+.launchSummary > strong { display: block; font-size: 20px; line-height: 28px; }
+.launchSummary > p { line-height: 24px; }
+.root [hidden] { display: none; }
+.root input[readonly] { color: var(--mm-muted, #b7b7b3); }
+.root dl + p { margin-top: 16px; }
+.root h2[tabindex]:focus, .root p[role="alert"]:focus { outline: 2px solid #a1bfa9; outline-offset: 4px; scroll-margin-top: 24px; }
+.root button:focus-visible, .root summary:focus-visible, .root a:focus-visible { outline: 2px solid #a1bfa9; outline-offset: 4px; }
+@media (max-width: 600px) { .actions { align-items: stretch; flex-direction: column; } .actions > button { width: 100%; } .root dl > div { grid-template-columns: minmax(0, 1fr); gap: 4px; } .root dd { text-align: left; } }
+/* Visible form boundaries retain at least 3:1 contrast on the shared dark surfaces. */
+.root :is(input:not([type="file"]), select, textarea):not([aria-invalid="true"]), .root button { border-color: #737373; }
+@media (forced-colors: active) { .root :is(input, select, textarea, button) { border-color: ButtonText; } }
+
+.templateLibrary { margin-bottom: 24px; }
+.templateLibrary div:has(> input[type="search"]) { border-color: #737373; }
+@media (forced-colors: active) { .templateLibrary div:has(> input[type="search"]) { border-color: ButtonText; } }
+
+.templateDetails { margin-bottom: 16px; }
+.templateDetails > p:first-child { font-size: 14px; line-height: 20px; margin: 0 0 8px; }

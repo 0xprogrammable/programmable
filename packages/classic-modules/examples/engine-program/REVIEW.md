@@ -1,0 +1,27 @@
+# Operator review for this engine contribution
+
+The service uses the existing source draft, owner status, operator plan, protected worker lease and independently authorized reviewer. The profile is `programmable.module-engine-solidity@1`, defined by the service's `src/module-review/engine-profile-v1.md` and typed `engine-types-v1.ts`. This starter follows the additive `programmable.modules.engine-build-plan.v1` contract and its optional bounded operation timestamps. The originally introduced profile was backend source `4c40108235cfd68b7c366faed97cc4bc71c69996`; timestamp support was added in `a65ba9bbf232b63e10b4ec6387c755ebebdc0167`. A deployment must expose that later profile before these refund vectors can run.
+
+The contributor submits the ordinary source request. `requiresHost` declares a requirement and grants no permission. Uploaded scripts, compiler flags, remote import URLs and shell commands are never executed by the worker. The operator selects the engine component, exact source, fixed Solc 0.8.26/Cancun/via-IR/optimizer-1000 compiler and the complete ordered configuration mapping. Both effective compiler inputs and outputs must match. This starter has no Solidity immutable slots; its canonical context is stored, so `immutableBindings` and both runtime/constructor offset arrays are empty.
+
+`tools/materialize-plan.mjs` constructs an ordinary proposed operator plan from the exact immutable request and local compiler artifact. It fills the actual `submissionId` and `requestDigest`, `engineComponentId:"engine"`, `configurationCodec:"programmable.engine-abi@1"`, and the three ordered `configurationAbi` entries. It does not create a second policy interpreter or upload/assign the plan.
+
+The plan requires `moneyRights:2` (quote), `coinRights:0`, `executionGas:500000` and these exact permissions:
+
+| Operation | Input roles | Output roles | Authorization |
+| --- | ---: | ---: | ---: |
+| `settlement.request.v1` hash | 2 (quote) | 0 | 0 (public payer) |
+| `settlement.fulfill.v1` hash | 0 | 2 (quote) | 1 (launch creator) |
+| `settlement.refund.v1` hash | 0 | 2 (quote) | 0 (engine also requires original payer) |
+
+The plan's `testEconomics` is `{platformBps:30,buyCreatorBps:0,sellCreatorBps:0}`. This describes only the hermetic host fixture, assuming a later reviewed revision with an eligible author family. It creates no settlement trade fee, author reward entitlement, registry fee policy or production value transfer. If the admitted revision has no eligible families, its policy uses 10 bps and the operator must align test economics to that policy. No duplicated family ID can manufacture eligibility.
+
+Every successful case contains a funded request for fulfillment and an independent funded request for refund. The vectors assert actual request records and aggregate liability after each success. They reject a noncreator fulfillment, redirected payment, early refund, refund of a fulfilled request, late fulfillment, foreign refund and a second refund. The host harness separately checks exact input/output, caller roles, nonce/replay behavior, runtime/context hashes, initialization and direct-call denial. A failed transfer must preserve the request and every other liability.
+
+Service-owned Anvil fixture values are deterministic: chain 31337, genesis timestamp 1800000000, the standard first account as creator, second as user, and the host at creator nonce zero. These are not source-author wallets. The plan computes each launch ID from the request digest and case ID, each CREATE2 engine address from the exact creation bytes plus canonical constructor, and each request ID from chain/host/launch/engine/payer/request nonce. A source edit changes the digest and therefore the request identities. Do not hand-copy an old request ID into a new plan.
+
+`operations[].timestamp` is an optional integer in 1800000000–1831536000, nondecreasing per case. The service freezes automatic time advancement and checks the same timestamp for `eth_call` and the mined receipt. This example requests at 1800000100, fulfills at 1800000200, and refunds at the exact 1800003700 expiry. There is no user-supplied script, arbitrary RPC command or external callback. A deployment with the earlier profile that lacks timestamps cannot establish the positive refund evidence; changing expected outcomes or dropping refund permission is not a substitute.
+
+For the general schema, a second complete case exercises another quote CA under the same request and source package. For a fixed schema, the second successful CA case is replaced by a rejected context mismatch. A negative raw configuration also attempts to bypass the fixed time window. API fixed-value override rejection is separately checked using the shared validator. The reviewer must bind fixed quote templates in the actual host revision, not rely on these local scripts.
+
+Review still needs the full constructor-valid configuration range, source and dependency licenses/pins, exact deployment runtime, real token behavior, request funding/conservation, creator attestation trust, expiry recovery/liveness and composition evidence. The primary coin has no additional rights. Host-side actor/nonce enforcement, fee-policy accounting and registry history belong to the actual host, not the small local test harness. Protected Docker execution is distinct from Foundry tests or a local Anvil run. Review acceptance still leaves `registryApproved:false` and `available:false` until separate admission and publication proofs exist.

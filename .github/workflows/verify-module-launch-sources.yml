@@ -45,14 +45,15 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .module-source-state
-          key: module-native-source-v1-${{ hashFiles('config/module-mode/robinhood.preview.json') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: module-launch-source-v2-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            module-native-source-v1-${{ hashFiles('config/module-mode/robinhood.preview.json') }}-
+            module-launch-source-v2-
+            module-native-source-v1-
 
       - name: Verify and publish finalized launch sources
         run: |
           set -o pipefail
-          node --test contracts/scripts/module-mode/verify-launch-source.test.mjs
+          MODULE_MODE_SOLC="$RUNNER_TEMP/module-mode-solc" node --test contracts/scripts/module-mode/verify-launch-source.test.mjs contracts/scripts/module-mode/launch-source-profiles.test.mjs
           node contracts/scripts/module-mode/verify-launch-source.mjs \
             --publish \
             --solc "$RUNNER_TEMP/module-mode-solc" \
@@ -62,10 +63,11 @@ jobs:
             --output module-source-report.json 2>&1 | tee module-source-verification.log
 
       - name: Save verified block checkpoint
+        if: always()
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .module-source-state
-          key: module-native-source-v1-${{ hashFiles('config/module-mode/robinhood.preview.json') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: module-launch-source-v2-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Preserve verification evidence
         if: always()

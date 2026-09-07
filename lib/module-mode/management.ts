@@ -2,7 +2,7 @@ import { decodeFunctionResult, encodeAbiParameters, encodeFunctionData, keccak25
   type Abi, type Address, type Hex } from "viem";
 import { compileOpenConfig } from "@/packages/classic-modules/src/open-config.mjs";
 import { configurationSummary, type ModuleModeCatalogEntry, type FormValue } from "./builder";
-import { assertModuleNativeRelease, readModuleNativeLaunch, type ModuleNativeClient, type ModuleNativeLaunchRecord } from "./native-client";
+import { assertModuleNativeRelease, readModuleNativeLaunch, type ModuleNativeClient, type ModuleNativeLaunchRecord, type ModuleNativeAuthorWalletChange } from "./native-client";
 import { bindNativeCatalogEntry, nativeJson, type NativeModuleModeCatalogEntry } from "./native-catalog";
 import { moduleAddress, moduleHash, moduleRecord, moduleUint, type ModuleModeRelease } from "./release";
 import { bindModuleManagementManifest, managementReadAbi, unsupportedManagementCapabilities,
@@ -25,6 +25,9 @@ export const managementCoreAbi = parseAbi([
   "function changeCreatorWallet(bytes32 poolId,uint256 index,address newWallet)",
   "function replaceCreatorWallets(bytes32 poolId,address[] newWallets,uint256 expectedAdminRevision,uint256 deadline)",
   "function getRevision(bytes32 packageId) view returns ((bytes32 familyId,address factory,bytes32 factoryCodeHash,bytes32 moduleCodeHash,bytes32 manifestHash,uint32 callbackGas,bool enabled))",
+  "function families(bytes32 familyId) view returns (address author,address wallet)",
+  "function changeAuthorWallet(bytes32 familyId,address rewardWallet)",
+  "event AuthorWalletChanged(bytes32 indexed familyId,address indexed previousWallet,address indexed wallet)",
   "function name() view returns (string)", "function symbol() view returns (string)",
 ]);
 
@@ -47,6 +50,7 @@ export type ModuleManagementIntent =
   | { kind: "program"; instanceId: Hex; actionId: string; inputs: FormValue }
   | { kind: "claim-fees"; recipient: Address }
   | { kind: "rotate-creator"; index: number; recipient: Address }
+  | { kind: "rotate-author"; packageId: Hex; recipient: Address }
   | { kind: "replace-creators"; recipients: Address[] };
 export interface ModuleManagementBuildInput {
   client: ModuleNativeClient; release: ModuleModeRelease; catalog: readonly ModuleModeCatalogEntry[];
@@ -156,10 +160,14 @@ export async function readModuleManagementSnapshot(input: Omit<ModuleManagementB
   return snapshot;
 }
 
-async function verifyInstance({ client, snapshot, instance, entry }: { client: ModuleNativeClient; snapshot: ModuleManagementSnapshot; instance: ModuleManagedInstance; entry: NativeModuleModeCatalogEntry }) {
-  const pin = entry.nativeBinding;
-  for (const key of ["factory", "factoryCodeHash", "moduleCodeHash"] as const) requireValue(same(instance[key], pin[key]), "The catalogue does not match this instance's immutable launch binding.");
-  requireValue(instance.callbackGas === pin.callbackGas, "The module callback budget differs from its reviewed binding.");
+type AuthorInstance = Pick<ModuleManagedInstance, "instanceId" | "packageId" | "configHash" | "factory" | "factoryCodeHash" | "module" | "moduleCodeHash" | "callbackGas">;
+type AuthorSnapshot = Pick<ModuleManagementSnapshot, "release" | "launch" | "blockNumber">;
+async function verifyInstance({ client, snapshot, instance, entry }: { client: ModuleNativeClient; snapshot: AuthorSnapshot; instance: AuthorInstance; entry?: NativeModuleModeCatalogEntry }) {
+  const pin = entry?.nativeBinding;
+  if (pin) {
+    for (const key of ["factory", "factoryCodeHash", "moduleCodeHash"] as const) requireValue(same(instance[key], pin[key]), "The catalogue does not match this instance's immutable launch binding.");
+    requireValue(instance.callbackGas === pin.callbackGas, "The module callback budget differs from its reviewed binding.");
+  }
   const [bindingHash, registeredInstance, revision] = await Promise.all([
     read(client, instance.module, "bindingHash", [], snapshot.blockNumber),
     read(client, snapshot.launch.runtime, "instanceOf", [instance.module], snapshot.blockNumber),
@@ -174,9 +182,56 @@ async function verifyInstance({ client, snapshot, instance, entry }: { client: M
   requireValue(typeof bindingHash === "string" && same(bindingHash, expectedBinding)
     && typeof registeredInstance === "string" && same(registeredInstance, instance.instanceId), "The program is not bound to this launch and configuration.");
   const r = moduleRecord(revision, ["familyId", "factory", "factoryCodeHash", "moduleCodeHash", "manifestHash", "callbackGas", "enabled"], "revision");
-  for (const key of ["familyId", "factory", "factoryCodeHash", "moduleCodeHash", "manifestHash"] as const) requireValue(typeof r[key] === "string" && same(r[key], pin[key]), "The reviewed registry revision differs from this catalogue.");
+  for (const key of ["factory", "factoryCodeHash", "moduleCodeHash"] as const) requireValue(typeof r[key] === "string" && same(r[key], instance[key]), "The registry revision differs from the immutable instance.");
+  if (pin) for (const key of ["familyId", "manifestHash"] as const) requireValue(typeof r[key] === "string" && same(r[key], pin[key]), "The reviewed registry revision differs from this catalogue.");
   requireValue(Number(r.callbackGas) === instance.callbackGas, "The registry callback budget changed.");
+  requireValue(typeof r.enabled === "boolean", "The registry revision is unavailable.");
+  moduleHash(r.manifestHash, "revision.manifestHash");
   // A new-launch availability toggle never removes an existing instance's claims or immutable action rights.
+  return moduleHash(r.familyId, "revision.familyId");
+}
+
+export type ModuleNativeAuthorWallet = Omit<ModuleNativeAuthorWalletChange, "recipient">;
+async function readAuthorWallet(client: ModuleNativeClient, snapshot: AuthorSnapshot, instance: AuthorInstance, entry?: NativeModuleModeCatalogEntry): Promise<ModuleNativeAuthorWallet> {
+  const familyId = await verifyInstance({ client, snapshot, instance, entry });
+  const family = await read(client, snapshot.release.contracts.registry.address, "families", [familyId], snapshot.blockNumber);
+  requireValue(Array.isArray(family) && family.length === 2, "This release's author wallet could not be verified.");
+  const { launchId, poolId, recipeHash, launchKey } = snapshot.launch;
+  return { launchId, poolId, recipeHash, launchKey, packageId: instance.packageId, familyId,
+    author: moduleAddress(family[0], "family.author"), previousWallet: moduleAddress(family[1], "family.wallet") };
+}
+
+/** Published catalogue plus actual instance and family getters; unsupported rows never hide existing claims. */
+export async function readModuleNativeAuthorWallets(input: Omit<ModuleManagementBuildInput, "intent" | "deadline" | "actor">) {
+  const snapshot = await readModuleManagementSnapshot(input);
+  const entries = input.catalog.filter(entry => entry.status === "available").map(bindNativeCatalogEntry);
+  const rows = await Promise.all(snapshot.instances.map(async instance => {
+    try {
+      const entry = entries.find(candidate => same(candidate.nativeBinding.packageId, instance.packageId));
+      requireValue(entry, "This module's publication is unavailable.");
+      return { ...await readAuthorWallet(input.client, snapshot, instance, entry), title: entry.title };
+    } catch { return null; }
+  }));
+  const canonical = await input.client.getBlock({ blockNumber: snapshot.blockNumber });
+  requireValue(same(canonical.hash ?? "", snapshot.blockHash), "The chain changed while reading author wallets.");
+  const authors = rows.filter(row => row !== null).filter((row, index, all) => all.findIndex(other => same(other.familyId, row.familyId)) === index);
+  return { authors, unavailable: rows.filter(row => row === null).length, blockNumber: snapshot.blockNumber };
+}
+
+/** Receipt-only readback uses the authenticated source and immutable launch, never a storage-provided registry. */
+export async function readModuleNativeAuthorWalletAtBlock(input: { client: ModuleNativeClient; release: ModuleModeRelease; token: Address; packageId: Hex; blockNumber: bigint }): Promise<ModuleNativeAuthorWallet> {
+  const block = await assertModuleNativeRelease(input);
+  const launch = await readModuleNativeLaunch(input);
+  const raw = await read(input.client, launch.runtime, "instances", [launch.launchKey], block.blockNumber);
+  requireValue(Array.isArray(raw) && raw.length <= 16, "The runtime instance list is unavailable.");
+  const candidates = raw.filter(instance => instance && typeof instance === "object" && typeof instance.packageId === "string" && same(instance.packageId, input.packageId));
+  requireValue(candidates.length === 1, "The author module is not uniquely bound to this coin.");
+  const r = moduleRecord(candidates[0], ["instanceId", "packageId", "configHash", "factory", "factoryCodeHash", "module", "moduleCodeHash", "callbackGas"], "author.instance");
+  const instance: AuthorInstance = { instanceId: moduleHash(r.instanceId, "instanceId"), packageId: moduleHash(r.packageId, "packageId"), configHash: moduleHash(r.configHash, "configHash"), factory: moduleAddress(r.factory, "factory"), factoryCodeHash: moduleHash(r.factoryCodeHash, "factoryCodeHash"), module: moduleAddress(r.module, "module"), moduleCodeHash: moduleHash(r.moduleCodeHash, "moduleCodeHash"), callbackGas: Number(r.callbackGas) };
+  requireValue(Number.isSafeInteger(instance.callbackGas) && instance.callbackGas >= 25_000 && instance.callbackGas <= 500_000, "Invalid author module callback budget.");
+  const result = await readAuthorWallet(input.client, { release: block.release, launch, blockNumber: block.blockNumber }, instance);
+  requireValue(same((await input.client.getBlock({ blockNumber: block.blockNumber })).hash ?? "", block.blockHash), "The author receipt block changed.");
+  return result;
 }
 
 export function managementActionProblem(action: ManagementAction, instance: ModuleManagedInstance, snapshot: ModuleManagementSnapshot): string | null {
@@ -199,6 +254,7 @@ function checkedIntent(value: ModuleManagementIntent): ModuleManagementIntent {
     fund: ["kind", "instanceId", "amountWei"], claim: ["kind", "instanceId", "recipient"],
     program: ["kind", "instanceId", "actionId", "inputs"], "claim-fees": ["kind", "recipient"],
     "rotate-creator": ["kind", "index", "recipient"], "replace-creators": ["kind", "recipients"],
+    "rotate-author": ["kind", "packageId", "recipient"],
   };
   requireValue(raw && Object.hasOwn(keys, String(raw.kind)), "Unknown management operation.");
   moduleRecord(raw, keys[raw.kind as ModuleManagementIntent["kind"]], "management.intent");
@@ -215,6 +271,7 @@ export async function buildModuleManagementTransaction(input: ModuleManagementBu
   const ledger = input.release.contracts.rewardLedger.address;
   const vault = input.release.contracts.budgetVault.address;
   let to = vault; let value = 0n; let data: Hex; let description: string;
+  let authorWalletChange: ModuleNativeAuthorWalletChange | undefined;
   if (intent.kind === "fund" || intent.kind === "claim" || intent.kind === "program") {
     const id = moduleHash(intent.instanceId, "management.instanceId");
     const instance = snapshot.instances.find(item => same(item.instanceId, id));
@@ -246,6 +303,21 @@ export async function buildModuleManagementTransaction(input: ModuleManagementBu
         description = `${action.label}. ${action.description}${summary.length ? ` ${summary.map(item => `${item.label}: ${item.value}`).join("; ")}.` : ""}`;
       }
     }
+  } else if (intent.kind === "rotate-author") {
+    const packageId = moduleHash(intent.packageId, "author.packageId");
+    const instances = snapshot.instances.filter(item => same(item.packageId, packageId));
+    requireValue(instances.length === 1, "The author module is not uniquely bound to this coin.");
+    const instance = instances[0];
+    const entry = input.catalog.filter(item => item.status === "available").map(bindNativeCatalogEntry).find(item => same(item.nativeBinding.packageId, packageId));
+    requireValue(instance && entry, "The author module is not in this coin's approved catalogue.");
+    const current = await readAuthorWallet(input.client, snapshot, instance, entry);
+    requireValue(same(current.author, actor), "Only the registered family author can change its reward wallet.");
+    const recipient = moduleAddress(intent.recipient, "author.recipient");
+    requireValue(!same(recipient, current.previousWallet), "Choose a different author reward wallet.");
+    authorWalletChange = { ...current, recipient };
+    to = input.release.contracts.registry.address;
+    data = encodeFunctionData({ abi: managementCoreAbi, functionName: "changeAuthorWallet", args: [current.familyId, recipient] });
+    description = `Change future author fees for family ${current.familyId} from ${current.previousWallet} to ${recipient}. Authority: registered author ${current.author}. Applies to every coin using this family. Previously credited fees stay with their original wallet. Authorship does not change. The contract does not enforce the preview expiry or the previous wallet while this transaction is pending.`;
   } else {
     to = ledger;
     if (intent.kind === "claim-fees") {
@@ -273,7 +345,7 @@ export async function buildModuleManagementTransaction(input: ModuleManagementBu
   const gasEstimate = await input.client.estimateGas({ account: actor, to, data, value, blockNumber: snapshot.blockNumber });
   const canonical = await input.client.getBlock({ blockNumber: snapshot.blockNumber });
   requireValue(canonical.hash && same(canonical.hash, snapshot.blockHash), "The chain changed during simulation. Prepare the action again.");
-  return { transaction, expiresAt: input.deadline, gasEstimate, description, blockNumber: snapshot.blockNumber, blockHash: snapshot.blockHash };
+  return { transaction, expiresAt: input.deadline, gasEstimate, description, blockNumber: snapshot.blockNumber, blockHash: snapshot.blockHash, ...(authorWalletChange ? { authorWalletChange } : {}) };
 }
 
 export function moduleManagementChainMatches(chainId: string | null | undefined): boolean {

@@ -1,5 +1,6 @@
-import type { RobinhoodLaunch, RobinhoodModuleLaunch } from "@/lib/robinhood-launches";
-import { parseSnapshot, parseModuleModeSnapshot, type Checkpoint, type RobinhoodSnapshot, type ModuleModeSnapshot } from "./model";
+import type { RobinhoodEngineLaunch, RobinhoodLaunch, RobinhoodModuleLaunch } from "@/lib/robinhood-launches";
+import { isRobinhoodEngineLaunch, isRobinhoodModuleSourceKind } from "@/lib/robinhood-launches";
+import { parseSnapshot, parseModuleModeSnapshot, moduleModeSnapshots, type Checkpoint, type RobinhoodSnapshot, type ModuleModeSnapshot } from "./model";
 import type { IndexStore } from "./store";
 
 export type IndexSource = {
@@ -12,7 +13,7 @@ export type IndexSource = {
 };
 
 export type ModuleModeIndexSource = Omit<IndexSource, "routerAddress" | "binding" | "launches"> & {
-  sourceKind: "module-native-v1";
+  sourceKind: RobinhoodModuleLaunch["sourceKind"];
   sourceAddress: string;
   releaseDigest: string;
   launches(from: bigint, to: bigint, known: readonly RobinhoodLaunch[]): Promise<RobinhoodModuleLaunch[]>;
@@ -29,6 +30,18 @@ export class IndexBlockIncomplete extends Error {
   constructor(readonly items: RobinhoodLaunch[]) { super("Block verification continues on next pass"); }
 }
 
+function sameEngineLaunchIdentity(left: RobinhoodEngineLaunch, right: RobinhoodEngineLaunch) {
+  return (["sourceKind", "sourceAddress", "sourceReleaseDigest", "launchId", "tokenAddress", "creator",
+    "transactionHash", "blockNumber", "blockHash", "engineAddress", "engineRevisionId", "engineFamilyId",
+    "engineManifestHash", "engineRuntimeCodeHash", "tokenRuntimeCodeHash", "quoteAsset", "configurationHash",
+    "constructorHash", "initCodeHash", "planHash", "resourcesHash", "economicsPolicyId"] as const)
+    .every(key => left[key].toLowerCase() === right[key].toLowerCase())
+    && (["logIndex", "quoteDecimals", "decimals", "name", "symbol", "protocolFeeBps", "authorPoolFeeBps", "platformFeeBps"] as const)
+      .every(key => left[key] === right[key])
+    && (["modulePackageIds", "moduleFamilyIds", "feeEligibleFamilyIds"] as const)
+      .every(key => left[key].map(id => id.toLowerCase()).join(",") === right[key].map(id => id.toLowerCase()).join(","));
+}
+
 function mergeVerifiedLaunches(known: RobinhoodLaunch[], discovered: RobinhoodLaunch[]) {
   const byLaunchId = new Map<string, RobinhoodLaunch>();
   for (const row of [...known, ...discovered]) {
@@ -36,6 +49,17 @@ function mergeVerifiedLaunches(known: RobinhoodLaunch[], discovered: RobinhoodLa
     if (existing && (existing.blockHash.toLowerCase() !== row.blockHash.toLowerCase()
       || existing.blockNumber !== row.blockNumber || existing.logIndex !== row.logIndex)) {
       throw new Error("Launch location changed without a reorg");
+    }
+    if (isRobinhoodEngineLaunch(existing) && isRobinhoodEngineLaunch(row)
+      && existing.primaryMarket && sameEngineLaunchIdentity(existing, row)) {
+      // A later optional read failure cannot revoke a canonical market proof.
+      // Retain its complete row: the newer digest attests a different, marketless subject.
+      if (row.primaryMarket === null) continue;
+      if ((["poolManager", "poolId", "hook", "quoteAsset", "primaryToken", "launchId"] as const)
+        .some(key => existing.primaryMarket![key].toLowerCase() !== row.primaryMarket![key].toLowerCase())
+        || existing.primaryMarket.initialTick !== row.primaryMarket.initialTick) {
+        throw new Error("Verified Engine market changed without a reorg");
+      }
     }
     byLaunchId.set(row.launchId.toLowerCase(), row);
   }
@@ -63,18 +87,30 @@ export async function syncModuleModeIndex(source: ModuleModeIndexSource, store: 
   // Existing canonical Custom provenance initializes the shared envelope; never manufacture a Router binding.
   if (!saved) throw new Error("Canonical Robinhood index must be initialized before adding Module Mode");
   parseSnapshot(saved.snapshot);
-  const initial: ModuleModeSnapshot = saved.snapshot.moduleMode ?? {
-    version: 1, sourceKind: "module-native-v1", chainId: 4663, sourceAddress: source.sourceAddress,
+  const sources = moduleModeSnapshots(saved.snapshot);
+  const existing = sources.find(lane => lane.releaseDigest.toLowerCase() === source.releaseDigest.toLowerCase());
+  if (sources.some(lane => lane.sourceAddress.toLowerCase() === source.sourceAddress.toLowerCase() && lane !== existing)) {
+    throw new Error("Module Mode source changed; index migration required");
+  }
+  const initial: ModuleModeSnapshot = existing ?? {
+    version: 1, sourceKind: source.sourceKind, chainId: 4663, sourceAddress: source.sourceAddress,
     releaseDigest: source.releaseDigest, startBlock: source.startBlock.toString(), cursor: null, checkpoints: [],
     finalizedBlock: source.finalized.number, updatedAt: new Date((options.now ?? Date.now)()).toISOString(), items: [],
   };
-  if (source.sourceKind !== "module-native-v1" || initial.sourceAddress.toLowerCase() !== source.sourceAddress.toLowerCase()
+  if (!isRobinhoodModuleSourceKind(source.sourceKind) || source.sourceKind !== initial.sourceKind || initial.sourceAddress.toLowerCase() !== source.sourceAddress.toLowerCase()
     || initial.releaseDigest.toLowerCase() !== source.releaseDigest.toLowerCase()
     || initial.startBlock !== source.startBlock.toString()) throw new Error("Module Mode source changed; index migration required");
   return syncRange(source, {
     read: async () => ({ snapshot: initial, etag: saved.etag }),
     write: async (snapshot, etag) => {
-      const merged = parseSnapshot({ ...saved.snapshot, moduleMode: parseModuleModeSnapshot(snapshot) });
+      const lane = parseModuleModeSnapshot(snapshot);
+      const primary = saved.snapshot.moduleMode;
+      const usePrimary = !primary || primary.releaseDigest.toLowerCase() === source.releaseDigest.toLowerCase();
+      const merged = parseSnapshot(usePrimary ? { ...saved.snapshot, moduleMode: lane } : {
+        ...saved.snapshot,
+        moduleModeSources: [...(saved.snapshot.moduleModeSources ?? []).filter(item =>
+          item.releaseDigest.toLowerCase() !== source.releaseDigest.toLowerCase()), lane],
+      });
       await store.write(merged, etag);
     },
   }, initial, parseModuleModeSnapshot, options);

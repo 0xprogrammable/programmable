@@ -1,4 +1,7 @@
-export interface OpenConfigMetadata { label?: string; help?: string }
+export type OpenConfigParameterBinding =
+  | { mode: 'input'; default?: unknown }
+  | { mode: 'fixed'; value: unknown };
+export interface OpenConfigMetadata { label?: string; help?: string; binding?: OpenConfigParameterBinding }
 export type OpenConfigUintInput = string | number;
 export interface OpenRecordSchema extends OpenConfigMetadata {
   type: 'record'; fields: Record<string, OpenConfigSchema>; required: string[];
@@ -33,8 +36,8 @@ export interface OpenConfigContext {
 export interface OpenResolvedAsset { chainId: string; address: OpenConfigHex; decimals: number }
 export type OpenConfigBinding =
   | { path: string; kind: 'account' | 'component'; reference: string; resolved: OpenConfigHex }
-  | { path: string; kind: 'asset'; reference: string; resolved: OpenResolvedAsset };
-export type OpenConfigValue = string | boolean | OpenConfigValue[] | { [key: string]: OpenConfigValue };
+  | { path: string; kind: 'asset'; reference: string | null; resolved: OpenResolvedAsset };
+export type OpenConfigValue = string | number | boolean | OpenConfigValue[] | { [key: string]: OpenConfigValue };
 export interface OpenAbiParameter { name: string; type: string; components?: OpenAbiParameter[] }
 export interface OpenCompiledConfig {
   value: OpenConfigValue;
@@ -44,6 +47,15 @@ export interface OpenCompiledConfig {
   encoded: OpenConfigHex;
   bindings: OpenConfigBinding[];
 }
+export interface OpenResolvedConfig { value: OpenConfigValue; bindings: OpenConfigBinding[] }
+/**
+ * Uses the identical validation/resolution path as compileOpenConfig. Inserts
+ * omitted fixed values and editable defaults; rejects fixed overrides. Free
+ * required values without defaults must still be supplied. Undefined is only
+ * accepted for a root with a fixed value or input default. Fixed subtrees require
+ * literal addresses/asset metadata and cannot resolve caller-rebindable handles.
+ */
+export function resolveOpenConfigBindings(schema: unknown, values: unknown, context?: OpenConfigContext): OpenResolvedConfig;
 /**
  * One root ABI parameter; records sort fields, arrays preserve order. Optional
  * fields encode tuple(bool present,T value) with type-level zero when absent.
@@ -53,5 +65,9 @@ export interface OpenCompiledConfig {
  * maxLength counts UTF-8 bytes for strings, decoded bytes for hexadecimal bytes.
  * References are caller-supplied assertions, not authenticated onchain evidence.
  * Asset metadata is in bindings; committing its encoded address alone is insufficient.
+ * Literal assets use {chainId,address,decimals} and a binding with reference:null.
+ * Literal components use {address}. Existing symbolic forms remain unchanged.
+ * Schema binding metadata changes no ABI layout. The exact reviewed schema/package
+ * digest must accompany bytes; the engine must enforce that binding independently.
  */
 export function compileOpenConfig(schema: unknown, values: unknown, context?: OpenConfigContext): OpenCompiledConfig;

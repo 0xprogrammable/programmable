@@ -1,4 +1,16 @@
-# Building a Classic module with an agent
+# Building a Module Mode contribution with an agent
+
+Start with the [current contribution guide](https://programmable.market/developer-reference/module-mode), [API reference](https://programmable.market/developers/module-mode-api-v1.md) and [agent discovery](https://programmable.market/api/agent). Native programs and executable Engine contributions share the same source API. Use SDK/standalone CLI `1.0.0-development.4`, verify its published manifest hash, and keep credentials in `PROGRAMMABLE_MODULES_API_KEY`.
+
+Choose the actual host interface before writing the source. The [Native starter](examples/native-program/README.md) targets the Native callback runtime. The [Engine starter](examples/engine-program/README.md) implements creator-attested, funded quote settlement with expiry refunds through `constructor(Context,bytes)`, `initialize` and `execute`. Its [versioned download manifest](https://programmable.market/developers/module-mode-starters/engine-program/v0.1.0-development.1/manifest.json) pins a complete source archive. Read its trust model and use the contributor's own wallets. Names in `requiresHost`, an intake receipt and a local passing test confer no review or deployment authority.
+
+Use `binding: {mode: "input", default?: value}` for an editable launch field and `binding: {mode: "fixed", value}` for a fixed field. Fixed quote addresses also need constructor and host-revision enforcement. General quote trading keeps its infrastructure configuration fixed and requires a qualified direct Quote/WETH conversion pool; do not infer support for an asset from its ticker or address alone.
+
+Native V2 and the Engine V1 quote profile charge 10 bps without eligible families, or 30 bps with them (10 for Programmable, 20 shared among distinct eligible families), plus creator fees. Native V1 retains its original 20-bps economics and claims. Non-trading escrow and settlement do not invent trade fees. The source guide's version and the active release determine which rules apply.
+
+Use `prepare-module-submission`, `submit-module`, `status-module` and `review-status-module` for the source workflow. The operator selects the executable review plan, and independent reviewer, registry, deployed-source and catalog checks follow. The historical Classic V1 interface below remains a separate, narrower contract; its limits must not be imposed on a different profile.
+
+## Historical Classic Modules V1 interface
 
 Use this guide with the versioned interface and README in this package. It is a contributor specification, not a grant of deployment, signing or catalog-review authority.
 

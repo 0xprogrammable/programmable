@@ -101,7 +101,7 @@ export function RobinhoodTokenView({ address, token, status }: {
                 </dd>
               </div>
             </dl>
-            <RobinhoodChart poolId={token.poolId} name={name} />
+            {token.poolId ? <RobinhoodChart poolId={token.poolId} name={name} /> : <p className={styles.notice}>No trading market is verified for this coin.</p>}
           </section>
       </> : <section className={styles.empty}>
         <h1>Token details</h1>

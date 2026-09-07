@@ -145,3 +145,68 @@ npx tsc --noEmit
 The tests use explicitly synthetic source, review and RPC fixtures. They are never deployment or
 approval evidence. The CLI bundles repository-owned TypeScript with the package-lock-pinned esbuild;
 submitted Solidity is treated only as data and is never executed by this publication process.
+
+## Executable Engine profile
+
+The same `manifest`, `prepare`, and `export` commands also handle an authenticated
+`programmable.modules.engine-build.v1` result. Native publication keeps its existing
+wire, compiler profile, command arguments, session handling and registry calls.
+There is no additional intake, publisher identity, or source-selected host command.
+
+For an Engine submission, `--identity` contains the installed
+`programmable.module-engine.release.v1` identity from `lib/module-engine/catalog.ts`.
+`--definition` contains exactly:
+
+```json
+{
+  "profile": "programmable.module-engine-solidity@1",
+  "catalogDefinition": { "...": "ModuleEngineCatalogDefinition" },
+  "revision": { "...": "ModuleEngineRevisionDefinition" }
+}
+```
+
+The versioned types define the complete fields. The revision binds the source package
+and family, fixed quote/configuration restrictions, initial operation, execution gas,
+money/coin rights, operation permissions and sorted fee families. Code, compiler,
+source closure and immutable runtime-to-constructor mappings come from the protected
+build. They are never accepted as a separate operator override. Fixed configuration
+and quote restrictions must select a successful reviewed instance with the same
+`fixedConfigurationHash(launchId)` behavior: fixed revisions require a case with
+`fixedConfiguration: true` and the exact configuration hash; general revisions require
+a case with that flag absent or false. Initial operations must succeed in a matching
+case. Named tuple configuration uses the shared Engine encoder; Native ABI bytes are
+unchanged. Quote presentation
+requires a fixed reviewed configuration for its external dependencies.
+
+`manifest` prepares the exact Engine Host manifest for independent review. The existing
+private review BFF accepts this profile only against an installed `engineReleaseIdentity`;
+an identity supplied inside the manifest does not grant authority. Source author and
+reviewer remain distinct. No publisher command records acceptance.
+
+After the current independent acceptance, `prepare` returns exact zero-value calls for
+`registry.registerReviewedFamily(...)` and `host.approveRevision(...)`. The latter carries
+the revision, complete immutable offsets, constructor word offsets, operation permissions
+and fee families. The registry owner's address is read from two independent reviewed RPC
+providers; host, ledger and registry relationships and all release code pins must match.
+The family call is needed only when the family is absent. Existing author and current
+reward wallet must match. An immutable revision must never be overwritten or automatically
+re-enabled. Each applicable call still needs simulation immediately before owner signing.
+
+Engine `--transactions` for `export` has exactly `family` (hash or null) and `revision`
+(hash). There is no Engine factory deployment transaction: the Host deploys each Engine
+instance during its own launch using its exact constructor and runtime patches. Export
+checks the included owner transaction and exact `EngineRevisionApproved` event, current
+revision, all permissions, both offset arrays and fee families on both providers. It also
+re-reads the authenticated review to reject concurrent changes.
+
+`catalog-preparation.json` and the export receipt keep `available: false`. The local
+source/manifest/review files become inputs to protected publication review. Canonical
+inclusion does not prove Robinhood's Ethereum finality, install the source, publish a
+website or make an Engine template available. Those remain separate release proofs.
+
+Each Engine command also writes private `review-build.json` containing exactly
+`{subject,plan,artifact}` from the same authenticated snapshot. Protected catalogue
+ingestion uses this file to reconstruct the complete compiler/test receipt against
+the source request. It is never copied into `public/developers/modules`, and the
+public availability response must not return it. The manifest's compact source
+subset alone cannot reconstruct the full build artifact digest.

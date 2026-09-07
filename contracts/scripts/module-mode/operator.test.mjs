@@ -220,13 +220,15 @@ test('UI-check server rejects every mutation and keeps the real prepare path dis
     assert.equal(duplicate.status, 400); assert.match((await duplicate.json()).error, /Duplicate/);
   } finally { await new Promise(resolve => server.close(resolve)); }
 });
-async function browserFixture({ canRetry = false, armError = false } = {}) {
+async function browserFixture({ canRetry = false, armError = false, sourceVersion = 'module-native-v1', uiCheck = false } = {}) {
   const elements = new Map();
   const element = () => ({ hidden: false, disabled: false, checked: false, textContent: '', value: '', append() {}, focus() {}, querySelector() { return element(); } });
   const get = id => { if (!elements.has(id)) elements.set(id, element()); return elements.get(id); };
   const state = { uiCheck: false, ...plan, stepIndex: 0, totalSteps: plan.steps.length, ...plan.steps[0], owner: params.owner,
     transactionRecipient: plan.steps[0].to, operatorSourceCommit: plan.sourceCommit, runtime: plan.contracts.tokenFactory, authority: { runId: 1 },
     canRetry, journalState: canRetry ? 'outcome-unknown' : 'not-requested', transactionHash: null, actionInProgress: false };
+  state.sourceVersion = sourceVersion; state.uiCheck = uiCheck;
+  if (sourceVersion === 'module-engine-v1') { state.role = 'host'; state.parameters = { ...state.parameters }; delete state.parameters.minimumInitialBuyNative; }
   const request = { ...originalRequest(), ...(canRetry ? { retryAttempt: 1 } : {}) };
   const calls = [], events = {}; let accountChange = false;
   const provider = { isMetaMask: true, on: (event, handler) => { events[event] = handler; }, request: async ({ method, params: values }) => {
@@ -250,10 +252,21 @@ async function browserFixture({ canRetry = false, armError = false } = {}) {
   const source = await readFile(new URL('./operator.js', import.meta.url), 'utf8');
   runInNewContext(source, { document: { getElementById: get, querySelector: () => ({ content: 'fixture-token' }), createElement: element }, window: { ethereum: provider }, fetch });
   await new Promise(resolve => setImmediate(resolve));
+  if (uiCheck) return { get, calls };
   await get('connect').onclick(); await get(canRetry ? 'retry' : 'prepare').onclick();
   get('reviewed').checked = true; get('reviewed').onchange();
   return { get, calls, request, changeAccountDuringHandoff: () => { accountChange = true; } };
 }
+test('new-source operator previews show exact 10/20 economics and Engine has no native minimum or wallet access', async () => {
+  for (const sourceVersion of ['module-native-v2', 'module-engine-v1']) {
+    const ui = await browserFixture({ sourceVersion, uiCheck: true });
+    assert.equal(ui.get('error').textContent, '');
+    assert.match(ui.get('economics-summary').textContent, /10 bps.*30 bps.*20 bps/);
+    assert.equal(ui.get('connect').hidden, true); assert.equal(ui.calls.some(call => call.method), false);
+    if (sourceVersion === 'module-engine-v1') { assert.equal(ui.get('minimum-row').hidden, true); assert.equal(ui.get('title').textContent, 'Module engine host'); }
+    else assert.match(ui.get('minimum').textContent, /0.0004 ETH gross, plus gas/);
+  }
+});
 test('wallet account changes invalidate the reviewed request before the journal or wallet handoff', async () => {
   const ui = await browserFixture(); ui.changeAccountDuringHandoff(); await ui.get('send').onclick();
   assert.match(ui.get('error').textContent, /wallet changed/i);

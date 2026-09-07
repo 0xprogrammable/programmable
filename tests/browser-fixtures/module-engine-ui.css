@@ -1,0 +1,13 @@
+* { box-sizing: border-box; }
+html { background: #101010; color-scheme: dark; }
+body { color: #fff; font-family: Arial, sans-serif; margin: 0; }
+button, input, select, textarea { font: inherit; }
+.fixture-banner { background: #302817; border-bottom: 1px solid #a58b54; color: #fff4ce; font-size: 12px; line-height: 20px; padding: 16px 24px; }
+.fixture-banner > p { margin: 4px 0 12px; }
+.fixture-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; }
+.fixture-controls label { display: grid; gap: 4px; }
+.fixture-controls select { background: #19160e; border: 1px solid #aa956d; border-radius: 4px; color: #fff; min-height: 44px; padding: 8px; }
+.fixture-controls :focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+.fixture-version label { display: grid; gap: 8px; font-size: 14px; }
+.fixture-version select { min-height: 48px; width: 100%; padding: 12px; background: #242424; border: 1px solid #484848; border-radius: 8px; color: #fff; font: inherit; font-size: 16px; }
+@media (max-width: 500px) { .fixture-controls { align-items: stretch; flex-direction: column; } }

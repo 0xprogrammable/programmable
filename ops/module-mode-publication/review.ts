@@ -1,8 +1,10 @@
+import { verifyModuleEngineBuildArtifactV1 } from "../../lib/module-mode/review-engine-contract";
+import type { ModuleEngineBuildArtifactV1, ModuleEngineBuildPlanV1 } from "../../lib/module-mode/review-engine-types";
 import { constants } from "node:fs";
 import { open } from "node:fs/promises";
 import { moduleAddress } from "../../lib/module-mode/release";
 import { nativeCanonicalJson, nativeJson } from "../../lib/module-mode/native-catalog";
-import { isReviewId, parseReviewAttempt, parseReviewJob, reviewDigest, reviewRecord, type ReviewAttempt, type ReviewBuildArtifact, type ReviewJob } from "../../lib/module-mode/review-contract";
+import { isReviewId, parseReviewAttempt, parseReviewJob, reviewDigest, reviewRecord, type ReviewAttempt, type ReviewBuildArtifact, type AnyReviewBuildArtifact, type ReviewPlan, type ReviewJob } from "../../lib/module-mode/review-contract";
 import { validateModuleReviewDecisionRecordV1, type ModuleReviewDecisionRecordV1 } from "../../lib/server/module-mode/review-decision-wire-v1";
 import { parseStrictJson } from "../../lib/server/projection-target/canonical-json";
 import { validateModuleSubmissionRequest, type ModuleSubmissionRequest } from "../../packages/classic-modules/src/open-transport.mjs";
@@ -40,7 +42,7 @@ function bindSession(value: unknown): OperatorSession {
   return { walletAddress, accessToken: r.accessToken as string, ...(r.identityToken ? { identityToken: r.identityToken as string } : {}) };
 }
 export interface AuthenticatedReview {
-  job: ReviewJob; artifact: ReviewBuildArtifact; source: ModuleSubmissionRequest; sourceBytes: Uint8Array;
+  job: ReviewJob; artifact: AnyReviewBuildArtifact; source: ModuleSubmissionRequest; sourceBytes: Uint8Array;
   decisions: ModuleReviewDecisionRecordV1[]; observedAt: number; worker: unknown;
 }
 const authenticated = new WeakMap<object, string>();
@@ -50,11 +52,11 @@ function snapshotDigest(value: AuthenticatedReview) {
 export function requireAuthenticatedReview(value: AuthenticatedReview): void {
   need(authenticated.get(value) === snapshotDigest(value) && Date.now() - value.observedAt >= 0 && Date.now() - value.observedAt <= 300_000, "Fresh authenticated review read required");
 }
-function bindSource(job: ReviewJob, sourceBytes: Uint8Array): { source: ModuleSubmissionRequest; artifact: ReviewBuildArtifact } {
+function bindSource(job: ReviewJob, sourceBytes: Uint8Array): { source: ModuleSubmissionRequest; artifact: AnyReviewBuildArtifact } {
   const checked = validateModuleSubmissionRequest(exactJson(sourceBytes));
   need(checked.ok, "Invalid immutable submission");
   const source = checked.request, artifact = job.artifact;
-  need(artifact && job.plan && ["built", "accepted"].includes(job.state), "Completed protected native build required");
+  need(artifact && job.plan && ["built", "accepted"].includes(job.state), "Completed protected module build required");
   need(checked.requestDigest === job.subject.requestDigest && source.descriptor.author.toLowerCase() === job.subject.author, "Source does not bind the authenticated author");
   need(artifact.packageId === checked.packageId && artifact.familyId === checked.familyId && artifact.rewardWallet === source.descriptor.rewardWallet.toLowerCase(), "Build package identity differs");
   need(artifact.sourceManifestHash === reviewDigest("programmable.modules.source-manifest.v1", source.descriptor)
@@ -71,9 +73,16 @@ function bindSource(job: ReviewJob, sourceBytes: Uint8Array): { source: ModuleSu
   same(artifact.compiler, { ...NATIVE_COMPILER,
     settingsHash: reviewDigest("programmable.modules.compiler-settings.v1", NATIVE_SETTINGS),
     completeInputHash: reviewDigest("programmable.modules.compiler-input.v1", { language: "Solidity", sources, settings: NATIVE_SETTINGS }), reproducible: true }, "Pinned compiler/input");
+  if (artifact.schemaVersion === "programmable.modules.engine-build.v1") {
+    need(job.plan.schemaVersion === "programmable.modules.engine-build-plan.v1", "Engine build plan required");
+    verifyModuleEngineBuildArtifactV1(artifact, job.subject, job.plan, source);
+    return { source, artifact };
+  }
+  need(job.plan.schemaVersion === "programmable.modules.native-build-plan.v1", "Native build plan required");
+  const nativePlan = job.plan;
   for (const role of ["factory", "program"] as const) {
     const compiled = artifact[role];
-    const component = source.descriptor.components.find(component => component.id === job.plan![`${role}ComponentId`]);
+    const component = source.descriptor.components.find(component => component.id === nativePlan[`${role}ComponentId`]);
     const profiles = ["programmable.native-solidity@1", role === "factory" ? "evm-solidity-0.8.26@1" : "programmable.module-native-runtime@1"];
     need(component && profiles.includes(component.runtime) && component.id === compiled.componentId
       && component.sourcePath === compiled.sourcePath && component.entrypoint === compiled.contractName, "Compiled component differs from the reviewed source");
@@ -91,7 +100,7 @@ async function body(response: Response, maximum: number): Promise<Uint8Array> {
     return Buffer.concat(chunks);
   } catch (error) { await reader.cancel(); throw error; } finally { reader.releaseLock(); }
 }
-function completedWorker(job: ReviewJob, artifact: ReviewBuildArtifact, history: unknown) {
+function completedWorker(job: ReviewJob, artifact: AnyReviewBuildArtifact, history: unknown) {
   need(Array.isArray(history) && history.length >= 2 && history.length <= 24, "Review worker attempts missing");
   need(job.attempt > 0 && job.attempt <= 1000, "Current protected worker attempt missing");
   const attempts = history.map(value => parseReviewAttempt(value, job.subject));
@@ -158,4 +167,13 @@ export function acceptedDecision(value: AuthenticatedReview): ModuleReviewDecisi
     && decision.reviewerWallet !== value.job.subject.author
     && value.artifact.reviewRequired.every(area => decision.command.acknowledgedReviewAreas.includes(area)), "Current accepted review revision required");
   return decision;
+}
+
+export function requireNativeReview(value: AuthenticatedReview): asserts value is AuthenticatedReview & {artifact:ReviewBuildArtifact;job:ReviewJob & {plan:ReviewPlan}} {
+  requireAuthenticatedReview(value);
+  need(value.artifact.schemaVersion === "programmable.modules.native-build.v1" && value.job.plan?.schemaVersion === "programmable.modules.native-build-plan.v1", "Native publication profile required");
+}
+export function requireEngineReview(value: AuthenticatedReview): asserts value is AuthenticatedReview & {artifact:ModuleEngineBuildArtifactV1;job:ReviewJob & {plan:ModuleEngineBuildPlanV1}} {
+  requireAuthenticatedReview(value);
+  need(value.artifact.schemaVersion === "programmable.modules.engine-build.v1" && value.job.plan?.schemaVersion === "programmable.modules.engine-build-plan.v1", "Engine publication profile required");
 }

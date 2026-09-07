@@ -85,7 +85,7 @@ function isLaunch(value: unknown): value is Launch {
   return typeof value.launchId === "string" && HASH.test(value.launchId)
     && (value.sourceKind === undefined || isRobinhoodModuleLaunch(value))
     && typeof value.tokenAddress === "string" && ADDRESS.test(value.tokenAddress)
-    && typeof value.hookAddress === "string" && ADDRESS.test(value.hookAddress)
+    && ((typeof value.hookAddress === "string" && ADDRESS.test(value.hookAddress)) || (value.sourceKind === "module-engine-v1" && value.hookAddress === null))
     && typeof value.creator === "string" && ADDRESS.test(value.creator)
     && typeof value.transactionHash === "string" && HASH.test(value.transactionHash)
     && typeof value.blockNumber === "string" && /^\d+$/.test(value.blockNumber)

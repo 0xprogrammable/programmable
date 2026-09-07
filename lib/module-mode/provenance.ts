@@ -1,6 +1,6 @@
 import { decodeEventLog, encodeAbiParameters, encodeEventTopics, getCreate2Address, keccak256,
   parseAbi, parseAbiParameters, toHex, type Address, type Hex } from "viem";
-import { bindActiveModuleModeRelease, moduleAddress as address, moduleBytes as bytes, moduleEqual as equal,
+import { bindActiveModuleModeReleaseV1 as bindActiveModuleModeRelease, moduleAddress as address, moduleBytes as bytes, moduleEqual as equal,
   moduleHash as hash, moduleInteger as integer, moduleRecord as record, moduleUint as uint,
   rejectModuleEvidence as fail, type ModuleModeRelease } from "./release";
 

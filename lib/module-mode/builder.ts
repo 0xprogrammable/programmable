@@ -3,6 +3,8 @@ import { MAX_METADATA_URL_BYTES, MAX_TOKEN_DESCRIPTION_BYTES, MAX_TOKEN_NAME_BYT
 import { MAX_TOKEN_IMAGE_UPLOAD_BYTES } from "@/lib/token-image";
 import type { ModuleDiscovery } from "./library";
 import { MODULE_DEFAULT_TOKEN_IMAGE, validateModuleSocialLinks, type ModuleSocialLinks } from "./token-metadata";
+import { MODULE_MODE_ECONOMICS_POLICY_V2, type ModuleModeRelease } from "./release";
+import type { NativeModuleModeCatalogEntry } from "./native-catalog";
 
 import {
   compileOpenConfig,
@@ -81,7 +83,7 @@ export interface ModuleModeDraft {
   initialBuyWei: string;
   totalProgramFundingWei: string;
   totalNativeValueWei: string;
-  fees: { creatorBuyBps: number; creatorSellBps: number; programmableBps: 20; asset: "native-ETH" };
+  fees: { creatorBuyBps: number; creatorSellBps: number; programmableBps: 10 | 20 | 30; asset: "native-ETH"; economicsPolicyId?: `0x${string}` };
   modules: Array<{
     id: string;
     version: string;
@@ -280,11 +282,35 @@ export function cloneFormValue<T extends FormValue>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
-export function defaultSchemaValue(schema: OpenConfigSchema): FormValue {
+/** Schema-bound values use canonical units; display defaults in a catalog retain their existing form units. */
+export function configurationToForm(schema: OpenConfigSchema, value: OpenConfigValue, fields: Record<string, FieldDisplay> = {}, path = ""): FormValue {
+  if (schema.type === "uint") {
+    const display = fields[path]; const amount = BigInt(String(value));
+    if (display?.input === "duration") return { amount: amount.toString(), unit: "seconds" };
+    if (display?.input === "datetime-utc") return new Date(Number(amount) * 1000).toISOString().slice(0, 19);
+    const multiplier = BigInt(display?.multiplier ?? "1"); const decimals = display?.decimals ?? 0;
+    // Catalog display multipliers are normally time units. Keep exact fractional units when needed.
+    let scale = 0; let scaled = amount;
+    while (scaled % multiplier !== 0n && scale < 18) { scaled *= 10n; scale += 1; }
+    if (scaled % multiplier !== 0n) throw new Error("The template value cannot be represented in these display units.");
+    return formatUnits(scaled / multiplier, decimals + scale);
+  }
+  if (schema.type === "record") return Object.fromEntries(Object.entries(value as Record<string, OpenConfigValue>).map(([key, child]) => [key, schema.fields[key] ? configurationToForm(schema.fields[key], child, fields, pathKey(path, key)) : child as FormValue]));
+  if (schema.type === "array" && Array.isArray(value)) return value.map(child => configurationToForm(schema.items, child, fields, `${path}/*`));
+  if (schema.type === "variant") {
+    const record = value as Record<string, OpenConfigValue>; const branch = String(record[schema.tag]); const children = { ...record }; delete children[schema.tag];
+    return { [schema.tag]: branch, ...asFormRecord(configurationToForm(schema.variants[branch], children, fields, `${path}/${branch}`)) };
+  }
+  return JSON.parse(JSON.stringify(value)) as FormValue;
+}
+
+export function defaultSchemaValue(schema: OpenConfigSchema, fields: Record<string, FieldDisplay> = {}, path = ""): FormValue {
+  if (schema.binding?.mode === "fixed") return configurationToForm(schema, schema.binding.value as OpenConfigValue, fields, path);
+  if (schema.binding?.mode === "input" && Object.hasOwn(schema.binding, "default")) return configurationToForm(schema, schema.binding.default as OpenConfigValue, fields, path);
   switch (schema.type) {
-    case "record": return Object.fromEntries(schema.required.map((key) => [key, defaultSchemaValue(schema.fields[key])]));
-    case "array": return Array.from({ length: schema.minItems ?? 0 }, () => defaultSchemaValue(schema.items));
-    case "variant": { const branch = Object.keys(schema.variants)[0]; return { [schema.tag]: branch, ...asFormRecord(defaultSchemaValue(schema.variants[branch])) }; }
+    case "record": return Object.fromEntries(Object.entries(schema.fields).filter(([key, field]) => schema.required.includes(key) || field.binding?.mode === "fixed" || (field.binding?.mode === "input" && Object.hasOwn(field.binding, "default"))).map(([key, field]) => [key, defaultSchemaValue(field, fields, pathKey(path, key))]));
+    case "array": return Array.from({ length: schema.minItems ?? 0 }, () => defaultSchemaValue(schema.items, fields, `${path}/*`));
+    case "variant": { const branch = Object.keys(schema.variants)[0]; return { [schema.tag]: branch, ...asFormRecord(defaultSchemaValue(schema.variants[branch], fields, `${path}/${branch}`)) }; }
     case "bool": return false;
     case "account": return { address: "" };
     case "asset": return { asset: "" };
@@ -294,12 +320,29 @@ export function defaultSchemaValue(schema: OpenConfigSchema): FormValue {
     default: return "";
   }
 }
+
+function initialFormValue(schema: OpenConfigSchema, value: FormValue | undefined, fields: Record<string, FieldDisplay> = {}, path = ""): FormValue {
+  if (schema.binding?.mode === "fixed" || value === undefined) return defaultSchemaValue(schema, fields, path);
+  if (schema.type === "record") {
+    const record = { ...asFormRecord(value) };
+    for (const [key, field] of Object.entries(schema.fields)) {
+      if (Object.hasOwn(record, key) || schema.required.includes(key) || field.binding?.mode === "fixed" || (field.binding?.mode === "input" && Object.hasOwn(field.binding, "default"))) record[key] = initialFormValue(field, record[key], fields, pathKey(path, key));
+    }
+    return record;
+  }
+  if (schema.type === "array" && Array.isArray(value)) return value.map(child => initialFormValue(schema.items, child, fields, `${path}/*`));
+  if (schema.type === "variant") {
+    const record = asFormRecord(value); const branch = String(record[schema.tag]); const children = { ...record }; delete children[schema.tag];
+    if (schema.variants[branch]) return { [schema.tag]: branch, ...asFormRecord(initialFormValue(schema.variants[branch], children, fields, `${path}/${branch}`)) };
+  }
+  return value;
+}
 export function asFormRecord(value: FormValue | undefined): Record<string, FormValue> {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
 }
 
 export function setModuleSelected(state: ModuleModeState, entry: ModuleModeCatalogEntry, selected: boolean): ModuleModeState {
-  const defaults = cloneFormValue(entry.defaults);
+  const defaults = initialFormValue(entry.schema, cloneFormValue(entry.defaults), entry.fields);
   const defaultRecord = asFormRecord(defaults);
   for (const key of entry.futureTimestampFields ?? []) if (defaultRecord[key] === "") defaultRecord[key] = new Date(Date.now() + 86400_000).toISOString().slice(0, 16);
   return {
@@ -322,37 +365,70 @@ export function parseExactUnits(input: string, decimals = 0, multiplier = "1"): 
 function pathKey(path: string, key: string | number) { return `${path}/${String(key).replaceAll("~", "~0").replaceAll("/", "~1")}`; }
 
 /** Converts display units without floating-point math, retaining invalid text in the form. */
-export function configurationFromForm(schema: OpenConfigSchema, value: FormValue, fields: Record<string, FieldDisplay> = {}, path = "", schemaPath = ""): FormValue {
+export function configurationFromForm(schema: OpenConfigSchema, value: FormValue, fields: Record<string, FieldDisplay> = {}, path = "", schemaPath = "", boundScope = false): FormValue {
+  boundScope ||= schema.binding !== undefined;
   if (schema.type === "uint") {
     try {
       const display = fields[schemaPath];
       if (display?.input === "duration") return durationToSeconds(value);
       if (typeof value !== "string") throw new Error("Enter a number.");
       if (display?.input === "datetime-utc") return utcDateTimeToSeconds(value);
+      if (boundScope && display?.multiplier) {
+        const decimals = display.decimals ?? 0; const extra = Math.max(0, (value.trim().split(".")[1]?.length ?? 0) - decimals);
+        const scaled = BigInt(parseExactUnits(value, decimals + extra, display.multiplier)); const divisor = 10n ** BigInt(extra);
+        if (scaled % divisor !== 0n) throw new Error("Choose a value that equals a whole unit of the configured amount.");
+        return (scaled / divisor).toString();
+      }
       return parseExactUnits(value, display?.decimals, display?.multiplier);
     } catch (error) { throw Object.assign(error instanceof Error ? error : new Error("Check this number."), { path }); }
   }
   if (schema.type === "record") {
     const record = asFormRecord(value);
-    return Object.fromEntries(Object.entries(record).map(([key, child]) => [key, schema.fields[key] ? configurationFromForm(schema.fields[key], child, fields, pathKey(path, key), pathKey(schemaPath, key)) : child]));
+    return Object.fromEntries(Object.entries(record).map(([key, child]) => [key, schema.fields[key] ? configurationFromForm(schema.fields[key], child, fields, pathKey(path, key), pathKey(schemaPath, key), boundScope) : child]));
   }
-  if (schema.type === "array" && Array.isArray(value)) return value.map((child, index) => configurationFromForm(schema.items, child, fields, pathKey(path, index), `${schemaPath}/*`));
+  if (schema.type === "array" && Array.isArray(value)) return value.map((child, index) => configurationFromForm(schema.items, child, fields, pathKey(path, index), `${schemaPath}/*`, boundScope));
   if (schema.type === "variant") {
     const record = asFormRecord(value);
     const branch = record[schema.tag];
     if (typeof branch !== "string" || !schema.variants[branch]) return value;
     const children = { ...record }; delete children[schema.tag];
-    return { [schema.tag]: branch, ...asFormRecord(configurationFromForm(schema.variants[branch], children, fields, path, `${schemaPath}/${branch}`)) };
+    return { [schema.tag]: branch, ...asFormRecord(configurationFromForm(schema.variants[branch], children, fields, path, `${schemaPath}/${branch}`, boundScope)) };
   }
   return value;
 }
 
-export function feeBreakdown(buyPercent: string, sellPercent: string) {
-  function total(value: string) { return /^(?:[0-9]|10)$/.test(value) ? `${Number(value)}.20%` : "—"; }
-  return { buy: total(buyPercent), sell: total(sellPercent), programmable: "0.20%" };
+export interface ModuleModeFeePolicy {
+  platformBps: 10 | 20 | 30; protocolBps: 10 | 20; authorPoolBps: 0 | 10 | 20;
+  eligibleFamilyCount: number; economicsPolicyId?: `0x${string}`;
+}
+/** A catalog estimate only; the native client rechecks V2 eligibility at the review block. */
+export function moduleModeFeePolicy(release?: ModuleModeRelease | null, selected: readonly ModuleModeCatalogEntry[] = []): ModuleModeFeePolicy | null {
+  if (release?.sourceVersion !== "module-native-v2") return { platformBps: 20, protocolBps: selected.length ? 10 : 20, authorPoolBps: selected.length ? 10 : 0, eligibleFamilyCount: selected.length };
+  if (release.economicsPolicyId !== MODULE_MODE_ECONOMICS_POLICY_V2) return null;
+  const families = new Map<string, { eligible: boolean; reviewDigest: string }>();
+  for (const entry of selected) {
+    const binding = (entry as NativeModuleModeCatalogEntry).nativeBinding; const review = binding?.feeEligibility;
+    if (!binding || !/^0x[0-9a-fA-F]{64}$/.test(binding.familyId) || BigInt(binding.familyId) === 0n
+      || !review || typeof review.eligible !== "boolean" || !/^0x[0-9a-fA-F]{64}$/.test(review.reviewDigest)
+      || (review.eligible && BigInt(review.reviewDigest) === 0n)) return null;
+    const family = binding.familyId.toLowerCase(); const previous = families.get(family);
+    if (previous && (previous.eligible !== review.eligible || previous.reviewDigest !== review.reviewDigest.toLowerCase())) return null;
+    families.set(family, { eligible: review.eligible, reviewDigest: review.reviewDigest.toLowerCase() });
+  }
+  const eligibleFamilyCount = [...families.values()].filter(review => review.eligible).length;
+  return { platformBps: eligibleFamilyCount ? 30 : 10, protocolBps: 10, authorPoolBps: eligibleFamilyCount ? 20 : 0, eligibleFamilyCount, economicsPolicyId: release.economicsPolicyId };
+}
+export function feeBreakdown(buyPercent: string, sellPercent: string, policy: ModuleModeFeePolicy | null = moduleModeFeePolicy()) {
+  const percent = (bps: number) => `${Math.floor(bps / 100)}.${String(bps % 100).padStart(2, "0")}%`;
+  function total(value: string) { return policy && /^(?:[0-9]|10)$/.test(value) ? percent(Number(value) * 100 + policy.platformBps) : "—"; }
+  return { buy: total(buyPercent), sell: total(sellPercent), programmable: policy ? percent(policy.platformBps) : "—" };
 }
 
-export function programmableFeeAllocation(moduleCount: number) {
+export function programmableFeeAllocation(moduleCount: number, policy?: ModuleModeFeePolicy | null) {
+  if (policy === null) return "Module fee eligibility is unavailable. Refresh the catalog before reviewing.";
+  if (policy?.economicsPolicyId) return policy.eligibleFamilyCount > 0
+    ? "0.10% to Programmable + 0.20% shared equally by the eligible module families."
+    : "0.10% to Programmable. No author fee applies without an eligible module family.";
   return moduleCount > 0
     ? "0.10% to Programmable + 0.10% shared equally by the selected module authors."
     : "The full 0.20% goes to Programmable when no modules are selected.";
@@ -365,7 +441,7 @@ function stableJson(value: unknown): string {
 }
 
 /** A local configuration check, never release, admission, price or wallet authorization evidence. */
-export function validateModuleModeDraft(state: ModuleModeState, catalog: readonly ModuleModeCatalogEntry[] = PREVIEW_MODULE_CATALOG, context: OpenConfigContext = {}, engine: ModuleModeEngineProfile = NATIVE_ENGINE_PROFILE, nowSeconds = Math.floor(Date.now() / 1000), minimumInitialBuyWei?: string): DraftResult {
+export function validateModuleModeDraft(state: ModuleModeState, catalog: readonly ModuleModeCatalogEntry[] = PREVIEW_MODULE_CATALOG, context: OpenConfigContext = {}, engine: ModuleModeEngineProfile = NATIVE_ENGINE_PROFILE, nowSeconds = Math.floor(Date.now() / 1000), minimumInitialBuyWei?: string, release?: ModuleModeRelease | null): DraftResult {
   const issues: BuilderIssue[] = [];
   if (!/^[a-z][a-z0-9_.-]{1,127}$/.test(engine.id) || !Number.isSafeInteger(engine.version) || engine.version < 1) issues.push({ path: "/engine", message: "The engine profile is missing or invalid. Refresh before reviewing." });
   const name = state.name.trim(); const symbol = state.symbol.trim(); const description = state.description.trim();
@@ -439,6 +515,8 @@ export function validateModuleModeDraft(state: ModuleModeState, catalog: readonl
   }
   const totalProgramFundingWei = modules.reduce((total, entry) => total + BigInt(entry.fundingWei), 0n).toString();
   const totalNativeValueWei = (BigInt(initialBuyWei) + BigInt(totalProgramFundingWei)).toString();
+  const policy = moduleModeFeePolicy(release, catalog.filter(entry => state.selectedModules.includes(entry.id)));
+  if (!policy) issues.push({ path: "/modules", message: "Module fee eligibility could not be verified. Refresh the catalog before reviewing." });
   if (BigInt(totalNativeValueWei) > (1n << 256n) - 1n) issues.push({ path: "/initialBuyEth", message: "The combined initial buy and program budgets exceed the native value limit." });
   if (issues.length > 0) return { ok: false, issues };
   const image: Exclude<ModuleModeImage, { kind: "none" }> = state.tokenImage.kind === "none" || state.tokenImage.kind === "uri"
@@ -450,7 +528,7 @@ export function validateModuleModeDraft(state: ModuleModeState, catalog: readonl
     chainId: 4663 as const, quoteAsset: "native-ETH" as const,
     engine,
     token: { name, symbol, description, image, ...(social.ok && Object.keys(social.links).length ? { socialLinks: social.links } : {}) }, initialBuyWei, totalProgramFundingWei, totalNativeValueWei,
-    fees: { creatorBuyBps, creatorSellBps, programmableBps: 20 as const, asset: "native-ETH" as const },
+    fees: { creatorBuyBps, creatorSellBps, programmableBps: policy!.platformBps, asset: "native-ETH" as const, ...(policy!.economicsPolicyId ? { economicsPolicyId: policy!.economicsPolicyId } : {}) },
     modules,
   };
   return { ok: true, draft: { ...draft, draftId: sha256(stringToHex(stableJson(draft))) } };
@@ -470,6 +548,9 @@ export function configurationSummary(schema: OpenConfigSchema, value: FormValue,
     return [{ label, value: branchSchema?.label ?? branch }, ...(branchSchema ? configurationSummary(branchSchema, record, fields, label, `${path}/${branch}`, bindings, configurationPath) : [])];
   }
   if (schema.type === "account") { const record = asFormRecord(value); const binding = bindings.find((item) => item.path === configurationPath && item.kind === "account"); return [{ label, value: typeof record.role === "string" ? `Role: ${record.role}${binding ? ` · ${binding.resolved}` : ""}` : String(record.address ?? "") }]; }
-  if (schema.type === "asset" || schema.type === "component") return [{ label, value: String(asFormRecord(value)[schema.type] ?? "") }];
+  if (schema.type === "asset" || schema.type === "component") {
+    const record = asFormRecord(value);
+    return [{ label, value: typeof record.address === "string" ? `${record.address}${schema.type === "asset" ? ` · Chain ${String(record.chainId)}` : ""}` : String(record[schema.type] ?? "") }];
+  }
   return [{ label, value: schema.type === "bool" ? value ? "On" : "Off" : `${String(value)}${fields[path]?.suffix ? ` ${fields[path].suffix}` : ""}` }];
 }

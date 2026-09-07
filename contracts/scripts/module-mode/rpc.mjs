@@ -98,14 +98,14 @@ export function walletRequest(plan, observation, ceilings) {
   return { chainId: '0x1237', from: step.sender, to: step.to, value: '0x0', data: step.data, nonce: hexQuantity(observation.nonce),
     gas: hexQuantity(observation.gasLimit), maxFeePerGas: hexQuantity(maxFee), maxPriorityFeePerGas: hexQuantity(priority), accessList: [], type: '0x2' };
 }
-export async function prepareWalletRequest(plan, stepIndex, providers, ceilings) {
-  const observation = await observeStage(plan, stepIndex, providers); const request = walletRequest(plan, observation, ceilings);
+export async function prepareWalletRequest(plan, stepIndex, providers, ceilings, stageObserver = observeStage) {
+  const observation = await stageObserver(plan, stepIndex, providers); const request = walletRequest(plan, observation, ceilings);
   const issued = Date.now(); const prepared = { planDigest: plan.planDigest, stepIndex, request, observation, issuedAt: issued, expiresAt: issued + 300000 };
   return { ...prepared, requestDigest: digest('programmable.module-mode-owner-request.v1', prepared) };
 }
-export async function revalidateWalletRequest(plan, prepared, providers, ceilings) {
+export async function revalidateWalletRequest(plan, prepared, providers, ceilings, stageObserver = observeStage) {
   need(prepared.planDigest === plan.planDigest && Date.now() >= prepared.issuedAt && prepared.expiresAt - Date.now() >= 60000, 'Owner request expired or belongs to another plan');
-  const fresh = await observeStage(plan, prepared.stepIndex, providers); const request = walletRequest(plan, fresh, ceilings);
+  const fresh = await stageObserver(plan, prepared.stepIndex, providers); const request = walletRequest(plan, fresh, ceilings);
   need(request.nonce === prepared.request.nonce, 'Owner nonce changed');
   // Keep the reviewed payload and gas. A fresh estimate may shrink but may not exceed the reviewed allowance.
   need(BigInt(request.gas) <= BigInt(prepared.request.gas), 'Fresh gas estimate exceeds reviewed request');

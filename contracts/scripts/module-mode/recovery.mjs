@@ -11,6 +11,16 @@ export function assertContinuationPlan(original, current) {
   }
   const comparable = plan => {
     const body = Object.fromEntries(Object.entries(plan).filter(([key]) => !['sourceCommit', 'sourceTree', 'buildDigest', 'planDigest'].includes(key)));
+    const inheritedBasisRequired = ['programmable.module-mode-native-v2-deployment-plan.v1', 'programmable.module-engine-deployment-plan.v1'].includes(plan.schemaVersion);
+    need(!inheritedBasisRequired || plan.basis, 'Continuation requires the inherited source basis');
+    if (plan.basis !== undefined) {
+      const { basisDigest, ...basis } = plan.basis;
+      need(inheritedBasisRequired
+        && basis.schemaVersion === 'programmable.module-mode-native-v2-basis.v1'
+        && digest(basis.schemaVersion, basis) === hash(basisDigest)
+        && basis.provenance?.sourceCommit === plan.sourceCommit, 'Continuation basis domain, digest or source provenance differs');
+      body.basis = { ...basis, provenance: { ...basis.provenance, sourceCommit: 'compared-separately' } };
+    }
     return { ...body, identityCandidate: { ...body.identityCandidate, sourceCommit: 'compared-separately' } };
   };
   need(canonicalJson(comparable(original)) === canonicalJson(comparable(current)), 'Continuation changes deployment bytes, addresses, roles or economics');
@@ -39,10 +49,10 @@ export function walletRetryRequest(plan, entry, observation, ceilings, reviewedR
   return structuredClone(entry.request);
 }
 
-export async function prepareWalletRetry(plan, entry, providers, ceilings, reviewedRequestDigest, retryAttempt) {
+export async function prepareWalletRetry(plan, entry, providers, ceilings, reviewedRequestDigest, retryAttempt, stageObserver = observeStage) {
   need(Number.isSafeInteger(retryAttempt) && retryAttempt > 0, 'Explicit positive retry attempt required');
   assertOriginalRequest(plan, entry, reviewedRequestDigest);
-  const observation = await observeStage(plan, entry.stepIndex, providers);
+  const observation = await stageObserver(plan, entry.stepIndex, providers);
   const request = walletRetryRequest(plan, entry, observation, ceilings, reviewedRequestDigest);
   const issuedAt = Date.now();
   const prepared = { planDigest: plan.planDigest, stepIndex: entry.stepIndex, request, observation,

@@ -2,10 +2,11 @@ import { keccak256, toHex, type Hex } from "viem";
 import { isModuleDiscovery } from "@/lib/module-mode/library";
 import configuredCatalog from "@/config/module-mode/catalog.json";
 import configuredRelease from "@/config/module-mode/robinhood.preview.json";
+import historicalReleases from "@/config/module-mode/historical-releases.json";
 import { PREVIEW_MODULE_CATALOG, type ModuleModeCatalogEntry } from "@/lib/module-mode/builder";
 import { bindModuleManagementManifest, unsupportedManagementCapabilities, type ModuleManagementManifestV1 } from "@/lib/module-mode/management-manifest";
 import {
-  bindNativeCatalogEntry, MODULE_MODE_AVAILABILITY_SCHEMA, moduleNativeCatalogDigest,
+  bindNativeCatalogEntryForRelease, bindNativeFeeEligibility, MODULE_MODE_AVAILABILITY_SCHEMA, moduleNativeCatalogDigest,
   nativeJson, parseModuleModeAvailability, type ModuleModeAvailability,
   type ModuleModeNativeBinding, type NativeModuleModeCatalogEntry,
 } from "@/lib/module-mode/native-catalog";
@@ -30,7 +31,7 @@ const UNAVAILABLE = "Module Mode is temporarily unavailable. Please try again sh
 
 export type ModuleModeCatalogDefinition = Omit<NativeModuleModeCatalogEntry, "status" | "nativeBinding"> & { requiresHost: string[] };
 export type ModuleModeHostReleaseIdentity = Pick<ModuleModeRelease, "schemaVersion" | "sourceVersion" | "chainId" | "sourceCommit" |
-  "startBlock" | "minimumInitialBuyNative" | "tokenCreationCodeHash" | "finalityPolicy" | "contracts" | "releaseDigest">;
+  "startBlock" | "minimumInitialBuyNative" | "tokenCreationCodeHash" | "finalityPolicy" | "contracts" | "releaseDigest" | "economicsPolicyId">;
 export type ModuleModeHostRuntimeBinding = Omit<ModuleModeNativeBinding, "manifestHash" | "reviewDigest"> & {
   sourceReleaseDigest: Hex;
   registry: ModuleModeRelease["contracts"]["registry"];
@@ -102,7 +103,8 @@ export function createModuleModeHostManifest(input: {
     || (entry.discovery.author !== undefined && entry.discovery.author.toLowerCase() !== checked.descriptor.author.toLowerCase()))) {
     throw new Error("Module discovery must identify its source author.");
   }
-  const binding = moduleRecord(input.nativeBinding, ["familyId", "packageId", "factory", "factoryCodeHash", "moduleCodeHash", "callbackGas"], "host.nativeBinding");
+  const v2 = release.sourceVersion === "module-native-v2";
+  const binding = moduleRecord(input.nativeBinding, ["familyId", "packageId", "factory", "factoryCodeHash", "moduleCodeHash", "callbackGas", ...(v2 ? ["feeEligibility"] : [])], "host.nativeBinding");
   if (checked.packageId !== moduleHash(binding.packageId, "catalog.packageId")
     || checked.familyId !== moduleHash(binding.familyId, "catalog.familyId")) throw new Error("Module source identity differs.");
   if (entry.version !== checked.descriptor.version || !entry.programAbi || !entry.engine) throw new Error("Module configuration ABI or version is missing.");
@@ -127,6 +129,7 @@ export function createModuleModeHostManifest(input: {
         familyId: moduleHash(binding.familyId, "catalog.familyId"), packageId: moduleHash(binding.packageId, "catalog.packageId"),
         factory: moduleAddress(binding.factory, "catalog.factory"), factoryCodeHash: moduleHash(binding.factoryCodeHash, "catalog.factoryCodeHash"),
         moduleCodeHash: moduleHash(binding.moduleCodeHash, "catalog.moduleCodeHash"), callbackGas,
+        ...(v2 ? { feeEligibility: bindNativeFeeEligibility(binding.feeEligibility) } : {}),
       },
       catalogDefinition: entry,
     },
@@ -140,7 +143,7 @@ export function moduleModePublicationUrl(packageId: Hex, kind: PublicationKind):
 }
 
 /** The checked-in catalogue is the publication allowlist; private submissions are never discovered here. */
-export function bindModuleModeCatalogFile(value: unknown, release: Pick<ModuleModeRelease, "releaseDigest">): ModuleModeCatalogFile {
+export function bindModuleModeCatalogFile(value: unknown, release: Pick<ModuleModeRelease, "releaseDigest" | "sourceVersion">): ModuleModeCatalogFile {
   const raw = moduleRecord(nativeJson(value), ["schemaVersion", "sourceReleaseDigest", "entries"], "catalog");
   if (raw.schemaVersion !== MODULE_MODE_CATALOG_SCHEMA || !Array.isArray(raw.entries) || raw.entries.length > 1000) throw new Error("Invalid module catalogue.");
   // A verified engine can launch a plain coin before the first reviewed module exists.
@@ -149,7 +152,7 @@ export function bindModuleModeCatalogFile(value: unknown, release: Pick<ModuleMo
   const ids = new Set<string>(); const packages = new Set<string>();
   const entries = raw.entries.map(value => {
     const rawEntry = moduleRecord(value, ["entry", "requestDigest", "review"], "catalog.publication");
-    const entry = bindNativeCatalogEntry(rawEntry.entry);
+    const entry = bindNativeCatalogEntryForRelease(rawEntry.entry, release);
     const packageId = moduleHash(entry.nativeBinding.packageId, "catalog.packageId");
     if (ids.has(entry.id) || packages.has(packageId)) throw new Error("Duplicate module catalogue identity.");
     ids.add(entry.id); packages.add(packageId);
@@ -186,7 +189,7 @@ export function verifyModuleModePublication(input: {
   return publication.entry;
 }
 
-async function readPublication(input: { packageId: Hex; kind: PublicationKind; fetchPublic: typeof fetch; signal: AbortSignal; budget: { bytes: number } }): Promise<unknown> {
+export async function readPublication(input: { packageId: Hex; kind: PublicationKind; fetchPublic: typeof fetch; signal: AbortSignal; budget: { bytes: number } }): Promise<unknown> {
   const response = await input.fetchPublic(moduleModePublicationUrl(input.packageId, input.kind), {
     method: "GET", headers: { accept: "application/json" }, redirect: "error", cache: "no-store", signal: input.signal,
   });
@@ -290,7 +293,68 @@ const configuredReader = createModuleModeAvailabilityReader({ releaseProfile: co
     websiteToken: process.env.PROGRAMMABLE_CUSTOM_LAUNCH_WEBSITE_TOKEN ?? "", fetchBackend: fetch, signal,
   }), fetchPublic: (...args) => fetch(...args),
 });
-export const readModuleModeAvailability = (): Promise<ModuleModeAvailability> => configuredReader();
+
+/** Historical generations use the same catalogue and authority checks as the current release. */
+export function createModuleModeHistoricalAvailabilityReader(input: {
+  historical: unknown;
+  dependencies: Pick<ModuleModeAvailabilityDependencies, "collector" | "fetchPublic" | "now" | "budgetMs">;
+}): (releaseDigest: string) => Promise<ModuleModeAvailability> {
+  const readers = new Map<string, () => Promise<ModuleModeAvailability>>();
+  const value = moduleRecord(nativeJson(input.historical), ["schemaVersion", "releases"], "historicalReleases");
+  if (value.schemaVersion !== "programmable.module-mode-historical-releases.v1" || !Array.isArray(value.releases)
+    || value.releases.length > 32) throw new Error("Invalid historical Module Mode releases.");
+  for (const entry of value.releases) {
+    const item = moduleRecord(entry, ["release", "catalog"], "historicalReleases.entry");
+    const release = bindActiveModuleModeRelease(item.release);
+    if (readers.has(release.releaseDigest)) throw new Error("Duplicate historical Module Mode release.");
+    readers.set(release.releaseDigest, createModuleModeAvailabilityReader({
+      ...input.dependencies, releaseProfile: release, catalogFile: item.catalog,
+    }));
+  }
+  return async digest => {
+    const key = moduleHash(digest, "historicalReleases.requestedDigest");
+    return readers.get(key)?.() ?? unavailable("This Module Mode release is not available.");
+  };
+}
+let historicalReader: ReturnType<typeof createModuleModeHistoricalAvailabilityReader> | undefined;
+/** Discovery only; every digest must still pass the exact release/publication reader before display. */
+export function configuredModuleModeReleaseDigests(): readonly string[] {
+  const historical = moduleRecord(nativeJson(historicalReleases), ["schemaVersion", "releases"], "historicalReleases");
+  if (historical.schemaVersion !== "programmable.module-mode-historical-releases.v1" || !Array.isArray(historical.releases)
+    || historical.releases.length > 32) throw new Error("Invalid historical Module Mode releases.");
+  const candidates: unknown[] = [nativeJson(configuredRelease), ...historical.releases.map(value =>
+    moduleRecord(value, ["release", "catalog"], "historicalReleases.entry").release)];
+  const digests = candidates.map(value => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid Module Mode release discovery.");
+    return moduleHash(Object.getOwnPropertyDescriptor(value, "releaseDigest")?.value, "releaseDiscovery.digest");
+  });
+  return Object.freeze([...new Set(digests)]);
+}
+export function configuredModuleModeCatalog(releaseDigest?: string): unknown {
+  if (releaseDigest === undefined || moduleHash(releaseDigest, "catalog.releaseDigest") === configuredRelease.releaseDigest) return configuredCatalog;
+  const historical = moduleRecord(nativeJson(historicalReleases), ["schemaVersion", "releases"], "historicalReleases");
+  if (historical.schemaVersion !== "programmable.module-mode-historical-releases.v1" || !Array.isArray(historical.releases)
+    || historical.releases.length > 32) throw new Error("Invalid historical Module Mode releases.");
+  for (const value of historical.releases) {
+    const item = moduleRecord(value, ["release", "catalog"], "historicalReleases.entry");
+    const release = bindActiveModuleModeRelease(item.release);
+    if (release.releaseDigest === releaseDigest.toLowerCase()) return item.catalog;
+  }
+  return null;
+}
+export const readModuleModeAvailability = async (releaseDigest?: string): Promise<ModuleModeAvailability> => {
+  if (releaseDigest === undefined || moduleHash(releaseDigest, "availability.releaseDigest") === configuredRelease.releaseDigest) return configuredReader();
+  // Historical configuration errors do not suppress the current release.
+  try {
+    historicalReader ??= createModuleModeHistoricalAvailabilityReader({ historical: historicalReleases, dependencies: {
+      collector: signal => createModuleModeHttpCollector({
+        backendBaseUrl: process.env.PROGRAMMABLE_CUSTOM_LAUNCH_API_BASE_URL ?? "",
+        websiteToken: process.env.PROGRAMMABLE_CUSTOM_LAUNCH_WEBSITE_TOKEN ?? "", fetchBackend: fetch, signal,
+      }), fetchPublic: (...args) => fetch(...args),
+    } });
+    return historicalReader(releaseDigest);
+  } catch { return unavailable(UNAVAILABLE); }
+};
 
 /** Public source publication format; never includes API keys, private queue metadata or a wallet signature. */
 export type ModuleModePublishedSource = ModuleSubmissionRequest;

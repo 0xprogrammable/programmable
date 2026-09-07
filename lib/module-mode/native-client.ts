@@ -7,10 +7,10 @@ import { robinhoodChain } from "@/lib/chains";
 import { MAX_TOKEN_DESCRIPTION_BYTES, MAX_TOKEN_NAME_BYTES } from "@/lib/metadata-policy";
 import { compileOpenConfig, type OpenConfigValue } from "@/packages/classic-modules/src/open-config.mjs";
 import { evaluateOpenConstraints } from "@/packages/classic-modules/src/open-constraints.mjs";
-import { encodeProgramConfiguration, NATIVE_ENGINE_PROFILE, validateTokenImage, type ModuleModeDraft } from "./builder";
+import { encodeProgramConfiguration, moduleModeFeePolicy, NATIVE_ENGINE_PROFILE, validateTokenImage, type ModuleModeDraft } from "./builder";
 import { MODULE_MODE_DEPENDENCIES, bindActiveModuleModeRelease, moduleAddress, moduleBytes, moduleHash, moduleRecord, moduleUint, type ModuleModeRelease } from "./release";
-import { bindNativeCatalogEntry, moduleNativeCatalogDigest, nativeCanonicalJson, nativeJson, parseModuleModeAvailability, type ModuleModeAvailability, type NativeModuleModeCatalogEntry } from "./native-catalog";
-import { MODULE_NATIVE_METADATA_TYPE, MODULE_NATIVE_SELECTION_TYPE, moduleNativeApprovalAbi, moduleNativeLaunchAbi, moduleNativePoolParameters, moduleNativeReadAbi, moduleNativeRouterAbi } from "./native-abi";
+import { bindNativeCatalogEntryForRelease, bindNativeFeeEligibility, moduleNativeCatalogDigest, nativeCanonicalJson, nativeJson, parseModuleModeAvailability, type ModuleModeAvailability, type NativeModuleModeCatalogEntry } from "./native-catalog";
+import { MODULE_NATIVE_METADATA_TYPE, MODULE_NATIVE_SELECTION_TYPE, moduleNativeApprovalAbi, moduleNativeLaunchAbi, moduleNativeLaunchAbiFor, moduleNativeLaunchV2Abi, moduleNativePoolParameters, moduleNativeReadAbi, moduleNativeReadAbiFor, moduleNativeReadV2Abi, moduleNativeRouterAbi } from "./native-abi";
 import type { ModuleManagementBuildInput } from "./management";
 import { moduleTokenMetadata, normalizeModuleSocialLinks } from "./token-metadata";
 
@@ -46,7 +46,15 @@ export interface PreparedModuleNativeSwap extends PreparedBase {
   readonly feeComponents: { creatorBps: number; platformBps: number; poolProtocolPips: number; poolLpPips: number };
 }
 export interface PreparedModuleNativeApproval extends PreparedBase { readonly kind: "approve"; readonly token: Address; readonly amount: bigint }
-export interface PreparedModuleNativeManagement extends PreparedBase { readonly kind: "manage"; readonly token: Address }
+export interface ModuleNativeAuthorWalletChange {
+  readonly launchId: Hex; readonly poolId: Hex; readonly recipeHash: Hex; readonly launchKey: Hex;
+  readonly packageId: Hex; readonly familyId: Hex; readonly author: Address; readonly previousWallet: Address; readonly recipient: Address;
+}
+export interface ModuleNativeAuthorWalletReceipt {
+  readonly familyId: Hex; readonly author: Address; readonly previousWallet: Address; readonly recipient: Address;
+  readonly previewChanged: boolean; readonly subsequentlyChanged: boolean;
+}
+export interface PreparedModuleNativeManagement extends PreparedBase { readonly kind: "manage"; readonly token: Address; readonly authorWalletChange?: ModuleNativeAuthorWalletChange }
 export type PreparedModuleNativeTransaction = PreparedModuleNativeLaunch | PreparedModuleNativeSwap | PreparedModuleNativeApproval | PreparedModuleNativeManagement;
 export interface ModuleNativeApprovalRequired { kind: "approval-required"; token: Address; spender: Address; amount: bigint; currentAllowance: bigint }
 export interface ModuleNativeImageBinding { uri: string; sourceSha256?: Hex }
@@ -61,6 +69,7 @@ const pending = new WeakSet<PreparedModuleNativeTransaction>();
 export interface ModuleNativeReceiptResult {
   status: "mined"; finalized: false; indexed: false; transactionHash: Hex; blockNumber: bigint; blockHash: Hex;
   kind: PreparedModuleNativeTransaction["kind"]; token?: Address; launch?: ModuleNativeLaunchRecord;
+  authorWalletChange?: ModuleNativeAuthorWalletReceipt;
 }
 export class ModuleNativeTransactionRevertedError extends Error {
   readonly code = "MODULE_NATIVE_TRANSACTION_REVERTED";
@@ -116,6 +125,18 @@ export async function assertModuleNativeRelease(input: { client: ModuleNativeCli
   ]);
   requireCondition(uint(minimum, "minimum", true) === BigInt(release.minimumInitialBuyNative), "Minimum initial buy differs from the release.");
   same(engineHash, pins.hook.runtimeCodeHash, "Runtime engine code"); same(runtime, pins.runtime.address, "Factory runtime"); same(router, pins.swapRouter.address, "Factory router");
+  if (release.sourceVersion === "module-native-v2") {
+    await Promise.all((["launcher", "hook", "swapRouter", "rewardLedger"] as const).map(async role => {
+      same(await read(client, pins[role].address, "ECONOMICS_POLICY_ID", [], block.number!, moduleNativeReadV2Abi), release.economicsPolicyId, `${role} economics policy`);
+    }));
+    await Promise.all((["hook", "rewardLedger"] as const).map(async role => {
+      const [protocol, authors] = await Promise.all([
+        read(client, pins[role].address, "PROTOCOL_FEE_BPS", [], block.number!, moduleNativeReadV2Abi),
+        read(client, pins[role].address, "AUTHOR_POOL_FEE_BPS", [], block.number!, moduleNativeReadV2Abi),
+      ]);
+      requireCondition(protocol === 10 && authors === 20, `${role} economics rates differ from the release.`);
+    }));
+  }
   const result = { release, blockNumber: block.number, blockHash: block.hash, timestamp: block.timestamp };
   await assertCanonical(client, result);
   return result;
@@ -134,8 +155,8 @@ function launchRecord(value: unknown): ModuleNativeLaunchRecord {
 async function boundLaunch(client: ModuleNativeClient, block: BoundBlock, rawToken: Address): Promise<ModuleNativeLaunchRecord> {
   const { release, blockNumber } = block; const pins = release.contracts; const token = moduleAddress(rawToken, "token");
   const [raw, identity, creator, supply, decimals] = await Promise.all([
-    read(client, pins.launcher.address, "getLaunch", [token], blockNumber, moduleNativeLaunchAbi),
-    read(client, pins.launcher.address, "getLaunchIdentity", [token], blockNumber, moduleNativeLaunchAbi),
+    read(client, pins.launcher.address, "getLaunch", [token], blockNumber, moduleNativeLaunchAbiFor(release)),
+    read(client, pins.launcher.address, "getLaunchIdentity", [token], blockNumber, moduleNativeLaunchAbiFor(release)),
     read(client, token, "creator", [], blockNumber), read(client, token, "totalSupply", [], blockNumber), read(client, token, "decimals", [], blockNumber),
   ]);
   const result = launchRecord(raw); const id = identity as Record<string, unknown>;
@@ -144,9 +165,13 @@ async function boundLaunch(client: ModuleNativeClient, block: BoundBlock, rawTok
   requireCondition(uint(supply, "supply") === SUPPLY && Number(decimals) === 18, "Token supply or decimals differ.");
   for (const field of ["launchId", "launchWallet", "token", "poolId", "hook", "recipeHash"] as const) same(id?.[field], result[field], `Launch identity ${field}`);
   same(id?.poolManager, pins.poolManager.address, "Identity PoolManager");
-  const config = await read(client, pins.hook.address, "poolConfig", [result.poolId], blockNumber) as readonly unknown[];
+  const config = await read(client, pins.hook.address, "poolConfig", [result.poolId], blockNumber, moduleNativeReadAbiFor(release)) as readonly unknown[];
   same(config[0], pins.launcher.address, "Pool registrar"); same(config[1], result.launchWallet, "Pool launch wallet"); same(config[2], pins.swapRouter.address, "Pool router");
   same(config[3], pins.swapRouter.runtimeCodeHash, "Pool router code"); same(config[6], result.recipeHash, "Pool recipe"); same(config[7], result.launchKey, "Pool launch key");
+  if (release.sourceVersion === "module-native-v2") {
+    const ledgerFee = await read(client, pins.rewardLedger.address, "platformFeeBps", [result.poolId], blockNumber, moduleNativeReadV2Abi);
+    requireCondition((config[8] === 10 || config[8] === 30) && config[8] === ledgerFee, "Pool and ledger fee policies differ.");
+  }
   return result;
 }
 export async function readModuleNativeLaunch(input: { client: ModuleNativeClient; release: ModuleModeRelease; token: Address; blockNumber?: bigint }): Promise<ModuleNativeLaunchRecord> {
@@ -188,7 +213,9 @@ function validateDraft(raw: ModuleModeDraft, availability: ModuleModeAvailabilit
   moduleRecord(draft.engine, ["id", "version", "label"], "draft.engine");
   moduleRecord(draft.token, ["name", "symbol", "description", "image", ...(Object.hasOwn(draft.token, "socialLinks") ? ["socialLinks"] : [])], "draft.token");
   requireCondition(nativeCanonicalJson(normalizeModuleSocialLinks(draft.token.socialLinks)) === nativeCanonicalJson(draft.token.socialLinks ?? {}), "Social links changed or are not canonical.");
-  moduleRecord(draft.fees, ["creatorBuyBps", "creatorSellBps", "programmableBps", "asset"], "draft.fees");
+  const release = availability.release!;
+  const v2 = release.sourceVersion === "module-native-v2";
+  moduleRecord(draft.fees, ["creatorBuyBps", "creatorSellBps", "programmableBps", "asset", ...(v2 ? ["economicsPolicyId"] : [])], "draft.fees");
   requireCondition(draft.format === "programmable.module-mode.draft.v0.1" && draft.status === "preview" && draft.launchable === false && draft.onchainApproved === false && draft.walletAuthorizationVerified === false && draft.chainId === 4663 && draft.quoteAsset === "native-ETH" && draft.engine.id === NATIVE_ENGINE_PROFILE.id && draft.engine.version === 1, "Unsupported draft or engine.");
   requireCondition(typeof draft.token.name === "string" && draft.token.name.trim() === draft.token.name && draft.token.name.length > 0 && new TextEncoder().encode(draft.token.name).length <= MAX_TOKEN_NAME_BYTES
     && /^[a-zA-Z0-9]{1,12}$/.test(draft.token.symbol) && typeof draft.token.description === "string" && new TextEncoder().encode(draft.token.description).length <= MAX_TOKEN_DESCRIPTION_BYTES, "Invalid token metadata.");
@@ -201,13 +228,14 @@ function validateDraft(raw: ModuleModeDraft, availability: ModuleModeAvailabilit
     same(image.sourceSha256, draft.token.image.sha256, "Uploaded image source digest");
   }
   for (const fee of [draft.fees.creatorBuyBps, draft.fees.creatorSellBps]) requireCondition(Number.isSafeInteger(fee) && fee >= 0 && fee <= 1000 && fee % 100 === 0, "Creator fees must be 0–10% in whole percentages.");
-  requireCondition(draft.fees.programmableBps === 20 && draft.fees.asset === "native-ETH", "The additional protocol fee must be 20 bps in ETH.");
+  if (!v2) requireCondition(draft.fees.programmableBps === 20 && draft.fees.asset === "native-ETH", "The additional protocol fee must be 20 bps in ETH.");
+  else same(draft.fees.economicsPolicyId, release.economicsPolicyId, "Draft economics policy");
   const initialBuy = checkedAmount(uint(draft.initialBuyWei, "initialBuy", true), "initial buy");
   requireCondition(initialBuy >= BigInt(availability.release!.minimumInitialBuyNative), "Initial buy is below the released minimum.");
-  requireCondition(Array.isArray(draft.modules) && draft.modules.length <= 8 && new Set(draft.modules.map(item => item.id)).size === draft.modules.length, "Invalid module count or duplicate selection.");
+  requireCondition(Array.isArray(draft.modules) && draft.modules.length <= (v2 ? 16 : 8) && new Set(draft.modules.map(item => item.id)).size === draft.modules.length, "Invalid module count or duplicate selection.");
   const paired = draft.modules.map(selected => {
     moduleRecord(selected, ["id", "version", "catalogDigest", "source", "configuration", "configurationBytes", "programConfigurationBytes", "fundingWei", "bindings"], "draft.module");
-    const entry = bindNativeCatalogEntry(availability.catalog.find(candidate => candidate.id === selected.id));
+    const entry = bindNativeCatalogEntryForRelease(availability.catalog.find(candidate => candidate.id === selected.id), release);
     same(selected.catalogDigest, moduleNativeCatalogDigest(entry), "Module catalog digest");
     requireCondition(selected.version === entry.version && nativeCanonicalJson(selected.source) === nativeCanonicalJson(entry.source), "Reviewed module source differs.");
     const compiled = compileOpenConfig(entry.schema, selected.configuration, { roles: { creator: account, launchWallet: account } });
@@ -226,8 +254,14 @@ function validateDraft(raw: ModuleModeDraft, availability: ModuleModeAvailabilit
     }
     const funding = uint(selected.fundingWei, "moduleFunding"); requireCondition(entry.funding || funding === 0n, "This module does not declare launch funding.");
     return { entry, funding, selection: { packageId: entry.nativeBinding.packageId, factory: entry.nativeBinding.factory, factoryCodeHash: entry.nativeBinding.factoryCodeHash, moduleCodeHash: entry.nativeBinding.moduleCodeHash, callbackGas: entry.nativeBinding.callbackGas, config } satisfies NativeSelection };
-  }).sort((a, b) => BigInt(a.entry.nativeBinding.familyId) < BigInt(b.entry.nativeBinding.familyId) ? -1 : 1);
-  requireCondition(new Set(paired.map(item => item.entry.nativeBinding.familyId.toLowerCase())).size === paired.length, "A functional family may appear only once.");
+  });
+  if (!v2) {
+    paired.sort((a, b) => BigInt(a.entry.nativeBinding.familyId) < BigInt(b.entry.nativeBinding.familyId) ? -1 : 1);
+    requireCondition(new Set(paired.map(item => item.entry.nativeBinding.familyId.toLowerCase())).size === paired.length, "A functional family may appear only once.");
+  } else {
+    const policy = moduleModeFeePolicy(release, paired.map(item => item.entry));
+    requireCondition(policy && policy.eligibleFamilyCount <= 8 && draft.fees.programmableBps === policy.platformBps && draft.fees.asset === "native-ETH", "Draft fee policy differs from the eligible module families.");
+  }
   requireCondition(paired.reduce((sum, item) => sum + item.selection.callbackGas, 0) <= 2_000_000 && paired.reduce((sum, item) => sum + (item.selection.config.length - 2) / 2, 0) <= 32_768, "Combined module resource limit exceeded.");
   const funding = paired.map(item => item.funding); const totalFunding = funding.reduce((sum, amount) => sum + amount, 0n);
   requireCondition(totalFunding === uint(draft.totalProgramFundingWei, "totalFunding") && initialBuy + totalFunding === uint(draft.totalNativeValueWei, "totalValue"), "Launch value does not match initial buy plus module budgets.");
@@ -252,8 +286,42 @@ async function simulate(client: ModuleNativeClient, tx: ModuleNativeWalletTransa
 function seal<T extends PreparedModuleNativeTransaction>(prepared: T, binding: PrivateBinding): T {
   frozen(prepared); preparations.set(prepared, binding); return prepared;
 }
-function encodeLaunch(parameters: Parameters<typeof encodeFunctionData<typeof moduleNativeLaunchAbi, "launch">>[0]["args"]) {
-  return encodeFunctionData({ abi: moduleNativeLaunchAbi, functionName: "launch", args: parameters });
+type NativeLaunchParameters = NonNullable<Parameters<typeof encodeFunctionData<typeof moduleNativeLaunchAbi, "launch">>[0]["args"]>[0];
+function encodeLaunch(release: ModuleModeRelease, parameters: NativeLaunchParameters, recipeHash: Hex) {
+  return release.sourceVersion === "module-native-v2"
+    ? encodeFunctionData({ abi: moduleNativeLaunchV2Abi, functionName: "launch", args: [{ ...parameters, expectedRecipeHash: recipeHash }] })
+    : encodeFunctionData({ abi: moduleNativeLaunchAbi, functionName: "launch", args: [parameters] });
+}
+async function reviewedRecipe(client: ModuleNativeClient, block: BoundBlock, checked: ReturnType<typeof validateDraft>) {
+  const pins = block.release.contracts;
+  const { creatorBuyBps, creatorSellBps } = checked.draft.fees;
+  if (block.release.sourceVersion === "module-native-v1") return {
+    recipeHash: keccak256(encodeAbiParameters(parseAbiParameters(`string,uint256,address,address,uint16,uint16,bytes32[],${MODULE_NATIVE_SELECTION_TYPE}`), ["programmable.module-mode.native-recipe.v1", 4663n, pins.hook.address, pins.registry.address, creatorBuyBps, creatorSellBps, checked.families, checked.selections])),
+    families: checked.families, selectionEligible: [] as boolean[], selectionReviewDigests: [] as Hex[],
+  };
+  const families = [...new Set(checked.families.map(family => family.toLowerCase() as Hex))];
+  const reviews = new Map(await Promise.all(families.map(async family => {
+    const value = await read(client, pins.registry.address, "familyFeeEligibility", [family], block.blockNumber, moduleNativeReadV2Abi) as readonly unknown[];
+    const review = bindNativeFeeEligibility({ eligible: value[0], reviewDigest: value[1] });
+    return [family, review] as const;
+  })));
+  const eligibility = checked.entries.map(entry => {
+    const actual = reviews.get(entry.nativeBinding.familyId.toLowerCase() as Hex)!;
+    const expected = bindNativeFeeEligibility(entry.nativeBinding.feeEligibility);
+    requireCondition(actual.eligible === expected.eligible, "Module fee eligibility changed. Refresh the catalog and prepare again.");
+    same(actual.reviewDigest, expected.reviewDigest, "Module fee eligibility review");
+    return actual;
+  });
+  const eligibleFamilies = families.filter(family => reviews.get(family)!.eligible).sort((a, b) => BigInt(a) < BigInt(b) ? -1 : 1);
+  requireCondition(eligibleFamilies.length <= 8, "Too many eligible module families.");
+  const selectionEligibilityHashes = eligibility.map((review, index) => keccak256(encodeAbiParameters(parseAbiParameters("bytes32,bool,bytes32"), [checked.families[index], review.eligible, review.reviewDigest])));
+  const recipeHash = keccak256(encodeAbiParameters(parseAbiParameters(`string,uint256,address,address,bytes32,bytes32[],uint16,uint16,bytes32[],${MODULE_NATIVE_SELECTION_TYPE}`),
+    ["programmable.module-mode.native-recipe.v2", 4663n, pins.hook.address, pins.registry.address, block.release.economicsPolicyId, selectionEligibilityHashes, creatorBuyBps, creatorSellBps, eligibleFamilies, checked.selections]));
+  const preview = await read(client, pins.hook.address, "previewRecipe", [creatorBuyBps, creatorSellBps, checked.selections], block.blockNumber, moduleNativeReadV2Abi) as readonly unknown[];
+  same(preview[0], recipeHash, "Reviewed recipe preview");
+  requireCondition(Array.isArray(preview[1]) && preview[1].length === eligibleFamilies.length, "Recipe preview family count differs.");
+  preview[1].forEach((family, index) => same(family, eligibleFamilies[index], "Recipe preview eligible family"));
+  return { recipeHash, families: eligibleFamilies, selectionEligible: eligibility.map(review => review.eligible), selectionReviewDigests: eligibility.map(review => review.reviewDigest) };
 }
 export interface PrepareModuleNativeLaunchInput {
   client: ModuleNativeClient; availability: ModuleModeAvailability; draft: ModuleModeDraft; account: Address;
@@ -270,31 +338,33 @@ export async function prepareModuleNativeLaunch(input: PrepareModuleNativeLaunch
   requireCondition(creators.length > 0 && creators.length <= 10 && creators.every(item => Number.isSafeInteger(item.shareBps) && item.shareBps > 0 && item.shareBps <= 10_000) && creators.reduce((sum, item) => sum + item.shareBps, 0) === 10_000, "Creator shares must total 10,000 bps across 1–10 recipients.");
   await assertRevisions(client, block, checked.entries);
   const pins = block.release.contracts;
-  const graffiti = keccak256(encodeAbiParameters(parseAbiParameters("string,uint256,address,address,bytes32"), ["programmable.module-mode.native-token.v1", 4663n, pins.launcher.address, account, creatorSalt]));
+  const launchAbi = moduleNativeLaunchAbiFor(block.release);
+  const generation = block.release.sourceVersion === "module-native-v2" ? "v2" : "v1";
+  const graffiti = keccak256(encodeAbiParameters(parseAbiParameters("string,uint256,address,address,bytes32"), [`programmable.module-mode.native-token.${generation}`, 4663n, pins.launcher.address, account, creatorSalt]));
   const salt = keccak256(encodeAbiParameters(parseAbiParameters("string,string,uint8,address,bytes32"), [checked.draft.token.name, checked.draft.token.symbol, 18, pins.launcher.address, graffiti]));
   const predictedToken = getCreate2Address({ from: pins.tokenFactory.address, salt, bytecodeHash: block.release.tokenCreationCodeHash });
-  const prediction = await read(client, pins.launcher.address, "predictTokenAddress", [checked.draft.token.name, checked.draft.token.symbol, account, creatorSalt], block.blockNumber, moduleNativeLaunchAbi) as readonly unknown[];
+  const prediction = await read(client, pins.launcher.address, "predictTokenAddress", [checked.draft.token.name, checked.draft.token.symbol, account, creatorSalt], block.blockNumber, launchAbi) as readonly unknown[];
   same(prediction[0], predictedToken, "Token prediction"); same(prediction[1], graffiti, "Token graffiti");
   const existingCode = await client.getCode({ address: predictedToken, blockNumber: block.blockNumber });
   requireCondition(!existingCode || existingCode === "0x", "This launch token already exists. Prepare a new launch salt.");
   const poolId = poolIdFor(predictedToken, pins.hook.address);
-  const recipeHash = keccak256(encodeAbiParameters(parseAbiParameters(`string,uint256,address,address,uint16,uint16,bytes32[],${MODULE_NATIVE_SELECTION_TYPE}`), ["programmable.module-mode.native-recipe.v1", 4663n, pins.hook.address, pins.registry.address, checked.draft.fees.creatorBuyBps, checked.draft.fees.creatorSellBps, checked.families, checked.selections]));
+  const recipe = await reviewedRecipe(client, block, checked); const { recipeHash } = recipe;
   const programHash = keccak256(encodeAbiParameters(parseAbiParameters(`bytes32,${MODULE_NATIVE_SELECTION_TYPE}`), [keccak256(toHex("programmable.module-mode.native-program.v1")), checked.selections]));
   const launchKey = keccak256(encodeAbiParameters(parseAbiParameters("bytes32,uint256,address,address,(address source,address launchWallet,address token,address poolManager,bytes32 poolId,bytes32 recipeHash,bytes32 programHash)"),
     [keccak256(toHex("programmable.module-mode.native-binding.v1")), 4663n, pins.runtime.address, pins.hook.address, { source: pins.launcher.address, launchWallet: account, token: predictedToken, poolManager: pins.poolManager.address, poolId, recipeHash, programHash }]));
   const metadata = moduleTokenMetadata(checked.draft.token.description, image.uri, checked.draft.token.socialLinks);
   const parameters = { name: checked.draft.token.name, symbol: checked.draft.token.symbol, buyCreatorFeeBps: checked.draft.fees.creatorBuyBps, sellCreatorFeeBps: checked.draft.fees.creatorSellBps, creatorSalt, metadata,
     creatorWallets: creators.map(item => item.wallet), creatorSharesBps: creators.map(item => item.shareBps), modules: checked.selections, moduleFunding: checked.funding, initialBuyNative: checked.initialBuy, minimumInitialTokenOut: 1n, deadline };
-  const previewTx = transaction(account, pins.launcher.address, encodeLaunch([parameters]), checked.value, "launch", `Launch ${parameters.name} on Robinhood Chain`);
+  const previewTx = transaction(account, pins.launcher.address, encodeLaunch(block.release, parameters, recipeHash), checked.value, "launch", `Launch ${parameters.name} on Robinhood Chain`);
   const quote = await client.call({ account, to: previewTx.to, data: previewTx.data, value: checked.value, blockNumber: block.blockNumber });
   requireCondition(quote.data, "Launch simulation returned no result.");
-  const quoted = launchRecord(decodeFunctionResult({ abi: moduleNativeLaunchAbi, functionName: "launch", data: quote.data }));
+  const quoted = launchRecord(decodeFunctionResult({ abi: launchAbi, functionName: "launch", data: quote.data }));
   for (const [actual, expected, label] of [[quoted.token, predictedToken, "token"], [quoted.launchWallet, account, "wallet"], [quoted.poolId, poolId, "pool"], [quoted.recipeHash, recipeHash, "recipe"], [quoted.launchKey, launchKey, "program"], [quoted.hook, pins.hook.address, "hook"], [quoted.runtime, pins.runtime.address, "runtime"]]) same(actual, expected, `Simulated ${label}`);
   requireCondition(quoted.initialBuyNative === checked.initialBuy, "Simulated initial buy differs.");
   parameters.minimumInitialTokenOut = quoted.initialBuyTokens * (10_000n - slip) / 10_000n;
   requireCondition(parameters.minimumInitialTokenOut > 0n, "Quoted output is too small for the selected slippage.");
-  const tx = { ...previewTx, data: encodeLaunch([parameters]) }; const simulation = await simulate(client, tx, block.blockNumber);
-  const confirmed = launchRecord(decodeFunctionResult({ abi: moduleNativeLaunchAbi, functionName: "launch", data: simulation.data }));
+  const tx = { ...previewTx, data: encodeLaunch(block.release, parameters, recipeHash) }; const simulation = await simulate(client, tx, block.blockNumber);
+  const confirmed = launchRecord(decodeFunctionResult({ abi: launchAbi, functionName: "launch", data: simulation.data }));
   requireCondition(confirmed.initialBuyTokens >= parameters.minimumInitialTokenOut, "Launch does not meet the reviewed minimum output.");
   await assertCanonical(client, block);
   const prepared: PreparedModuleNativeLaunch = { kind: "launch", transaction: tx, account, releaseDigest: block.release.releaseDigest, blockNumber: block.blockNumber, expiresAt: deadline, gasEstimate: simulation.gasEstimate,
@@ -304,8 +374,9 @@ export async function prepareModuleNativeLaunch(input: PrepareModuleNativeLaunch
     refresh: async () => {
       const current = await assertModuleNativeRelease({ client, release: block.release }); requireCondition(current.timestamp <= deadline, "Launch review expired. Prepare again.");
       validateDraft(checked.draft, availability, account, image, current.timestamp); await assertRevisions(client, current, checked.entries);
+      if (current.release.sourceVersion === "module-native-v2") same((await reviewedRecipe(client, current, checked)).recipeHash, recipeHash, "Current launch recipe");
       const next = await simulate(client, tx, current.blockNumber);
-      const result = launchRecord(decodeFunctionResult({ abi: moduleNativeLaunchAbi, functionName: "launch", data: next.data }));
+      const result = launchRecord(decodeFunctionResult({ abi: launchAbi, functionName: "launch", data: next.data }));
       same(result.token, predictedToken, "Current launch token"); same(result.recipeHash, recipeHash, "Current launch recipe"); same(result.launchKey, launchKey, "Current launch key");
       requireCondition(result.initialBuyTokens >= prepared.minimumTokenOut, "Current launch output is below the reviewed minimum."); await assertCanonical(client, current);
       return next.gasEstimate;
@@ -326,12 +397,34 @@ export async function prepareModuleNativeLaunch(input: PrepareModuleNativeLaunch
       same(config.creatorConfigurationHash, keccak256(encodeAbiParameters(parseAbiParameters("address[],uint16[]"), [parameters.creatorWallets, parameters.creatorSharesBps])), "Creator configuration");
       const identity = oneEvent(receipt, pins.launcher.address, moduleNativeLaunchAbi, "ModuleNativeTokenIdentityBound");
       same(identity.launchId, record.launchId, "Token identity launch"); same(identity.creatorSalt, creatorSalt, "Creator salt"); same(identity.graffiti, graffiti, "Token graffiti");
+      if (block.release.sourceVersion === "module-native-v2") {
+        const economics = oneEvent(receipt, pins.hook.address, moduleNativeReadV2Abi, "NativeEconomicsBound");
+        same(economics.poolId, record.poolId, "Economics pool"); same(economics.economicsPolicyId, block.release.economicsPolicyId, "Pool economics policy");
+        requireCondition(economics.protocolFeeBps === 10 && economics.authorPoolFeeBps === (recipe.families.length ? 20 : 0), "Receipt economics rates differ.");
+        for (const [field, expected] of [["eligibleFamilies", recipe.families], ["selectionEligible", recipe.selectionEligible], ["selectionReviewDigests", recipe.selectionReviewDigests]] as const) {
+          const actual = economics[field];
+          requireCondition(Array.isArray(actual) && actual.length === expected.length && actual.every((value, index) => typeof value === "string" ? value.toLowerCase() === String(expected[index]).toLowerCase() : value === expected[index]), `Receipt ${field} differs from the reviewed recipe.`);
+        }
+      }
       await assertCanonical(client, current); return receiptResult(receipt, "launch", { token: record.token, launch: record });
     },
   });
 }
 
 export interface PrepareModuleNativeSwapInput { client: ModuleNativeClient; availability: ModuleModeAvailability; account: Address; token: Address; isBuy: boolean; amountSpecified: bigint; limit?: bigint; recipient: Address; slippageBps?: number; deadlineSeconds?: number }
+async function swapFeeComponents(client: ModuleNativeClient, block: BoundBlock, poolId: Hex, isBuy: boolean) {
+  const pins = block.release.contracts;
+  const fees = await read(client, pins.hook.address, "feeComponents", [poolId, isBuy], block.blockNumber) as readonly number[];
+  if (block.release.sourceVersion === "module-native-v1") {
+    requireCondition(fees[1] === 20 && fees[0] >= 0 && fees[0] <= 1000 && fees[3] === 0, "Pool fee policy mismatch.");
+  } else {
+    const config = await read(client, pins.hook.address, "poolConfig", [poolId], block.blockNumber, moduleNativeReadV2Abi) as readonly unknown[];
+    requireCondition(Array.isArray(fees) && fees.length === 4 && fees.every(Number.isSafeInteger)
+      && fees[0] === config[isBuy ? 4 : 5] && fees[0] >= 0 && fees[0] <= 1000 && fees[0] % 100 === 0
+      && fees[1] === config[8] && (fees[1] === 10 || fees[1] === 30) && fees[2] >= 0 && fees[2] <= 1000 && fees[3] === 0, "Pool fee policy mismatch.");
+  }
+  return { creatorBps: fees[0], platformBps: fees[1], poolProtocolPips: fees[2], poolLpPips: fees[3] };
+}
 export async function prepareModuleNativeSwap(input: PrepareModuleNativeSwapInput): Promise<PreparedModuleNativeSwap | ModuleNativeApprovalRequired> {
   input = Object.freeze({ ...input });
   const { client } = input; const availability = active(input.availability); const account = moduleAddress(input.account, "account"); const token = moduleAddress(input.token, "token");
@@ -363,15 +456,19 @@ export async function prepareModuleNativeSwap(input: PrepareModuleNativeSwapInpu
     requireCondition(native > 0n && tokens > 0n && (exactInput ? paid === specified && received >= limit : received === specified && paid <= limit), "Simulated swap violates the reviewed amounts.");
   };
   verify(checkedNative, checkedTokens);
-  const fees = await read(client, block.release.contracts.hook.address, "feeComponents", [record.poolId, input.isBuy], block.blockNumber) as readonly number[];
-  requireCondition(fees[1] === 20 && fees[0] >= 0 && fees[0] <= 1000 && fees[3] === 0, "Pool fee policy mismatch.");
+  const fees = await swapFeeComponents(client, block, record.poolId, input.isBuy);
   const prepared: PreparedModuleNativeSwap = { kind: "swap", transaction: tx, account, releaseDigest: block.release.releaseDigest, blockNumber: block.blockNumber, expiresAt: deadline, gasEstimate: simulation.gasEstimate,
     token, poolId: record.poolId, isBuy: input.isBuy, amountSpecified: input.amountSpecified, limit, recipient, nativeAmount, tokenAmount,
-    feeComponents: { creatorBps: fees[0], platformBps: fees[1], poolProtocolPips: fees[2], poolLpPips: fees[3] } };
+    feeComponents: fees };
   await assertCanonical(client, block);
   return seal(prepared, { client, release: block.release, refresh: async () => {
     const current = await assertModuleNativeRelease({ client, release: block.release }); requireCondition(current.timestamp <= deadline, "Swap review expired. Prepare again.");
-    await boundLaunch(client, current, token); const result = await simulate(client, tx, current.blockNumber);
+    await boundLaunch(client, current, token);
+    if (current.release.sourceVersion === "module-native-v2") {
+      const latestFees = await swapFeeComponents(client, current, record.poolId, input.isBuy);
+      requireCondition(Object.keys(fees).every(key => latestFees[key as keyof typeof fees] === fees[key as keyof typeof fees]), "Reviewed swap fees changed. Prepare again.");
+    }
+    const result = await simulate(client, tx, current.blockNumber);
     const [native, tokens] = decodeFunctionResult({ abi: moduleNativeRouterAbi, functionName: "swap", data: result.data }); verify(native, tokens); await assertCanonical(client, current);
     return result.gasEstimate;
   }, receipt: async receipt => {
@@ -416,40 +513,67 @@ export async function prepareModuleNativeManagementTransaction(input: ModuleMana
   const intent = frozen(nativeJson(input.intent)) as ModuleManagementBuildInput["intent"];
   const context: ModuleManagementBuildInput = Object.freeze({ client, release, catalog, token, actor: account, intent, deadline: input.deadline });
   // Dynamic import avoids a runtime cycle: management reads use this module's authenticated release and launch helpers.
-  const { buildModuleManagementTransaction } = await import("./management");
+  const { buildModuleManagementTransaction, managementCoreAbi } = await import("./management");
   const reconstruct = async () => {
     const candidate = await buildModuleManagementTransaction(context);
-    const target = intent.kind === "program" ? release.contracts.runtime.address
+    const target = intent.kind === "rotate-author" ? release.contracts.registry.address : intent.kind === "program" ? release.contracts.runtime.address
       : intent.kind === "fund" || intent.kind === "claim" ? release.contracts.budgetVault.address : release.contracts.rewardLedger.address;
     requireCondition(candidate.transaction.chainId === 4663 && candidate.expiresAt === context.deadline, "Management chain or deadline changed.");
     same(candidate.transaction.from, account, "Management actor"); same(candidate.transaction.to, target, "Management target");
     const value = uint(BigInt(candidate.transaction.value), "management.value");
     requireCondition(value === (intent.kind === "fund" ? uint(intent.amountWei, "management.funding", true) : 0n), "Management value changed.");
     const data = moduleBytes(candidate.transaction.data, "management.calldata", 65_536);
+    if (intent.kind === "rotate-author") {
+      requireCondition(candidate.authorWalletChange, "Author wallet binding is unavailable.");
+      same(candidate.authorWalletChange.author, account, "Registered author");
+      same(candidate.authorWalletChange.packageId, intent.packageId, "Author package");
+      same(candidate.authorWalletChange.recipient, intent.recipient, "Author recipient");
+      same(data, encodeFunctionData({ abi: managementCoreAbi, functionName: "changeAuthorWallet", args: [candidate.authorWalletChange.familyId, candidate.authorWalletChange.recipient] }), "Author wallet calldata");
+    } else requireCondition(!candidate.authorWalletChange, "Unexpected author wallet binding.");
     requireCondition(data.length >= 10 && typeof candidate.description === "string" && candidate.description.length > 0 && candidate.description.length <= 65_536, "Invalid management transaction description or calldata.");
     requireCondition(typeof candidate.blockNumber === "bigint" && candidate.blockNumber >= BigInt(release.startBlock), "Management snapshot block is unavailable.");
     const hash = moduleHash(candidate.blockHash, "management.blockHash");
     const canonical = await client.getBlock({ blockNumber: candidate.blockNumber });
     requireCondition(canonical.number === candidate.blockNumber, "Management snapshot block number changed."); same(canonical.hash, hash, "Management snapshot block");
     requireCondition(canonical.timestamp < context.deadline && Math.abs(Date.now() / 1000 - Number(canonical.timestamp)) <= 120, "Management review expired or RPC state is stale. Prepare again.");
-    return { transaction: transaction(account, target, data, value, "manage", candidate.description), blockNumber: candidate.blockNumber, gasEstimate: gasReserve(candidate.gasEstimate) };
+    return { transaction: transaction(account, target, data, value, "manage", candidate.description), blockNumber: candidate.blockNumber, gasEstimate: gasReserve(candidate.gasEstimate), ...(candidate.authorWalletChange ? { authorWalletChange: candidate.authorWalletChange } : {}) };
   };
   const candidate = await reconstruct();
   const prepared: PreparedModuleNativeManagement = { kind: "manage", token, transaction: candidate.transaction, account, releaseDigest: release.releaseDigest,
-    blockNumber: candidate.blockNumber, expiresAt: context.deadline, gasEstimate: candidate.gasEstimate };
+    blockNumber: candidate.blockNumber, expiresAt: context.deadline, gasEstimate: candidate.gasEstimate, ...(candidate.authorWalletChange ? { authorWalletChange: candidate.authorWalletChange } : {}) };
   return seal(prepared, { client, release,
     refresh: async () => {
       const current = await reconstruct();
       for (const field of ["from", "to", "data", "value"] as const) same(current.transaction[field], prepared.transaction[field], `Reviewed management ${field}`);
       requireCondition(current.transaction.description === prepared.transaction.description, "Management effects changed. Prepare again.");
+      requireCondition(nativeCanonicalJson(current.authorWalletChange ?? null) === nativeCanonicalJson(prepared.authorWalletChange ?? null), "Author wallet binding changed. Prepare again.");
       return current.gasEstimate;
     },
     receipt: async receipt => {
+      if (prepared.authorWalletChange) return verifyModuleNativeAuthorWalletReceipt({ client, release, token, account, change: prepared.authorWalletChange, receipt });
       const block = await assertModuleNativeRelease({ client, release, blockNumber: receipt.blockNumber });
       await boundLaunch(client, block, token); await assertCanonical(client, block);
       return receiptResult(receipt, "manage", { token });
     },
   });
+}
+
+/** Canonical Registry receipt and family readback; an intervening permitted rotation is reported, never resent. */
+export async function verifyModuleNativeAuthorWalletReceipt(input: { client: ModuleNativeClient; release: ModuleModeRelease; token: Address; account: Address; change: ModuleNativeAuthorWalletChange; receipt: TransactionReceipt }): Promise<ModuleNativeReceiptResult> {
+  const { client, release, change, receipt } = input;
+  requireCondition(receipt.status === "success", "Author wallet transaction did not succeed.");
+  same(receipt.from, input.account, "Author receipt wallet"); same(receipt.to, release.contracts.registry.address, "Author receipt registry");
+  same(change.author, input.account, "Registered author");
+  const { readModuleNativeAuthorWalletAtBlock, managementCoreAbi } = await import("./management");
+  const current = await readModuleNativeAuthorWalletAtBlock({ client, release, token: input.token, packageId: change.packageId, blockNumber: receipt.blockNumber });
+  for (const key of ["launchId", "poolId", "recipeHash", "launchKey", "packageId", "familyId", "author"] as const) same(current[key], change[key], `Author ${key}`);
+  const event = oneEvent(receipt, release.contracts.registry.address, managementCoreAbi, "AuthorWalletChanged");
+  same(event.familyId, change.familyId, "Author event family"); same(event.wallet, change.recipient, "Author event recipient");
+  const previousWallet = moduleAddress(event.previousWallet, "author.previousWallet");
+  const block = await client.getBlock({ blockNumber: receipt.blockNumber });
+  requireCondition(block.number === receipt.blockNumber, "Author receipt block number changed."); same(block.hash, receipt.blockHash, "Author receipt block");
+  return receiptResult(receipt, "manage", { token: input.token, authorWalletChange: { familyId: change.familyId, author: change.author, previousWallet, recipient: change.recipient,
+    previewChanged: previousWallet.toLowerCase() !== change.previousWallet.toLowerCase(), subsequentlyChanged: current.previousWallet.toLowerCase() !== change.recipient.toLowerCase() } });
 }
 
 /** Only in-memory preparations made by this module can cross the wallet boundary. A signing attempt consumes the review. */
@@ -488,7 +612,7 @@ function oneEvent(receipt: TransactionReceipt, address: Address, abi: Abi, event
   }
   requireCondition(events.length === 1, `Expected exactly one ${eventName} event from the bound contract.`); return events[0];
 }
-function receiptResult(receipt: TransactionReceipt, kind: PreparedModuleNativeTransaction["kind"], rest: { token?: Address; launch?: ModuleNativeLaunchRecord } = {}): ModuleNativeReceiptResult {
+function receiptResult(receipt: TransactionReceipt, kind: PreparedModuleNativeTransaction["kind"], rest: Pick<ModuleNativeReceiptResult, "token" | "launch" | "authorWalletChange"> = {}): ModuleNativeReceiptResult {
   return { status: "mined", finalized: false, indexed: false, transactionHash: receipt.transactionHash, blockNumber: receipt.blockNumber, blockHash: receipt.blockHash, kind, ...rest };
 }
 export async function waitForModuleNativeReceipt(input: { client: ModuleNativeClient; prepared: PreparedModuleNativeTransaction; transactionHash: Hex }): Promise<ModuleNativeReceiptResult> {

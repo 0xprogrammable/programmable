@@ -35,6 +35,8 @@ Local reviewer identity is an operator assertion, not a wallet signature.
 Creator recipients input is a JSON array of { wallet, shareBps }; shares total 10000.
 Open commands are an unreviewed v0.1 source/configuration candidate, never a launch or approval.
 Open package list is an array of descriptor paths; source paths are relative to --root.
+plan-open-template applies schema binding.mode input defaults and package-bound fixed values.
+Fixed overrides fail with OPEN_CONFIG_FIXED_OVERRIDE; no CLI option bypasses the package schema.
 Module API commands use an explicit deployment origin; loopback HTTP is allowed for local checks.
 Authenticated commands read PROGRAMMABLE_MODULES_API_KEY from the environment, never an argument.
 Use a key with modules:submit and modules:read. The descriptor author must be that key's EVM wallet;

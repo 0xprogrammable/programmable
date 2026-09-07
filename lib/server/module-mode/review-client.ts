@@ -1,9 +1,13 @@
 import "server-only";
 
+import { createReviewedModuleEngineManifest } from "@/lib/module-mode/review-engine-manifest";
+import { verifyModuleEngineBuildArtifactV1 } from "@/lib/module-mode/review-engine-contract";
+import { bindModuleEngineReleaseIdentity, computeModuleEngineHostManifestHash, type ModuleEngineCatalogDefinition, type ModuleEngineRevisionDefinition } from "@/lib/module-engine/catalog";
 import { randomBytes } from "node:crypto";
 import { getAddress, isAddress } from "viem";
 import { isWebsiteAdminWallet } from "@/lib/admin-access";
 import configuredRelease from "@/config/module-mode/robinhood.preview.json";
+import configuredEngineReviewRelease from "@/config/module-engine/review-release.json";
 import { isReviewId, parseReviewAttempt, parseReviewJob, parseReviewPlan, reviewDigest, reviewRecord, parseReviewQueueItem, type ReviewDetail } from "@/lib/module-mode/review-contract";
 import { nativeCanonicalJson } from "@/lib/module-mode/native-catalog";
 import { unsupportedManagementCapabilities } from "@/lib/module-mode/management-manifest";
@@ -42,7 +46,7 @@ function jsonHeader(input: Request | Response) { if (input.headers.get("content-
 
 export function createModuleReviewClient(input: {
   authenticator: WalletPrincipalAuthenticatorV1; backendBaseUrl: string; websiteToken: string; bffAssertionKeyV2: string;
-  fetchBackend: typeof fetch; releaseIdentity?: unknown; now?: () => Date; nonce?: () => string;
+  fetchBackend: typeof fetch; releaseIdentity?: unknown; engineReleaseIdentity?: unknown; now?: () => Date; nonce?: () => string;
 }) {
   const base = new URL(input.backendBaseUrl);
   if ((base.protocol !== "https:" && !(base.protocol === "http:" && ["localhost", "127.0.0.1"].includes(base.hostname))) || base.username || base.password || base.search || base.hash) throw new Error("Module review backend URL is invalid.");
@@ -91,6 +95,10 @@ export function createModuleReviewClient(input: {
         const checked = validateModuleSubmissionRequest(sourceResponse.value);
         if (!checked.ok || checked.requestDigest !== job.subject.requestDigest || checked.request.descriptor.author.toLowerCase() !== job.subject.author) fail(502, "MODULE_REVIEW_SOURCE_MISMATCH");
         if (job.artifact && (job.artifact.packageId !== checked.packageId || job.artifact.familyId !== checked.familyId || job.artifact.rewardWallet !== checked.request.descriptor.rewardWallet.toLowerCase() || job.artifact.sourceManifestHash !== reviewDigest("programmable.modules.source-manifest.v1", checked.request.descriptor) || job.artifact.configurationSchemaHash !== reviewDigest("programmable.modules.configuration-schema.v1", checked.request.descriptor.configuration))) fail(502, "MODULE_REVIEW_SOURCE_MISMATCH");
+        if (job.artifact?.schemaVersion === "programmable.modules.engine-build.v1") {
+          if (job.plan?.schemaVersion !== "programmable.modules.engine-build-plan.v1") fail(502, "MODULE_REVIEW_BUILD_PROFILE_MISMATCH");
+          verifyModuleEngineBuildArtifactV1(job.artifact, job.subject, job.plan, checked.request);
+        }
         if (!Array.isArray(detail.decisions) || detail.decisions.length > 1000 || detail.decisions.some((decision) => !validateModuleReviewDecisionRecordV1(decision) || !same(decision.subject, job.subject))) fail(502, "MODULE_REVIEW_DECISION_INVALID");
         const attempts = detail.attempts ?? [];
         if (!Array.isArray(attempts) || attempts.length > 24) fail(502, "MODULE_REVIEW_ATTEMPTS_INVALID");
@@ -99,12 +107,26 @@ export function createModuleReviewClient(input: {
       const validateManifest = (text: unknown, detail: ReviewDetail) => {
         if (typeof text !== "string" || Buffer.byteLength(text) > 2 * 1024 * 1024) fail(400, "MODULE_REVIEW_MANIFEST_REQUIRED");
         if (!detail.job.artifact) fail(409, "MODULE_REVIEW_BUILD_REQUIRED");
+        if (detail.job.artifact.schemaVersion === "programmable.modules.engine-build.v1") {
+          const raw = userInput(() => parsed(Buffer.from(text), 2 * 1024 * 1024));
+          if (input.engineReleaseIdentity === null || input.engineReleaseIdentity === undefined) fail(409, "MODULE_REVIEW_HOST_RELEASE_UNAVAILABLE");
+          // Bind the closed server identity before Engine publication or activation.
+          // Validate it here so configuration failures stay local to Engine review.
+          const release = bindModuleEngineReleaseIdentity(input.engineReleaseIdentity);
+          const manifest = userInput(() => reviewRecord(reviewRecord(raw).manifest));
+          const expected = userInput(() => createReviewedModuleEngineManifest({ job: detail.job, descriptor: detail.source.descriptor,
+            release, definition: manifest.catalogDefinition as ModuleEngineCatalogDefinition,
+            revision: manifest.revision as ModuleEngineRevisionDefinition }));
+          if (!same(raw, expected)) fail(400, "MODULE_REVIEW_MANIFEST_BUILD_MISMATCH");
+          return computeModuleEngineHostManifestHash(expected);
+        }
         const release = input.releaseIdentity ?? configuredRelease;
         if (!release || typeof release !== "object" || typeof (release as { releaseDigest?: unknown }).releaseDigest !== "string") fail(409, "MODULE_REVIEW_HOST_RELEASE_UNAVAILABLE");
         const raw = userInput(() => parsed(Buffer.from(text), 2 * 1024 * 1024));
         const manifest = reviewRecord(reviewRecord(raw).manifest);
         const binding = reviewRecord(manifest.runtimeBinding);
-        const nativeBinding = { familyId: binding.familyId, packageId: binding.packageId, factory: binding.factory, factoryCodeHash: binding.factoryCodeHash, moduleCodeHash: binding.moduleCodeHash, callbackGas: binding.callbackGas };
+        const nativeBinding = { familyId: binding.familyId, packageId: binding.packageId, factory: binding.factory, factoryCodeHash: binding.factoryCodeHash, moduleCodeHash: binding.moduleCodeHash, callbackGas: binding.callbackGas,
+          ...(Object.hasOwn(binding, "feeEligibility") ? { feeEligibility: binding.feeEligibility } : {}) };
         const artifact = detail.job.artifact;
         if (nativeBinding.familyId !== artifact.familyId || nativeBinding.packageId !== artifact.packageId || nativeBinding.factoryCodeHash !== artifact.factory.runtimeCodeHash || nativeBinding.moduleCodeHash !== artifact.program.runtimeCodeHash || nativeBinding.callbackGas !== artifact.callbackGas) fail(400, "MODULE_REVIEW_MANIFEST_BUILD_MISMATCH");
         const expected = userInput(() => createModuleModeHostManifest({ release: release as ModuleModeHostReleaseIdentity, definition: manifest.catalogDefinition as ModuleModeCatalogDefinition, nativeBinding: nativeBinding as Parameters<typeof createModuleModeHostManifest>[0]["nativeBinding"], descriptor: detail.source.descriptor }));
@@ -164,7 +186,7 @@ export function createModuleReviewClient(input: {
 let client: ReturnType<typeof createModuleReviewClient> | undefined;
 export async function moduleReviewRoute(request: Request, operation: Operation, id?: string) {
   try {
-    client ??= createModuleReviewClient({ authenticator: createPrivyWalletPrincipalAuthenticatorV1(), backendBaseUrl: process.env.PROGRAMMABLE_CUSTOM_LAUNCH_API_BASE_URL ?? "", websiteToken: process.env.PROGRAMMABLE_CUSTOM_LAUNCH_WEBSITE_TOKEN ?? "", bffAssertionKeyV2: process.env.PROGRAMMABLE_CUSTOM_LAUNCH_BFF_ASSERTION_KEY_V2 ?? "", fetchBackend: fetch });
+    client ??= createModuleReviewClient({ authenticator: createPrivyWalletPrincipalAuthenticatorV1(), backendBaseUrl: process.env.PROGRAMMABLE_CUSTOM_LAUNCH_API_BASE_URL ?? "", websiteToken: process.env.PROGRAMMABLE_CUSTOM_LAUNCH_WEBSITE_TOKEN ?? "", bffAssertionKeyV2: process.env.PROGRAMMABLE_CUSTOM_LAUNCH_BFF_ASSERTION_KEY_V2 ?? "", fetchBackend: fetch, engineReleaseIdentity: configuredEngineReviewRelease });
     return await client.handle(request, operation, id);
   } catch { return response(503, { error: { code: "MODULE_REVIEW_SERVICE_UNAVAILABLE" } }); }
 }

@@ -19,7 +19,7 @@ export async function GET(request: Request) {
   }
   try {
     const result = await readModuleAuthorProfile(account.toLowerCase(), Number(page));
-    return Response.json(result, { status: result.status === "ready" ? 200 : 503, headers });
+    return Response.json(result, { status: result.status === "unavailable" ? 503 : 200, headers });
   } catch {
     return Response.json({ error: "modules_unavailable" }, { status: 503, headers });
   }
