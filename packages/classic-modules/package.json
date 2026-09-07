@@ -1,6 +1,6 @@
 {
   "name": "@programmable/classic-modules",
-  "version": "1.0.0-development.3",
+  "version": "1.0.0-development.4",
   "private": true,
   "description": "Local contributor validation and deterministic recipes for Classic Modules V1",
   "type": "module",
