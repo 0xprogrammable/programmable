@@ -7,7 +7,7 @@ import type { ModuleModeAvailability, NativeModuleModeCatalogEntry } from "../li
 import { bindActiveModuleModeRelease } from "../lib/module-mode/release";
 import {
   bindModuleModeCatalogFile, computeModuleModeHostManifestHash, createModuleModeAvailabilityReader,
-  createModuleModeHostManifest, MODULE_MODE_CATALOG_SCHEMA, moduleModePublicationUrl,
+  createModuleModeHostManifest, createModuleModeHistoricalAvailabilityReader, MODULE_MODE_CATALOG_SCHEMA, moduleModePublicationUrl,
   verifyModuleModePublication, type ModuleModeAvailabilityDependencies, type ModuleModeCatalogDefinition, type ModuleModeHostReleaseIdentity,
 } from "../lib/server/module-mode/catalog";
 import { computeModuleReviewDecisionDigestV1, type ModuleReviewDecisionRecordV1 } from "../lib/server/module-mode/review-decision-wire-v1";
@@ -195,6 +195,20 @@ describe("Reviewed starter publication bytes", () => {
 });
 
 describe("Read-only Module Mode availability", () => {
+  it("resolves exact historical release/catalogue bindings without substituting the current generation", async () => {
+    const f = fixture();
+    const read = createModuleModeHistoricalAvailabilityReader({ historical: {
+      schemaVersion: "programmable.module-mode-historical-releases.v1", releases: [{ release: f.release, catalog: f.catalog }],
+    }, dependencies: f.dependencies });
+    expect(await read(h(9999))).toMatchObject({ release: null, catalog: [] });
+    expect(f.authenticateRelease).not.toHaveBeenCalled();
+    expect(await read(f.release.releaseDigest)).toMatchObject({ release: f.release, catalog: [f.publication.entry] });
+    expect(f.authenticateRelease).toHaveBeenCalledWith(f.release);
+    const rejected = createModuleModeHistoricalAvailabilityReader({ historical: {
+      schemaVersion: "programmable.module-mode-historical-releases.v1", releases: [{ release: f.release, catalog: f.catalog }],
+    }, dependencies: { ...f.dependencies, collector: () => ({ authenticateRelease: async () => { throw new Error("Unavailable authority"); } }) } });
+    expect(await rejected(f.release.releaseDigest)).toMatchObject({ release: null, catalog: [] });
+  });
   it("keeps the reviewed starter catalogue unavailable while the release is disabled", async () => {
     expect(catalogFile.schemaVersion).toBe(MODULE_MODE_CATALOG_SCHEMA);
     expect(catalogFile.sourceReleaseDigest).toBe(configuredRelease.releaseDigest);
@@ -283,7 +297,7 @@ describe("Read-only Module Mode availability", () => {
     expect(f.fetchPublic).not.toHaveBeenCalled();
   });
   it("keeps the public route read-only and uncached at the browser boundary", async () => {
-    const readAvailability = vi.fn<() => Promise<ModuleModeAvailability>>();
+    const readAvailability = vi.fn<(releaseDigest?: string) => Promise<ModuleModeAvailability>>();
     vi.resetModules();
     vi.doMock("../lib/server/module-mode/catalog", async importOriginal => ({
       ...await importOriginal<typeof import("../lib/server/module-mode/catalog")>(),
@@ -304,6 +318,15 @@ describe("Read-only Module Mode availability", () => {
         expect(await response.json()).toEqual(availability);
       }
       expect(readAvailability).toHaveBeenCalledTimes(cases.length);
+      const digest = fixture().release.releaseDigest;
+      readAvailability.mockResolvedValueOnce(cases[0].availability);
+      expect((await route.GET(new Request(`https://programmable.market/api/module-mode?releaseDigest=${digest}`))).status).toBe(200);
+      expect(readAvailability).toHaveBeenLastCalledWith(digest);
+      readAvailability.mockClear();
+      for (const query of ["releaseDigest=not-a-digest", `releaseDigest=${h(0)}`, `releaseDigest=${digest}&releaseDigest=${digest}`, "sourceUrl=https://example.com"]) {
+        expect((await route.GET(new Request(`https://programmable.market/api/module-mode?${query}`))).status).toBe(400);
+      }
+      expect(readAvailability).not.toHaveBeenCalled();
       expect(Object.keys(route)).not.toContain("POST");
     } finally {
       vi.doUnmock("../lib/server/module-mode/catalog");

@@ -7,7 +7,7 @@ import { a, h } from "./fixtures/module-mode-evidence";
 const mocks = vi.hoisted(() => ({ store: vi.fn(), custom: vi.fn(), module: vi.fn() }));
 vi.mock("../lib/server/robinhood-index/store", () => ({ indexStore: mocks.store }));
 vi.mock("../lib/server/robinhood-index/source", () => ({ robinhoodSource: mocks.custom }));
-vi.mock("../lib/server/robinhood-index/module-source", () => ({ configuredModuleModeSource: mocks.module }));
+vi.mock("../lib/server/robinhood-index/module-source", () => ({ configuredModuleModeSources: mocks.module }));
 import { GET } from "../app/api/ops/robinhood-index/route";
 
 const point = (n: number) => ({ number: String(n), hash: h(n) });
@@ -23,7 +23,8 @@ function fixture() {
   const custom: IndexSource = { routerAddress: a(900), binding: h(901), startBlock: 50n, finalized: point(100), block: async n => point(Number(n)), launches: async () => [] };
   const nativeSource: ModuleModeIndexSource = { sourceKind: "module-native-v1", sourceAddress: a(800), releaseDigest: h(801), startBlock: 50n,
     finalized: point(100), block: async n => point(Number(n)), launches: async () => [] };
-  mocks.store.mockReturnValue(store); mocks.custom.mockResolvedValue(custom); mocks.module.mockResolvedValue(nativeSource);
+  mocks.store.mockReturnValue(store); mocks.custom.mockResolvedValue(custom);
+  mocks.module.mockResolvedValue([{ releaseDigest: nativeSource.releaseDigest, source: async () => nativeSource }]);
   return { read: () => saved, write, remove: () => { saved = null; } };
 }
 const request = () => new Request("https://programmable.market/api/ops/robinhood-index", { headers: { authorization: `Bearer ${"a".repeat(48)}` } });
@@ -55,12 +56,33 @@ describe("Independent canonical Robinhood index lanes", () => {
     expect((await GET(request())).status).toBe(503); expect(f.write).not.toHaveBeenCalled(); expect(f.read()).toBeNull();
   });
   it("reports the disabled Module lane and rejects unauthenticated or overridden jobs", async () => {
-    fixture(); mocks.module.mockResolvedValue(null);
+    fixture(); mocks.module.mockResolvedValue([]);
     const response = await GET(request()); expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ custom: { status: "ready" }, moduleMode: { status: "disabled" } });
     mocks.store.mockClear();
     expect((await GET(new Request("https://programmable.market/api/ops/robinhood-index"))).status).toBe(401);
     expect((await GET(new Request("https://programmable.market/api/ops/robinhood-index?source=module", request()))).status).toBe(400);
     expect(mocks.store).not.toHaveBeenCalled();
+  });
+  it("advances a historical source when the current release is unavailable", async () => {
+    const f = fixture();
+    const historical: ModuleModeIndexSource = { sourceKind: "module-native-v1", sourceAddress: a(810), releaseDigest: h(811),
+      startBlock: 50n, finalized: point(100), block: async n => point(Number(n)), launches: async () => [] };
+    mocks.module.mockResolvedValue([
+      { releaseDigest: h(801), source: async () => { throw new Error("Private current-release provider failure"); } },
+      { releaseDigest: historical.releaseDigest, source: async () => historical },
+    ]);
+    const response = await GET(request()); const body = await response.json();
+    expect(response.status).toBe(503);
+    expect(body.moduleMode).toEqual({ status: "unavailable" });
+    expect(body.moduleSources[h(811)]).toMatchObject({ status: "ready", indexedThrough: "100" });
+    expect(f.read()?.moduleMode?.releaseDigest).toBe(h(811));
+    expect(JSON.stringify(body)).not.toContain("Private");
+    const historicalSnapshot = structuredClone(f.read()?.moduleMode);
+    mocks.module.mockResolvedValue([]);
+    const missing = await GET(request());
+    expect(missing.status).toBe(503);
+    expect((await missing.json()).moduleSources[h(811)]).toEqual({ status: "unavailable" });
+    expect(f.read()?.moduleMode).toEqual(historicalSnapshot);
   });
 });

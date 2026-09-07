@@ -2,6 +2,7 @@ import { keccak256, toHex, type Hex } from "viem";
 import { isModuleDiscovery } from "@/lib/module-mode/library";
 import configuredCatalog from "@/config/module-mode/catalog.json";
 import configuredRelease from "@/config/module-mode/robinhood.preview.json";
+import historicalReleases from "@/config/module-mode/historical-releases.json";
 import { PREVIEW_MODULE_CATALOG, type ModuleModeCatalogEntry } from "@/lib/module-mode/builder";
 import { bindModuleManagementManifest, unsupportedManagementCapabilities, type ModuleManagementManifestV1 } from "@/lib/module-mode/management-manifest";
 import {
@@ -290,7 +291,55 @@ const configuredReader = createModuleModeAvailabilityReader({ releaseProfile: co
     websiteToken: process.env.PROGRAMMABLE_CUSTOM_LAUNCH_WEBSITE_TOKEN ?? "", fetchBackend: fetch, signal,
   }), fetchPublic: (...args) => fetch(...args),
 });
-export const readModuleModeAvailability = (): Promise<ModuleModeAvailability> => configuredReader();
+
+/** Historical generations use the same catalogue and authority checks as the current release. */
+export function createModuleModeHistoricalAvailabilityReader(input: {
+  historical: unknown;
+  dependencies: Pick<ModuleModeAvailabilityDependencies, "collector" | "fetchPublic" | "now" | "budgetMs">;
+}): (releaseDigest: string) => Promise<ModuleModeAvailability> {
+  const readers = new Map<string, () => Promise<ModuleModeAvailability>>();
+  const value = moduleRecord(nativeJson(input.historical), ["schemaVersion", "releases"], "historicalReleases");
+  if (value.schemaVersion !== "programmable.module-mode-historical-releases.v1" || !Array.isArray(value.releases)
+    || value.releases.length > 32) throw new Error("Invalid historical Module Mode releases.");
+  for (const entry of value.releases) {
+    const item = moduleRecord(entry, ["release", "catalog"], "historicalReleases.entry");
+    const release = bindActiveModuleModeRelease(item.release);
+    if (readers.has(release.releaseDigest)) throw new Error("Duplicate historical Module Mode release.");
+    readers.set(release.releaseDigest, createModuleModeAvailabilityReader({
+      ...input.dependencies, releaseProfile: release, catalogFile: item.catalog,
+    }));
+  }
+  return async digest => {
+    const key = moduleHash(digest, "historicalReleases.requestedDigest");
+    return readers.get(key)?.() ?? unavailable("This Module Mode release is not available.");
+  };
+}
+let historicalReader: ReturnType<typeof createModuleModeHistoricalAvailabilityReader> | undefined;
+export function configuredModuleModeCatalog(releaseDigest?: string): unknown {
+  if (releaseDigest === undefined || moduleHash(releaseDigest, "catalog.releaseDigest") === configuredRelease.releaseDigest) return configuredCatalog;
+  const historical = moduleRecord(nativeJson(historicalReleases), ["schemaVersion", "releases"], "historicalReleases");
+  if (historical.schemaVersion !== "programmable.module-mode-historical-releases.v1" || !Array.isArray(historical.releases)
+    || historical.releases.length > 32) throw new Error("Invalid historical Module Mode releases.");
+  for (const value of historical.releases) {
+    const item = moduleRecord(value, ["release", "catalog"], "historicalReleases.entry");
+    const release = bindActiveModuleModeRelease(item.release);
+    if (release.releaseDigest === releaseDigest.toLowerCase()) return item.catalog;
+  }
+  return null;
+}
+export const readModuleModeAvailability = async (releaseDigest?: string): Promise<ModuleModeAvailability> => {
+  if (releaseDigest === undefined || moduleHash(releaseDigest, "availability.releaseDigest") === configuredRelease.releaseDigest) return configuredReader();
+  // Historical configuration errors do not suppress the current release.
+  try {
+    historicalReader ??= createModuleModeHistoricalAvailabilityReader({ historical: historicalReleases, dependencies: {
+      collector: signal => createModuleModeHttpCollector({
+        backendBaseUrl: process.env.PROGRAMMABLE_CUSTOM_LAUNCH_API_BASE_URL ?? "",
+        websiteToken: process.env.PROGRAMMABLE_CUSTOM_LAUNCH_WEBSITE_TOKEN ?? "", fetchBackend: fetch, signal,
+      }), fetchPublic: (...args) => fetch(...args),
+    } });
+    return historicalReader(releaseDigest);
+  } catch { return unavailable(UNAVAILABLE); }
+};
 
 /** Public source publication format; never includes API keys, private queue metadata or a wallet signature. */
 export type ModuleModePublishedSource = ModuleSubmissionRequest;

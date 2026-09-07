@@ -97,6 +97,44 @@ describe("Module Mode joins the canonical Robinhood index",()=>{
     await expect(syncModuleModeIndex({...source,releaseDigest:h(998)},saved.store,options)).rejects.toThrow("index migration required");
     expect(saved.read().moduleMode?.releaseDigest).toBe(fixture.release.releaseDigest);
   });
+  it("keeps independent historical checkpoints and preserves every source when another generation advances", async () => {
+    const saved = memoryStore();
+    const original = await moduleModeSource(moduleEvidenceFixture().release, collector());
+    await syncModuleModeIndex(original, saved.store, options);
+    const first = structuredClone(saved.read().moduleMode);
+    const next = { ...original, sourceAddress: a(990), releaseDigest: h(991),
+      launches: async () => first!.items.map(row => ({ ...row, sourceAddress: a(990), sourceReleaseDigest: h(991),
+        tokenAddress: a(992), launchId: h(993), poolId: h(994), transactionHash: h(995) })) };
+    await syncModuleModeIndex(next, saved.store, options);
+    expect(saved.read().moduleMode).toEqual(first);
+    expect(saved.read().moduleModeSources).toHaveLength(1);
+    expect(profileLaunchList(saved.read(), a(90), 1, now).page.totalItems).toBe(3);
+    expect(launchList(saved.read(), 1, "", now).page.totalItems).toBe(3);
+    const second = structuredClone(saved.read().moduleModeSources);
+    await syncModuleModeIndex(original, saved.store, options);
+    expect(saved.read().moduleModeSources).toEqual(second);
+    await syncModuleModeIndex(next, saved.store, options);
+    expect(saved.read().moduleModeSources).toEqual(second);
+    const broken = { ...next, finalized: { number: "199", hash: h(1199) },
+      block: async (n: bigint) => ({ number: String(n), hash: h(Number(n) + 1000) }), launches: async () => [] };
+    expect(await syncModuleModeIndex(broken, saved.store, options)).toMatchObject({ rewound: true, status: "ready" });
+    expect(saved.read().moduleMode).toEqual(first);
+    expect(saved.read().moduleModeSources?.[0].items).toEqual([]);
+  });
+  it("rejects cross-generation token/pool duplication and source identity collisions before saving", async () => {
+    const saved = memoryStore();
+    const source = await moduleModeSource(moduleEvidenceFixture().release, collector());
+    await syncModuleModeIndex(source, saved.store, options);
+    const before = structuredClone(saved.read());
+    const row = before.moduleMode!.items[0];
+    const duplicate = { ...source, sourceAddress: a(990), releaseDigest: h(991),
+      launches: async () => [{ ...row, sourceAddress: a(990), sourceReleaseDigest: h(991), launchId: h(992) }] };
+    await expect(syncModuleModeIndex(duplicate, saved.store, options)).rejects.toThrow("Duplicate cross-source");
+    expect(saved.read()).toEqual(before);
+    const repeated = structuredClone(before);
+    repeated.moduleModeSources = [structuredClone(repeated.moduleMode!)];
+    expect(() => parseSnapshot(repeated)).toThrow("Duplicate Module Mode source");
+  });
   it("authenticates the checked-in active release before exposing its index source",async()=>{
     const release=bindActiveModuleModeRelease(configuredRelease); const c=collector([]);
     const boundary=point(BigInt(release.startBlock)+199n);

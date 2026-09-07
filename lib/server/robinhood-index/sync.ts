@@ -1,5 +1,5 @@
 import type { RobinhoodLaunch, RobinhoodModuleLaunch } from "@/lib/robinhood-launches";
-import { parseSnapshot, parseModuleModeSnapshot, type Checkpoint, type RobinhoodSnapshot, type ModuleModeSnapshot } from "./model";
+import { parseSnapshot, parseModuleModeSnapshot, moduleModeSnapshots, type Checkpoint, type RobinhoodSnapshot, type ModuleModeSnapshot } from "./model";
 import type { IndexStore } from "./store";
 
 export type IndexSource = {
@@ -63,7 +63,12 @@ export async function syncModuleModeIndex(source: ModuleModeIndexSource, store: 
   // Existing canonical Custom provenance initializes the shared envelope; never manufacture a Router binding.
   if (!saved) throw new Error("Canonical Robinhood index must be initialized before adding Module Mode");
   parseSnapshot(saved.snapshot);
-  const initial: ModuleModeSnapshot = saved.snapshot.moduleMode ?? {
+  const sources = moduleModeSnapshots(saved.snapshot);
+  const existing = sources.find(lane => lane.releaseDigest.toLowerCase() === source.releaseDigest.toLowerCase());
+  if (sources.some(lane => lane.sourceAddress.toLowerCase() === source.sourceAddress.toLowerCase() && lane !== existing)) {
+    throw new Error("Module Mode source changed; index migration required");
+  }
+  const initial: ModuleModeSnapshot = existing ?? {
     version: 1, sourceKind: "module-native-v1", chainId: 4663, sourceAddress: source.sourceAddress,
     releaseDigest: source.releaseDigest, startBlock: source.startBlock.toString(), cursor: null, checkpoints: [],
     finalizedBlock: source.finalized.number, updatedAt: new Date((options.now ?? Date.now)()).toISOString(), items: [],
@@ -74,7 +79,14 @@ export async function syncModuleModeIndex(source: ModuleModeIndexSource, store: 
   return syncRange(source, {
     read: async () => ({ snapshot: initial, etag: saved.etag }),
     write: async (snapshot, etag) => {
-      const merged = parseSnapshot({ ...saved.snapshot, moduleMode: parseModuleModeSnapshot(snapshot) });
+      const lane = parseModuleModeSnapshot(snapshot);
+      const primary = saved.snapshot.moduleMode;
+      const usePrimary = !primary || primary.releaseDigest.toLowerCase() === source.releaseDigest.toLowerCase();
+      const merged = parseSnapshot(usePrimary ? { ...saved.snapshot, moduleMode: lane } : {
+        ...saved.snapshot,
+        moduleModeSources: [...(saved.snapshot.moduleModeSources ?? []).filter(item =>
+          item.releaseDigest.toLowerCase() !== source.releaseDigest.toLowerCase()), lane],
+      });
       await store.write(merged, etag);
     },
   }, initial, parseModuleModeSnapshot, options);

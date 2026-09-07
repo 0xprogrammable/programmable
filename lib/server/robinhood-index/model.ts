@@ -16,6 +16,8 @@ export type RobinhoodSnapshot = {
   items: RobinhoodLaunch[];
   pending?: { block: Checkpoint; items: RobinhoodLaunch[] } | null;
   moduleMode?: ModuleModeSnapshot | null;
+  /** Additional exact releases. The original lane keeps its stored identity and checkpoint. */
+  moduleModeSources?: ModuleModeSnapshot[];
 };
 
 export type ModuleModeSnapshot = {
@@ -85,12 +87,23 @@ export function parseSnapshot(value: unknown): RobinhoodSnapshot {
     }
     parseSnapshot({ ...value, pending: null, cursor: pending.block, checkpoints: [], items: pending.items });
   }
-  if (value.moduleMode != null) {
-    const modules = parseModuleModeSnapshot(value.moduleMode);
-    const pools = new Set((value.items as RobinhoodLaunch[]).map(row => `${row.poolManager.toLowerCase()}:${row.poolId.toLowerCase()}`));
+  if (value.moduleModeSources !== undefined && (!Array.isArray(value.moduleModeSources) || value.moduleModeSources.length > 32)) {
+    throw new Error("Invalid Module Mode sources");
+  }
+  const sources = [value.moduleMode, ...(value.moduleModeSources as unknown[] ?? [])].filter(source => source != null);
+  const sourceAddresses = new Set<string>();
+  const sourceReleases = new Set<string>();
+  const pools = new Set((value.items as RobinhoodLaunch[]).map(row => `${row.poolManager.toLowerCase()}:${row.poolId.toLowerCase()}`));
+  for (const source of sources) {
+    const modules = parseModuleModeSnapshot(source);
+    const address = modules.sourceAddress.toLowerCase();
+    const digest = modules.releaseDigest.toLowerCase();
+    if (sourceAddresses.has(address) || sourceReleases.has(digest)) throw new Error("Duplicate Module Mode source");
+    sourceAddresses.add(address); sourceReleases.add(digest);
     for (const row of modules.items) {
       const pool = `${row.poolManager.toLowerCase()}:${row.poolId.toLowerCase()}`;
       if (tokens.has(row.tokenAddress.toLowerCase()) || pools.has(pool)) throw new Error("Duplicate cross-source Robinhood launch");
+      tokens.add(row.tokenAddress.toLowerCase()); pools.add(pool);
     }
   }
   return value as RobinhoodSnapshot;
@@ -139,18 +152,21 @@ export function parseModuleModeSnapshot(value: unknown): ModuleModeSnapshot {
 }
 
 export function snapshotLaunches(snapshot: RobinhoodSnapshot | null): readonly RobinhoodLaunch[] {
-  return [...(snapshot?.items ?? []), ...(snapshot?.moduleMode?.items ?? [])];
+  return [...(snapshot?.items ?? []), ...moduleModeSnapshots(snapshot).flatMap(source => source.items)];
+}
+export function moduleModeSnapshots(snapshot: RobinhoodSnapshot | null): readonly ModuleModeSnapshot[] {
+  return [...(snapshot?.moduleMode ? [snapshot.moduleMode] : []), ...(snapshot?.moduleModeSources ?? [])];
 }
 function snapshotStatus(snapshot: RobinhoodSnapshot | null, now: number): RobinhoodLaunchList["status"] {
   if (!snapshot) return "unavailable";
-  const sources = [snapshot, ...(snapshot.moduleMode ? [snapshot.moduleMode] : [])];
+  const sources = [snapshot, ...moduleModeSnapshots(snapshot)];
   if (sources.some(source => now - Date.parse(source.updatedAt) > 300_000)) return "stale";
   return sources.some(source => source.pending || source.cursor?.number !== source.finalizedBlock) ? "syncing" : "ready";
 }
 function snapshotUpdatedAt(snapshot: RobinhoodSnapshot | null): string | null {
   if (!snapshot) return null;
-  return snapshot.moduleMode && Date.parse(snapshot.moduleMode.updatedAt) < Date.parse(snapshot.updatedAt)
-    ? snapshot.moduleMode.updatedAt : snapshot.updatedAt;
+  return moduleModeSnapshots(snapshot).reduce((oldest, source) =>
+    Date.parse(source.updatedAt) < Date.parse(oldest) ? source.updatedAt : oldest, snapshot.updatedAt);
 }
 
 function asPending(value: unknown) {

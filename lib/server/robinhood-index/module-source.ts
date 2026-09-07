@@ -28,6 +28,13 @@ export interface ModuleModeFinalizedCollector {
     launches: readonly { evidence: unknown; launchedAt: string | null }[];
   }>;
 }
+export interface ModuleModeReleaseCollector extends ModuleModeFinalizedCollector {
+  listAuthorizedReleases(): Promise<readonly ModuleModeRelease[]>;
+}
+export type ModuleModeSourceLane = {
+  releaseDigest: string;
+  source: (signal?: AbortSignal) => Promise<ModuleModeIndexSource>;
+};
 
 export function moduleModePublicLaunch(row: ModuleModeProvenance, launchedAt: string | null): RobinhoodModuleLaunch {
   if (launchedAt !== null && (typeof launchedAt !== "string" || !Number.isFinite(Date.parse(launchedAt)))) throw new Error("Module Mode launch timestamp is invalid");
@@ -107,17 +114,44 @@ export async function configuredModuleModeSource(collector?: ModuleModeFinalized
   }));
 }
 
+/** Discover installed source generations, then authenticate and collect each one independently. */
+export async function configuredModuleModeSources(collector?: ModuleModeReleaseCollector, signal?: AbortSignal): Promise<ModuleModeSourceLane[]> {
+  if (!preview.enabled && preview.status === "preview") return [];
+  const installed = collector ?? createModuleModeHttpCollector({
+    backendBaseUrl: process.env.PROGRAMMABLE_CUSTOM_LAUNCH_API_BASE_URL ?? "",
+    websiteToken: process.env.PROGRAMMABLE_CUSTOM_LAUNCH_WEBSITE_TOKEN ?? "", fetchBackend: fetch, signal,
+  });
+  const primary = bindActiveModuleModeRelease(preview);
+  const releases = await installed.listAuthorizedReleases();
+  const byDigest = new Map([[primary.releaseDigest, primary]]);
+  const bySource = new Map([[primary.contracts.launcher.address, primary.releaseDigest]]);
+  for (const release of releases) {
+    const existing = byDigest.get(release.releaseDigest);
+    if (existing && JSON.stringify(existing) !== JSON.stringify(release)) throw new Error("Module Mode release authorization changed");
+    const sourceDigest = bySource.get(release.contracts.launcher.address);
+    if (sourceDigest && sourceDigest !== release.releaseDigest) throw new Error("Module Mode source identity collides");
+    byDigest.set(release.releaseDigest, release); bySource.set(release.contracts.launcher.address, release.releaseDigest);
+  }
+  return [...byDigest.values()].map(release => ({ releaseDigest: release.releaseDigest,
+    source: (laneSignal?: AbortSignal) => moduleModeSource(release, collector ?? createModuleModeHttpCollector({
+      backendBaseUrl: process.env.PROGRAMMABLE_CUSTOM_LAUNCH_API_BASE_URL ?? "",
+      websiteToken: process.env.PROGRAMMABLE_CUSTOM_LAUNCH_WEBSITE_TOKEN ?? "", fetchBackend: fetch,
+      signal: signal && laneSignal ? AbortSignal.any([signal, laneSignal]) : signal ?? laneSignal,
+    })),
+  }));
+}
+
 /** Server-held service credentials only. Contributor keys and client-supplied profiles never enter this route. */
 export function createModuleModeHttpCollector(input: {
   backendBaseUrl: string; websiteToken: string; fetchBackend: typeof fetch; signal?: AbortSignal;
-}): ModuleModeFinalizedCollector {
+}): ModuleModeReleaseCollector {
   let base: URL;
   try { base = new URL(input.backendBaseUrl); } catch { throw new Error("Module Mode collector origin is not configured"); }
   if (base.protocol !== "https:" || base.username || base.password || base.search || base.hash
     || base.pathname !== "/" || !base.hostname || base.port) throw new Error("Module Mode collector origin is invalid");
   if (typeof input.websiteToken !== "string" || input.websiteToken.length < 32 || input.websiteToken.length > 1024
     || /[\s\u0000-\u001f\u007f]/u.test(input.websiteToken)) throw new Error("Module Mode service credential is not configured");
-  const request = async (operation: "release" | "boundary" | "block" | "range", body: Record<string, string>): Promise<unknown> => {
+  const request = async (operation: "sources" | "release" | "boundary" | "block" | "range", body: Record<string, string>): Promise<unknown> => {
     let response: Response;
     try {
       response = await input.fetchBackend(new URL(`/internal/module-mode-index/v1/${operation}`, base), {
@@ -162,6 +196,14 @@ export function createModuleModeHttpCollector(input: {
     return envelope.result;
   };
   return {
+    async listAuthorizedReleases() {
+      const result = moduleRecord(await request("sources", {}), ["releases"], "collector.sources");
+      if (!Array.isArray(result.releases) || result.releases.length > 32) throw new Error("Module Mode source inventory exceeds its budget");
+      const releases = result.releases.map(bindActiveModuleModeRelease);
+      if (new Set(releases.map(release => release.releaseDigest)).size !== releases.length
+        || new Set(releases.map(release => release.contracts.launcher.address)).size !== releases.length) throw new Error("Module Mode sources contain duplicate identities");
+      return Object.freeze(releases);
+    },
     async authenticateRelease(release) {
       const actual = bindActiveModuleModeRelease(await request("release", { sourceReleaseDigest: release.releaseDigest }));
       if (JSON.stringify(actual) !== JSON.stringify(release)) throw new Error("Module Mode collector active release differs");

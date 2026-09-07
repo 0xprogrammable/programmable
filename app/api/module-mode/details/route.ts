@@ -14,7 +14,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     || new Set(packages.map(value => value.toLowerCase())).size !== packages.length) {
     return NextResponse.json({ error: "Provide a release and up to 16 distinct module package IDs." }, { status: 400 });
   }
-  const details = await readPublicModuleDetails();
+  const details = await readPublicModuleDetails(release.toLowerCase());
   if (!details) return NextResponse.json({ error: "Module details are temporarily unavailable." }, { status: 503, headers: { "Cache-Control": "no-store" } });
   const selected = new Set(packages.map(value => value.toLowerCase()));
   return NextResponse.json({ releaseDigest: details.releaseDigest,
