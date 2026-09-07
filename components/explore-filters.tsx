@@ -1,9 +1,9 @@
 "use client";
 
 import { SlidersHorizontal, X } from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type CSSProperties } from "react";
 import {
-  activeExploreFilterCount, DEFAULT_EXPLORE_FILTERS,
+  activeExploreFilterCount, DEFAULT_EXPLORE_FILTERS, LAUNCH_MODE_OPTIONS,
   type RobinhoodExploreFilters,
 } from "@/lib/robinhood-explore-filters";
 import styles from "./explore-filters.module.css";
@@ -14,7 +14,7 @@ export function ExploreFilters({ value = DEFAULT_EXPLORE_FILTERS, onApply, disab
   disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const [draft, setDraft] = useState(value);
+  const [panelOffset, setPanelOffset] = useState(0);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const keyboardOpenRef = useRef(false);
@@ -33,10 +33,15 @@ export function ExploreFilters({ value = DEFAULT_EXPLORE_FILTERS, onApply, disab
       if (event.target instanceof Node && !rootRef.current?.contains(event.target)) setOpen(false);
     }
     document.addEventListener("pointerdown", outside);
-    return () => document.removeEventListener("pointerdown", outside);
+    const resized = () => setOpen(false);
+    window.addEventListener("resize", resized);
+    return () => {
+      document.removeEventListener("pointerdown", outside);
+      window.removeEventListener("resize", resized);
+    };
   }, [open]);
 
-  return <div className={styles.root} ref={rootRef}
+  return <div className={styles.root} ref={rootRef} style={{ "--filter-offset": `${panelOffset}px` } as CSSProperties}
     onKeyDown={(event) => {
       if (open && event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close(true); }
     }}
@@ -51,38 +56,48 @@ export function ExploreFilters({ value = DEFAULT_EXPLORE_FILTERS, onApply, disab
       data-active={count > 0}
       onClick={(event) => {
         if (open) close();
-        else { keyboardOpenRef.current = event.detail === 0; setDraft(value); setOpen(true); }
+        else {
+          keyboardOpenRef.current = event.detail === 0;
+          const right = triggerRef.current?.getBoundingClientRect().right ?? window.innerWidth - 16;
+          setPanelOffset(Math.min(0, right - Math.min(288, window.innerWidth - 32) - 16));
+          setOpen(true);
+        }
       }}
     >
       <SlidersHorizontal size={16} aria-hidden="true" />
       <span className={styles.label}>Filters</span>
       {count > 0 ? <span className={styles.count} aria-hidden="true">{count}</span> : null}
     </button>
-    {open ? <form className={styles.panel} id={panelId} role="dialog" aria-label="Launch filters"
-      onSubmit={(event) => { event.preventDefault(); onApply?.(draft); close(true); }}
-    >
+    {open ? <div className={styles.panel} id={panelId} role="dialog" aria-label="Launch filters">
       <div className={styles.heading}>
-        <h2>Filters</h2>
+        <div className={styles.headingLabel}>
+          <h2>Filters</h2>
+          <button className={styles.reset} type="button" onClick={() => onApply?.(DEFAULT_EXPLORE_FILTERS)}>Reset</button>
+        </div>
         <button className={styles.close} type="button" aria-label="Close filters" onClick={() => close(true)}><X size={18} aria-hidden="true" /></button>
       </div>
       <fieldset className={styles.field}>
+        <legend>Launch type</legend>
+        <div className={`${styles.choices} ${styles.modeChoices}`}>
+          {LAUNCH_MODE_OPTIONS.map(mode => <button type="button" key={mode.value}
+            aria-pressed={(value.mode ?? "all") === mode.value}
+            onClick={() => onApply?.({ ...value, mode: mode.value })}>{mode.label}</button>)}
+        </div>
+      </fieldset>
+      <fieldset className={styles.field}>
         <legend>Age</legend>
         <div className={styles.choices}>
-          <button type="button" aria-pressed={draft.sort === "oldest"} onClick={() => setDraft({ sort: "oldest" })}>Oldest</button>
-          <button type="button" aria-pressed={draft.sort === "newest"} onClick={() => setDraft({ sort: "newest" })}>Newest</button>
+          <button type="button" aria-pressed={value.sort === "oldest"} onClick={() => onApply?.({ ...value, sort: "oldest" })}>Oldest</button>
+          <button type="button" aria-pressed={value.sort === "newest"} onClick={() => onApply?.({ ...value, sort: "newest" })}>Newest</button>
         </div>
       </fieldset>
       <fieldset className={styles.field}>
         <legend>Market cap</legend>
         <div className={styles.choices}>
-          <button type="button" aria-pressed={draft.sort === "lowest"} onClick={() => setDraft({ sort: "lowest" })}>Lowest</button>
-          <button type="button" aria-pressed={draft.sort === "highest"} onClick={() => setDraft({ sort: "highest" })}>Highest</button>
+          <button type="button" aria-pressed={value.sort === "lowest"} onClick={() => onApply?.({ ...value, sort: "lowest" })}>Lowest</button>
+          <button type="button" aria-pressed={value.sort === "highest"} onClick={() => onApply?.({ ...value, sort: "highest" })}>Highest</button>
         </div>
       </fieldset>
-      <div className={styles.actions}>
-        <button type="button" onClick={() => { onApply?.(DEFAULT_EXPLORE_FILTERS); close(true); }}>Reset</button>
-        <button className={styles.apply} type="submit">Apply</button>
-      </div>
-    </form> : null}
+    </div> : null}
   </div>;
 }

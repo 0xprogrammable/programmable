@@ -45,29 +45,30 @@
   max-width: calc(100vw - 32px);
   padding: 16px;
   position: absolute;
-  right: 0;
+  right: var(--filter-offset, 0px);
   top: calc(100% + 8px);
   width: 288px;
 }
 .heading { align-items: center; display: flex; justify-content: space-between; margin: -8px -8px -4px 0; }
 .heading h2 { font-size: 16px; font-weight: 500; line-height: 24px; margin: 0; }
+.headingLabel { align-items: center; display: flex; gap: 8px; }
+.panel .reset { background: transparent; border: 0; color: var(--webde-muted); padding: 8px; }
 .panel .close { background: transparent; border: 0; display: grid; padding: 0; place-items: center; width: 44px; }
 .field { border: 0; margin: 0; min-inline-size: 0; padding: 0; }
-.field legend { color: var(--webde-muted); font-size: 13px; line-height: 20px; margin-bottom: 8px; padding: 0; }
+.field legend { color: var(--webde-muted); font-size: 14px; line-height: 20px; margin-bottom: 8px; padding: 0; }
 .choices { display: grid; gap: 8px; grid-template-columns: 1fr 1fr; }
+.modeChoices { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.modeChoices button { padding-inline: 8px; }
 .choices button { color: var(--webde-muted); }
 .choices button[aria-pressed="true"] {
   background: var(--webde-surface-raised);
   border-color: color-mix(in srgb, var(--webde-ink) 35%, transparent);
   color: var(--webde-ink);
 }
-.actions { display: grid; gap: 8px; grid-template-columns: 1fr 1fr; margin-top: 4px; }
 .panel button { cursor: pointer; padding: 8px 12px; }
-.panel .apply { background: var(--webde-surface-raised); border-color: var(--webde-muted); }
-.trigger:focus-visible, .panel button:focus-visible { outline: 2px solid var(--webde-muted); outline-offset: 2px; }
+.trigger:focus-visible, .panel button:focus-visible { outline: 2px solid var(--webde-ink); outline-offset: 2px; }
 @media (hover: hover) and (pointer: fine) {
-  .trigger:hover:not(:disabled), .panel button:hover:not(.apply) { background: var(--webde-surface-raised); }
-  .panel .apply:hover { opacity: .9; }
+  .trigger:hover:not(:disabled), .panel button:hover { background: var(--webde-surface-raised); }
 }
 @media (max-width: 700px) {
   .trigger { min-width: 44px; padding: 0; width: 44px; }

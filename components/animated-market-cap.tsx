@@ -7,7 +7,7 @@ export type MarketCapMetric =
   | { kind: "eth"; value: number }
   | { kind: "quote"; symbol: string; value: number };
 
-export const MARKET_CAP_ANIMATION_DURATION_MS = 220;
+export const MARKET_CAP_ANIMATION_DURATION_MS = 280;
 
 const useClientLayoutEffect =
   typeof window === "undefined" ? useEffect : useLayoutEffect;
@@ -37,16 +37,16 @@ const compactNumberFormatter = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 1,
 });
 
-function compactUsd(value: number, target: number) {
-  return target < 1_000
+function compactUsd(value: number) {
+  return value < 1_000
     ? usdStandardFormatter.format(value)
     : usdCompactFormatter.format(value);
 }
 
-function compactNumber(value: number, target: number) {
-  return target >= 1_000
+function compactNumber(value: number) {
+  return value >= 1_000
     ? compactNumberFormatter.format(value)
-    : target >= 100
+    : value >= 100
       ? standardLargeNumberFormatter.format(value)
       : standardNumberFormatter.format(value);
 }
@@ -57,7 +57,6 @@ export function formatMarketCapMetric(
 ) {
   return formatMarketCapValue(
     metric.kind,
-    metric.value,
     metric.kind === "quote" ? metric.symbol : "",
     value,
   );
@@ -65,18 +64,17 @@ export function formatMarketCapMetric(
 
 function formatMarketCapValue(
   kind: MarketCapMetric["kind"],
-  target: number,
   symbol: string,
   value: number,
 ) {
   if (kind === "usd") {
-    return compactUsd(value, target);
+    return compactUsd(value);
   }
 
   const formatted =
     kind === "eth" && value > 0 && value < 0.0001
       ? value.toExponential(2)
-      : compactNumber(value, target);
+      : compactNumber(value);
 
   return `${formatted} ${kind === "eth" ? "ETH" : symbol}`;
 }
@@ -98,13 +96,16 @@ export function shouldAnimateMarketCapChange({
   previousMetric,
   previousReplayKey,
   reducedMotion,
+  displayedValue,
 }: Readonly<{
   nextMetric: MarketCapMetric;
   nextReplayKey: string;
   previousMetric: MarketCapMetric | null;
   previousReplayKey: string | null;
   reducedMotion: boolean;
+  displayedValue?: number;
 }>) {
+  const fromValue = displayedValue ?? previousMetric?.value;
   if (
     previousMetric === null ||
     previousReplayKey !== nextReplayKey ||
@@ -112,14 +113,14 @@ export function shouldAnimateMarketCapChange({
     !hasSameMetricIdentity(previousMetric, nextMetric) ||
     !Number.isFinite(previousMetric.value) ||
     !Number.isFinite(nextMetric.value) ||
-    previousMetric.value <= 0 ||
-    nextMetric.value <= 0 ||
-    Object.is(previousMetric.value, nextMetric.value)
+    fromValue === undefined || !Number.isFinite(fromValue) ||
+    previousMetric.value < 0 || nextMetric.value < 0 || fromValue < 0 ||
+    Object.is(fromValue, nextMetric.value)
   ) {
     return false;
   }
 
-  return formatMarketCapMetric(previousMetric) !== formatMarketCapMetric(nextMetric);
+  return formatMarketCapMetric(previousMetric, fromValue) !== formatMarketCapMetric(nextMetric);
 }
 
 export function interpolateMarketCapValue(
@@ -150,7 +151,7 @@ export function AnimatedMarketCap({
   const kind = metric.kind;
   const value = metric.value;
   const symbol = metric.kind === "quote" ? metric.symbol : "";
-  const finalLabel = formatMarketCapValue(kind, value, symbol, value);
+  const finalLabel = formatMarketCapValue(kind, symbol, value);
 
   useClientLayoutEffect(() => {
     const element = valueRef.current;
@@ -161,17 +162,18 @@ export function AnimatedMarketCap({
         ? { kind, symbol, value }
         : { kind, value };
     const previousSnapshot = previousSnapshotRef.current;
-    const reducedMotion = window.matchMedia(
+    const motionPreference = window.matchMedia(
       "(prefers-reduced-motion: reduce)",
-    ).matches;
+    );
+    const fromValue = currentValueRef.current;
     const shouldAnimate = shouldAnimateMarketCapChange({
       nextMetric,
       nextReplayKey: replayKey,
       previousMetric: previousSnapshot?.metric ?? null,
       previousReplayKey: previousSnapshot?.replayKey ?? null,
-      reducedMotion,
+      reducedMotion: motionPreference.matches,
+      displayedValue: fromValue,
     });
-    const fromValue = currentValueRef.current;
 
     previousSnapshotRef.current = {
       metric: nextMetric,
@@ -190,19 +192,20 @@ export function AnimatedMarketCap({
 
     let animationFrame = 0;
     let delayTimer = 0;
+    let active = true;
     const normalizedDelay = Number.isFinite(delay) ? Math.max(0, delay) : 0;
 
     element.textContent = formatMarketCapValue(
       kind,
-      value,
       symbol,
       fromValue,
     );
 
-    delayTimer = window.setTimeout(() => {
+    const startAnimation = () => {
       const start = performance.now();
 
       const tick = (now: number) => {
+        if (!active) return;
         const progress = (now - start) / MARKET_CAP_ANIMATION_DURATION_MS;
         const nextValue = interpolateMarketCapValue(
           fromValue,
@@ -213,7 +216,6 @@ export function AnimatedMarketCap({
         currentValueRef.current = nextValue;
         element.textContent = formatMarketCapValue(
           kind,
-          value,
           symbol,
           nextValue,
         );
@@ -228,11 +230,25 @@ export function AnimatedMarketCap({
       };
 
       animationFrame = window.requestAnimationFrame(tick);
-    }, normalizedDelay);
+    };
+    if (normalizedDelay > 0) delayTimer = window.setTimeout(startAnimation, normalizedDelay);
+    else startAnimation();
 
-    return () => {
+    const motionChanged = (event: MediaQueryListEvent) => {
+      if (!event.matches) return;
+      active = false;
       window.clearTimeout(delayTimer);
       window.cancelAnimationFrame(animationFrame);
+      currentValueRef.current = value;
+      element.textContent = finalLabel;
+    };
+    motionPreference.addEventListener("change", motionChanged);
+
+    return () => {
+      active = false;
+      window.clearTimeout(delayTimer);
+      window.cancelAnimationFrame(animationFrame);
+      motionPreference.removeEventListener("change", motionChanged);
     };
   }, [delay, finalLabel, kind, replayKey, symbol, value]);
 
