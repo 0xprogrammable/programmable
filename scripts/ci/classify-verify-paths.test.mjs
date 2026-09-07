@@ -333,8 +333,10 @@ test("partitions every artifact-dependent suite without multi-filter side effect
       "contracts/scripts/module-mode/operator-dispatch.test.mjs",
       "contracts/scripts/module-mode/publication-operator.test.mjs",
       "contracts/scripts/module-mode/verify-launch-source.test.mjs",
+      "contracts/scripts/module-mode/launch-source-profiles.test.mjs",
       "contracts/scripts/module-native-v2/deployment.test.mjs",
       "contracts/scripts/module-engine/deployment.test.mjs",
+      "contracts/scripts/module-engine/quote-deployment.test.mjs",
     ].join(" "),
   ]);
   for (const path of CONTRACT_RELEASE_TEST_PATHS) {

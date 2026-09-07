@@ -26,8 +26,10 @@ test("build, release, and analysis retain all existing contract checks without a
     "contracts/scripts/module-mode/operator-dispatch.test.mjs",
     "contracts/scripts/module-mode/publication-operator.test.mjs",
     "contracts/scripts/module-mode/verify-launch-source.test.mjs",
+    "contracts/scripts/module-mode/launch-source-profiles.test.mjs",
     "contracts/scripts/module-native-v2/deployment.test.mjs",
     "contracts/scripts/module-engine/deployment.test.mjs",
+    "contracts/scripts/module-engine/quote-deployment.test.mjs",
   ].join(" ")));
   const starterBuild = "forge build --root ../packages/classic-modules/examples/native-program";
   assert.equal(commands.filter((command) => command === starterBuild).length, 1);
