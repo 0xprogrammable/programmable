@@ -762,7 +762,7 @@ export default function CustomLaunchApiDocsPage() {
           </p>
           <p>
             The fixed platform recipient is{" "}
-            <code>0xD88539d3c4C460136a733A3Fd60cf6BF269079da</code>.
+            <code className={styles.breakableValue}>0xD88539d3c4C460136a733A3Fd60cf6BF269079da</code>.
             Fees accrue as PoolManager native claims. Anyone can trigger a claim,
             but payment goes only to that recipient. Gas and liquidity deposits
             are separate, and a claim does not create new revenue. Historical
