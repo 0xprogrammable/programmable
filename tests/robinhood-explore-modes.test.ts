@@ -8,7 +8,7 @@ const now = Date.parse("2026-09-07T00:00:00Z");
 const hex = (value: number, length = 64) => `0x${value.toString(16).padStart(length, "0")}`;
 const address = (value: number) => hex(value, 40);
 
-function custom(id: number): RobinhoodLaunch {
+function custom(id: number): RobinhoodLaunch & { hookAddress: string; poolManager: string; poolId: string } {
   return { routerAddress: address(1), launchId: hex(id), tokenAddress: address(1_000 + id), hookAddress: address(2),
     creator: address(3), poolManager: address(4), poolId: hex(1_000 + id), stampHash: hex(2_000 + id),
     transactionHash: hex(3_000 + id), blockNumber: String(100 + id), blockHash: hex(4_000 + id), logIndex: id,
@@ -57,7 +57,7 @@ describe("Explore source filters and card pagination", () => {
     const { saved, customs, modules } = catalog();
     const selected = launchList(saved, 1, "", now, { sort: "newest", mode: "module" });
     expect(selected.items.slice(1)).toEqual(modules.toReversed());
-    expect(selected.items.every(row => !customs.includes(row))).toBe(true);
+    expect(selected.items.every(row => !customs.some(custom => custom === row))).toBe(true);
     expect(selected.items.slice(1).every(row => row.modulePackageIds?.length === 0)).toBe(true);
     const emptySearch = launchList(saved, 1, "missing", now, { sort: "newest", mode: "module" }, undefined, 10);
     expect(emptySearch.items.map(row => row.tokenAddress)).toEqual([PINNED_ROBINHOOD_TOKEN]);

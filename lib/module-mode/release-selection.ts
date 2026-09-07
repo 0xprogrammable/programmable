@@ -30,7 +30,7 @@ export function parseModuleModePageSelection(value: Record<string, string | stri
 /** A saved canonical coin identity wins over a URL hint. Unknown coins still require onchain binding. */
 export function moduleModeCoinReleaseSelection(selection: ModuleModeReleaseSelection, indexed: RobinhoodLaunch | null): ModuleModeReleaseSelection {
   if (!indexed) return selection;
-  if (!isRobinhoodModuleLaunch(indexed) || selection.sourceKind
+  if (!isRobinhoodModuleLaunch(indexed) || (selection.sourceKind && indexed.sourceKind !== selection.sourceKind)
     || (selection.releaseDigest && selection.releaseDigest !== indexed.sourceReleaseDigest.toLowerCase())) throw new Error("Coin and release selection differ.");
-  return { releaseDigest: indexed.sourceReleaseDigest.toLowerCase() as Hex };
+  return { releaseDigest: indexed.sourceReleaseDigest.toLowerCase() as Hex, ...(indexed.sourceKind === "module-engine-v1" ? { sourceKind: "module-engine-v1" as const } : {}) };
 }

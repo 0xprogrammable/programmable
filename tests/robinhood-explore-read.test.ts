@@ -11,7 +11,7 @@ vi.mock("@/lib/server/robinhood-presentation", () => ({ readRobinhoodMarkets: mo
 import { readRobinhoodLaunches } from "@/lib/server/robinhood-index/read";
 
 const hex = (value: number, length: number) => `0x${value.toString(16).padStart(length, "0")}`;
-function token(id: number): RobinhoodLaunch {
+function token(id: number): RobinhoodLaunch & { poolId: string } {
   return { routerAddress: hex(1, 40), launchId: hex(id, 64), tokenAddress: hex(id, 40), hookAddress: hex(id + 100, 40),
     creator: hex(2, 40), poolManager: hex(3, 40), poolId: hex(id + 200, 64), stampHash: hex(id + 300, 64),
     transactionHash: hex(id + 400, 64), blockNumber: String(id), blockHash: hex(id + 500, 64), logIndex: 1,
@@ -21,7 +21,7 @@ function saved(items: RobinhoodLaunch[]): RobinhoodSnapshot {
   return { version: 1, chainId: 4663, routerAddress: hex(1, 40), binding: hex(1, 64), startBlock: "1",
     cursor: { number: "100", hash: hex(100, 64) }, checkpoints: [], finalizedBlock: "100", updatedAt: new Date().toISOString(), items };
 }
-function market(row: RobinhoodLaunch, value: number): RobinhoodCoinMarket {
+function market(row: RobinhoodLaunch & { poolId: string }, value: number): RobinhoodCoinMarket {
   return { poolId: row.poolId, priceUsd: null, marketCapUsd: value, liquidityUsd: null, volume24hUsd: null,
     change24hPercent: null, observedAt: new Date().toISOString(), sourceUrl: "https://dexscreener.com/" };
 }

@@ -94,7 +94,8 @@ export function parseSnapshot(value: unknown): RobinhoodSnapshot {
   const sources = [value.moduleMode, ...(value.moduleModeSources as unknown[] ?? [])].filter(source => source != null);
   const sourceAddresses = new Set<string>();
   const sourceReleases = new Set<string>();
-  const pools = new Set((value.items as RobinhoodLaunch[]).map(row => `${row.poolManager.toLowerCase()}:${row.poolId.toLowerCase()}`));
+  const poolIdentity = (row: RobinhoodLaunch) => row.poolManager && row.poolId ? `${row.poolManager.toLowerCase()}:${row.poolId.toLowerCase()}` : null;
+  const pools = new Set((value.items as RobinhoodLaunch[]).flatMap(row => { const pool = poolIdentity(row); return pool ? [pool] : []; }));
   for (const source of sources) {
     const modules = parseModuleModeSnapshot(source);
     const address = modules.sourceAddress.toLowerCase();
@@ -102,9 +103,9 @@ export function parseSnapshot(value: unknown): RobinhoodSnapshot {
     if (sourceAddresses.has(address) || sourceReleases.has(digest)) throw new Error("Duplicate Module Mode source");
     sourceAddresses.add(address); sourceReleases.add(digest);
     for (const row of modules.items) {
-      const pool = `${row.poolManager.toLowerCase()}:${row.poolId.toLowerCase()}`;
-      if (tokens.has(row.tokenAddress.toLowerCase()) || pools.has(pool)) throw new Error("Duplicate cross-source Robinhood launch");
-      tokens.add(row.tokenAddress.toLowerCase()); pools.add(pool);
+      const pool = poolIdentity(row);
+      if (tokens.has(row.tokenAddress.toLowerCase()) || (pool && pools.has(pool))) throw new Error("Duplicate cross-source Robinhood launch");
+      tokens.add(row.tokenAddress.toLowerCase()); if (pool) pools.add(pool);
     }
   }
   return value as RobinhoodSnapshot;
@@ -120,25 +121,15 @@ export function parseModuleModeSnapshot(value: unknown): ModuleModeSnapshot {
     || !Array.isArray(value.items) || value.items.length > 10_000) throw new Error("Invalid Module Mode index");
   const identities = [new Set<string>(), new Set<string>(), new Set<string>(), new Set<string>()];
   for (const row of value.items) {
-    if (!isObject(row) || !isRobinhoodModuleLaunch(row) || row.sourceKind !== value.sourceKind || row.routerAddress !== null || row.stampHash !== null
-      || !(["sourceAddress", "tokenAddress", "hookAddress", "creator", "poolManager", "runtime"] as const).every(key => matches(row[key], ADDRESS) && !/^0x0{40}$/i.test(String(row[key])))
-      || !(["sourceReleaseDigest", "launchId", "poolId", "recipeHash", "launchKey", "transactionHash", "blockHash", "verificationDigest"] as const).every(key => matches(row[key], HASH) && !/^0x0{64}$/i.test(String(row[key])))
-      || String(row.sourceAddress).toLowerCase() !== value.sourceAddress.toLowerCase()
-      || String(row.sourceReleaseDigest).toLowerCase() !== value.releaseDigest.toLowerCase()
-      || !matches(row.blockNumber, BLOCK) || !Number.isSafeInteger(row.logIndex) || Number(row.logIndex) < 0
-      || !(row.launchedAt === null || date(row.launchedAt))
-      || !(["name", "symbol"] as const).every(key => typeof row[key] === "string" && String(row[key]).length > 0 && String(row[key]).length <= 128)
-      || row.decimals !== 18 || value.cursor === null || BigInt(row.blockNumber) > BigInt(value.cursor.number)
-      || BigInt(row.blockNumber) < BigInt(value.startBlock)
-      || !Array.isArray(row.modulePackageIds) || !Array.isArray(row.moduleFamilyIds)
-      || row.modulePackageIds.length > 16 || row.modulePackageIds.length !== row.moduleFamilyIds.length
-      || ![...row.modulePackageIds, ...row.moduleFamilyIds].every(id => matches(id, HASH) && !/^0x0{64}$/i.test(id))
-      || (row.sourceKind === "module-native-v1" && (new Set(row.modulePackageIds.map(id => id.toLowerCase())).size !== row.modulePackageIds.length
-        || row.moduleFamilyIds.some((id, index, ids) => index > 0 && id.toLowerCase() <= ids[index - 1].toLowerCase())))) {
+    if (!isObject(row) || !isRobinhoodModuleLaunch(row) || row.sourceKind !== value.sourceKind
+      || row.sourceAddress.toLowerCase() !== value.sourceAddress.toLowerCase()
+      || row.sourceReleaseDigest.toLowerCase() !== value.releaseDigest.toLowerCase()
+      || !matches(row.blockNumber, BLOCK) || value.cursor === null || BigInt(row.blockNumber) > BigInt(value.cursor.number)
+      || BigInt(row.blockNumber) < BigInt(value.startBlock)) {
       throw new Error("Invalid Module Mode launch");
     }
-    const keys = [String(row.launchId), String(row.tokenAddress), `${row.poolManager}:${row.poolId}`, `${row.transactionHash}:${row.logIndex}`];
-    keys.forEach((key, index) => { const id = key.toLowerCase(); if (identities[index].has(id)) throw new Error("Duplicate Module Mode launch"); identities[index].add(id); });
+    const keys = [String(row.launchId), String(row.tokenAddress), row.poolManager && row.poolId ? `${row.poolManager}:${row.poolId}` : null, `${row.transactionHash}:${row.logIndex}`];
+    keys.forEach((key, index) => { if (key === null) return; const id = key.toLowerCase(); if (identities[index].has(id)) throw new Error("Duplicate Module Mode launch"); identities[index].add(id); });
   }
   const cursor = value.cursor as Checkpoint | null;
   if (cursor && (BigInt(cursor.number) > BigInt(value.finalizedBlock)

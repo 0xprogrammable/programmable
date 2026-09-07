@@ -24,6 +24,7 @@ type JsonObject = Record<string, unknown>;
 type Metadata = Pick<RobinhoodCoinPresentation, "imageUrl" | "description" | "links">;
 type MetadataBinding = Readonly<{ launch: JsonObject; metadata: Metadata }>;
 type MarketToken = Pick<RobinhoodLaunch, "tokenAddress" | "poolId">;
+type VerifiedMarketToken = MarketToken & { poolId: string };
 const object = (value: unknown): value is JsonObject =>
   value !== null && typeof value === "object" && !Array.isArray(value);
 const same = (left: unknown, right: unknown) =>
@@ -189,7 +190,7 @@ function numeric(value: unknown, signed = false): number | null {
   return Number.isFinite(parsed) && (signed || parsed >= 0) ? parsed : null;
 }
 
-async function readMarkets(tokens: readonly MarketToken[]): Promise<Map<string, RobinhoodCoinMarket>> {
+async function readMarkets(tokens: readonly VerifiedMarketToken[]): Promise<Map<string, RobinhoodCoinMarket>> {
   const pools = [...new Set(tokens.map((token) => token.poolId.toLowerCase()))];
   const batches = Array.from({ length: Math.ceil(pools.length / 30) }, (_, index) => pools.slice(index * 30, (index + 1) * 30));
   const pairs: { pair: unknown; observedAt: string }[] = [];
@@ -249,16 +250,17 @@ const cachedModuleMetadata = unstable_cache(async (tokens: readonly RobinhoodLau
   Array.from(await readModuleTokenMetadata(tokens)), ["robinhood-module-metadata-v1"], { revalidate: 60 });
 
 // A shared full-catalog observation makes sorting independent of the current page.
-const cachedMarkets = unstable_cache(async (tokens: readonly MarketToken[]) =>
+const cachedMarkets = unstable_cache(async (tokens: readonly VerifiedMarketToken[]) =>
   Array.from(await readMarkets(tokens)), ["robinhood-coin-markets-v2"], { revalidate: 60 });
 
 export async function readRobinhoodMarkets(tokens: readonly MarketToken[]): Promise<Map<string, RobinhoodCoinMarket>> {
   if (tokens.length === 0) return new Map();
-  if (tokens.length > MAX_MARKET_TOKENS || tokens.some((token) => !ADDRESS.test(token.tokenAddress) || !HASH.test(token.poolId))) {
+  if (tokens.length > MAX_MARKET_TOKENS || tokens.some((token) => !ADDRESS.test(token.tokenAddress) || (token.poolId !== null && !HASH.test(token.poolId)))) {
     throw new Error("Invalid market request");
   }
-  const identities = tokens.map((token) => ({ tokenAddress: token.tokenAddress.toLowerCase(), poolId: token.poolId.toLowerCase() }))
+  const identities = tokens.flatMap((token) => token.poolId === null ? [] : [{ tokenAddress: token.tokenAddress.toLowerCase(), poolId: token.poolId.toLowerCase() }])
     .toSorted((a, b) => a.tokenAddress.localeCompare(b.tokenAddress));
+  if (identities.length === 0) return new Map();
   const entries = await cachedMarkets(identities);
   const now = Date.now();
   return new Map(entries.filter(([, market]) => {
@@ -269,7 +271,7 @@ export async function readRobinhoodMarkets(tokens: readonly MarketToken[]): Prom
 
 export async function readRobinhoodPresentations(tokens: readonly RobinhoodLaunch[], knownMarkets?: ReadonlyMap<string, RobinhoodCoinMarket>): Promise<RobinhoodCoinPresentation[]> {
   if (tokens.length === 0) return [];
-  if (tokens.length > MAX_TOKENS || tokens.some((token) => !ADDRESS.test(token.tokenAddress) || !HASH.test(token.poolId))) {
+  if (tokens.length > MAX_TOKENS || tokens.some((token) => !ADDRESS.test(token.tokenAddress) || (token.poolId !== null && !HASH.test(token.poolId)))) {
     throw new Error("Invalid presentation request");
   }
   const ordered = tokens.toSorted((a, b) => a.tokenAddress.toLowerCase().localeCompare(b.tokenAddress.toLowerCase()));

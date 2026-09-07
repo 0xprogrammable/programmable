@@ -16,7 +16,7 @@ beforeEach(() => { for (const method of [readModuleEngineLaunch, verifyModuleEng
 
 function engineRelease() {
   const release: ModuleEngineRelease = { schemaVersion: MODULE_ENGINE_RELEASE_SCHEMA, sourceVersion: "module-engine-v1", engineProfile: MODULE_ENGINE_PROFILE, chainId: 4663,
-    sourceCommit: "ab".repeat(20), startBlock: "1", tokenCreationCodeHash: h(1), tokenRuntimeCodeHash: h(2), economicsPolicyId: MODULE_MODE_ECONOMICS_POLICY_V2,
+    sourceCommit: "ab".repeat(20), startBlock: "1", tokenCreationCodeHash: h(1), economicsPolicyId: MODULE_MODE_ECONOMICS_POLICY_V2,
     finalityPolicy: MODULE_MODE_FINALITY_POLICY, releaseDigest: h(3), enabled: true, status: "active", deploymentEvidenceDigest: h(4), sourceVerificationDigest: h(5), lifecycleEvidenceDigest: h(6),
     contracts: { host: { address: a(70), runtimeCodeHash: h(70) }, registry: { address: a(71), runtimeCodeHash: h(71) }, tokenFactory: { address: a(72), runtimeCodeHash: h(72) },
       launchPolicy: { address: a(73), runtimeCodeHash: h(73) }, ledger: { address: a(74), runtimeCodeHash: h(74) }, poolManager: { address: a(75), runtimeCodeHash: h(75) } } };

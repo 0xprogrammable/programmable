@@ -131,7 +131,7 @@ export async function readModuleEngineLaunchVersions(input: { digests: readonly 
   = { digests: configuredModuleEngineReleaseDigests(), read: readModuleEngineAvailability }): Promise<ModuleEngineLaunchVersion[]> {
   const digests = [...new Set(input.digests.map(digest => moduleHash(digest, "engineLaunchVersions.digest")))];
   if (digests.length > 33) throw new Error("Invalid Engine launch version inventory.");
-  const results = await Promise.allSettled(digests.map(digest => input.read(digest)));
+  const results = await Promise.allSettled(digests.map(async digest => input.read(digest)));
   return results.flatMap((result, index) => {
     if (result.status !== "fulfilled") return [];
     try {

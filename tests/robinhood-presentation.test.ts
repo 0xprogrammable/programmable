@@ -18,7 +18,7 @@ import { hashProjectMetadata } from "../packages/launch/src/project-metadata.mjs
 
 const hash = (digit: string) => `0x${digit.repeat(64)}`;
 const address = (digit: string) => `0x${digit.repeat(40)}`;
-const TOKEN: RobinhoodLaunch = {
+const TOKEN: RobinhoodLaunch & { poolId: string } = {
   routerAddress: address("1"), launchId: hash("1"), tokenAddress: address("2"),
   hookAddress: address("3"), creator: address("4"), poolManager: address("5"),
   poolId: hash("2"), stampHash: hash("3"), transactionHash: hash("4"),

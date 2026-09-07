@@ -576,7 +576,7 @@ describe("Robinhood website launch list", () => {
     rows[0] = { ...rows[0], name: "Robinhood Test", symbol: "RHCT" };
     const saved = snapshot(rows);
 
-    for (const query of ["  rObInHoOd TeSt  ", "rhct", rows[0].tokenAddress.toUpperCase(), rows[0].hookAddress]) {
+    for (const query of ["  rObInHoOd TeSt  ", "rhct", rows[0].tokenAddress.toUpperCase(), rows[0].hookAddress!]) {
       const result = launchList(saved, 1, query, NOW);
       expect(result.items).toEqual([rows[0]]);
       expect(result.page).toMatchObject({ totalItems: 1, totalPages: 1, hasMore: false });
