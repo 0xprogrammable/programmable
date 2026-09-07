@@ -1,5 +1,7 @@
 import "server-only";
 
+import { AGENT_KEY_SCHEMA, AGENT_SCOPES } from "@/lib/agent-connection";
+
 import {
   randomBytes,
   randomUUID,
@@ -38,7 +40,8 @@ export const CUSTOM_LAUNCH_API_SCHEMA_V2 =
 export const API_KEY_CAPABILITIES_SCHEMA_V2 =
   "programmable.api-key-capabilities.v2" as const;
 type ApiKeySchemaVersion = typeof CUSTOM_LAUNCH_API_SCHEMA_V1
-  | typeof CUSTOM_LAUNCH_API_SCHEMA_V2;
+  | typeof CUSTOM_LAUNCH_API_SCHEMA_V2
+  | typeof AGENT_KEY_SCHEMA;
 
 const MAXIMUM_BROWSER_BODY_BYTES = 4_096;
 const MAXIMUM_BACKEND_BODY_BYTES = 65_536;
@@ -55,7 +58,7 @@ const MODULE_SCOPES = Object.freeze([
   "modules:read",
 ] as const);
 const METADATA_SCOPE_PATTERN = /^[a-z][a-z0-9-]{1,63}:[a-z][a-z0-9-]{1,63}$/u;
-type DeveloperApiKeyPurposeV1 = "custom-launches" | "module-contributions";
+type DeveloperApiKeyPurposeV1 = "custom-launches" | "module-contributions" | "all";
 
 const RESPONSE_HEADERS = Object.freeze({
   "Cache-Control": "no-store",
@@ -79,6 +82,8 @@ export interface DeveloperApiKeyBridgeV1 {
   list(request: Request): Promise<Response>;
   listV2(request: Request): Promise<Response>;
   capabilitiesV2(request: Request): Promise<Response>;
+  createAgent(request: Request): Promise<Response>;
+  rotateAgent(request: Request, credentialId: string): Promise<Response>;
   createV2(request: Request): Promise<Response>;
   rotateV2(request: Request, credentialId: string): Promise<Response>;
   create(request: Request): Promise<Response>;
@@ -231,7 +236,35 @@ export function createDeveloperApiKeyBridgeV1(input: Readonly<{
     }
   };
 
+  const mutateAgent = async (request: Request, credentialId?: string) => {
+    if (request.method !== "POST") return errorResponse(405, "method_not_allowed", "POST");
+    try {
+      requireJsonRequest(request);
+      const normalizedCredentialId = credentialId === undefined
+        ? undefined : requireBrowserCredentialId(credentialId);
+      const record = exactBrowserRecord(await readBrowserJson(request),
+        ["schemaVersion", "walletAddress", "label", "expiresInDays"],
+        ["schemaVersion", "walletAddress", "label"]);
+      const parsed = parseMutationFields(record, AGENT_KEY_SCHEMA);
+      const idempotencyKey = requireIdempotencyKey(request);
+      const principal = await input.authenticator.authenticate(request);
+      const walletAddress = requireLinkedWallet(principal, parsed.walletAddress);
+      // Admission belongs to the backend so committed retries remain retrievable.
+      const { response: backend, readOptions } = await callBackend(request, principal, walletAddress, "POST",
+        normalizedCredentialId === undefined ? "/v1/wallet-admin/agent-keys"
+          : `/v1/wallet-admin/agent-keys/${encodeURIComponent(normalizedCredentialId)}/rotate`,
+        { schemaVersion: AGENT_KEY_SCHEMA, label: parsed.label, expiresInDays: parsed.expiresInDays },
+        idempotencyKey);
+      if (!backend.ok) throw await mappedBackendError(backend, readOptions);
+      const result = parseApiKeyMutationResult(await readBoundedBackendJson(backend, readOptions),
+        backend.status, normalizedCredentialId, "all", AGENT_KEY_SCHEMA);
+      return jsonResponse(backend.status, { schemaVersion: AGENT_KEY_SCHEMA, ...result });
+    } catch (error) { return mappedError(error); }
+  };
+
   return Object.freeze({
+    createAgent: (request: Request) => mutateAgent(request),
+    rotateAgent: (request: Request, credentialId: string) => mutateAgent(request, credentialId),
     async capabilitiesV2(request: Request) {
       if (request.method !== "GET") {
         return errorResponse(405, "method_not_allowed", "GET");
@@ -251,12 +284,14 @@ export function createDeveloperApiKeyBridgeV1(input: Readonly<{
           || typeof record.preservingRotation !== "boolean"
           || (record.preservingModuleRotation !== undefined
             && typeof record.preservingModuleRotation !== "boolean")
+          || (record.unifiedKeys !== undefined && typeof record.unifiedKeys !== "boolean")
         ) throw new BackendContractErrorV1();
         return jsonResponse(200, {
           schemaVersion: API_KEY_CAPABILITIES_SCHEMA_V2,
           restrictedIssuance: record.restrictedIssuance,
           preservingRotation: record.preservingRotation,
           preservingModuleRotation: record.preservingModuleRotation === true,
+          unifiedKeys: record.unifiedKeys === true,
         });
       } catch (error) {
         return mappedError(error);
@@ -702,11 +737,12 @@ function parseApiKeyMutationResult(
   const supportedPair = [CURRENT_SCOPES, MODULE_SCOPES].some((pair) =>
     apiKey.scopes.length === pair.length && pair.every((scope) => apiKey.scopes.includes(scope)));
   if (schemaVersion === CUSTOM_LAUNCH_API_SCHEMA_V1 && !supportedPair) throw new BackendContractErrorV1();
+  if (schemaVersion === AGENT_KEY_SCHEMA && !sameScopes(apiKey.scopes, AGENT_SCOPES)) throw new BackendContractErrorV1();
   if (expectedPurpose !== undefined) {
-    const expectedScopes = expectedPurpose === "module-contributions"
+    const expectedScopes = expectedPurpose === "all" ? AGENT_SCOPES : expectedPurpose === "module-contributions"
       ? MODULE_SCOPES
       : CURRENT_SCOPES;
-    if (!expectedScopes.every((scope) => apiKey.scopes.includes(scope))) {
+    if (!sameScopes(apiKey.scopes, expectedScopes)) {
       throw new BackendContractErrorV1();
     }
   }

@@ -6,7 +6,7 @@
   --mm-ink: var(--webde-ink, #fff);
   color: var(--mm-ink);
   margin-inline: auto;
-  max-width: 1120px;
+  max-width: 1200px;
   padding: 32px 24px 80px;
   width: 100%;
 }
@@ -30,12 +30,12 @@
 .network { color: var(--mm-muted); display: inline-flex; font-size: 14px; gap: 8px; }
 .heading { margin-bottom: 32px; }
 .titleRow { flex-wrap: wrap; gap: 16px; }
-.titleRow h1 { font-size: clamp(36px, 4vw, 48px); font-weight: 500; letter-spacing: -0.04em; line-height: 1.1; margin: 0; }
+.titleRow h1 { font-size: 30px; font-weight: 500; letter-spacing: -0.03em; line-height: 36px; margin: 0; }
 .heading > p { color: var(--mm-muted); font-size: 18px; line-height: 28px; margin: 12px 0 0; }
 .launchAvailability { align-items: center; display: flex; flex-wrap: wrap; gap: 8px 16px; justify-content: space-between; margin: -8px 0 24px; }
 .launchAvailability p { color: var(--mm-muted); font-size: 14px; line-height: 20px; margin: 0; }
 .previewTag { background: var(--mm-surface); border: 1px solid #444; border-radius: 8px; color: #d6d6d3; font-size: 12px; line-height: 20px; padding: 2px 8px; }
-.layout { align-items: start; display: grid; gap: 32px; grid-template-columns: minmax(0, 1fr) 304px; }
+.layout { align-items: start; display: grid; gap: 32px; grid-template-columns: minmax(0, 1fr) 288px; }
 .formPanel { background: var(--mm-surface); border: 1px solid var(--mm-line); border-radius: 16px; min-width: 0; padding: 32px; }
 .formFields { border: 0; margin: 0; min-width: 0; padding: 0; }
 .formSection + .formSection { border-top: 1px solid var(--mm-line); margin-top: 32px; padding-top: 32px; }
@@ -81,7 +81,8 @@
 .field select option { background: #242424; color: #fff; }
 .field textarea { min-height: 80px; resize: vertical; }
 .inputWithUnit { display: flex; min-width: 0; position: relative; }
-.inputWithUnit > input { padding-right: 80px; }
+.inputWithUnit > input { padding-right: 12px; }
+.inputWithUnit:has(> span) > input { padding-right: 80px; }
 .inputWithUnit > span { align-items: center; bottom: 0; color: var(--mm-muted); display: flex; font-size: 14px; padding-inline: 12px; pointer-events: none; position: absolute; right: 0; top: 0; }
 .help { color: var(--mm-muted); font-size: 12px; line-height: 20px; margin: 0; }
 .fieldError { color: #ffb7aa; font-size: 14px; line-height: 20px; margin: 0; overflow-wrap: anywhere; }
@@ -143,7 +144,7 @@
 .unavailableModule { border: 1px solid #936d63; border-radius: 8px; margin-top: 16px; padding: 16px; }
 .unavailableModule p { color: #ffcabf; font-size: 14px; line-height: 20px; margin: 0; }
 .unavailableModule strong { font-weight: 500; }
-.formFooter { border-top: 1px solid var(--mm-line); flex-wrap: wrap; gap: 16px; justify-content: space-between; margin-top: 24px; padding-top: 24px; }
+.formFooter { justify-content: flex-end; border-top: 1px solid var(--mm-line); flex-wrap: wrap; gap: 16px; margin-top: 24px; padding-top: 24px; }
 .formFooter p { color: var(--mm-muted); flex: 1 1 150px; font-size: 12px; line-height: 20px; margin: 0; }
 .primaryButton { background: #f4f2e9; border: 1px solid #f4f2e9; color: #161613; font-size: 16px; font-weight: 600; min-height: 48px; padding: 12px 16px; text-decoration: none; }
 .secondaryButton { background: none; border: 1px solid #555; color: #fff; font-size: 16px; min-height: 48px; padding: 12px 16px; }
@@ -151,34 +152,37 @@
 .errorSummary strong { color: #ffe2db; font-weight: 500; }
 .errorSummary ul { display: grid; gap: 8px; margin: 12px 0 0; padding-left: 20px; }
 .previewPanel { min-width: 0; position: sticky; top: calc(var(--header-height, 88px) + 24px); }
-.tokenArtwork { aspect-ratio: 1.8; background: #312b32; border-radius: 12px; isolation: isolate; overflow: hidden; position: relative; }
-.tokenArtwork img { object-fit: cover; object-position: center 56%; }
-.tokenArtwork[data-custom="true"] { background: #181818; border: 1px solid var(--mm-line); }
-.tokenArtwork[data-custom="true"] img { object-fit: contain; object-position: center; }
-.tokenMonogram { align-items: center; background: rgb(17 17 17 / 0.74); border: 1px solid rgb(255 255 255 / 0.3); border-radius: 50%; color: #fff; display: flex; font-size: 24px; font-weight: 500; height: 64px; inset: 50% auto auto 50%; justify-content: center; letter-spacing: -0.04em; position: absolute; transform: translate(-50%, -50%); width: 64px; }
-.tokenPreviewHeading { padding-top: 24px; }
-.eyebrow { color: var(--mm-muted); font-size: 12px; line-height: 20px; }
-.tokenPreview h2 { font-size: 24px; font-weight: 500; letter-spacing: -0.03em; line-height: 32px; margin: 4px 0; overflow-wrap: anywhere; }
-.tokenPreview p { color: var(--mm-muted); font-size: 14px; line-height: 20px; margin: 0; overflow-wrap: anywhere; }
-.previewFacts { display: grid; gap: 12px; margin-top: 24px; }
-.previewFacts > div,
-.totalFees > div { display: flex; gap: 16px; justify-content: space-between; }
-.previewFacts span { color: var(--mm-muted); font-size: 12px; line-height: 20px; }
-.previewFacts strong { font-size: 12px; font-weight: 400; line-height: 20px; text-align: right; }
-.totalFees { border-block: 1px solid #393939; display: grid; gap: 8px; margin-top: 24px; padding-block: 24px; }
-.totalFees h3 { font-size: 14px; font-weight: 500; line-height: 20px; margin: 0 0 4px; }
-.totalFees > div > span { color: var(--mm-muted); font-size: 16px; line-height: 24px; }
-.totalFees > div > strong { font-size: 24px; font-weight: 500; letter-spacing: -0.03em; line-height: 32px; font-variant-numeric: tabular-nums; }
-.totalFees p { color: var(--mm-muted); font-size: 12px; line-height: 20px; margin: 8px 0 0; }
-.plainCoin { color: #d6d6d1; font-size: 14px; line-height: 24px; margin: 24px 0 0; }
-.activeModules { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 24px; }
-.activeModules span { align-items: center; color: #dadbd3; display: inline-flex; font-size: 12px; gap: 4px; line-height: 20px; }
-.availabilityNote { color: var(--mm-muted); font-size: 12px; line-height: 20px; margin: 24px 0 0; }
-.nativeValueSummary { display: grid; gap: 8px; margin-top: 24px; }
-.nativeValueSummary h3 { font-size: 14px; font-weight: 500; line-height: 20px; margin: 0 0 4px; }
-.nativeValueSummary > div { display: flex; gap: 16px; justify-content: space-between; }
-.nativeValueSummary span { color: var(--mm-muted); font-size: 12px; line-height: 20px; }
-.nativeValueSummary strong { font-size: 12px; font-weight: 500; line-height: 20px; overflow-wrap: anywhere; text-align: right; }
+.coinCard { background: #181818; border: 1px solid var(--mm-line); border-radius: 16px; min-width: 0; padding: 24px; }
+.coinCardHeading { align-items: center; display: flex; gap: 12px; min-width: 0; }
+.coinCardHeading > div:last-child { min-width: 0; }
+.coinAvatar { align-items: center; background: #272727; border: 1px solid #444; border-radius: 12px; color: #dbded4; display: flex; flex: 0 0 56px; font-size: 24px; height: 56px; justify-content: center; overflow: hidden; position: relative; width: 56px; }
+.coinAvatar img { object-fit: cover; }
+.coinCard h2 { font-size: 18px; font-weight: 500; letter-spacing: -0.02em; line-height: 28px; margin: 0; overflow-wrap: anywhere; }
+.coinCardHeading p { color: var(--mm-muted); font-size: 14px; line-height: 20px; margin: 0; overflow-wrap: anywhere; }
+.coinAssembly { display: grid; gap: 8px; margin-top: 24px; }
+.baseBlock, .assemblyModule { align-items: center; background: #1f1f1f; border: 1px solid #3c3c3c; border-radius: 8px; display: flex; gap: 8px; min-height: 64px; min-width: 0; padding: 8px 12px; }
+.baseBlock > div { display: grid; flex: 1; gap: 4px; }
+.baseBlock strong { font-size: 14px; font-weight: 500; line-height: 20px; }
+.baseBlock div > span { color: var(--mm-muted); font-size: 12px; line-height: 16px; }
+.baseBlock > svg, .assemblyModule > svg { color: #c1d0b2; flex: 0 0 auto; }
+.baseDot { background: #b2bda5; border-radius: 50%; flex: 0 0 8px; height: 8px; margin: 0 8px; width: 8px; }
+.assemblyModule > button, .assemblyModule > span:not(:first-child) { background: transparent; border: 0; color: #eee; cursor: pointer; flex: 1; font: inherit; font-size: 14px; line-height: 20px; min-height: 44px; min-width: 0; padding: 0; text-align: left; overflow-wrap: anywhere; }
+.assemblyModule > button:disabled { cursor: default; }
+.assemblyModule > span:first-child { height: 32px; width: 32px; }
+.addModuleSlot { align-items: center; background: transparent; border: 1px dashed #585858; border-radius: 8px; color: #c5c5c5; cursor: pointer; display: flex; font: inherit; font-size: 14px; gap: 8px; justify-content: center; min-height: 48px; padding: 8px; }
+.coinTotals { display: grid; gap: 12px; margin: 24px 0 0; }
+.coinTotals > div { align-items: baseline; display: flex; flex-wrap: wrap; font-size: 14px; gap: 4px 12px; justify-content: space-between; line-height: 20px; }
+.coinTotals dt { color: var(--mm-muted); }
+.coinTotals dd { font-variant-numeric: tabular-nums; margin: 0; overflow-wrap: anywhere; }
+.coinTotal { padding-top: 8px; }
+.coinFeeNote { color: var(--mm-muted); font-size: 12px; line-height: 16px; margin: 16px 0 0; }
+.buildModuleLink { align-items: center; color: #c5c5c5; display: flex; font-size: 14px; gap: 8px; justify-content: center; margin-top: 8px; min-height: 48px; text-decoration: none; }
+.buildModuleLink:hover { color: #fff; }
+.availabilityNote { color: var(--mm-muted); font-size: 12px; line-height: 20px; margin: 16px 0 0; }
+.moduleDetails { margin: 0 0 16px; }
+.moduleDetails summary { color: #c5c5c5; cursor: pointer; font-size: 12px; line-height: 16px; min-height: 32px; padding: 8px 0; }
+.moduleDetails p { color: #c5c5c5; font-size: 14px; line-height: 20px; margin: 8px 0; }
+.moduleConfigurationHeading h3 { scroll-margin-top: calc(var(--header-height, 88px) + 24px); }
 .reviewRows { display: grid; gap: 24px; margin: 0; }
 .reviewRows > div { display: grid; gap: 8px; grid-template-columns: 1fr 1.4fr; }
 .reviewRows dt { color: var(--mm-muted); font-size: 14px; line-height: 24px; }
@@ -248,17 +252,7 @@
   .layout { gap: 24px; grid-template-columns: minmax(0, 1fr); }
   .formPanel { padding: 24px 16px; }
   .previewPanel { position: static; }
-  .tokenPreview { align-items: center; display: flex; gap: 16px; }
-  .tokenArtwork { aspect-ratio: 1; border-radius: 8px; flex: 0 0 80px; }
-  .tokenMonogram { font-size: 18px; height: 48px; width: 48px; }
-  .tokenPreviewHeading { padding: 0; }
-  .tokenPreview h2 { font-size: 20px; line-height: 28px; }
-  .previewPanel { background: var(--mm-surface); border: 1px solid var(--mm-line); border-radius: 16px; padding: 24px 16px; }
-  .totalFees { margin-top: 16px; padding-block: 16px; }
-  .plainCoin,
-  .activeModules,
-  .availabilityNote { margin-top: 16px; }
-  .previewFacts { margin-top: 16px; }
+  .coinCard { padding: 24px 16px; }
   .formFooter { align-items: stretch; flex-direction: column; gap: 12px; }
   .formFooter p { flex: 0 1 auto; }
   .formFooter .primaryButton { width: 100%; }

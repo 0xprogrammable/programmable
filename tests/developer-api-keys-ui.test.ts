@@ -362,9 +362,8 @@ describe("developer API key interface", () => {
     );
     expect(apiKeysStyles).toContain("--api-key-row-min-height");
     expect(apiKeysStyles).not.toContain("grid-template-rows: repeat(");
-    expect(apiKeysSource.indexOf('aria-labelledby="api-keys-title"')).toBeLessThan(
-      apiKeysSource.indexOf('aria-labelledby="agent-setup-title"'),
-    );
+    expect(apiKeysSource).not.toContain('aria-labelledby="agent-setup-title"');
+    expect(apiKeysSource).toContain('href="/agents.md"');
     expect(apiKeysSource.indexOf('aria-label="API key pages"')).toBeLessThan(
       apiKeysSource.indexOf('className={styles.keyList}'),
     );
@@ -426,13 +425,10 @@ describe("developer API key interface", () => {
       signCustomLaunchFundingAuthorization: walletAction,
     }));
 
-    const setupButton = html.match(/<button\b[^>]*>Copy agent setup<\/button>/u)?.[0];
-    expect(setupButton).toBeDefined();
-    expect(setupButton).not.toContain("disabled");
-    expect(html).toContain('aria-labelledby="agent-setup-title"');
-    expect(html).toMatch(/<details[^>]*aria-labelledby="agent-setup-title"[^>]*>/u);
-    expect(html).not.toMatch(/<details[^>]*\bopen[^>]*aria-labelledby="agent-setup-title"/u);
-    expect(html).toContain("new or existing key");
+    expect(html).toContain("Copy instructions");
+    expect(html).toContain('href="/agents.md"');
+    expect(html).not.toContain("Set up your agent");
+    expect(html).not.toContain("Manage access for");
     expect(html).not.toContain(">Copy key</button>");
     expect(html).not.toContain("api-key-mutation-result-title");
     expect(html).not.toMatch(/pm_live_[A-Za-z0-9_-]{22}_[A-Za-z0-9_-]{43}/u);
@@ -451,9 +447,7 @@ describe("developer API key interface", () => {
     const copyKey = apiKeysSource.slice(copyKeyStart, copySetupStart);
     const copySetup = apiKeysSource.slice(copySetupStart, dismissStart);
     expect(copyKey).toContain('secretState !== "delivered-once"');
-    expect(copySetup).toContain('purpose === "module-contributions"');
-    expect(copySetup).toContain("? moduleAgentSetupText");
-    expect(copySetup).toContain(": agentSetupText");
+    expect(copySetup).toContain("buildAgentInstructions({ scopes, wallet:");
     expect(copySetup).not.toContain("mutationResult");
     expect(copySetup).not.toContain("apiKeySecret");
   });
@@ -471,7 +465,7 @@ describe("developer API key interface", () => {
       expect(parseApiKeyList({ ...response, apiKeys: [apiKey("invalid", { scopes })] })).toBeNull();
     }
     expect(parseApiKeyList({ ...response, apiKeys: [keys[0], keys[0]] })).toBeNull();
-    expect(apiKeyPurposeLabel(["custom-launch:read"])).toBe("Custom launches");
+    expect(apiKeyPurposeLabel(["custom-launch:read"])).toBe("Launches · read only");
   });
 
   it("enables restricted issuance only with both capabilities and rotation only with preservation", () => {
@@ -486,7 +480,7 @@ describe("developer API key interface", () => {
     for (const scopes of [["custom-launch:create"], ["custom-launch:read", "fees:read"], ["modules:submit", "modules:read"]]) {
       expect(apiKeyRotationVersion(scopes, both)).toBeNull();
     }
-    expect(parseApiKeyCapabilities({ schemaVersion: "programmable.api-key-capabilities.v2", ...both })).toEqual(both);
+    expect(parseApiKeyCapabilities({ schemaVersion: "programmable.api-key-capabilities.v2", ...both })).toEqual({ ...both, unifiedKeys: false });
     expect(parseApiKeyCapabilities({ schemaVersion: "programmable.api-key-capabilities.v2", restrictedIssuance: "true", preservingRotation: true })).toBeNull();
   });
 
@@ -587,8 +581,8 @@ describe("developer API key interface", () => {
 
   it("renders accessible access options and truthful saved/legacy/missing chain restrictions", () => {
     const choice = renderToStaticMarkup(createElement(ApiKeyAccessChoice, { value: "read-only", onChange: vi.fn(), available: true, disabled: false }));
-    expect(choice).toContain("Read account-wide launch history. Cannot prepare launches.");
-    expect(choice).toMatch(/<input[^>]*checked=""[^>]*>/u);
+    expect(choice).toContain("Launch access");
+    expect(choice).toMatch(/<option[^>]*value="read-only"[^>]*selected=""/u);
     for (const [restriction, copy] of [
       [undefined, "Not available"],
       [{ allowedChainIds: null, mode: "legacy-policy-dependent", effectiveEligibility: "evaluated-per-request" }, "Legacy policy"],
@@ -608,13 +602,13 @@ describe("developer API key interface", () => {
     expect(parseApiKeyList({ ...value, apiKeys: [apiKey("reader")] })).toBeNull();
   });
 
-  it("recognizes only the two complete purpose pairs", () => {
+  it("recognizes the complete legacy pairs and combined access", () => {
     expect(apiKeyPurpose(["custom-launch:create", "custom-launch:read"]))
       .toBe("custom-launches");
     expect(apiKeyPurpose(["modules:read", "modules:submit"]))
       .toBe("module-contributions");
     expect(apiKeyPurposeLabel(["modules:submit", "modules:read"]))
-      .toBe("Module contributions");
+      .toBe("Modules");
     for (const scopes of [
       [], ["modules:submit"], ["modules:submit", "modules:submit"],
       ["modules:read", "custom-launch:create"],
@@ -673,19 +667,17 @@ describe("developer API key interface", () => {
       value: "custom-launches", onChange, moduleContributionsAvailable: false,
       checking: false, disabled: false,
     }));
-    expect(pending).toContain("<legend>Purpose</legend>");
-    expect(pending).toMatch(/<input[^>]*type="radio"[^>]*checked=""[^>]*value="custom-launches"/u);
-    expect(pending).toMatch(/<input[^>]*type="radio"[^>]*disabled=""[^>]*value="module-contributions"/u);
-    expect(pending).toContain('aria-describedby="module-key-availability"');
-    expect(pending).toContain("Module contributions are not available right now.");
-    expect(pending).toContain("Pending");
+    expect(pending).toContain("<span>Access</span>");
+    expect(pending).toMatch(/<option[^>]*value="custom-launches"[^>]*selected=""/u);
+    expect(pending).toMatch(/<option[^>]*value="module-contributions"[^>]*disabled=""/u);
+    expect(pending).toContain("Modules · unavailable");
     const available = renderToStaticMarkup(createElement(ApiKeyPurposeChoice, {
-      value: "module-contributions", onChange, moduleContributionsAvailable: true,
+      value: "module-contributions", onChange, moduleContributionsAvailable: true, unifiedAvailable: true,
       checking: false, disabled: false,
     }));
     expect(available).not.toContain('disabled=""');
-    expect(available).toMatch(/<input[^>]*checked=""[^>]*value="module-contributions"/u);
-    expect(available).toContain("Submit module packages and read their review status.");
+    expect(available).toMatch(/<option[^>]*value="module-contributions"[^>]*selected=""/u);
+    expect(available).toContain("Launches + modules");
     expect(onChange).not.toHaveBeenCalled();
   });
 
@@ -703,20 +695,15 @@ describe("developer API key interface", () => {
   });
 
   it("preserves wallet authority and one-time secret handling", () => {
-    expect(apiKeysSource).toContain(
-      "API keys cannot sign or broadcast wallet transactions.",
-    );
+    expect(apiKeysSource).toContain('secretState !== "delivered-once"');
     expect(apiKeysSource).toContain("Save this key now");
-    expect(apiKeysSource).toContain("It will not be shown again.");
+    expect(apiKeysSource).toContain("the key is shown once.");
     expect(apiKeysSource).toContain("data-confirm-revoke");
     expect(apiKeysSource).toContain('event.key === "Escape"');
     expect(apiKeysSource).toContain("revealRef.current?.focus()");
     expect(apiKeysSource).toContain("confirmRevokeRef.current?.focus()");
-    expect(apiKeysSource).toContain("Copy agent setup");
-    expect(apiKeysSource).toContain("PROGRAMMABLE_AGENT_SETUP_TEXT_V1");
-    expect(apiKeysSource).toContain(
-      "the <code>$PROGRAMMABLE_API_KEY</code> placeholder, never your secret.",
-    );
+    expect(apiKeysSource).toContain("Copy connection");
+    expect(apiKeysSource).toContain("Copy instructions");
     expect(PROGRAMMABLE_AGENT_SETUP_TEXT_V1).toContain("$PROGRAMMABLE_API_KEY");
     expect(PROGRAMMABLE_AGENT_SETUP_TEXT_V1).toContain(
       PROGRAMMABLE_AGENT_SETUP_LINKS_V1.cli,

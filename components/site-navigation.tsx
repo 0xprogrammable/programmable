@@ -208,11 +208,6 @@ function HeaderWalletButton({
             onPointerEnter={() => warmNavigationRoute(router, "/profile")}
             onPointerDown={() => warmNavigationRoute(router, "/profile")}
             onClick={onClose}>Profile</Link>
-          <button type="button" disabled={disconnecting} onClick={() => {
-            onClose();
-            triggerRef.current?.focus();
-            openWallet();
-          }}>Manage wallets</button>
           <button type="button" onClick={async () => {
             try {
               await navigator.clipboard.writeText(wallet.account);

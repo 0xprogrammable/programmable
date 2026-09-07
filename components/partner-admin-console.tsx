@@ -712,7 +712,7 @@ export function PartnerAdminConsole() {
             {connecting
               ? "Connecting wallet"
               : authenticated
-                ? "Manage wallets"
+                ? "Connect wallet"
                 : "Connect wallet"}
           </button>
         </section>
@@ -730,7 +730,7 @@ export function PartnerAdminConsole() {
               <code>{walletNotLinked.requestId}</code>
             </p>
           ) : null}
-          <button type="button" onClick={openWallet}>Manage wallets</button>
+          <button type="button" onClick={openWallet}>Link wallet</button>
         </section>
       ) : accessDenied ? (
         <section className={styles.statePanel} data-state="access-denied">

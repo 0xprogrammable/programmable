@@ -264,7 +264,7 @@ describe("partner attribution UI", () => {
     expect(walletRecoveryState).toContain("Link this wallet to continue");
     expect(walletRecoveryState).toContain("select another linked wallet");
     expect(walletRecoveryState).toContain("onClick={openWallet}");
-    expect(walletRecoveryState).toContain("Manage wallets");
+    expect(walletRecoveryState).toContain("Link wallet");
     expect(walletRecoveryState).not.toContain("Try again");
   });
 });

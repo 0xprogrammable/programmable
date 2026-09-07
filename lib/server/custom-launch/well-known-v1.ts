@@ -1,4 +1,5 @@
 import "server-only";
+import { PROGRAMMABLE_AGENT_ENTRY } from "@/lib/agent-connection";
 import { V4_API_DISCOVERY, V4_API_PROFILE_VERSION } from "../../custom-launch/v4-api-discovery";
 import { robinhoodV4PublicContractDiscovery, robinhoodV4PublicPolicyDescription } from
   "../../custom-launch/v4-public-contract-discovery";
@@ -22,6 +23,7 @@ export function programmableWellKnownDocumentV1(
   return Object.freeze({
     schemaVersion: "2.0.0" as const,
     platformId: "programmable" as const,
+    ...(V4_API_PROFILE_VERSION === "4.0.0" ? {} : { agent: PROGRAMMABLE_AGENT_ENTRY }),
     name: "Programmable Developer Platform",
     description: robinhoodV4PublicPolicyDescription(V4_API_PROFILE_VERSION,
       "Canonical discovery for Programmable Classic and Custom launches. Fresh V3.3 general-hook writes and lifecycle reads accept wallet keys, partner roots and bounded partner subkeys on Ethereum Mainnet. Robinhood Chain V4 availability is derived from the versioned release evidence below, independently from token publication and indexing. Its required 20 bps default policy is not a canonical onchain fee-enforcement or revenue claim. V2 and V1 remain readable but their creation routes are write-fenced."),

@@ -83,6 +83,14 @@ describe("Module Mode host publication identity", () => {
     expect(f.manifest.manifest.catalogDefinition).not.toHaveProperty("status");
     expect(f.manifest.manifest.catalogDefinition).not.toHaveProperty("nativeBinding");
   });
+  it("binds optional discovery to the package author while allowing future categories", () => {
+    const f = fixture();
+    const definition = { ...f.definition, discovery: { category: "future-mechanics/nested", tags: ["Future idea"], author: f.source.descriptor.author } };
+    const input = { release: f.release, nativeBinding: f.binding, descriptor: f.source.descriptor, definition };
+    expect(createModuleModeHostManifest(input).manifest.catalogDefinition.discovery).toEqual(definition.discovery);
+    expect(() => createModuleModeHostManifest({ ...input, definition: { ...definition, discovery: { ...definition.discovery, author: a(999) } } })).toThrow("source author");
+    expect(() => createModuleModeHostManifest({ ...input, definition: { ...definition, discovery: { ...definition.discovery, tags: ["x".repeat(41)] } } })).toThrow();
+  });
   it("pins deterministic canonical host-manifest and append-only review golden vectors", () => {
     const f = fixture();
     expect(f.manifestHash).toBe("0xb50de16a7c50e3717b3468d45a53d87d07050ad2dd20e7cab1e9e06d25432fce");

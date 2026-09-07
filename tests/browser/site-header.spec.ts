@@ -25,7 +25,7 @@ test("wallet opens only its actions; copy, Escape, outside click and focus work"
   await trigger.click();
   const menu = page.getByRole("group",{name:"Wallet actions",exact:true});
   await expect(menu.getByRole("link")).toHaveText(["Profile"]);
-  await expect(menu.getByRole("button")).toHaveText(["Manage wallets","Copy address","Disconnect"]);
+  await expect(menu.getByRole("button")).toHaveText(["Copy address","Disconnect"]);
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await menu.getByRole("button",{name:"Copy address",exact:true}).click();
   await expect(menu.getByRole("status")).toHaveText("Address copied");

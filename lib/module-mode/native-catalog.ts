@@ -4,6 +4,8 @@ import { assertOpenConstraints } from "@/packages/classic-modules/src/open-const
 import { NATIVE_ENGINE_PROFILE, type ModuleModeCatalogEntry } from "./builder";
 import { bindActiveModuleModeRelease, moduleAddress, moduleHash, moduleInteger, moduleRecord, type ModuleModeRelease } from "./release";
 
+import { isModuleDiscovery } from "./library";
+
 export type { ModuleModeRelease } from "./release";
 export const MODULE_MODE_AVAILABILITY_SCHEMA = "programmable.module-mode.availability.v1" as const;
 export const MODULE_NATIVE_HOST_CAPABILITIES = [
@@ -58,6 +60,7 @@ function validateCatalogBase(entry: ModuleModeCatalogEntry) {
     || [entry.title, entry.summary, entry.detail, entry.version].some(text => typeof text !== "string" || text.length > 4000)
     || !entry.title || !entry.version || !entry.source || typeof entry.source.path !== "string" || !entry.source.path
     || typeof entry.source.sha256 !== "string" || !/^[a-f0-9]{64}$/.test(entry.source.sha256)) throw new Error("Invalid module catalog entry.");
+  if (entry.discovery !== undefined && !isModuleDiscovery(entry.discovery)) throw new Error("Invalid module discovery metadata.");
   assertOpenConfigSchema(entry.schema); assertOpenConstraints(entry.constraints ?? []);
   if (entry.fields) {
     if (typeof entry.fields !== "object" || Array.isArray(entry.fields)) throw new Error("Invalid module display fields.");
