@@ -27,10 +27,23 @@ function recovery(transactionHash) {
 async function load() {
   state = await api('/state'); $('stage').textContent = `Deployment ${state.stepIndex + 1} of ${state.totalSteps}`; $('title').textContent = names[state.role] || state.role;
   for (const [id, value] of Object.entries({ target: state.target, recipient: state.transactionRecipient, commit: state.sourceCommit, digest: state.planDigest, 'operator-commit': state.uiCheck ? 'Local preview; source authority not asserted' : state.operatorSourceCommit, initcode: state.initcodeHash, runtime: state.runtime.runtimeCodeHash })) $(id).textContent = value;
-  if (state.sourceVersion === 'module-engine-v1') $('minimum-row').hidden = true;
-  else $('minimum').textContent = `${eth(state.parameters.minimumInitialBuyNative)} gross, plus gas`;
-  if (state.sourceVersion === 'module-native-v2' || state.sourceVersion === 'module-engine-v1') $('economics-summary').textContent = 'Without eligible module families, the protocol fee is 10 bps. With eligible families, the fee is 30 bps: 10 bps for the protocol and 20 bps shared by those families. Creator fees are additional.';
-  for (const [label, wallet] of [['Deployer · pays gas', state.owner], ['Review authority', state.parameters.reviewAuthority], ['Treasury', state.economics.treasury], ['CTO fee admin', state.economics.rewardAdmin]]) row($('wallets'), label, wallet);
+  if (state.sourceVersion === 'module-engine-quote-v1' && state.planSchema === 'programmable.module-engine-quote-deployment-plan.v1') {
+    $('title').textContent = state.role === 'positionPlanner' ? 'Quote liquidity planner' : 'Quote to ETH converter';
+    $('minimum-row').hidden = true; $('wallets-title').textContent = 'Gas payer'; row($('wallets'), 'Deployer · pays gas', state.owner);
+    $('economics-summary').textContent = 'This step deploys shared liquidity or fee conversion infrastructure. Neither contract has administrative permissions. Template approval and publication require separate reviews.';
+    const labels = { positionPlanner: 'Quote liquidity planner', converter: 'Quote to ETH converter', poolManager: 'V4 PoolManager',
+      positionManager: 'V4 PositionManager', positionForwarderFactory: 'Locked position factory', deterministicDeployer: 'CREATE2 deployer',
+      v3Factory: 'V3 factory', router: 'SwapRouter02', weth: 'Wrapped ETH' };
+    $('quote-dependencies').hidden = false;
+    for (const [role, pin] of Object.entries({ ...state.quoteInfrastructure.contracts, ...state.quoteInfrastructure.dependencies })) {
+      row($('quote-pins'), `${labels[role]} address`, pin.address); row($('quote-pins'), `${labels[role]} runtime hash`, pin.runtimeCodeHash);
+    }
+  } else {
+    if (state.sourceVersion === 'module-engine-v1') $('minimum-row').hidden = true;
+    else $('minimum').textContent = `${eth(state.parameters.minimumInitialBuyNative)} gross, plus gas`;
+    if (state.sourceVersion === 'module-native-v2' || state.sourceVersion === 'module-engine-v1') $('economics-summary').textContent = 'Without eligible module families, the protocol fee is 10 bps. With eligible families, the fee is 30 bps: 10 bps for the protocol and 20 bps shared by those families. Creator fees are additional.';
+    for (const [label, wallet] of [['Deployer · pays gas', state.owner], ['Review authority', state.parameters.reviewAuthority], ['Treasury', state.economics.treasury], ['CTO fee admin', state.economics.rewardAdmin]]) row($('wallets'), label, wallet);
+  }
   const dl = document.createElement('dl'); dl.className = 'facts'; state.constructorInputs.forEach((input, i) => row(dl, `${input.name} (${input.type})`, JSON.stringify(state.constructorValues[i]))); if (!state.constructorInputs.length) row(dl, 'Constructor', 'No arguments'); $('constructor').append(dl);
   if (state.uiCheck) { $('mode').textContent = 'UI check only. Wallet requests, RPC calls and journal writes are disabled.'; $('connect').hidden = true; $('prepare').textContent = 'Review deployment details'; $('next-copy').textContent = 'Inspect the actual prepared constructor and source commitments. This preview cannot send a transaction.'; }
   else { $('mode').textContent = `Exact production operator source and hosted Verify run ${state.authority.runId} bound. Wallet confirmation remains yours.`; if (state.journalState !== 'not-requested') recovery(state.transactionHash); }

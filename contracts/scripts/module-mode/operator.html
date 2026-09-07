@@ -14,9 +14,10 @@
     <div class="columns">
       <section aria-labelledby="payload-title"><h2 id="payload-title">What this step does</h2>
         <dl class="facts"><div><dt>Deploys to</dt><dd class="mono" id="target">—</dd></div><div><dt>Transaction recipient</dt><dd class="mono" id="recipient">—</dd></div><div><dt>ETH sent</dt><dd>0 ETH <span class="muted">· network gas is separate</span></dd></div><div><dt>Maximum gas cost</dt><dd id="maximum">Fresh simulation required</dd></div><div id="minimum-row"><dt>Minimum launch purchase</dt><dd id="minimum">—</dd></div></dl>
-        <h2>Bound wallets</h2><dl class="wallets" id="wallets"></dl>
+        <h2 id="wallets-title">Bound wallets</h2><dl class="wallets" id="wallets"></dl>
         <p class="footnote" id="economics-summary">Without modules, the full 20 bps protocol fee goes to the treasury. With modules, 10 bps is shared equally across the selected module families. Creator fees are additional.</p>
         <details id="technical"><summary>Constructor and source commitments</summary><dl class="facts"><div><dt>Contract source commit</dt><dd class="mono" id="commit"></dd></div><div><dt>Operator source commit</dt><dd class="mono" id="operator-commit"></dd></div><div><dt>Plan digest</dt><dd class="mono" id="digest"></dd></div><div><dt>Initcode hash</dt><dd class="mono" id="initcode"></dd></div><div><dt>Deployed runtime hash</dt><dd class="mono" id="runtime"></dd></div></dl><div id="constructor"></div></details>
+        <details id="quote-dependencies" hidden><summary>Planner, converter and retained infrastructure</summary><dl class="facts" id="quote-pins"></dl></details>
         <details id="request-details" hidden><summary>Exact wallet request</summary><pre id="request"></pre></details>
       </section>
       <aside aria-labelledby="next-title"><p class="eyebrow">Owner action</p><h2 id="next-title">Prepare this step</h2><p id="next-copy">Connect the reviewed deployer. The tool checks both providers before asking your wallet to submit.</p>

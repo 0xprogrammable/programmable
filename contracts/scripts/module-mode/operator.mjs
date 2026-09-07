@@ -18,6 +18,9 @@ import { observeNativeV2Stage, observeNativeV2Receipt } from '../module-native-v
 import { sealEngineBuild } from '../module-engine/build.mjs';
 import { ENGINE_PLAN_SCHEMA, assertEnginePlan, assertEngineBasis } from '../module-engine/core.mjs';
 import { observeEngineStage, observeEngineReceipt } from '../module-engine/rpc.mjs';
+import { sealQuoteBuild } from '../module-engine/quote-build.mjs';
+import { QUOTE_PLAN_SCHEMA, QUOTE_IDENTITY_SCHEMA, QUOTE_SOURCE_VERSION, assertQuoteProfile, assertQuotePlan, assertQuoteBasis } from '../module-engine/quote-core.mjs';
+import { observeQuoteStage, observeQuoteReceipt } from '../module-engine/quote-rpc.mjs';
 
 const directory = path.dirname(fileURLToPath(import.meta.url));
 const profiles = [
@@ -29,6 +32,9 @@ const profiles = [
   { planSchema: ENGINE_PLAN_SCHEMA, identitySchema: 'programmable.module-engine.release.v1', sourceVersion: 'module-engine-v1',
     sealBuild: sealEngineBuild, assertPlan: assertEnginePlan, assertBasis: assertEngineBasis,
     observeStage: observeEngineStage, observeReceipt: observeEngineReceipt },
+  { planSchema: QUOTE_PLAN_SCHEMA, identitySchema: QUOTE_IDENTITY_SCHEMA, sourceVersion: QUOTE_SOURCE_VERSION,
+    sealBuild: sealQuoteBuild, assertPlan: assertQuotePlan, assertBasis: assertQuoteBasis,
+    observeStage: observeQuoteStage, observeReceipt: observeQuoteReceipt },
 ].map(Object.freeze);
 
 /** Exact source dispatch only; every live path still reseals and uses the existing source/wallet authority. */
@@ -38,7 +44,8 @@ export function operatorSourceProfile(plan) {
   const profile = profiles.find(item => plan.schemaVersion === item.planSchema && identity.schemaVersion === item.identitySchema
     && identity.sourceVersion === item.sourceVersion);
   need(profile && (plan.sourceVersion === undefined || plan.sourceVersion === profile.sourceVersion), 'Unsupported or mixed deployment source schemas');
-  if (profile.sourceVersion !== 'module-native-v1') need(identity.economicsPolicyId === ECONOMICS_POLICY_ID
+  if (profile.sourceVersion === QUOTE_SOURCE_VERSION) assertQuoteProfile(plan);
+  else if (profile.sourceVersion !== 'module-native-v1') need(identity.economicsPolicyId === ECONOMICS_POLICY_ID
     && plan.economics?.economicsPolicyId === ECONOMICS_POLICY_ID, 'Deployment economics policy differs');
   return profile;
 }
@@ -102,6 +109,7 @@ export async function startOperator(options) {
           operatorSourceCommit: authorityPlan.sourceCommit, operatorPlanDigest: authorityPlan.planDigest, actionInProgress: busy,
           canRetry: !uiCheck && Boolean(options.retryAttempt && entry && !entry.transactionHash && !retry && entry.requestDigest === options.reviewedRequestDigest), retryAttempt: options.retryAttempt ?? null,
           role: step.role, target: step.target, transactionRecipient: step.to, owner: step.sender, value: step.value, parameters: plan.parameters, economics: plan.economics,
+          ...(profile.sourceVersion === QUOTE_SOURCE_VERSION ? { quoteInfrastructure: { contracts: plan.identityCandidate.contracts, dependencies: plan.dependencies } } : {}),
           constructorInputs: step.constructorInputs, constructorValues: step.constructorValues, initcodeHash: step.initcodeHash,
           initcodeBytes: step.initcodeBytes, runtime: { ...plan.contracts[step.role], runtime: undefined },
           ceilings: options.ceilings ?? null, authority: authority ?? null, journalState: entry ? entry.transactionHash ? 'transaction-recorded' : 'outcome-unknown' : 'not-requested', transactionHash: entry?.transactionHash ?? null }); return;

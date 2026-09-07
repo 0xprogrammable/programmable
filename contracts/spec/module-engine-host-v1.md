@@ -334,3 +334,89 @@ SDK, UI and live quote/route integration; provider-backed buy/sell and public ac
 currently supports exact-input operations. Exact-output, Native-module callback composition, additional asset
 roles, strategy/position liabilities and authenticated external/cross-chain inputs are separate concrete profile work; they
 are not claimed by accepting an engine package or by this suite passing.
+
+## Quote infrastructure deployment preparation
+
+The Core Host release deploys its Host and Ledger. The Quote profile also needs the existing
+`StockPairedPositionPlannerV3` implementation and `ModuleQuoteEthConverterV1` bound to the installed Robinhood
+SwapRouter02. The earlier Classic native planner is a different implementation and cannot fill this role.
+`contracts/scripts/module-engine/quote-prepare.mjs` prepares exactly these two contracts, in that order. A
+`ModuleQuoteEngineV1` instance is still deployed by the Host for each launch; there is no global example engine.
+
+The new plan has the exact schema `programmable.module-engine-quote-deployment-plan.v1`. Its separate
+`programmable.module-engine-quote-infrastructure.v1` identity contains only `positionPlanner` and `converter`
+as new roles and seven retained dependency pins. It is not a canonical launch-source release or an economics
+policy. The script does not create fee, review or administrator rights. The gas payer is bound to the existing
+source-controlled deployment-owner basis. Both transaction values are zero; each actual EIP-1559 gas allowance
+and maximum fee still requires fresh simulation, sufficient owner ETH and explicit owner-reviewed ceilings.
+
+The planner has no constructor arguments. Its runtime must reproduce the `type(StockPairedPositionPlannerV3).runtimeCode`
+embedded in the public Quote Engine's constructor. The deployment sealer therefore reads the committed public
+Engine review settings and recompiles both targets with Solc 0.8.26, optimizer 1000, Cancun, `viaIR: true` and
+`metadata.bytecodeHash: none`, leaving CBOR at the compiler's default. A default non-viaIR Forge planner does
+not satisfy that binding. The sealer derives the actual 107-source import closure without changing source bytes,
+checks the embedded full planner runtime, and separately reproduces the planner from its 32-source publication
+input. The resulting reviewed-profile planner has 7,851 bytes of runtime and 7,877 bytes of initcode. The Quote
+Engine has 16,429 bytes of runtime and 29,478 bytes of creation code; its canonical nine-field configuration adds
+640 constructor bytes for a complete 30,118-byte initcode. These are local compiler-parity checks, not an
+accepted source submission or a successful isolated Quote lifecycle review.
+
+The converter retains its already verified non-viaIR, no-CBOR build profile because its runtime is explicitly
+bound by `converterCodeHash`, rather than compared to an embedded `type(...).runtimeCode`. Its full compiler
+input and metadata accompany its separate source-verification request. The converter constructor has exactly `(address router,address weth)`;
+its deployed runtime binds the router, router factory and WETH addresses plus all three code hashes. Both new
+addresses are CREATE2 predictions through the existing `0x4e59b44847b379578588920ca78fbf26c0b4956c` deployment
+proxy. A prediction alone does not authorize the proxy: preparation uses its pinned runtime and the operator
+rechecks that runtime before every wallet request. The retained V4 PoolManager, PositionManager, locked-position
+factory, V3 factory, SwapRouter02 and WETH runtimes are also checked at one common block. The PositionManager,
+locked-position factory and router getters must reproduce their expected links. Stage 1 requires the exact stage 0
+planner runtime. A matching occupied target requires its actual receipt; it never becomes a fresh deployment request.
+
+The deployment preparation reuses the existing pinned compiler sealer, complete Git-object source equality,
+historical locked-position-factory source closure, independent provider custody, owner wallet requests, journal,
+receipts and source readback. The shared operator dispatch recognizes this exact fourth schema and only these two
+zero-value stages. Existing Native V1, Native V2 and Core Engine policy checks remain unchanged. The preview shows
+only the gas payer, constructor/source commitments and all nine infrastructure runtime pins. The inherited
+same-nonce retry path retains every original wallet field. Operator-only continuation under a different source
+commit is currently unsupported for this infrastructure schema and fails closed in the unchanged recovery policy.
+
+From a clean committed checkout, prepare unsigned files without selecting a trading price implicitly:
+
+```sh
+MODULE_MODE_FORGE=/absolute/path/to/pinned/forge \
+MODULE_MODE_SOLC=/absolute/path/to/pinned/native/solc-0.8.26 \
+  node contracts/scripts/module-engine/quote-prepare.mjs --output /absolute/new/output/directory
+```
+
+Optional `--parameters FILE` requires exactly `owner` and `releaseLabel`; the owner must equal the inherited
+deployment owner. The default label is `robinhood-engine-quote-v1`. Optional `--review-configuration FILE`
+requires exactly `initialQuotePerTokenX18` (positive decimal uint256 string) and `feeTier` (100, 500, 3000 or 10000).
+It produces the exact nine-field root tuple `ModuleQuoteEngineV1.Configuration`, with the mandatory leading ABI
+offset for its dynamic suffix. Infrastructure addresses and converter code hash are derived from the plan.
+`fixedQuoteAsset` is zero for a free CA and the suffix is exactly `uint24(feeTier) || WETH`. The reviewed revision
+must enforce the resulting fixed configuration hash; changing CA does not permit changing route, price or
+dependencies. Without explicit price/tier input, the output contains configuration requirements and ABI but no
+invented fixed configuration. Neither form approves or publishes a revision. The actual market for each selected
+CA must separately pass the converter's current history, liquidity, freshness and impact checks.
+
+`review-compiler-parity.json` records the actual compiler settings, binary hash, full input digest, Engine sizes
+and embedded planner hash. `quote-review.standard-input.json` is the exact complete source inventory used for
+this local profile check. The contributor review must use the same source bytes and independently bind its own
+actual subject, request, compiler input, operation cases and results. Source transport or compiler parity alone
+does not provide the V4/router dependencies or address-bit-qualified CREATE2 instance required by a real Quote
+constructor in the isolated worker. The protected review policy is not relaxed by this deployment package.
+
+The emitted `simulation-input.bin` reuses `script/module-mode/SimulateModuleNativeDeploymentV1.s.sol` for local
+fork execution of both exact zero-value calls and all nine resulting/retained runtime hashes. Its name does not
+change the ABI: this generic simulation runner signs and broadcasts nothing. Its logged local call gas is not a
+transaction estimate or approved fee ceiling. Candidate mode remains explicitly unusable by the live operator.
+
+After owner-controlled deployment, `quote-collect.mjs observe/record --plan FILE --step 0|1` uses the reviewed
+provider quorum and, for recording, the protected `--journal DIRECTORY`. `deployment` requires both actual journal
+transactions, canonical receipts and same-block runtime/getter readback. `source-requests` binds each new source
+submission to its own exact creation transaction; `source` additionally validates the published full compiler
+input, constructor, runtime and exact historical Forwarder source evidence supplied by `--previous-source FILE`.
+These commands write separate infrastructure evidence with an `infrastructureDigest`, never a launch release
+digest. Included code, Ethereum finality, source publication, template approval/publication and two actual D10
+launches remain distinct proofs. No prepare, observe, collect or simulation command submits a transaction or
+publishes a source bundle.
