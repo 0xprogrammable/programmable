@@ -1,5 +1,6 @@
 import { sha256, type Hex } from "viem";
 
+import { ROBINHOOD_CHAIN_ID } from "@/lib/chains";
 import type { ModuleModeDraft } from "@/lib/module-mode/builder";
 import { isProgrammableTokenImageUrl, readTokenImageUploadResponse } from "@/lib/token-image";
 
@@ -17,6 +18,13 @@ export function isModuleModeChain(chainId: string | undefined) {
 export function moduleModeWalletStep(wallet: ModuleModeWalletSnapshot): "connect" | "switch" | "prepare" {
   if (!wallet.authenticated || !wallet.sessionReady || !wallet.account) return "connect";
   return isModuleModeChain(wallet.chainId) ? "prepare" : "switch";
+}
+
+/** The wallet context accepts decimal network IDs; its EIP-1193 state uses hex. */
+export async function switchModuleModeNetwork(switchNetwork: (chainId: string) => Promise<boolean>): Promise<void> {
+  if (!await switchNetwork(String(ROBINHOOD_CHAIN_ID))) {
+    throw new Error("The network change was not completed. Switch your wallet to Robinhood Chain and try again.");
+  }
 }
 
 export function assertModuleModeWalletUnchanged(current: ModuleModeWalletSnapshot, expectedAccount: string) {
