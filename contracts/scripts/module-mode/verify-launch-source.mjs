@@ -620,13 +620,15 @@ export async function run(options, dependencies = {}) {
         }
       }
       record.status = record.records.some(item => item.status === 'not-published') ? 'source-publication-required' : 'verified';
-      if (options.stateFile && record.status === 'verified' && range.from <= range.to) {
+      if (range.from <= range.to) {
         const [end, snapshot] = await context.request([{ method: 'eth_getBlockByNumber', params: [toHex(range.to), false] },
           { method: 'eth_getBlockByNumber', params: [context.stateNumber, false] }]);
-        need(end?.hash === record.scanEndHash && BigInt(end.number) === range.to, 'Scan end block changed before checkpoint');
-        need(snapshot?.hash === head.hash && BigInt(snapshot.number) === BigInt(context.stateNumber), 'State snapshot changed before checkpoint');
-        state.releases[release.releaseDigest] = checkpointEntry(release, range.to + 1n, end.hash.toLowerCase(), report.checkedAt);
-        await writeCheckpoint(options.stateFile, state);
+        need(end?.hash === record.scanEndHash && BigInt(end.number) === range.to, 'Scan end block changed after source readback');
+        need(snapshot?.hash === head.hash && BigInt(snapshot.number) === BigInt(context.stateNumber), 'State snapshot changed after source readback');
+        if (options.stateFile && record.status === 'verified') {
+          state.releases[release.releaseDigest] = checkpointEntry(release, range.to + 1n, end.hash.toLowerCase(), report.checkedAt);
+          await writeCheckpoint(options.stateFile, state);
+        }
       }
     } catch (error) { record.status = 'failed'; record.error = error.message; }
   }

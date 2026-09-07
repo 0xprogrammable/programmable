@@ -285,6 +285,11 @@ test('one generation failure cannot overwrite another digest checkpoint; invento
     assert.equal(failed.status, 'failed');
     assert.ok(failed.releases.filter(x => x.sourceVersion !== 'module-engine-v1').every(x => x.error.includes('snapshot changed')));
     await assert.rejects(readFile(stateFile), { code: 'ENOENT' });
+    for (const args of [[], ['--publish']]) {
+      const withoutCheckpoint = await run(parseOptions(args), { root, request, fetchPublic: async () => { throw new Error('No launch, no source write'); } });
+      assert.equal(withoutCheckpoint.status, 'failed');
+      assert.ok(withoutCheckpoint.releases.filter(x => x.sourceVersion !== 'module-engine-v1').every(x => x.error.includes('snapshot changed after source readback')));
+    }
     changedSnapshot = false; requests.length = 0;
     const historical = await run(parseOptions(['--from-block', native.startBlock, '--to-block', String(BigInt(native.startBlock) + 2n)]), { root, request });
     const newer = historical.releases.find(x => x.sourceVersion === 'module-native-v2');
