@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import { ArrowDownToLine, ArrowLeft, ArrowRight, Check, RefreshCw } from "lucide-react";
 import { useWallet } from "@/components/wallet-provider";
+import { isWebsiteAdminWallet } from "@/lib/admin-access";
 import { isReviewDigest, parseReviewPlan, reviewStateLabel, type ModuleReviewDecisionCommandV1, type ModuleReviewDecisionRecordV1, type ReviewDetail, type ReviewManifestCheck, type ReviewQueue } from "@/lib/module-mode/review-contract";
 import styles from "./module-review-admin-console.module.css";
 
@@ -44,7 +45,8 @@ const AREA_LABELS: Record<string, string> = {
 
 export function ModuleReviewAdminConsole() {
   const { authenticated, connecting, wallet, getAccessToken, getIdentityToken, openWallet } = useWallet();
-  const account = authenticated ? wallet?.account.toLowerCase() ?? null : null;
+  const account = authenticated && isWebsiteAdminWallet(wallet?.account)
+    ? wallet?.account.toLowerCase() ?? null : null;
   const session = useRef(account);
   useLayoutEffect(() => { session.current = account; }, [account]);
   const request = useCallback<RequestReview>(async (path, body, signal, asText) => {
@@ -68,12 +70,12 @@ export function ModuleReviewAdminConsole() {
   }, [account, getAccessToken, getIdentityToken]);
   return <div className={`${styles.page} page-width`}>
     <header className={styles.header}>
-      <div><p className={styles.eyebrow}>Admin / Module Mode</p><h1>Module review</h1><p>Review the source, check the build, and decide what comes next.</p></div>
+      <div><p className={styles.eyebrow}>Modules</p><h1>Admin Dashboard</h1></div>
       <Link className={styles.textLink} href="/admin/partners">Partner access <ArrowRight size={15} aria-hidden="true" /></Link>
     </header>
     {account ? <ModuleReviewWorkspace key={account} account={account} request={request} /> : <section className={styles.gate}>
-      <div className={styles.gateMark} aria-hidden="true">M</div><h2>Connect your admin wallet</h2>
-      <p>Module submissions are private. The review service checks your wallet’s permission after you connect.</p>
+      <div className={styles.gateMark} aria-hidden="true">M</div><h2>Admin wallet required</h2>
+      <p>Connect the admin wallet to review submissions.</p>
       <button className={styles.primary} type="button" disabled={connecting} onClick={openWallet}>{connecting ? "Connecting…" : "Connect wallet"}</button>
     </section>}
   </div>;

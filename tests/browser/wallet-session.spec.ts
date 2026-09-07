@@ -65,6 +65,33 @@ async function expectMethods(page: Page, methods: string[]) {
   await expect.poll(async () => (await calls(page)).map((call) => call.method)).toEqual(methods);
 }
 
+test("only the admin wallet gets one dashboard entry, including keyboard and account changes", async ({ page }) => {
+  await open(page);
+  const header = page.getByRole("banner");
+  await header.getByRole("button", { name: "Wallet 0xaaaa…aaaa", exact: true }).click();
+  await expect(header.getByRole("link", { name: "Admin Dashboard", exact: true })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await scenario(page, "website-admin");
+  const button = header.getByRole("button", { name: /^Wallet 0x7987…1b9c$/i });
+  await button.focus();
+  await page.keyboard.press("Enter");
+  const link = header.getByRole("link", { name: "Admin Dashboard", exact: true });
+  await expect(link).toHaveCount(1);
+  await expect(link).toHaveAttribute("href", "/admin/modules");
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Tab");
+  await expect(link).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(button).toBeFocused();
+  await expect(link).toBeHidden();
+  await button.click();
+  await scenario(page, "primary");
+  await expect(header.getByRole("link", { name: "Admin Dashboard", exact: true })).toHaveCount(0);
+  await scenario(page, "website-admin");
+  await scenario(page, "anonymous");
+  await expect(header.getByRole("link", { name: "Admin Dashboard", exact: true })).toHaveCount(0);
+});
+
 for (const path of ["/profile", "/developers/api-keys"]) {
   test(`${path}: primary account wins over a newer unlinked or foreign wallet`, async ({ page }) => {
     await open(page, path);

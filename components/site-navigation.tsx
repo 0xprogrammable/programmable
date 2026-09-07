@@ -23,6 +23,7 @@ import {
   NavigationMenuIcon,
 } from "@/components/navigation-icons";
 import { useWallet } from "@/components/wallet-provider";
+import { AdminDashboardLink } from "@/components/admin-dashboard-link";
 import styles from "@/components/site-navigation.module.css";
 
 const desktopNavItems = [
@@ -130,6 +131,7 @@ function HeaderWalletButton({
 }>) {
   const {
     wallet,
+    authenticated,
     hasSession,
     connecting,
     openingWallet,
@@ -208,6 +210,8 @@ function HeaderWalletButton({
             onPointerEnter={() => warmNavigationRoute(router, "/profile")}
             onPointerDown={() => warmNavigationRoute(router, "/profile")}
             onClick={onClose}>Profile</Link>
+          <AdminDashboardLink account={wallet.account} authenticated={authenticated}
+            menuOpen={menuOpen} onNavigate={onClose} />
           <button type="button" onClick={async () => {
             try {
               await navigator.clipboard.writeText(wallet.account);

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { ModuleReviewAdminConsole } from "@/components/module-review-admin-console";
 
 export const metadata: Metadata = {
-  title: "Module review · Programmable",
+  title: "Admin Dashboard · Programmable",
   description: "Review module submissions and build evidence.",
   robots: { index: false, follow: false },
 };

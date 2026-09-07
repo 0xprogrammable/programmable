@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 
 import { PARTNER_ADMIN_SCHEMA_V1 } from "../lib/partner-admin-contract";
+import { WEBSITE_ADMIN_WALLET } from "../lib/admin-access";
 import {
   createPartnerAdminBridgeV1,
 } from "../lib/server/custom-launch/partner-admin-bridge-v1";
@@ -13,7 +14,7 @@ import {
   WalletPrincipalAuthenticationErrorV1,
 } from "../lib/server/creator-article/wallet-principal.server";
 
-const WALLET = "0x1111111111111111111111111111111111111111" as const;
+const WALLET = WEBSITE_ADMIN_WALLET;
 const OTHER_WALLET = "0x2222222222222222222222222222222222222222" as const;
 const PARTNER_ID = "018f3e2a-7b4c-7d5e-8f90-123456789abc";
 const OTHER_PARTNER_ID = "038f3e2a-7b4c-7d5e-8f90-123456789abc";
@@ -169,7 +170,7 @@ function expectedAssertion(
     method,
     requestTarget,
     "did:privy:test-user",
-    WALLET,
+    WALLET.toLowerCase(),
     ASSERTION_ISSUED_AT,
     ASSERTION_NONCE,
     bodySha256,
@@ -304,6 +305,27 @@ describe("partner admin same-origin bridge", () => {
     ));
     expect(unlinkedMutation.status).toBe(403);
     expect((await unlinkedMutation.json()).error.code).toBe("wallet_not_linked");
+    expect(fetchBackend).not.toHaveBeenCalled();
+  });
+
+  it.each(["read", "write"])("rejects another linked wallet on admin %s before any backend access", async operation => {
+    authenticate.mockResolvedValueOnce({
+      privyUserId: "did:privy:test-user",
+      privySessionId: "session-1",
+      wallets: [WALLET, OTHER_WALLET],
+    });
+    const result = operation === "read"
+      ? await bridge().list(new Request(
+        `https://programmable.market/api/admin/partners?walletAddress=${OTHER_WALLET}`,
+        { headers: browserHeaders() },
+      ))
+      : await bridge().create(new Request("https://programmable.market/api/admin/partners", {
+        method: "POST",
+        headers: { ...browserHeaders(true), "idempotency-key": IDEMPOTENCY_VALUE },
+        body: JSON.stringify({ ...createBrowserBody(), walletAddress: OTHER_WALLET }),
+      }));
+    expect(result.status).toBe(403);
+    expect((await result.json()).error.code).toBe("admin_wallet_required");
     expect(fetchBackend).not.toHaveBeenCalled();
   });
 

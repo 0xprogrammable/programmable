@@ -7,9 +7,10 @@ import { reviewDigest, type ReviewBuildArtifact, type ReviewDetail, type ReviewJ
 import { createModuleModeHostManifest, computeModuleModeHostManifestHash, type ModuleModeCatalogDefinition } from "../../lib/server/module-mode/catalog";
 import { validateModuleSubmissionRequest, type ModuleSubmissionRequest } from "../../packages/classic-modules/src/open-transport.mjs";
 import { a, h, moduleEvidenceFixture } from "./module-mode-evidence";
+import { WEBSITE_ADMIN_WALLET } from "../../lib/admin-access";
 
 // Synthetic parser and UI fixtures. Never deployment, worker, reviewer, or publication evidence.
-export function moduleReviewAdminFixture() {
+export function moduleReviewAdminFixture(author = a(900)) {
   const release = bindActiveModuleModeRelease(moduleEvidenceFixture().release);
   const files = [{ path: "README.md", text: "Synthetic module review fixture. Never publish or admit." },
     { path: "src/Program.sol", text: "// Synthetic parser fixture, not a deployable module.\ncontract Program {}\ncontract Factory {}\n" }].map(file => ({
@@ -17,7 +18,7 @@ export function moduleReviewAdminFixture() {
   }));
   const schema = { type: "record" as const, fields: { capNative: { type: "uint" as const, bits: 128, min: "1", label: "Maximum buys" }, duration: { type: "uint" as const, bits: 64, min: "1", label: "Duration" } }, required: ["capNative", "duration"] };
   const source: ModuleSubmissionRequest = { format: "programmable.modules.submission.v0.1", files, descriptor: {
-    format: "programmable.classic.source-package.v0.1", name: "Synthetic opening cap", version: "1.0.0", author: a(900), rewardWallet: a(901), familySalt: h(902),
+    format: "programmable.classic.source-package.v0.1", name: "Synthetic opening cap", version: "1.0.0", author, rewardWallet: a(901), familySalt: h(902),
     source: { files: files.map(({ path, sha256 }) => ({ path, sha256 })) }, configuration: schema,
     components: [
       { id: "program", runtime: "programmable.module-native-runtime@1", sourcePath: "src/Program.sol", entrypoint: "Program" },
@@ -27,7 +28,7 @@ export function moduleReviewAdminFixture() {
   } };
   const checked = validateModuleSubmissionRequest(source);
   if (!checked.ok) throw new Error(JSON.stringify(checked.errors));
-  const subject: ReviewSubject = { submissionId: "00000000-0000-4000-8000-000000000001", principalId: "00000000-0000-4000-8000-000000000002", author: a(900), requestDigest: checked.requestDigest };
+  const subject: ReviewSubject = { submissionId: "00000000-0000-4000-8000-000000000001", principalId: "00000000-0000-4000-8000-000000000002", author, requestDigest: checked.requestDigest };
   const plan: ReviewPlan = { schemaVersion: "programmable.modules.native-build-plan.v1", submissionId: subject.submissionId, requestDigest: subject.requestDigest,
     programComponentId: "program", factoryComponentId: "factory", configurationCodec: "programmable.native-abi@1", programAbi: [{ path: ["capNative"], type: "uint128" }, { path: ["duration"], type: "uint64" }], callbackGas: 75000,
     cases: [{ id: "basic", parameters: { capNative: "1", duration: "60" }, budgetWei: "0", expectedDeployment: "success" }] };
@@ -55,5 +56,5 @@ export function moduleReviewAdminFixture() {
   const binding = { familyId: checked.familyId, packageId: checked.packageId, factory: a(800), factoryCodeHash: artifact.factory.runtimeCodeHash, moduleCodeHash: artifact.program.runtimeCodeHash, callbackGas: 75000 };
   const manifest = createModuleModeHostManifest({ release, definition, nativeBinding: binding, descriptor: source.descriptor });
   const detail: ReviewDetail = { schemaVersion: "programmable.modules.website-review-detail.v1", job, decisions: [], attempts: [{ attempt: 1, event: "completed", requestDigest: subject.requestDigest, planDigest, workerIdentity: { sourceCommit: "a".repeat(40), runId: "12345", runAttempt: "1", workflowRef: "synthetic/fixture/.github/workflows/review.yml@refs/heads/test", identityDigest: h(11) }, artifactDigest: artifact.artifactDigest, errorCode: null, createdAt: job.updatedAt }], source: { descriptor: source.descriptor, packageId: checked.packageId, familyId: checked.familyId, files: files.map(file => ({ path: file.path, sha256: file.sha256, bytes: Buffer.from(file.bytes, "base64").byteLength })) } };
-  return { release, source, subject, plan, artifact, job, definition, binding, manifest, manifestHash: computeModuleModeHostManifestHash(manifest), detail, reviewer: a(903), policyDigest: h(904) };
+  return { release, source, subject, plan, artifact, job, definition, binding, manifest, manifestHash: computeModuleModeHostManifestHash(manifest), detail, reviewer: WEBSITE_ADMIN_WALLET.toLowerCase() as `0x${string}`, policyDigest: h(904) };
 }
