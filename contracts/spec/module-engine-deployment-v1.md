@@ -113,6 +113,15 @@ reproduces the plan and rechecks its exact historical basis before reading. The 
 actual owner-reviewed armed request and exact transaction hash; this CLI cannot arm a wallet or submit a transaction.
 `--source-root` reads the original clean deployment checkout when the collector has advanced.
 
+The existing `module-mode/operator.mjs` selects Native V1, Native V2 or Engine only when the plan schema,
+identity schema and sourceVersion match exactly. Live preparation reseals with the selected builder and checks
+its inherited basis before applying the unchanged production-source and hosted-Verify authority. Prepare,
+arm, retry and receipt collection use that source's stage/receipt observers inside the same wallet and journal
+path. A continuation cannot change generations. A source-only continuation may replace a correctly hashed
+basis-provenance commit bound to its own plan; the basis domain, provenance file hashes, historical release,
+rights, deployment payloads and all other compared fields must remain identical. The UI displays the new
+10/20 policy and omits the native purchase field for the generic Engine host.
+
 The Engine observer adds immutable/source checks at the same common or receipt block: all three retained contracts,
 official PoolManager, old recipient ledger, current registry owner, Host source ID and TokenFactory/LaunchPolicy/
 Registry/Ledger links, plus Ledger policy, 10/20 constants, PoolManager, Registry, Host and recipients. It closes

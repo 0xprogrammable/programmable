@@ -4,15 +4,44 @@ import { randomBytes } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { assertPlan, hash, need } from './core.mjs';
+import { PLAN_SCHEMA, assertPlan, hash, need } from './core.mjs';
 import { exactJson } from './source-readback.mjs';
 import { REPOSITORY_ROOT, sealBuild, git } from './build.mjs';
 import { assertSourceAuthority } from './authority.mjs';
-import { reviewedProviders, prepareWalletRequest, revalidateWalletRequest, observeReceipt } from './rpc.mjs';
+import { reviewedProviders, prepareWalletRequest, revalidateWalletRequest, observeStage, observeReceipt } from './rpc.mjs';
 import { armJournal, armRetryJournal, retryJournalEntry, journalDirectory, journalEntry, recordTransaction, recordReceipt } from './journal.mjs';
 import { assertContinuationPlan, assertOriginalRequest, prepareWalletRetry } from './recovery.mjs';
+import { sealNativeV2Build } from '../module-native-v2/build.mjs';
+import { assertNativeV2Basis } from '../module-native-v2/basis.mjs';
+import { PLAN_SCHEMA_V2, ECONOMICS_POLICY_ID, assertNativeV2Plan } from '../module-native-v2/core.mjs';
+import { observeNativeV2Stage, observeNativeV2Receipt } from '../module-native-v2/rpc.mjs';
+import { sealEngineBuild } from '../module-engine/build.mjs';
+import { ENGINE_PLAN_SCHEMA, assertEnginePlan, assertEngineBasis } from '../module-engine/core.mjs';
+import { observeEngineStage, observeEngineReceipt } from '../module-engine/rpc.mjs';
 
 const directory = path.dirname(fileURLToPath(import.meta.url));
+const profiles = [
+  { planSchema: PLAN_SCHEMA, identitySchema: 'programmable.module-mode-source.v1', sourceVersion: 'module-native-v1',
+    sealBuild, assertPlan, observeStage, observeReceipt },
+  { planSchema: PLAN_SCHEMA_V2, identitySchema: 'programmable.module-mode-source.v2', sourceVersion: 'module-native-v2',
+    sealBuild: sealNativeV2Build, assertPlan: assertNativeV2Plan, assertBasis: assertNativeV2Basis,
+    observeStage: observeNativeV2Stage, observeReceipt: observeNativeV2Receipt },
+  { planSchema: ENGINE_PLAN_SCHEMA, identitySchema: 'programmable.module-engine.release.v1', sourceVersion: 'module-engine-v1',
+    sealBuild: sealEngineBuild, assertPlan: assertEnginePlan, assertBasis: assertEngineBasis,
+    observeStage: observeEngineStage, observeReceipt: observeEngineReceipt },
+].map(Object.freeze);
+
+/** Exact source dispatch only; every live path still reseals and uses the existing source/wallet authority. */
+export function operatorSourceProfile(plan) {
+  const identity = plan?.identityCandidate;
+  need(plan?.chainId === 4663 && identity?.chainId === 4663, 'Deployment source chain differs');
+  const profile = profiles.find(item => plan.schemaVersion === item.planSchema && identity.schemaVersion === item.identitySchema
+    && identity.sourceVersion === item.sourceVersion);
+  need(profile && (plan.sourceVersion === undefined || plan.sourceVersion === profile.sourceVersion), 'Unsupported or mixed deployment source schemas');
+  if (profile.sourceVersion !== 'module-native-v1') need(identity.economicsPolicyId === ECONOMICS_POLICY_ID
+    && plan.economics?.economicsPolicyId === ECONOMICS_POLICY_ID, 'Deployment economics policy differs');
+  return profile;
+}
 export function sameOrigin(req, origin, token) {
   need(req.headers.host === new URL(origin).host, 'Unexpected Host');
   need(req.headers.origin === origin && req.headers['x-module-operator-token'] === token, 'Same-origin operator authorization required');
@@ -23,8 +52,11 @@ function secureHeaders(nonce) { return { 'cache-control': 'no-store', 'x-content
   'content-security-policy': `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'self'; connect-src 'self'; font-src 'self'; img-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'`,
   'cross-origin-opener-policy': 'same-origin', 'cross-origin-resource-policy': 'same-origin' }; }
 export async function startOperator(options) {
-  const { plan, stepIndex, uiCheck = false } = options; const step = plan.steps[stepIndex]; need(step, 'Unknown deployment step');
+  const { plan, stepIndex, uiCheck = false } = options; const profile = operatorSourceProfile(plan);
+  const step = plan.steps[stepIndex]; need(step, 'Unknown deployment step');
   const authorityPlan = options.continuationPlan ?? plan;
+  const authorityProfile = operatorSourceProfile(authorityPlan);
+  need(profile === authorityProfile, 'Continuation cannot change the deployment source generation');
   const authorityDigest = options.continuationPlan ? options.reviewedContinuationPlanDigest : options.reviewedPlanDigest;
   const refreshAuthority = () => assertSourceAuthority(authorityPlan, authorityDigest, options.runId, options.runAttempt);
   if (options.retryAttempt !== undefined) {
@@ -33,7 +65,8 @@ export async function startOperator(options) {
   } else need(options.reviewedRequestDigest === undefined, 'Retry digest requires an explicit retry attempt');
   let providers, authority;
   if (!uiCheck) {
-    const freshBuild = await sealBuild(); assertPlan(authorityPlan, freshBuild);
+    const freshBuild = await authorityProfile.sealBuild(); await authorityProfile.assertPlan(authorityPlan, freshBuild);
+    if (authorityProfile.assertBasis) await authorityProfile.assertBasis(authorityPlan.basis);
     if (options.continuationPlan) {
       need(plan.planDigest === options.reviewedPlanDigest, 'Original reviewed plan digest differs');
       assertContinuationPlan(plan, authorityPlan);
@@ -64,7 +97,8 @@ export async function startOperator(options) {
       if (req.url === '/state') {
         const entry = uiCheck ? null : await journalEntry(options.journal, plan.planDigest, stepIndex);
         const retry = !uiCheck && options.retryAttempt ? await retryJournalEntry(options.journal, plan.planDigest, stepIndex, options.retryAttempt) : null;
-        reply(200, { uiCheck, chainId: 4663, planDigest: plan.planDigest, sourceCommit: plan.sourceCommit, stepIndex, totalSteps: plan.steps.length,
+        reply(200, { uiCheck, chainId: 4663, sourceVersion: profile.sourceVersion, planSchema: profile.planSchema,
+          planDigest: plan.planDigest, sourceCommit: plan.sourceCommit, stepIndex, totalSteps: plan.steps.length,
           operatorSourceCommit: authorityPlan.sourceCommit, operatorPlanDigest: authorityPlan.planDigest, actionInProgress: busy,
           canRetry: !uiCheck && Boolean(options.retryAttempt && entry && !entry.transactionHash && !retry && entry.requestDigest === options.reviewedRequestDigest), retryAttempt: options.retryAttempt ?? null,
           role: step.role, target: step.target, transactionRecipient: step.to, owner: step.sender, value: step.value, parameters: plan.parameters, economics: plan.economics,
@@ -77,13 +111,13 @@ export async function startOperator(options) {
         if (req.url === '/prepare') {
           need(!await journalEntry(options.journal, plan.planDigest, stepIndex), 'This step was already handed to a wallet; reconcile its outcome instead of retrying');
           authority = await refreshAuthority();
-          prepared = await prepareWalletRequest(plan, stepIndex, providers, options.ceilings);
+          prepared = await prepareWalletRequest(plan, stepIndex, providers, options.ceilings, profile.observeStage);
           reply(200, prepared); return;
         }
         if (req.url === '/arm') {
           need(prepared && !prepared.retryAttempt && input.requestDigest === prepared.requestDigest, 'Prepared request digest differs');
           authority = await refreshAuthority();
-          await revalidateWalletRequest(plan, prepared, providers, options.ceilings); await armJournal(options.journal, prepared, authority);
+          await revalidateWalletRequest(plan, prepared, providers, options.ceilings, profile.observeStage); await armJournal(options.journal, prepared, authority);
           reply(200, { request: prepared.request, requestDigest: prepared.requestDigest }); prepared = null; return;
         }
         if (req.url === '/prepare-retry') {
@@ -91,7 +125,7 @@ export async function startOperator(options) {
           need(!await retryJournalEntry(options.journal, plan.planDigest, stepIndex, options.retryAttempt), 'This retry was already handed off; reconcile its outcome');
           const entry = await journalEntry(options.journal, plan.planDigest, stepIndex);
           authority = await refreshAuthority();
-          prepared = await prepareWalletRetry(plan, entry, providers, options.ceilings, options.reviewedRequestDigest, options.retryAttempt);
+          prepared = await prepareWalletRetry(plan, entry, providers, options.ceilings, options.reviewedRequestDigest, options.retryAttempt, profile.observeStage);
           reply(200, prepared); return;
         }
         if (req.url === '/arm-retry') {
@@ -99,7 +133,7 @@ export async function startOperator(options) {
           const entry = await journalEntry(options.journal, plan.planDigest, stepIndex);
           assertOriginalRequest(plan, entry, options.reviewedRequestDigest);
           authority = await refreshAuthority();
-          await revalidateWalletRequest(plan, prepared, providers, options.ceilings);
+          await revalidateWalletRequest(plan, prepared, providers, options.ceilings, profile.observeStage);
           await armRetryJournal(options.journal, prepared, authority);
           reply(200, { request: prepared.request, requestDigest: prepared.requestDigest }); prepared = null; return;
         }
@@ -109,7 +143,7 @@ export async function startOperator(options) {
         }
         if (req.url === '/receipt') {
           const entry = await journalEntry(options.journal, plan.planDigest, stepIndex); need(entry?.transactionHash, 'Record the transaction hash first');
-          const evidence = await observeReceipt(plan, entry, providers); if (evidence.status === 'included-code-verified-unfinalized') await recordReceipt(options.journal, plan.planDigest, stepIndex, evidence);
+          const evidence = await profile.observeReceipt(plan, entry, providers); if (evidence.status === 'included-code-verified-unfinalized') await recordReceipt(options.journal, plan.planDigest, stepIndex, evidence);
           reply(200, evidence); return;
         }
         throw new Error('Unknown operator action');
