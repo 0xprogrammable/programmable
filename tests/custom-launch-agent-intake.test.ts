@@ -10,8 +10,12 @@ import {
   PROGRAMMABLE_AGENT_SETUP_TEXT_V1,
   PROGRAMMABLE_ROBINHOOD_FUNDING_INTAKE_V1,
   PROGRAMMABLE_ROBINHOOD_FUNDING_INTAKE_TEXT_V1,
+  buildProgrammableAgentSetupTextV1,
+  programmableAgentIntakeV1,
+  programmableRobinhoodFundingIntakeTextV1,
 } from "../lib/custom-launch/agent-setup-v1";
 import { PRELAUNCH_CUSTOM_REGISTRY_PUBLIC_MANIFEST_V1 } from "../lib/custom-launch/registry-public-manifest-v1";
+import { V4_API_PROFILE_VERSION } from "../lib/custom-launch/v4-api-discovery";
 import { programmableWellKnownDocumentV1 } from "../lib/server/custom-launch/well-known-v1";
 
 const rawGuide = readFileSync(
@@ -23,8 +27,8 @@ const document = programmableWellKnownDocumentV1(
 );
 
 describe("chain-first Custom Launch intake", () => {
-  it("keeps the funding conversation scoped to Robinhood and consistent across discovery, setup and guide", () => {
-    const funding = document.customLaunchApi.intake.chainSpecific.robinhood;
+  it("keeps historical funding guidance scoped to Robinhood and consistent across discovery and setup", () => {
+    const funding = programmableAgentIntakeV1().chainSpecific.robinhood;
     expect(funding).toBe(PROGRAMMABLE_ROBINHOOD_FUNDING_INTAKE_V1);
     expect(funding.chainId).toBe(4663);
     expect(funding.choicesAreRequestEnumValues).toBe(false);
@@ -39,13 +43,25 @@ describe("chain-first Custom Launch intake", () => {
     expect(fundingStart).toBeGreaterThan(robinhoodStart);
     expect(fundingStart).toBeLessThan(ethereumStart);
     expect(PROGRAMMABLE_AGENT_SETUP_TEXT_V1.slice(ethereumStart)).not.toContain(PROGRAMMABLE_ROBINHOOD_FUNDING_INTAKE_TEXT_V1);
+  });
+
+  it("uses current Native20 funding guidance consistently in the active profile and public guide", () => {
+    const funding = programmableAgentIntakeV1("4.1.0").chainSpecific.robinhood;
+    const setup = buildProgrammableAgentSetupTextV1("4.1.0");
+    const fundingText = programmableRobinhoodFundingIntakeTextV1("4.1.0");
+    expect(fundingText).toContain("Native20 charges 20 bps (0.20%)");
+    expect(PROGRAMMABLE_ROBINHOOD_FUNDING_INTAKE_TEXT_V1).not.toContain("Native20 charges");
+    expect(setup.indexOf(fundingText)).toBeGreaterThan(setup.indexOf("Robinhood Chain Mainnet only"));
+    expect(setup.indexOf(fundingText)).toBeLessThan(setup.indexOf("Ethereum Mainnet only"));
     for (const instruction of funding.instructions) {
       expect(rawGuide).toContain(instruction);
+      expect(setup).toContain(instruction);
     }
   });
 
   it("publishes the same preparation guidance before technical setup on every entry point", () => {
-    expect(document.customLaunchApi.intake).toBe(PROGRAMMABLE_AGENT_INTAKE_V1);
+    expect(document.customLaunchApi.intake).toEqual(programmableAgentIntakeV1(V4_API_PROFILE_VERSION));
+    expect(programmableAgentIntakeV1()).toBe(PROGRAMMABLE_AGENT_INTAKE_V1);
     expect(document.customLaunchApi.intake.scope).toBe("agent-preparation-not-server-authorization");
     expect(PROGRAMMABLE_AGENT_SETUP_TEXT_V1.indexOf(PROGRAMMABLE_AGENT_INTAKE_TEXT_V1))
       .toBeGreaterThan(0);

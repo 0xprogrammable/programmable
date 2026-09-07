@@ -22,6 +22,12 @@ Selected 4.1 requires a request-bound funding plan, exact launch and gas budgets
 
 A V4 client must poll with `programmable-launch status REQUEST_UUID --api-version 4 --chain-id 4663 --watch --until authorized`, stop for separate wallet review, signature and broadcast, then poll the same command with `--until finalized`. The CLI never signs or broadcasts. The V4 states are `received`, `validating`, `action_required`, `authorized`, `awaiting_wallet_signature`, `wallet_action_required`, `submitted`, `sequencer_soft_confirmed`, `ethereum_posted`, `finalized` and `failed`. `action_required` is remediation, not a wallet action. Source verification starts after finality and stays independent from indexing, trading and publication.
 
+## Shared token and hook on Robinhood
+
+Use the separate [MultiRole V2 capabilities](https://api.programmable.market/v4/chains/4663/multi-role-custom-launches/capabilities), [guide](https://api.programmable.market/v4/chains/4663/multi-role-custom-launches/guide.md) and [client](https://api.programmable.market/v4/chains/4663/multi-role-custom-launches/client.mjs) for one contract that implements both token and hook. Its request, funding and lifecycle contract is separate from V4 4.1. The automatic economic verifier accepts the exact Native20 recipe and supported constructor configuration; different source code or economic mechanisms return `evidence_required`. Preflight/create uses `custom-launch:create`; status/list uses `custom-launch:read`, bound to chain `4663` and the controller.
+
+Native20 charges 20 bps (0.20%) of gross native ETH per successful buy or sell for Programmable, rounded up per trade. Creator and pool fees are additional. The [fees guide](../economics.md) defines accruals, claims and the [Dune dashboard](https://dune.com/programmablehq/analytics) metrics. Track the [MultiRole finalized feed](https://api.programmable.market/v4/chains/4663/multi-role-custom-launches/finalized) separately from the existing V4 feed.
+
 ## Service status
 
 {% openapi src="../.gitbook/assets/programmable-v2.yaml" path="/api/v2/status" method="get" %}
