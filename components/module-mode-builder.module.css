@@ -188,9 +188,9 @@
 .reviewModule h3 { font-size: 16px; font-weight: 500; line-height: 24px; margin: 0; }
 .reviewModule p { color: var(--mm-muted); font-size: 12px; line-height: 20px; margin: 8px 0 16px; }
 .reviewModule dl { display: grid; gap: 8px; margin: 0; }
-.reviewModule dl > div { display: flex; gap: 16px; justify-content: space-between; }
+.reviewModule dl > div { display: grid; gap: 8px 16px; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); }
 .reviewModule dt { color: var(--mm-muted); font-size: 14px; line-height: 20px; }
-.reviewModule dd { font-size: 14px; line-height: 20px; margin: 0; text-align: right; }
+.reviewModule dd { font-size: 14px; line-height: 20px; margin: 0; overflow-wrap: anywhere; text-align: right; }
 .previewNotice { background: #272725; border: 1px solid #4d4d47; border-radius: 8px; margin-top: 32px; padding: 16px; }
 .previewNotice strong { font-size: 14px; font-weight: 500; line-height: 20px; }
 .previewNotice p { color: #c9c9c1; font-size: 14px; line-height: 20px; margin: 8px 0 0; }
@@ -276,8 +276,10 @@
   .moduleConfiguration { padding: 12px; }
   .imagePicker { align-items: flex-start; gap: 12px; }
   .imageThumbnail { flex-basis: 64px; height: 64px; }
-  .reviewRows > div { grid-template-columns: minmax(0, 1fr); gap: 4px; }
-  .reviewRows dd { text-align: left; }
+  .reviewRows > div,
+  .reviewModule dl > div { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .reviewRows dd,
+  .reviewModule dd { text-align: left; }
 }
 
 @media (forced-colors: active) {
