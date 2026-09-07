@@ -1,0 +1,152 @@
+name: Consume platform maintenance evidence
+
+on:
+  workflow_run:
+    workflows: [Verify platform maintenance]
+    types: [completed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: protected-platform-maintenance-main
+  cancel-in-progress: false
+
+jobs:
+  consume:
+    name: Verify immutable evidence and request ordinary protected merge
+    if: >-
+      github.repository_id == 1314365508 &&
+      github.ref == 'refs/heads/production' &&
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: platform-maintenance-policy
+    outputs:
+      producer_run: ${{ steps.consume.outputs.producer_run }}
+      merge_sha: ${{ steps.consume.outputs.merge_sha }}
+      merge_artifact: ${{ steps.upload.outputs.artifact-id }}
+    permissions:
+      actions: read
+      attestations: read
+      checks: write
+      contents: write
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: trusted
+          persist-credentials: false
+          lfs: false
+          submodules: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.14.0
+      - name: Resolve exact successful producer, attempt and immutable artifact
+        id: producer
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MAINTENANCE_PRODUCER_RUN: ${{ github.event.workflow_run.id }}
+          MAINTENANCE_OUTPUT: ${{ runner.temp }}/maintenance-consumer
+        run: node trusted/scripts/ci/platform-maintenance-runner.mjs resolve
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.producer.outputs.artifact_id }}
+          run-id: ${{ steps.producer.outputs.run_id }}
+          github-token: ${{ github.token }}
+          repository: programmablehq/PROGRAMMABLE
+          path: ${{ runner.temp }}/maintenance-evidence
+          digest-mismatch: error
+      - name: Resolve independently reviewed policy-reader source pins
+        id: policy
+        env:
+          MAINTENANCE_OUTPUT: ${{ runner.temp }}/maintenance-consumer
+        run: node trusted/scripts/ci/platform-maintenance-runner.mjs policy-config
+      - name: Create repository-scoped read-only policy token
+        id: policy_token
+        if: steps.policy.outputs.configured == 'true'
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          app-id: ${{ steps.policy.outputs.app_id }}
+          private-key: ${{ secrets.PLATFORM_MAINTENANCE_POLICY_APP_PRIVATE_KEY }}
+          owner: programmablehq
+          repositories: PROGRAMMABLE
+          permission-administration: read
+          permission-metadata: read
+          skip-token-revoke: false
+      - name: Verify provenance, all live bindings and protected merge policy
+        id: consume
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MAINTENANCE_POLICY_APP_ID: ${{ steps.policy.outputs.app_id }}
+          MAINTENANCE_POLICY_INSTALLATION_ID: ${{ steps.policy_token.outputs.installation-id }}
+          MAINTENANCE_POLICY_READ_TOKEN: ${{ steps.policy_token.outputs.token }}
+          MAINTENANCE_PRODUCER: ${{ runner.temp }}/maintenance-consumer/producer.json
+          MAINTENANCE_EVIDENCE: ${{ runner.temp }}/maintenance-evidence/evidence.json
+          MAINTENANCE_OUTPUT: ${{ runner.temp }}/maintenance-consumer
+        run: node trusted/scripts/ci/platform-maintenance-runner.mjs consume
+      - id: upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: platform-maintenance-merge-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/maintenance-consumer/merge-observation.json
+          if-no-files-found: error
+          retention-days: 30
+          overwrite: false
+
+  dispatch:
+    name: Dispatch exact protected post-merge verification
+    needs: consume
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: read
+      attestations: read
+      actions: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: trusted
+          persist-credentials: false
+          lfs: false
+          submodules: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.14.0
+      - id: producer
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MAINTENANCE_PRODUCER_RUN: ${{ needs.consume.outputs.producer_run }}
+          MAINTENANCE_OUTPUT: ${{ runner.temp }}/maintenance-dispatch
+        run: node trusted/scripts/ci/platform-maintenance-runner.mjs resolve
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.producer.outputs.artifact_id }}
+          run-id: ${{ steps.producer.outputs.run_id }}
+          github-token: ${{ github.token }}
+          repository: programmablehq/PROGRAMMABLE
+          path: ${{ runner.temp }}/maintenance-evidence
+          digest-mismatch: error
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ needs.consume.outputs.merge_artifact }}
+          path: ${{ runner.temp }}/maintenance-merge
+          digest-mismatch: error
+      - name: Revalidate actual merge and dispatch with separate Actions authority
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MAINTENANCE_PRODUCER: ${{ runner.temp }}/maintenance-dispatch/producer.json
+          MAINTENANCE_EVIDENCE: ${{ runner.temp }}/maintenance-evidence/evidence.json
+          MAINTENANCE_MERGE_OBSERVATION: ${{ runner.temp }}/maintenance-merge/merge-observation.json
+          MAINTENANCE_OUTPUT: ${{ runner.temp }}/maintenance-dispatch
+        run: node trusted/scripts/ci/platform-maintenance-runner.mjs dispatch
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: platform-maintenance-dispatch-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/maintenance-dispatch/post-merge-dispatch.json
+          if-no-files-found: error
+          retention-days: 30
+          overwrite: false
