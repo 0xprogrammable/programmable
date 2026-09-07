@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { decodeAbiParameters, decodeFunctionData, encodeAbiParameters, encodeEventTopics, encodeFunctionResult, keccak256, parseAbiParameters, sha256, toHex, type Abi, type Address, type Hex, type TransactionReceipt } from "viem";
+import { decodeAbiParameters, decodeFunctionData, encodeAbiParameters, encodeEventTopics, encodeFunctionResult, getCreate2Address, keccak256, parseAbiParameters, sha256, toHex, type Abi, type Address, type Hex, type TransactionReceipt } from "viem";
 import { createModuleModeState, PREVIEW_MODULE_CATALOG, setModuleSelected, validateModuleModeDraft, type ModuleModeDraft, type ModuleModeState } from "../lib/module-mode/builder";
-import { bindActiveModuleModeRelease, type ModuleModeDependency } from "../lib/module-mode/release";
+import { bindActiveModuleModeRelease, computeModuleModeReleaseDigest, MODULE_MODE_ECONOMICS_POLICY_V2, type ModuleModeDependency } from "../lib/module-mode/release";
 import { MODULE_MODE_AVAILABILITY_SCHEMA, nativeCanonicalJson, type ModuleModeAvailability, type NativeModuleModeCatalogEntry } from "../lib/module-mode/native-catalog";
-import { MODULE_NATIVE_METADATA_TYPE, MODULE_NATIVE_SELECTION_TYPE, moduleNativeApprovalAbi, moduleNativeLaunchAbi, moduleNativeRouterAbi } from "../lib/module-mode/native-abi";
+import { MODULE_NATIVE_METADATA_TYPE, MODULE_NATIVE_SELECTION_TYPE, moduleNativeApprovalAbi, moduleNativeLaunchAbi, moduleNativeLaunchAbiFor, moduleNativeLaunchV2Abi, moduleNativeReadV2Abi, moduleNativeRouterAbi } from "../lib/module-mode/native-abi";
 import { assertModuleNativeRelease, prepareModuleNativeApproval, prepareModuleNativeLaunch, prepareModuleNativeManagementTransaction, prepareModuleNativeSwap, revalidateModuleNativeTransaction, waitForModuleNativeReceipt, ModuleNativeTransactionRevertedError, type ModuleNativeClient, type PreparedModuleNativeTransaction } from "../lib/module-mode/native-client";
 import { managementCoreAbi, type ModuleManagementBuildInput } from "../lib/module-mode/management";
 import { moduleEvidenceFixture, a, h } from "./fixtures/module-mode-evidence";
@@ -12,17 +12,31 @@ import { MODULE_DEFAULT_TOKEN_IMAGE, moduleTokenMetadata } from "../lib/module-m
 const now = BigInt(Math.floor(Date.now() / 1000));
 type Call = { account?: Address; to: Address; data: Hex; value?: bigint; blockNumber?: bigint };
 type Read = { address: Address; functionName: string; args: readonly unknown[]; blockNumber?: bigint };
-function harness(withModules = false) {
+function harness(withModules = false, v2 = false) {
   const rawFixture = moduleEvidenceFixture(0, 0);
   const f = { ...rawFixture, wallet: rawFixture.evidence.getLaunch.record.launchWallet, token: rawFixture.evidence.getLaunch.record.token, graffiti: rawFixture.evidence.token.graffiti };
-  const release = bindActiveModuleModeRelease(f.release); const pins = release.contracts;
+  const candidate = v2 ? { ...f.release, schemaVersion: "programmable.module-mode-source.v2", sourceVersion: "module-native-v2", economicsPolicyId: MODULE_MODE_ECONOMICS_POLICY_V2 } : f.release;
+  const release = bindActiveModuleModeRelease({ ...candidate, releaseDigest: computeModuleModeReleaseDigest(candidate) }); const pins = release.contracts;
+  const launchAbi = moduleNativeLaunchAbiFor(release);
+  if (v2) {
+    f.graffiti = keccak256(encodeAbiParameters(parseAbiParameters("string,uint256,address,address,bytes32"), ["programmable.module-mode.native-token.v2", 4663n, pins.launcher.address, f.wallet, h(500)]));
+    const salt = keccak256(encodeAbiParameters(parseAbiParameters("string,string,uint8,address,bytes32"), ["Fixture 0", "F0", 18, pins.launcher.address, f.graffiti]));
+    f.token = getCreate2Address({ from: pins.tokenFactory.address, salt, bytecodeHash: release.tokenCreationCodeHash }).toLowerCase() as Address;
+    const poolId = keccak256(encodeAbiParameters(parseAbiParameters("address,address,uint24,int24,address"), [a(0), f.token, 0, 200, pins.hook.address]));
+    Object.assign(f.evidence.getLaunch.record, { token: f.token, poolId });
+    Object.assign(f.evidence.identity.record, { token: f.token, poolId });
+  }
   const roleByAddress = new Map(Object.entries(pins).map(([role, pin]) => [pin.address.toLowerCase(), role as ModuleModeDependency]));
   const catalog: NativeModuleModeCatalogEntry[] = withModules ? PREVIEW_MODULE_CATALOG.map((entry, i) => ({ ...entry, status: "available", nativeBinding: {
     familyId: h(i === 0 ? 900 : 100), packageId: h(200 + i), factory: a(100 + i), factoryCodeHash: keccak256(toHex(`factory${i}`)), moduleCodeHash: h(400 + i), callbackGas: 100_000, manifestHash: h(500 + i), reviewDigest: h(600 + i),
+    ...(v2 ? { feeEligibility: { eligible: true, reviewDigest: h(700 + i) } } : {}),
   } })) : [];
   const availability: ModuleModeAvailability = { schemaVersion: MODULE_MODE_AVAILABILITY_SCHEMA, release, catalog, reason: null };
   let chainId = 4663; let codeMismatch = false; let disabled = false; let allowance = 0n; let blockHash = h(400);
   let adminRevision = 0n; let currentCreator = f.wallet;
+  let poolPlatform = v2 ? withModules ? 30 : 10 : 20; let poolBuy = 0; let poolSell = 1000; let poolProtocol = 500;
+  let badPolicy: string | null = null; let badLedgerRate: number | null = null; let badPreview = false;
+  const eligibility = new Map(catalog.map(entry => [entry.nativeBinding.familyId, entry.nativeBinding.feeEligibility!]));
   let lastLaunch: Record<string, unknown> | null = null;
   let simulatedLaunch = { ...f.evidence.getLaunch.record, positionTokenId: 1n, initialBuyNative: 1000n, initialBuyTokens: 90_000n };
   let receipt: TransactionReceipt; let receiptTx: Record<string, unknown>;
@@ -34,6 +48,12 @@ function harness(withModules = false) {
       const entry = catalog.find(item => item.nativeBinding.packageId === args[0]); if (!entry) throw new Error("Unknown revision");
       return { ...entry.nativeBinding, enabled: !disabled };
     }
+    if (fn === "familyFeeEligibility") { const review = eligibility.get(args[0] as Hex)!; return [review.eligible, review.reviewDigest]; }
+    if (fn === "ECONOMICS_POLICY_ID") return role === badPolicy ? h(9999) : MODULE_MODE_ECONOMICS_POLICY_V2;
+    if (fn === "PROTOCOL_FEE_BPS") return 10;
+    if (fn === "AUTHOR_POOL_FEE_BPS") return 20;
+    if (fn === "platformFeeBps") return badLedgerRate ?? poolPlatform;
+    if (fn === "previewRecipe") { const recipe = recipeFor(args[0] as number, args[1] as number, args[2] as { packageId: Hex }[]); return [badPreview ? h(9999) : recipe.recipeHash, recipe.families]; }
     if (fn === "creator") return pins.launcher.address;
     if (fn === "totalSupply") return 1_000_000_000n * 10n ** 18n;
     if (fn === "decimals") return 18;
@@ -46,8 +66,8 @@ function harness(withModules = false) {
     if (fn === "claimable") return 500n;
     if (fn === "claimedBy" || fn === "contributionByPool") return 100n;
     if (fn === "allowance") return allowance;
-    if (fn === "poolConfig") return [pins.launcher.address, f.wallet, pins.swapRouter.address, pins.swapRouter.runtimeCodeHash, 0, 1000, simulatedLaunch.recipeHash, simulatedLaunch.launchKey];
-    if (fn === "feeComponents") return [0, 20, 500, 0];
+    if (fn === "poolConfig") return [pins.launcher.address, f.wallet, pins.swapRouter.address, pins.swapRouter.runtimeCodeHash, poolBuy, poolSell, simulatedLaunch.recipeHash, simulatedLaunch.launchKey, ...(v2 ? [poolPlatform] : [])];
+    if (fn === "feeComponents") return [v2 ? args[1] ? poolBuy : poolSell : 0, poolPlatform, poolProtocol, 0];
     if (fn === "predictTokenAddress") return [f.token, f.graffiti];
     if (fn === "minInitialBuyNative") return 1000n;
     if (fn === "engineCodeHash") return pins.hook.runtimeCodeHash;
@@ -57,19 +77,31 @@ function harness(withModules = false) {
     if (target in pins && role) return pins[target as ModuleModeDependency].address;
     throw new Error(`Unexpected read ${role}.${fn}`);
   });
+  function recipeFor(buy: number, sell: number, selections: { packageId: Hex }[]) {
+    const entries = selections.map(selection => catalog.find(item => item.nativeBinding.packageId === selection.packageId)!);
+    const selectedFamilies = entries.map(entry => entry.nativeBinding.familyId);
+    const reviews = entries.map(entry => eligibility.get(entry.nativeBinding.familyId));
+    const families = v2 ? [...new Set(selectedFamilies.filter((_, index) => reviews[index]!.eligible))].sort((a, b) => BigInt(a) < BigInt(b) ? -1 : 1) : selectedFamilies;
+    const recipeHash = v2
+      ? keccak256(encodeAbiParameters(parseAbiParameters(`string,uint256,address,address,bytes32,bytes32[],uint16,uint16,bytes32[],${MODULE_NATIVE_SELECTION_TYPE}`), ["programmable.module-mode.native-recipe.v2", 4663n, pins.hook.address, pins.registry.address, MODULE_MODE_ECONOMICS_POLICY_V2,
+        reviews.map((review, index) => keccak256(encodeAbiParameters(parseAbiParameters("bytes32,bool,bytes32"), [selectedFamilies[index], review!.eligible, review!.reviewDigest]))), buy, sell, families, selections as never]))
+      : keccak256(encodeAbiParameters(parseAbiParameters(`string,uint256,address,address,uint16,uint16,bytes32[],${MODULE_NATIVE_SELECTION_TYPE}`), ["programmable.module-mode.native-recipe.v1", 4663n, pins.hook.address, pins.registry.address, buy, sell, families, selections as never]));
+    return { recipeHash, families, selectionEligible: reviews.map(review => review?.eligible ?? false), selectionReviewDigests: reviews.map(review => review?.reviewDigest ?? h(0)) };
+  }
   const call = vi.fn(async ({ data }: Call) => {
-    for (const abi of [moduleNativeLaunchAbi, moduleNativeRouterAbi, moduleNativeApprovalAbi, managementCoreAbi]) {
+    for (const abi of [launchAbi, moduleNativeRouterAbi, moduleNativeApprovalAbi, managementCoreAbi]) {
       let decoded: ReturnType<typeof decodeFunctionData<Abi>>;
       try { decoded = decodeFunctionData({ abi, data }); } catch { continue; }
       if (decoded.functionName === "launch") {
         const p = decoded.args![0] as Record<string, unknown>; lastLaunch = p;
         const selections = p.modules as { packageId: Hex }[];
-        const families = selections.map(selection => catalog.find(item => item.nativeBinding.packageId === selection.packageId)!.nativeBinding.familyId);
-        const recipeHash = keccak256(encodeAbiParameters(parseAbiParameters(`string,uint256,address,address,uint16,uint16,bytes32[],${MODULE_NATIVE_SELECTION_TYPE}`), ["programmable.module-mode.native-recipe.v1", 4663n, pins.hook.address, pins.registry.address, Number(p.buyCreatorFeeBps), Number(p.sellCreatorFeeBps), families, p.modules as never]));
+        const { recipeHash, families } = recipeFor(Number(p.buyCreatorFeeBps), Number(p.sellCreatorFeeBps), selections);
+        if (v2 && p.expectedRecipeHash !== recipeHash) throw new Error("Stale expected recipe");
+        poolPlatform = v2 ? families.length ? 30 : 10 : 20; poolBuy = Number(p.buyCreatorFeeBps); poolSell = Number(p.sellCreatorFeeBps);
         const programHash = keccak256(encodeAbiParameters(parseAbiParameters(`bytes32,${MODULE_NATIVE_SELECTION_TYPE}`), [keccak256(toHex("programmable.module-mode.native-program.v1")), p.modules as never]));
         const launchKey = keccak256(encodeAbiParameters(parseAbiParameters("bytes32,uint256,address,address,(address source,address launchWallet,address token,address poolManager,bytes32 poolId,bytes32 recipeHash,bytes32 programHash)"), [keccak256(toHex("programmable.module-mode.native-binding.v1")), 4663n, pins.runtime.address, pins.hook.address, { source: pins.launcher.address, launchWallet: f.wallet, token: f.token, poolManager: pins.poolManager.address, poolId: f.evidence.getLaunch.record.poolId, recipeHash, programHash }]));
         simulatedLaunch = { ...simulatedLaunch, recipeHash, launchKey, initialBuyNative: p.initialBuyNative as bigint };
-        return { data: encodeFunctionResult({ abi: moduleNativeLaunchAbi, functionName: "launch", result: simulatedLaunch }) };
+        return { data: encodeFunctionResult({ abi: launchAbi, functionName: "launch", result: simulatedLaunch }) };
       }
       if (decoded.functionName === "swap") {
         const [, isBuy, specified] = decoded.args as [Address, boolean, bigint, bigint, Address, bigint];
@@ -94,7 +126,7 @@ function harness(withModules = false) {
   } as unknown as ModuleNativeClient;
   const state: ModuleModeState = { ...createModuleModeState(), name: "Fixture 0", symbol: "F0", description: "A local RPC fixture", sellFeePercent: "10", initialBuyEth: "0.000000000000001", tokenImage: { kind: "uri", uri: "https://example.com/fixture.webp", contentVerified: false } };
   function draft(custom = state) {
-    const result = validateModuleModeDraft(custom, catalog, { roles: { creator: f.wallet, launchWallet: f.wallet } });
+    const result = validateModuleModeDraft(custom, catalog, { roles: { creator: f.wallet, launchWallet: f.wallet } }, undefined, undefined, undefined, release);
     if (!result.ok) throw new Error(JSON.stringify(result.issues)); return result.draft;
   }
   const launch = (raw = draft()) => prepareModuleNativeLaunch({ client, availability, draft: raw, account: f.wallet, creatorSalt: h(500), image: { uri: "https://example.com/fixture.webp" } });
@@ -117,6 +149,11 @@ function harness(withModules = false) {
         metadataHash: keccak256(encodeAbiParameters(parseAbiParameters(`string,string,${MODULE_NATIVE_METADATA_TYPE}`), [p.name as string, p.symbol as string, p.metadata as never])),
         creatorConfigurationHash: keccak256(encodeAbiParameters(parseAbiParameters("address[],uint16[]"), [p.creatorWallets as Address[], p.creatorSharesBps as number[]])), economicsHash: h(302) });
       add(moduleNativeLaunchAbi, "ModuleNativeTokenIdentityBound", pins.launcher.address, { launchId: simulatedLaunch.launchId, creatorSalt: h(500), graffiti: f.graffiti });
+      if (v2) {
+        const recipe = recipeFor(Number(p.buyCreatorFeeBps), Number(p.sellCreatorFeeBps), p.modules as { packageId: Hex }[]);
+        add(moduleNativeReadV2Abi, "NativeEconomicsBound", pins.hook.address, { poolId: simulatedLaunch.poolId, economicsPolicyId: MODULE_MODE_ECONOMICS_POLICY_V2, protocolFeeBps: 10, authorPoolFeeBps: recipe.families.length ? 20 : 0,
+          eligibleFamilies: recipe.families, selectionEligible: recipe.selectionEligible, selectionReviewDigests: recipe.selectionReviewDigests });
+      }
     }
     if (prepared.kind === "swap") add(moduleNativeRouterAbi, "NativeTradeCompleted", pins.swapRouter.address, { poolId: prepared.poolId, actor: prepared.account, recipient: prepared.recipient, isBuy: prepared.isBuy, amountSpecified: prepared.amountSpecified, nativeAmount: prepared.nativeAmount, tokenAmount: prepared.tokenAmount });
     if (prepared.kind === "approve") { allowance = prepared.amount; add(moduleNativeApprovalAbi, "Approval", prepared.token, { owner: prepared.account, spender: pins.swapRouter.address, value: prepared.amount }); }
@@ -125,6 +162,9 @@ function harness(withModules = false) {
     return { transactionHash, receipt, transaction: receiptTx };
   }
   return { client, f, release, availability, state, catalog, draft, launch, setupReceipt, readContract, call,
+    setEligibility: (family: Hex, eligible: boolean, reviewDigest: Hex) => { eligibility.set(family, { eligible, reviewDigest }); },
+    setPolicyMismatch: (role: string) => { badPolicy = role; }, setLedgerRate: (rate: number) => { badLedgerRate = rate; },
+    setPoolProtocol: (rate: number) => { poolProtocol = rate; }, setBadPreview: () => { badPreview = true; },
     setAdminRevision: (revision: bigint) => { adminRevision = revision; }, setCreator: (wallet: Address) => { currentCreator = wallet; },
     setChain: (id: number) => { chainId = id; }, setCodeMismatch: () => { codeMismatch = true; }, disable: () => { disabled = true; }, setAllowance: (n: bigint) => { allowance = n; }, setBlockHash: (value: Hex) => { blockHash = value; } };
 }
@@ -330,5 +370,112 @@ describe("native wallet transaction adapter", () => {
     vi.mocked(f.client.getBlock).mockResolvedValueOnce({ number: 101n, hash: fresh.receipt.blockHash, timestamp: now } as never)
       .mockResolvedValueOnce({ number: 101n, hash: h(999), timestamp: now } as never);
     await expect(waitForModuleNativeReceipt({ client: f.client, prepared: approval, transactionHash: fresh.transactionHash })).rejects.toThrow("Canonical receipt block after verification");
+  });
+});
+
+describe("native V2 generation binding", () => {
+  function selectedState(f: ReturnType<typeof harness>, count: number, fee = "0") {
+    let state = { ...f.state, buyFeePercent: fee, sellFeePercent: fee };
+    for (const entry of f.catalog.slice(0, count)) state = setModuleSelected(state, entry, true);
+    if (count > 1) (state.moduleValues[f.catalog[1].id] as Record<string, unknown>).refundWallet = { role: "creator" };
+    return state;
+  }
+  it.each([0, 1, 2])("prepares and revalidates all four routes with %i eligible families and 0/1/10%% creator fees", async count => {
+    for (const fee of ["0", "1", "10"]) {
+      const f = harness(count > 0, true); const draft = f.draft(selectedState(f, count, fee));
+      expect(draft.fees).toEqual({ creatorBuyBps: Number(fee) * 100, creatorSellBps: Number(fee) * 100, programmableBps: count ? 30 : 10, asset: "native-ETH", economicsPolicyId: MODULE_MODE_ECONOMICS_POLICY_V2 });
+      const prepared = await f.launch(draft);
+      const decoded = decodeFunctionData({ abi: moduleNativeLaunchV2Abi, data: prepared.transaction.data });
+      if (decoded.functionName !== "launch") throw new Error("Expected launch");
+      expect(decoded.args[0].expectedRecipeHash).toBe(prepared.recipeHash);
+      expect(decoded.args[0].modules.map(item => item.packageId)).toEqual(f.catalog.slice(0, count).map(entry => entry.nativeBinding.packageId));
+      expect(decoded.args[0].moduleFunding).toEqual(count === 2 ? [0n, 10n ** 16n] : count === 1 ? [0n] : []);
+      await expect(revalidateModuleNativeTransaction(prepared, f.f.wallet)).resolves.toMatchObject({ data: prepared.transaction.data });
+      f.setAllowance(100_000n);
+      for (const [isBuy, amountSpecified, limit] of [[true, -10_000n, undefined], [true, 100n, 30_000n], [false, -100n, undefined], [false, 100n, 6000n]] as const) {
+        const swap = await prepareModuleNativeSwap({ client: f.client, availability: f.availability, account: f.f.wallet, token: f.f.token, recipient: a(91), isBuy, amountSpecified, limit });
+        if (swap.kind !== "swap") throw new Error("Unexpected approval");
+        expect(swap.feeComponents).toEqual({ creatorBps: Number(fee) * 100, platformBps: count ? 30 : 10, poolProtocolPips: 500, poolLpPips: 0 });
+        await expect(revalidateModuleNativeTransaction(swap, f.f.wallet)).resolves.toMatchObject({ data: swap.transaction.data });
+      }
+    }
+  });
+  it("deduplicates family rewards while preserving instance and funding order", async () => {
+    const f = harness(true, true); const first = f.catalog[0].nativeBinding;
+    f.catalog[1].nativeBinding = { ...f.catalog[1].nativeBinding, familyId: first.familyId, feeEligibility: first.feeEligibility };
+    const prepared = await f.launch(f.draft(selectedState(f, 2)));
+    const receipt = f.setupReceipt(prepared);
+    const event = receipt.receipt.logs.at(-1)!;
+    const data = decodeAbiParameters(parseAbiParameters("uint16,uint16,bytes32[],bool[],bytes32[]"), event.data);
+    expect(data.slice(0, 3)).toEqual([10, 20, [first.familyId]]);
+    expect(data[3]).toEqual([true, true]); expect(data[4]).toEqual([first.feeEligibility!.reviewDigest, first.feeEligibility!.reviewDigest]);
+    await expect(waitForModuleNativeReceipt({ client: f.client, prepared, transactionHash: receipt.transactionHash })).resolves.toMatchObject({ status: "mined" });
+  });
+  it("charges no author pool for selected but ineligible families, including the registry default", async () => {
+    const f = harness(true, true);
+    for (const entry of f.catalog) {
+      entry.nativeBinding.feeEligibility = { eligible: false, reviewDigest: h(0) };
+      f.setEligibility(entry.nativeBinding.familyId, false, h(0));
+    }
+    const draft = f.draft(selectedState(f, 2)); expect(draft.fees.programmableBps).toBe(10);
+    const prepared = await f.launch(draft); const receipt = f.setupReceipt(prepared);
+    await expect(waitForModuleNativeReceipt({ client: f.client, prepared, transactionHash: receipt.transactionHash })).resolves.toMatchObject({ kind: "launch" });
+    const data = decodeAbiParameters(parseAbiParameters("uint16,uint16,bytes32[],bool[],bytes32[]"), receipt.receipt.logs.at(-1)!.data);
+    expect(data.slice(0, 3)).toEqual([10, 0, []]);
+  });
+  it.each(["eligibility", "review"])("rejects a changed family %s before a signing simulation", async change => {
+    const f = harness(true, true); const prepared = await f.launch(f.draft(selectedState(f, 1)));
+    f.setEligibility(f.catalog[0].nativeBinding.familyId, change !== "eligibility", h(999));
+    const calls = f.call.mock.calls.length;
+    await expect(revalidateModuleNativeTransaction(prepared, f.f.wallet)).rejects.toThrow("fee eligibility");
+    expect(f.call).toHaveBeenCalledTimes(calls);
+  });
+  it("rejects mismatched preview, generation, policy getters and ledger rates", async () => {
+    const badPreview = harness(false, true); badPreview.setBadPreview(); await expect(badPreview.launch()).rejects.toThrow("recipe preview");
+    for (const role of ["launcher", "hook", "rewardLedger", "swapRouter"]) {
+      const f = harness(false, true); f.setPolicyMismatch(role);
+      await expect(assertModuleNativeRelease({ client: f.client, release: f.release })).rejects.toThrow(`${role} economics policy`);
+    }
+    const f = harness(false, true); const old = harness();
+    await expect(f.launch(old.draft())).rejects.toThrow("draft.fees.keys");
+    await expect(old.launch(f.draft())).rejects.toThrow("draft.fees.keys");
+    f.setLedgerRate(30);
+    await expect(prepareModuleNativeApproval({ client: f.client, availability: f.availability, account: f.f.wallet, token: f.f.token, amount: 100n })).rejects.toThrow("Pool and ledger fee policies");
+  });
+  it("keeps launched V2 economics after registry changes and rejects changed PoolManager fees at signing", async () => {
+    const f = harness(true, true); await f.launch(f.draft(selectedState(f, 1)));
+    f.setEligibility(f.catalog[0].nativeBinding.familyId, false, h(999));
+    const swap = await prepareModuleNativeSwap({ client: f.client, availability: { ...f.availability, catalog: [] }, account: f.f.wallet, token: f.f.token, recipient: a(91), isBuy: true, amountSpecified: -10_000n });
+    if (swap.kind !== "swap") throw new Error("Unexpected approval");
+    expect(swap.feeComponents.platformBps).toBe(30);
+    f.setPoolProtocol(600);
+    await expect(revalidateModuleNativeTransaction(swap, f.f.wallet)).rejects.toThrow("Reviewed swap fees changed");
+  });
+  it("requires the economics event snapshot from the bound hook in a V2 receipt", async () => {
+    const f = harness(); const v2 = harness(false, true);
+    const legacy = await f.launch(); const current = await v2.launch();
+    expect(legacy.transaction.data.slice(0, 10)).not.toBe(current.transaction.data.slice(0, 10));
+    expect(legacy.recipeHash).not.toBe(current.recipeHash); expect(legacy.predictedToken).not.toBe(current.predictedToken);
+    const data = v2.setupReceipt(current);
+    await expect(waitForModuleNativeReceipt({ client: v2.client, prepared: current, transactionHash: data.transactionHash })).resolves.toMatchObject({ kind: "launch" });
+    data.receipt.logs.at(-1)!.data = encodeAbiParameters(parseAbiParameters("uint16,uint16,bytes32[],bool[],bytes32[]"), [10, 20, [h(999)], [], []]);
+    await expect(waitForModuleNativeReceipt({ client: v2.client, prepared: current, transactionHash: data.transactionHash })).rejects.toThrow("Receipt economics rates");
+  });
+  it("preserves both generations' fee claims independently of the current module catalog", async () => {
+    for (const v2 of [false, true]) {
+      const f = harness(false, v2);
+      const claim = await prepareModuleNativeManagementTransaction({ client: f.client, release: f.release, catalog: [], token: f.f.token, actor: f.f.wallet,
+        intent: { kind: "claim-fees", recipient: a(91) }, deadline: now + 300n });
+      await expect(revalidateModuleNativeTransaction(claim, f.f.wallet)).resolves.toMatchObject({ to: f.release.contracts.rewardLedger.address });
+      expect(f.readContract.mock.calls.some(([read]) => read.functionName === "familyFeeEligibility")).toBe(false);
+    }
+  });
+  it("enforces fixed template values again at the native preparation boundary", async () => {
+    const f = harness(true, true); const entry = f.catalog[0];
+    if (entry.schema.type !== "record") throw new Error("Expected record");
+    entry.schema = { ...entry.schema, fields: { ...entry.schema.fields, capNative: { ...entry.schema.fields.capNative, binding: { mode: "fixed", value: "100000000000000000" } } } };
+    const draft = f.draft(selectedState(f, 1)); await expect(f.launch(draft)).resolves.toMatchObject({ kind: "launch" });
+    const forged = structuredClone(draft); (forged.modules[0].configuration as Record<string, unknown>).capNative = "200000000000000000";
+    await expect(f.launch(redigest(forged))).rejects.toThrow("cannot override");
   });
 });

@@ -1,13 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { decodeAbiParameters } from "viem";
 import { MODULE_DEFAULT_TOKEN_IMAGE } from "@/lib/module-mode/token-metadata";
+import { compileOpenConfig } from "@/packages/classic-modules/src/open-config.mjs";
+import { bindActiveModuleModeRelease, computeModuleModeReleaseDigest, MODULE_MODE_ECONOMICS_POLICY_V2 } from "@/lib/module-mode/release";
+import { moduleEvidenceFixture, a, h } from "./fixtures/module-mode-evidence";
 
 import {
   configurationFromForm,
+  configurationToForm,
   configurationSummary,
   createModuleModeState,
   defaultSchemaValue,
   feeBreakdown,
+  moduleModeFeePolicy,
   programmableFeeAllocation,
   parseExactUnits,
   LEGACY_V1_MODULE_CATALOG as PREVIEW_MODULE_CATALOG,
@@ -315,5 +320,57 @@ describe("Native engine configuration", () => {
     const invalid = validateBuilder({ ...state, socialLinks: { twitter: "https://example.com/pretend-x" } });
     expect(invalid.ok).toBe(false);
     if (!invalid.ok) expect(invalid.issues).toEqual([{ path: "/socialLinks/twitter", message: "Enter an HTTPS link to X." }]);
+  });
+});
+
+describe("Module Mode bound fee and template values", () => {
+  it("quotes the selected source generation and distinct eligible families without counting ineligible modules", () => {
+    const v1 = bindActiveModuleModeRelease(moduleEvidenceFixture().release);
+    const identity = { ...v1, schemaVersion: "programmable.module-mode-source.v2", sourceVersion: "module-native-v2", economicsPolicyId: MODULE_MODE_ECONOMICS_POLICY_V2 };
+    const v2 = bindActiveModuleModeRelease({ ...identity, releaseDigest: computeModuleModeReleaseDigest(identity) });
+    const entry = { ...NATIVE_CATALOG[0], nativeBinding: { familyId: h(1), feeEligibility: { eligible: true, reviewDigest: h(2) } } };
+    const duplicateFamily = { ...entry, id: "different-revision" };
+    const ineligible = { ...entry, id: "helper-module", nativeBinding: { familyId: h(3), feeEligibility: { eligible: false, reviewDigest: h(0) } } };
+    expect(feeBreakdown("1", "10", moduleModeFeePolicy(v2))).toEqual({ buy: "1.10%", sell: "10.10%", programmable: "0.10%" });
+    expect(feeBreakdown("0", "1", moduleModeFeePolicy(v2, [entry, duplicateFamily, ineligible]))).toEqual({ buy: "0.30%", sell: "1.30%", programmable: "0.30%" });
+    expect(moduleModeFeePolicy(v2, [entry, duplicateFamily])?.eligibleFamilyCount).toBe(1);
+    expect(moduleModeFeePolicy(v2, [ineligible])?.authorPoolBps).toBe(0);
+    expect(feeBreakdown("1", "10", moduleModeFeePolicy(v1, [entry]))).toEqual({ buy: "1.20%", sell: "10.20%", programmable: "0.20%" });
+    expect(moduleModeFeePolicy(v2, NATIVE_CATALOG)).toBeNull();
+    expect(feeBreakdown("0", "0", null)).toEqual({ buy: "—", sell: "—", programmable: "—" });
+  });
+
+  it("materializes typed fixed values and input defaults in display units without false overrides", () => {
+    const schema: OpenConfigSchema = { type: "record", required: ["duration", "amount"], fields: {
+      duration: { type: "uint", binding: { mode: "fixed", value: "90" } },
+      amount: { type: "uint", binding: { mode: "input", default: "1000000000000000" } },
+      asset: { type: "asset", binding: { mode: "fixed", value: { chainId: "4663", address: a(99), decimals: 18 } } },
+    } };
+    const fields = { "/duration": { multiplier: "60", suffix: "minutes" }, "/amount": { decimals: 18, suffix: "ETH" } };
+    const entry = { ...NATIVE_CATALOG[0], schema, fields, defaults: {}, programAbi: undefined, initialBuyLimitField: undefined, initialBuyLimitEnabledField: undefined };
+    const state = setModuleSelected(validState(), entry, true);
+    expect(state.moduleValues[entry.id]).toMatchObject({ duration: "1.5", amount: "0.001", asset: { address: a(99) } });
+    const result = validateBuilder(state, [entry]);
+    if (!result.ok) throw new Error(JSON.stringify(result.issues));
+    expect(result.draft.modules[0].configuration).toEqual({ amount: "1000000000000000", asset: { chainId: "4663", address: a(99), decimals: 18 }, duration: "90" });
+    const next = structuredClone(state); (next.moduleValues[entry.id] as Record<string, unknown>).amount = "0.002";
+    expect(validateBuilder(next, [entry]).ok).toBe(true);
+    (next.moduleValues[entry.id] as Record<string, unknown>).duration = "2";
+    const forged = validateBuilder(next, [entry]); expect(forged.ok).toBe(false);
+    if (!forged.ok) expect(forged.issues[0].message).toContain("cannot override");
+  });
+
+  it("keeps parent fixed records, arrays and variant defaults immutable through form round trips", () => {
+    const schema: OpenConfigSchema = { type: "record", required: ["fees", "route"], binding: { mode: "fixed", value: { fees: ["100", "200"], route: { kind: "pair", recipient: { address: a(99) } } } }, fields: {
+      fees: { type: "array", minItems: 2, maxItems: 2, items: { type: "uint" } },
+      route: { type: "variant", tag: "kind", variants: { pair: { type: "record", required: ["recipient"], fields: { recipient: { type: "account" } } } } },
+    } };
+    const fields = { "/fees/*": { decimals: 2, suffix: "%" } };
+    const form = defaultSchemaValue(schema, fields);
+    expect(form).toMatchObject({ fees: ["1", "2"] });
+    const resolved = compileOpenConfig(schema, configurationFromForm(schema, form, fields));
+    expect(configurationToForm(schema, resolved.value, fields)).toEqual(form);
+    const changed = { ...(form as Record<string, unknown>), fees: ["1", "3"] };
+    expect(() => compileOpenConfig(schema, configurationFromForm(schema, changed as never, fields))).toThrow("cannot override");
   });
 });

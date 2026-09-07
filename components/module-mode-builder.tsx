@@ -17,6 +17,8 @@ import {
   feeBreakdown,
   formatNativeWei,
   nativeValueBreakdown,
+  moduleModeFeePolicy,
+  programmableFeeAllocation,
   NATIVE_ENGINE_PROFILE,
   PREVIEW_MODULE_CATALOG,
   setModuleSelected,
@@ -27,8 +29,10 @@ import {
   type ModuleModeEngineProfile,
   type ModuleModeImage,
   type ModuleModeState,
+  type ModuleModeFeePolicy,
   type OpenConfigContext,
 } from "@/lib/module-mode/builder";
+import type { ModuleModeRelease } from "@/lib/module-mode/release";
 
 const feeOptions = Array.from({ length: 11 }, (_, index) => String(index));
 const socialFields = [
@@ -65,6 +69,7 @@ export interface ModuleModeBuilderProps {
   configurationContext?: OpenConfigContext;
   launchAction?: ModuleModeLaunchAction;
   minimumInitialBuyWei?: string;
+  release?: ModuleModeRelease | null;
   previewDescription?: string;
   statusContent?: ReactNode;
   reviewContent?: ReactNode;
@@ -72,7 +77,7 @@ export interface ModuleModeBuilderProps {
   onEdit?: () => void;
 }
 
-export function ModuleModeBuilder({ catalog = PREVIEW_MODULE_CATALOG, engine = NATIVE_ENGINE_PROFILE, configurationContext = {}, launchAction, minimumInitialBuyWei, previewDescription, statusContent, reviewContent, resultContent, onEdit }: Readonly<ModuleModeBuilderProps>) {
+export function ModuleModeBuilder({ catalog = PREVIEW_MODULE_CATALOG, engine = NATIVE_ENGINE_PROFILE, configurationContext = {}, launchAction, minimumInitialBuyWei, release, previewDescription, statusContent, reviewContent, resultContent, onEdit }: Readonly<ModuleModeBuilderProps>) {
   const { hydrated, viewChainId, setViewChainId } = useViewChain();
   useEffect(() => {
     if (!hydrated || viewChainId === 4663) return;
@@ -86,6 +91,7 @@ export function ModuleModeBuilder({ catalog = PREVIEW_MODULE_CATALOG, engine = N
   const [checked, setChecked] = useState(false);
   const [review, setReview] = useState<ModuleModeDraft | null>(null);
   const [reviewEntries, setReviewEntries] = useState<ModuleModeCatalogEntry[]>([]);
+  const [reviewPolicy, setReviewPolicy] = useState<ModuleModeFeePolicy | null>(null);
   const [chosenEntries, setChosenEntries] = useState<Record<string, ModuleModeCatalogEntry>>({});
   const [removed, setRemoved] = useState<ModuleModeCatalogEntry | null>(null);
   const [announcement, setAnnouncement] = useState("");
@@ -101,11 +107,13 @@ export function ModuleModeBuilder({ catalog = PREVIEW_MODULE_CATALOG, engine = N
   }, []);
   const form = useRef<HTMLFormElement>(null);
   const reviewHeading = useRef<HTMLHeadingElement>(null);
-  const result = useMemo(() => checked ? validateModuleModeDraft(state, catalog, configurationContext, engine, undefined, minimumInitialBuyWei) : null, [checked, state, catalog, configurationContext, engine, minimumInitialBuyWei]);
+  const result = useMemo(() => checked ? validateModuleModeDraft(state, catalog, configurationContext, engine, undefined, minimumInitialBuyWei, release) : null, [checked, state, catalog, configurationContext, engine, minimumInitialBuyWei, release]);
   const issues = result && !result.ok ? result.issues : [];
-  const fees = feeBreakdown(state.buyFeePercent, state.sellFeePercent);
   const visibleCatalog = [...catalog, ...Object.values(chosenEntries).filter((entry) => !catalog.some((current) => current.id === entry.id))];
   const selected = review ? reviewEntries : visibleCatalog.filter((entry) => state.selectedModules.includes(entry.id));
+  const policy = review ? reviewPolicy : moduleModeFeePolicy(release, selected);
+  const fees = feeBreakdown(state.buyFeePercent, state.sellFeePercent, policy);
+  const feeAllocation = programmableFeeAllocation(selected.length, policy);
   const missingSelected = selected.filter((entry) => !catalog.some((current) => current.id === entry.id));
   const amounts = nativeValueBreakdown(state, visibleCatalog);
   const hasFunding = selected.some((entry) => Boolean(entry.funding));
@@ -139,7 +147,7 @@ export function ModuleModeBuilder({ catalog = PREVIEW_MODULE_CATALOG, engine = N
   }
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (imageBusy || contextLocked) return; setChecked(true);
-    const next = validateModuleModeDraft(state, catalog, configurationContext, engine, undefined, minimumInitialBuyWei);
+    const next = validateModuleModeDraft(state, catalog, configurationContext, engine, undefined, minimumInitialBuyWei, release);
     if (!next.ok) {
       if (next.issues.some((issue) => issue.path.startsWith("/modules") || issue.path.startsWith("/funding"))) setAdvanced(true);
       if (next.issues.some((issue) => /^\/socialLinks\/(discord|github|gitbook)$/.test(issue.path))) setMoreLinks(true);
@@ -147,6 +155,7 @@ export function ModuleModeBuilder({ catalog = PREVIEW_MODULE_CATALOG, engine = N
       return;
     }
     setReviewEntries([...selected]);
+    setReviewPolicy(moduleModeFeePolicy(release, selected));
     setReview(next.draft);
     requestAnimationFrame(() => { reviewHeading.current?.focus(); reviewHeading.current?.scrollIntoView({ block: "start", behavior: "auto" }); });
     if (launchAction) void continueLaunch(next.draft);
@@ -180,7 +189,7 @@ export function ModuleModeBuilder({ catalog = PREVIEW_MODULE_CATALOG, engine = N
               <div><dt>Initial buy</dt><dd>{state.initialBuyEth.trim()} ETH</dd></div>
               {hasFunding ? <div><dt>Module budgets</dt><dd>{formatNativeWei(review.totalProgramFundingWei)} ETH</dd></div> : null}
               <div><dt>Total before gas</dt><dd>{formatNativeWei(review.totalNativeValueWei)} ETH</dd></div>
-              <div><dt>Swap fees</dt><dd>{fees.buy} buy / {fees.sell} sell <span>Includes the 0.20% Programmable fee</span></dd></div>
+              <div><dt>Swap fees</dt><dd>{fees.buy} buy / {fees.sell} sell <span>Includes the {fees.programmable} platform fee</span></dd></div>
             </dl>
             {selected.length ? <details className={styles.transactionDetails}><summary>Module settings</summary>{selected.map((entry) => <div className={styles.reviewModule} key={entry.id}><h3>{entry.title}</h3><dl>{configurationSummary(entry.schema, state.moduleValues[entry.id], entry.fields, undefined, "", review.modules.find((item) => item.id === entry.id)?.bindings).map((item, index) => <div key={`${item.label}-${index}`}><dt>{item.label}</dt><dd>{item.value}</dd></div>)}{entry.funding ? <div><dt>{entry.funding.label}</dt><dd>{state.moduleFundingEth[entry.id] || "0"} ETH additional</dd></div> : null}</dl></div>)}</details> : null}
             {!launchAction ? <div className={styles.previewNotice} role="status"><p>{previewMessage}</p></div> : null}
@@ -212,8 +221,8 @@ export function ModuleModeBuilder({ catalog = PREVIEW_MODULE_CATALOG, engine = N
             <section className={styles.formSection} aria-labelledby="module-fees-title">
               <div className={styles.sectionHeading}><span className={styles.sectionMarker}>2</span><div><h2 id="module-fees-title">Swap fees</h2></div></div>
               <div className={styles.twoFields}>{(["buy", "sell"] as const).map((direction) => { const key = `${direction}FeePercent` as const; const issue = fieldIssue(key); return <div className={styles.field} key={direction}><label htmlFor={`module-${key}`}>{direction === "buy" ? "Buy fee" : "Sell fee"}</label><select id={`module-${key}`} name={key} value={state[key]} onChange={(event) => update(key, event.target.value)} aria-invalid={Boolean(issue) || undefined} aria-describedby={issue ? `module-${key}-error` : undefined}>{feeOptions.map((value) => <option key={value} value={value}>{value}%</option>)}</select>{issue ? <p id={`module-${key}-error`} className={styles.fieldError}>{issue.message}</p> : null}</div>; })}</div>
-              <div className={styles.feeLine}><span>Programmable fee <span className={styles.feeAsset}>in ETH</span></span><strong>+ 0.20%</strong></div>
-              <p className={styles.help}>Added to each trade. All fees are collected in ETH.</p>
+              <div className={styles.feeLine}><span>Platform fee <span className={styles.feeAsset}>in ETH</span></span><strong>+ {fees.programmable}</strong></div>
+              <p className={styles.help} role="status">{feeAllocation} Added to each trade, including your initial buy.</p>
             </section>
             <section className={styles.advancedSection} aria-labelledby="module-advanced-title">
               <h2 className={styles.advancedHeading}><button type="button" id="module-advanced-title" className={styles.advancedToggle} aria-expanded={advanced} aria-controls="module-advanced-content" onClick={() => setAdvanced((current) => !current)}><span><span className={styles.advancedTitle}>Modules <span>{selected.length ? `${selected.length} added` : "Optional"}</span></span></span><ChevronDown className={advanced ? styles.chevronOpen : undefined} size={20} aria-hidden="true" /></button></h2>
@@ -249,7 +258,7 @@ export function ModuleModeBuilder({ catalog = PREVIEW_MODULE_CATALOG, engine = N
               <div><dt>Initial buy</dt><dd>{amounts.initialBuy} ETH</dd></div>
               {hasFunding ? <><div><dt>Module budgets</dt><dd>{amounts.funding} ETH</dd></div><div className={styles.coinTotal}><dt>Total before gas</dt><dd>{amounts.total} ETH</dd></div></> : null}
             </dl>
-            <p className={styles.coinFeeNote}>Includes the 0.20% Programmable fee.</p>
+            <p className={styles.coinFeeNote}>Includes the {fees.programmable} platform fee.</p>
           </div>
           <Link href="/developers/modules" className={styles.buildModuleLink}>Build a module<ArrowRight size={16} aria-hidden="true" /></Link>
           {!launchAction ? <p className={styles.availabilityNote}>Preview only. Wallet launching is not available yet.</p> : null}

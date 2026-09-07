@@ -7,12 +7,15 @@ import {
   asFormRecord,
   DURATION_UNITS,
   defaultSchemaValue,
+  configurationSummary,
+  configurationToForm,
   type BuilderIssue,
   type FieldDisplay,
   type FormValue,
   type OpenConfigContext,
   type OpenConfigSchema,
 } from "@/lib/module-mode/builder";
+import { resolveOpenConfigBindings } from "@/packages/classic-modules/src/open-config.mjs";
 import styles from "@/components/module-mode-builder.module.css";
 
 interface SchemaFieldProps {
@@ -43,12 +46,22 @@ export function ModuleSchemaField({ schema, value, onChange, label, path, schema
   const describedBy = [schema.help ? `${id}-help` : "", issue ? `${id}-error` : ""].filter(Boolean).join(" ") || undefined;
   const shared = { fields, issues, context };
 
+  if (schema.binding?.mode === "fixed") {
+    let rows: ReturnType<typeof configurationSummary> | null = null;
+    try {
+      const fixed = resolveOpenConfigBindings(schema, undefined, context);
+      rows = configurationSummary(schema, configurationToForm(schema, fixed.value, fields, schemaPath), fields, title, schemaPath, fixed.bindings);
+    } catch { /* Invalid published bindings remain a visible validation error. */ }
+    if (!rows) return <p className={styles.fieldError} role="alert">The fixed template value could not be verified. Refresh the catalog before reviewing.</p>;
+    return <div className={styles.field} aria-describedby={describedBy}><span>{title} <small>Fixed by template</small></span><dl className={styles.reviewRows}>{rows.map((row, index) => <div key={`${row.label}-${index}`}><dt>{row.label}</dt><dd>{row.value}</dd></div>)}</dl>{schema.help ? <p id={`${id}-help`} className={styles.help}>{schema.help}</p> : null}{issue ? <p id={`${id}-error`} className={styles.fieldError}>{issue.message}</p> : null}</div>;
+  }
+
   if (schema.type === "record") {
     const record = asFormRecord(value);
     const children = (
       <div className={styles.recordFields}>
         {Object.entries(schema.fields).map(([key, field]) => {
-          const optional = !schema.required.includes(key);
+          const optional = !schema.required.includes(key) && field.binding?.mode !== "fixed";
           const present = Object.hasOwn(record, key);
           const fieldPath = childPath(path, key);
           return (
@@ -57,7 +70,7 @@ export function ModuleSchemaField({ schema, value, onChange, label, path, schema
                 <label className={styles.optionalToggle}>
                   <input type="checkbox" checked={present} onChange={(event) => {
                     const next = { ...record };
-                    if (event.target.checked) next[key] = savedOptional.current[key] ?? defaultSchemaValue(field);
+                    if (event.target.checked) next[key] = savedOptional.current[key] ?? defaultSchemaValue(field, fields, childPath(schemaPath, key));
                     else { savedOptional.current[key] = record[key]; delete next[key]; }
                     onChange(next);
                   }} />
@@ -65,7 +78,7 @@ export function ModuleSchemaField({ schema, value, onChange, label, path, schema
                 </label>
               ) : null}
               {present || !optional ? (
-                <ModuleSchemaField {...shared} schema={field} value={record[key] ?? defaultSchemaValue(field)} onChange={(next) => onChange({ ...record, [key]: next })} label={readable(key)} path={fieldPath} schemaPath={childPath(schemaPath, key)} />
+                <ModuleSchemaField {...shared} schema={field} value={record[key] ?? defaultSchemaValue(field, fields, childPath(schemaPath, key))} onChange={(next) => onChange({ ...record, [key]: next })} label={readable(key)} path={fieldPath} schemaPath={childPath(schemaPath, key)} />
               ) : null}
             </div>
           );
@@ -91,7 +104,7 @@ export function ModuleSchemaField({ schema, value, onChange, label, path, schema
           </div>
         ))}
         <div className={styles.collectionActions}>
-          <button type="button" className={styles.textButton} disabled={values.length >= schema.maxItems} onClick={() => onChange([...values, defaultSchemaValue(schema.items)])}><Plus size={16} aria-hidden="true" /> Add item</button>
+          <button type="button" className={styles.textButton} disabled={values.length >= schema.maxItems} onClick={() => onChange([...values, defaultSchemaValue(schema.items, fields, `${schemaPath}/*`)])}><Plus size={16} aria-hidden="true" /> Add item</button>
           {removedItem ? <button type="button" className={styles.textButton} disabled={values.length >= schema.maxItems} onClick={() => { const next = [...values]; next.splice(removedItem.index, 0, removedItem.value); onChange(next); setRemovedItem(null); }}>Undo removal</button> : null}
         </div>
         {issue ? <p id={`${id}-error`} className={styles.fieldError}>{issue.message}</p> : null}
@@ -111,7 +124,7 @@ export function ModuleSchemaField({ schema, value, onChange, label, path, schema
           <select id={id} value={branch} aria-invalid={Boolean(issue) || undefined} aria-describedby={describedBy} onChange={(event) => {
             savedVariants.current[branch] = children;
             const selected = event.target.value;
-            onChange({ [schema.tag]: selected, ...asFormRecord(savedVariants.current[selected] ?? defaultSchemaValue(schema.variants[selected])) });
+            onChange({ [schema.tag]: selected, ...asFormRecord(savedVariants.current[selected] ?? defaultSchemaValue(schema.variants[selected], fields, `${schemaPath}/${selected}`)) });
           }}>
             {Object.entries(schema.variants).map(([key, variant]) => <option key={key} value={key}>{variant.label ?? readable(key)}</option>)}
           </select>
