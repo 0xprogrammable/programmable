@@ -8,6 +8,16 @@ The source-intake wire contract stays `programmable.modules.api.v0.1`, with sour
 
 Use the immutable **1.0.0-development.4** standalone CLI for the review commands. Download its [manifest](https://programmable.market/developers/module-mode-cli/v1.0.0-development.4/manifest.json) and [CLI file](https://programmable.market/developers/module-mode-cli/v1.0.0-development.4/programmable-module-mode-1.0.0-development.4.mjs), and verify the file's SHA-256 against `artifact.sha256` in the manifest before running it. It needs Node.js, with no npm install or repository checkout. The older development.1 file remains unchanged and supports intake receipts only. These are development distribution versions; the live API capabilities determine which operations are enabled.
 
+## Native and Engine source profiles
+
+The same source request accepts reusable Native programs and Engine contributions. A Native component uses `runtime: "programmable.module-native-runtime@1"`; an Engine component uses `runtime: "programmable.module-engine-solidity@1"` with its real Solidity `sourcePath` and `entrypoint`. Listing a capability in `requiresHost` does not implement it. No second Engine intake or signing endpoint is introduced.
+
+The operator chooses `programmable.native-solidity@1` or `programmable.module-engine-solidity@1` in the existing review plan. Engine builds bind the complete compiler input, creation code, canonical `constructor(Context,bytes)` arguments, runtime template and compiler-derived immutable patches, then execute the declared operations in the isolated test harness. Contributor plans and local results cannot assign a protected review job or approve a revision.
+
+The [Engine starter manifest](https://programmable.market/developers/module-mode-starters/engine-program/v0.1.0-development.1/manifest.json) identifies the [source archive](https://programmable.market/developers/module-mode-starters/engine-program/v0.1.0-development.1/engine-program-0.1.0-development.1.tar.gz). Verify its hash before extracting it. Follow its `README.md`, supply your own author/reward wallets and family salt, run the local build, then use `prepare-module-submission` and `submit-module` below. The starter implements funded, creator-attested settlement with expiry refunds. It has no deployed host, approved revision or public availability claim.
+
+SDK development.4 configuration fields can declare `binding: {mode: "input", default?: value}` or `binding: {mode: "fixed", value}`. Fixed values may be omitted or repeated exactly; an override fails with `OPEN_CONFIG_FIXED_OVERRIDE`. A general quote address is a launch input in one reusable package. A fixed quote also requires the reviewed host revision and constructor to enforce that address against direct onchain calls. General quote trading still requires a nonzero fixed infrastructure configuration hash. See [Build a module](https://programmable.market/developer-reference/module-mode) for profile limits, fee versions and website-independent recovery.
+
 ## Author and reward wallet
 
 The package descriptor requires two nonzero EVM addresses:
@@ -15,7 +25,7 @@ The package descriptor requires two nonzero EVM addresses:
 - `author` is the contributor's wallet. It must match the authenticated wallet that owns the Module contributions API key. A wallet string alone does not establish ownership.
 - `rewardWallet` is the payout wallet submitted for this immutable module revision. It may differ from `author`. Supplying it does not claim control over that wallet or prove that any rewards exist.
 
-Create a key for **Module contributions** in the website's authenticated developer key settings when that deployment offers this capability. Its scopes are exactly `modules:submit` and `modules:read`. Existing Custom launches keys do not gain those scopes automatically. Keys are secrets; source files, descriptors, output artifacts and command-line arguments must not contain them.
+Create a key with **Launches + modules** access in the website's authenticated developer key settings, or use an existing key with `modules:submit` and `modules:read`. Module operations require those two scopes. Existing keys keep their original permissions. Keys are secrets; source files, descriptors, output artifacts and command-line arguments must not contain them.
 
 The CLI reads only `PROGRAMMABLE_MODULES_API_KEY` for authentication. Inject it through your agent's secret environment or a secret manager. Do not pass it as an argument or put a literal key in shell history. Capabilities are public and receive no Authorization header.
 
@@ -150,7 +160,7 @@ Public capabilities do not require `apiKey`. Authenticated methods require a key
 
 Each request contains the descriptor and exactly its pinned source files, encoded as canonical base64. Local limits are 128 files, 4 MiB per file, 16 MiB total raw source and 24 MiB serialized HTTP request bytes. Base64 expansion is included in the HTTP limit. The deployment may publish lower limits; the client checks those before uploading. A source hash match proves the received bytes match the descriptor. It does not prove source ownership, repository history, a successful build, runtime safety or approval.
 
-Build profiles have separate limits. The first `programmable.native-solidity@1` reviewer-selected profile supports at most 4 MiB of total submitted source bytes, including packaged dependencies and documentation, and 16 KiB of encoded configuration. An intake receipt for a larger package does not promise that this profile can build it. `MODULE_BUILD_PROFILE_CAPACITY_EXCEEDED` identifies that mismatch; a different host/profile requires its own supported review path. The open intake format and contributor source identity remain unchanged.
+Build profiles have separate limits. The reviewer-selected `programmable.native-solidity@1` and `programmable.module-engine-solidity@1` profiles each support at most 4 MiB of total submitted source bytes, including packaged dependencies and documentation, and 16 KiB of encoded configuration. Engine initialization and operation data each have a 16 KiB ceiling; the reviewed execution budget is at most 3,000,000 gas. An intake receipt for a larger package does not promise that a profile can build it. `MODULE_BUILD_PROFILE_CAPACITY_EXCEEDED` identifies a source-size mismatch; a different host/profile requires its own supported review path. The open intake format and contributor source identity remain unchanged.
 
 CLI failures return a nonzero exit code and structured JSON on stderr. Codes and safe field paths are retained; arbitrary server messages, raw response bodies and credential echoes are not printed. Relevant failures include:
 

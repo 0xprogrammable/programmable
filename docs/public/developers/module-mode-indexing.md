@@ -6,7 +6,19 @@ description: Identify Module Mode coins independently of their selected modules
 
 Index the launch contract, then attach the selected module configuration to that launch. Module names, categories and frontend controls are not part of coin identity. A coin with no modules uses the same source interface as a coin with modules.
 
-This reference covers `module-native-v1` on Robinhood Chain, `eip155:4663`. New modules within that source version use the same procedure. A new engine or source version must publish its own deployment binding and adapter before an indexer treats it as supported.
+The detailed event procedure and `/api/module-mode/indexer/v1` JSON contract below cover `module-native-v1` on Robinhood Chain, `eip155:4663`. New modules within that source version use the same procedure. Native V2 and Engine V1 are distinct source versions; select their actual adapter and deployment binding before indexing them.
+
+## Source versions
+
+| Source version | Source and verification reference |
+| --- | --- |
+| `module-native-v1` | Original Native launcher, V1 fees and launch/configuration commitments described below |
+| `module-native-v2` | Native V2 launcher with its versioned ABI and 10/30-bps policy; use the [Native ABI selector](https://github.com/programmablehq/PROGRAMMABLE/blob/production/lib/module-mode/native-abi.ts) and [source verifier](https://github.com/programmablehq/PROGRAMMABLE/blob/production/lib/module-mode/provenance.ts) |
+| `module-engine-v1` | Engine host launch, canonical parameter and instance bindings; use the [Engine ABI](https://github.com/programmablehq/PROGRAMMABLE/blob/production/lib/module-engine/index/abi-v1.ts) and [Engine verifier](https://github.com/programmablehq/PROGRAMMABLE/blob/production/lib/module-engine/index/provenance-v1.ts) |
+
+These are implementation references, not activated deployment claims. Require the selected source's installed release, deployment/source evidence and finalized lifecycle proof. Do not parse an Engine event using the Native V1 JSON contract or infer a new release from a manifest supplied by a coin.
+
+An Engine launch binds its creator from the host's launch record and canonical launch-parameter event, including for a smart-wallet caller. Its token is bound through the pinned factory, CREATE2 inputs and metadata; there is no universal runtime hash for every token instance. Verify the actual engine instance, constructor/runtime commitments and admitted revision. Retain escrow or settlement coins that have no pool, and retain verified coins when optional prices or trading routes are unavailable. Market support and external terminal visibility are separate from launch identity.
 
 ## Start with discovery
 

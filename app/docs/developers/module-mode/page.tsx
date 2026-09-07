@@ -11,9 +11,11 @@ export const metadata: Metadata = {
 const sections = [
   { id: "start", label: "Get started" },
   { id: "package", label: "Your module package" },
+  { id: "profiles", label: "Profiles and configuration" },
   { id: "api", label: "Submit and track" },
   { id: "review", label: "Review and availability" },
   { id: "rewards", label: "Author rewards" },
+  { id: "recovery", label: "Recover transactions" },
 ] as const;
 const cliDirectory = "/developers/module-mode-cli/v1.0.0-development.4";
 
@@ -44,6 +46,9 @@ export default function ModuleModeDeveloperPage() {
       </ol>
       <p className={styles.bodyCopy}>A GitHub repository or pull request is optional. The API receives the complete,
         hash-bound source package directly.</p>
+      <p className={styles.bodyCopy}>For an executable Engine contribution, download the source archive identified by the
+        <a href="/developers/module-mode-starters/engine-program/v0.1.0-development.1/manifest.json"> Engine starter manifest</a>,
+        verify its hash, then follow its README. The creator-attested settlement example has no approved revision or deployed host.</p>
     </section>
     <section id="package">
       <h2>Your module package</h2>
@@ -56,6 +61,23 @@ export default function ModuleModeDeveloperPage() {
       </dl>
       <p className={styles.bodyCopy}>The author must match the wallet that owns the API key. The reward wallet may be
         different. Both must be nonzero EVM addresses. Repeated helper contracts or instances do not create extra author shares.</p>
+    </section>
+    <section id="profiles">
+      <h2>Profiles and configuration</h2>
+      <p className={styles.bodyCopy}>Native programs and Engine contributions use the same source API. The operator selects
+        <code> programmable.native-solidity@1</code> for the Native callback interface or
+        <code> programmable.module-engine-solidity@1</code> for executable constructor, initialization and operation logic.
+        A capability name in a descriptor does not implement that behavior.</p>
+      <p className={styles.bodyCopy}>SDK development.4 fields can declare <code>binding.mode</code> as <code>input</code> or
+        <code> fixed</code>. Inputs can vary within their schema. A fixed override fails API compilation, and the constructor
+        and reviewed host revision must also enforce it. One general quote template can accept different token contract addresses;
+        a fixed quote template binds one address. General quote trading still fixes its infrastructure configuration.</p>
+      <p className={styles.bodyCopy}>The quote trading profile supports exact-input buys and sells. Fee conversion requires
+        the reviewed direct Quote/WETH V3 route, qualified price history and liquidity, or direct WETH unwrap. User minimums
+        can tighten its checks. Escrow and creator-attested settlement are non-trading profiles with funded liabilities and
+        explicit withdrawal or expiry rules. Creator attestation does not independently prove delivery of an external service.</p>
+      <p className={styles.bodyCopy}>Read the <a href="https://github.com/programmablehq/PROGRAMMABLE/blob/production/contracts/spec/module-engine-host-v1.md">Engine host specification</a>
+        {" "}for exact permissions, ABI, market and token limits. These source profiles do not imply an available catalog entry.</p>
     </section>
     <section id="api">
       <h2>Submit and track</h2>
@@ -87,9 +109,10 @@ export default function ModuleModeDeveloperPage() {
       <p className={styles.bodyCopy}><code>status-module</code> keeps the historical intake receipt.
         <code> review-status-module</code> reads current progress with your existing Module contributions key.
         An <code>accepted</code> review is followed by registry admission and catalog activation.</p>
-      <p className={styles.bodyCopy}>The first native Solidity build profile accepts up to 4 MiB of packaged
-        source, dependencies and documentation. Intake can store larger packages; a successful upload does
-        not establish compatibility with this build profile.</p>
+      <p className={styles.bodyCopy}>The Native and Engine Solidity build profiles each accept up to 4 MiB of packaged
+        source, dependencies and documentation, and 16 KiB of encoded configuration. Engine review bounds execution to
+        3,000,000 gas and initialization/operation data to 16 KiB each. Intake can store larger packages; a successful upload
+        does not establish compatibility with a build profile.</p>
       <p className={styles.bodyCopy}>Public availability needs a reproducible build, the required security and
         compatibility checks, a reviewed version, exact deployed code and an active catalog binding.
         A new version does not silently change existing coins. Modules that need a new host capability
@@ -97,14 +120,28 @@ export default function ModuleModeDeveloperPage() {
     </section>
     <section id="rewards">
       <h2>Author rewards</h2>
-      <p className={styles.bodyCopy}>The native ETH engine charges 0.20% in protocol fees in addition to the
-        creator&apos;s selected fee. Half is for Programmable and half is shared equally among the distinct,
-        eligible module families used by the coin. Eligibility and attribution are bound during review.</p>
-      <p className={styles.bodyCopy}>Without eligible module families, the protocol receives the full protocol fee.</p>
+      <p className={styles.bodyCopy}>Native V2 and the Engine V1 quote profile charge 0.10% without eligible families,
+        or 0.30% with them: 0.10% for Programmable and 0.20% shared equally among distinct eligible families.
+        The creator&apos;s selected fee is additional. Eligibility is explicitly bound during admission.</p>
+      <p className={styles.bodyCopy}>Native V1 keeps its original 0.20% fee: 0.10% each for Programmable and eligible
+        authors, or the full 0.20% for Programmable without eligible families. Old claims stay in their original ledger.
+        Non-trading deposits, requests and refunds create no swap fees.</p>
       <p className={styles.bodyCopy}>Rewards arise from actual qualifying fees. Submitting a wallet or receiving
         a draft ID does not create a payout. Module operating budgets and already earned claims remain separate
         from the creator&apos;s personal fee recipient.</p>
       <p className={styles.bodyCopy}><Link href="/launch/modules">Open the Module Mode builder</Link></p>
+    </section>
+    <section id="recovery">
+      <h2>Recover transactions and claims</h2>
+      <p className={styles.bodyCopy}>After a timeout, keep the transaction hash from your wallet and check its receipt before
+        starting another action. The original release, account, token, calldata and value must agree. A saved browser record
+        is not permission to resend, and a mined receipt is separate from finalized indexing.</p>
+      <p className={styles.bodyCopy}>If the website is unavailable, use the existing
+        <a href="https://github.com/programmablehq/PROGRAMMABLE/blob/production/lib/module-mode/management.ts"> Native management client</a>
+        {" or "}<a href="https://github.com/programmablehq/PROGRAMMABLE/blob/production/lib/module-engine/client.ts">Engine client</a>
+        {" "}with the verified original release and your RPC. Read accrued credit in the original ledger and review its
+        <code> claimTo(recipient)</code> call from the entitled wallet. Claims send zero native value apart from network gas.
+        Module budgets and escrow refunds use their own instance or host actions. The source CLI does not send wallet transactions.</p>
     </section>
   </DocsShell>;
 }
