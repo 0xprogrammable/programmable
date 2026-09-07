@@ -36,10 +36,16 @@ const feeRows = [
     treatment: PROGRAMMABLE_FEE_TABLE.classic.chargeMode,
   },
   {
-    path: "Standard Custom",
+    path: "Ethereum Custom (fee-certified)",
     total: formatBps(PROGRAMMABLE_FEE_TABLE.standardCustom.totalBps),
     split: `${formatBps(PROGRAMMABLE_FEE_TABLE.standardCustom.programmableBps)} to Programmable. Project economics are defined by the release.`,
     treatment: PROGRAMMABLE_FEE_TABLE.standardCustom.chargeMode,
+  },
+  {
+    path: "Robinhood Custom (Native20)",
+    total: `${formatBps(PROGRAMMABLE_FEE_TABLE.robinhoodCustom.programmableBps)} platform fee`,
+    split: "The full platform fee belongs to Programmable. Creator fees are defined separately by the project.",
+    treatment: PROGRAMMABLE_FEE_TABLE.robinhoodCustom.chargeMode,
   },
   {
     path: "Public template",
@@ -65,8 +71,11 @@ export default function EconomicsDocsPage() {
         </p>
         <p>
           Classic includes the Programmable share inside the fee selected for
-          that launch. Standard Custom uses a separate 10 bps policy on a
-          verified official market path. Template fees are a different product
+          that launch. Ethereum Custom uses a separate 10 bps policy on a
+          fee-certified market path. Robinhood Custom with Native20 charges
+          20 bps (0.20%) of the gross native ETH amount per successful buy or
+          sell, rounded up to the next wei. Creator and pool fees are additional.
+          Template fees are a different product
           path and are not stacked with another unnamed template charge.
         </p>
       </section>
@@ -121,7 +130,9 @@ export default function EconomicsDocsPage() {
         <h2>Creator earnings</h2>
         <p>
           Classic creator rewards are the selected swap fee minus the 10 bps
-          Programmable share. Public template creators receive 10 bps from
+          Programmable share. Robinhood Custom creator rewards accrue separately
+          from the 20 bps platform fee at the project's configured buy or sell rate.
+          Public template creators receive 10 bps from
           official launches that use their exact template version once that
           separately documented payout path is active.
         </p>
@@ -137,6 +148,14 @@ export default function EconomicsDocsPage() {
 
       <section id="revenue">
         <h2>Protocol revenue</h2>
+        <p>
+          The <a href="https://dune.com/programmablehq/analytics">Dune dashboard</a>{" "}
+          reports finalized Custom Launch stamps, creator rewards in ETH and
+          Programmable protocol revenue in ETH. Fee totals include credited,
+          unclaimed balances from supported native fee events. Gas, liquidity,
+          LP fees and withdrawals are excluded. Historical fee models without
+          those events are outside the ETH totals.
+        </p>
         <p>
           The published protocol allocation assigns 80% of attributable net
           protocol revenue to V4 buybacks and 20% to the treasury. V4 purchases

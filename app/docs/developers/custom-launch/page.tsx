@@ -310,7 +310,7 @@ export default function CustomLaunchApiDocsPage() {
 
       <section id="robinhood-v4">
         <div className={styles.sectionIntro}>
-          <h2>Check Robinhood V4 availability</h2>
+          <h2>Launch on Robinhood Chain</h2>
           {robinhoodVersion === "4.1.0" && (
             <p>
               If your token and hook share one physical contract, use the separate{" "}
@@ -319,9 +319,11 @@ export default function CustomLaunchApiDocsPage() {
               stop before authenticated submission. Follow the{" "}
               <a href={multiRoleProject.guide}>MultiRole V2 guide</a> and{" "}
               <a href={multiRoleProject.client}>Node 24 client</a> for preflight,
-              create and status. Automatic economic recognition currently covers the
-              Native20 recipe; unknown economics return <code>evidence_required</code>.
-              This is not a generic hook audit or wallet authority. The existing 4.1
+              create and status. The automatic economic verifier accepts the exact
+              Native20 recipe and supported constructor configuration. Different
+              source code or unknown economics return <code>evidence_required</code>;
+              follow the returned verification requirements before wallet handoff.
+              This is not a generic audit of arbitrary hook code. The existing 4.1
               profile and CLI below remain a separate lane.
             </p>
           )}
@@ -340,7 +342,8 @@ export default function CustomLaunchApiDocsPage() {
 
         <p className={styles.bodyCopy}>
           CLI <code>3.3.9</code> remains the installable release for live Ethereum
-          V3. Robinhood V4 uses <code>{robinhoodVersion}</code> after public activation.
+          V3. Robinhood V4 uses the profile advertised in live discovery,
+          {" "}<code>{robinhoodVersion}</code> for this request contract.
           Verify its release manifest, exact source commit and tarball checksum.
           The{" "}
           <a href={robinhoodContract.openApiUrl ?? "/openapi/custom-launch-v4.json"}>V4 OpenAPI</a>,{" "}
@@ -748,7 +751,32 @@ export default function CustomLaunchApiDocsPage() {
 
       <section id="fees">
         <div className={styles.sectionIntro}>
-          <h2>Review the V3 platform fee policy</h2>
+          <h2>Custom Launch fees</h2>
+          <p>
+            On Robinhood Chain, Native20 charges <strong>20 bps (0.20%)</strong>{" "}
+            of the gross native ETH amount once per successful buy or sell,
+            rounded up to the next wei. The full platform fee belongs to
+            Programmable. Creator and pool LP fees are additional. A 1 ETH
+            gross trade credits 0.002 ETH to Programmable before separate
+            creator fees.
+          </p>
+          <p>
+            The fixed platform recipient is{" "}
+            <code>0xD88539d3c4C460136a733A3Fd60cf6BF269079da</code>.
+            Fees accrue as PoolManager native claims. Anyone can trigger a claim,
+            but payment goes only to that recipient. Gas and liquidity deposits
+            are separate, and a claim does not create new revenue. Historical
+            launches retain their own fee contracts.
+          </p>
+          <p>
+            The <a href="https://dune.com/programmablehq/analytics">Dune dashboard</a>{" "}
+            reports finalized Custom Launch counts, creator rewards in ETH and
+            protocol revenue in ETH, including unclaimed native fee accruals.
+            Historical fee models without the supported event are outside the
+            ETH totals. Read the <Link href="/docs/economics">fee accounting guide</Link>{" "}
+            for the definitions.
+          </p>
+          <h3>Ethereum V3 fee policy</h3>
           <p>
             The general revision-3 profile is public on Ethereum Mainnet only
             (<code>chainId: &quot;1&quot;</code>) and has{" "}

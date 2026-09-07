@@ -83,6 +83,13 @@ export const PROGRAMMABLE_FEE_TABLE = {
     status: "Gated",
     totalBps: PROGRAMMABLE_FEE_POLICY.nativeCustom.totalBps,
   },
+  robinhoodCustom: {
+    basis: "gross native ETH amount per successful buy or sell",
+    chargeMode: "additional to creator and pool fees",
+    programmableBps: 20,
+    recipient: "0xD88539d3c4C460136a733A3Fd60cf6BF269079da",
+    rounding: "rounded up to the next wei per trade",
+  },
 } as const;
 
 export const PROGRAMMABLE_REVENUE_TARGET = {

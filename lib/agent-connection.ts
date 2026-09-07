@@ -38,7 +38,7 @@ export const PROGRAMMABLE_AGENT_ENTRY = Object.freeze({
       guide: "https://api.programmable.market/v4/chains/4663/multi-role-custom-launches/guide.md",
       client: "https://api.programmable.market/v4/chains/4663/multi-role-custom-launches/client.mjs",
       availability: "Check current capabilities readiness and context before packing or authenticated preflight/create. Published documentation does not imply enabled admission; capabilities may report unavailable.",
-      economicAdmission: "Automatic economic recognition currently covers the Native20 recipe. Unknown economics return evidence_required; this is not a generic hook audit.",
+      economicAdmission: "The automatic economic verifier accepts the exact Native20 recipe and supported constructor configuration. Different source code or unknown economics return evidence_required; this is not a generic hook audit. The Native20 platform fee is 20 bps (0.20%) of gross native ETH per successful buy or sell, rounded up per trade, additional to creator and pool fees.",
     },
     moduleContribution: {
       scopes: ["modules:submit", "modules:read"],

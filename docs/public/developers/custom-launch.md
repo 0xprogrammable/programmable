@@ -4,16 +4,26 @@ description: Package, submit and track deterministic Custom launches with scoped
 
 # Custom Launch API
 
-For a Robinhood token and hook that share one physical contract, use the separate **MultiRole V2** lane.
-Read its public [capabilities](https://api.programmable.market/v4/chains/4663/multi-role-custom-launches/capabilities)
-and check current readiness and context before packing; an unavailable response means stop before authenticated
-submission. The [MultiRole V2 guide](https://api.programmable.market/v4/chains/4663/multi-role-custom-launches/guide.md)
-and [Node 24 client](https://api.programmable.market/v4/chains/4663/multi-role-custom-launches/client.mjs) describe its
-packer and `preflight -> create -> status` flow. Preserve exact bytes and the same idempotency key on retries.
-Preflight/create requires `custom-launch:create`; status/list requires `custom-launch:read`, with the key's chain
-4663 grant and controller binding. Automatic economic recognition currently covers the Native20 recipe;
-unknown economics return `evidence_required`. This is not a generic hook audit. Published documentation is not activation
-or wallet authority. The existing 4.1 profile and CLI remain a separate lane with the rules described below.
+Custom Launch submits your own token, hook and supporting contracts through the Programmable Launch Stamp Router. Choose the chain and contract layout, check public capabilities, then package and submit the exact source with a scoped API key. The controller wallet reviews and signs the authorized transaction separately.
+
+## Choose the Robinhood contract layout
+
+| Layout | Integration |
+| --- | --- |
+| Separate token and hook addresses | Use the V4 profile and compatible CLI advertised in [live discovery](https://programmable.market/.well-known/programmable.json). |
+| Token and hook in one contract | Use [MultiRole V2 capabilities](https://api.programmable.market/v4/chains/4663/multi-role-custom-launches/capabilities), its [guide](https://api.programmable.market/v4/chains/4663/multi-role-custom-launches/guide.md) and [Node 24 client](https://api.programmable.market/v4/chains/4663/multi-role-custom-launches/client.mjs). |
+
+MultiRole V2 supports a shared token/hook address. Its automatic economic verifier accepts the exact Native20 recipe and supported constructor configuration. Changes to that contract's source or other economic mechanisms require additional verification; `evidence_required` means no wallet transaction is authorized. It is not a generic audit of arbitrary hook code. Keep the intended architecture and follow the returned remediation.
+
+Read readiness and context before packing. Follow `preflight -> create -> status`, preserving exact bytes and the same idempotency key on retries. Preflight/create requires `custom-launch:create`; status/list requires `custom-launch:read`, with the key's chain `4663` grant and controller binding. An unavailable capability response stops submission. The 4.1 profile and CLI retain their own schema and funding rules; do not copy those fields into MultiRole requests.
+
+## Robinhood Custom fees
+
+The Native20 kernel charges **20 bps (0.20%)** of the gross native ETH amount once per successful buy or sell, rounded up to the next wei. The full 20 bps belongs to Programmable. Creator fees and pool LP fees are additional and must be shown separately. A 1 ETH gross trade credits 0.002 ETH to Programmable before separate creator fees.
+
+The platform recipient is fixed at `0xD88539d3c4C460136a733A3Fd60cf6BF269079da`. Fees accrue as PoolManager native claims; permissionless claiming pays only the configured recipient. Gas and liquidity deposits are separate from fees, and a claim does not create new revenue. Historical contracts retain their own fee models. See [fees and revenue](../economics.md) and the [Dune statistics](https://dune.com/programmablehq/analytics).
+
+## Ethereum Custom
 
 Public V3.3 general-hook creation, list and single-resource reads accept wallet keys, partner roots and bounded partner
 subkeys on Ethereum Mainnet. V2 and V1 history and schemas remain available, while fresh authenticated
@@ -136,8 +146,9 @@ The separate [coverage OpenAPI](https://programmable.market/openapi/launch-cover
 | `findingObligations` | Required source repairs, funding/quote updates, transaction simulation or additional platform verification. Unknown codes remain unclassified. |
 | `requestAuthorization` | Always `requestAuthorized: false`; no particular request has been checked or approved. |
 
-The active format represents one native ETH/token pool. No-pool projects, multiple pool keys and same-address
-token/hooks need a transport extension. Listing all permission bits or a funding model does not prove every hook,
+The 4.1 coverage report describes one native ETH/token pool with separate token and hook addresses.
+Same-address token/hooks use MultiRole V2 as described above. No-pool projects and multiple pool keys require
+additional transport support. Listing all permission bits or a funding model does not prove every hook,
 curve, module or settlement behavior. Keep the project's intended architecture when it needs additional platform
 support; wider key permissions or uploaded proof claims cannot make that support available.
 

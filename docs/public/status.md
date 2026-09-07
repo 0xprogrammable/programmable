@@ -23,6 +23,8 @@ Submit only when both entries report all three create gates true: `publicWrites`
 published in discovery before installation. Router provenance, finality, source verification and indexing remain
 independent; external indexing may lag or be unavailable.
 
+For a shared token/hook contract, use [MultiRole V2 capabilities](https://api.programmable.market/v4/chains/4663/multi-role-custom-launches/capabilities) and its own request status and [finalized feed](https://api.programmable.market/v4/chains/4663/multi-role-custom-launches/finalized). Its readiness, economic verification and wallet handoff are separate from the 4.1 profile. `evidence_required` identifies missing verification and does not authorize a wallet transaction. The [Custom Launch guide](developers/custom-launch.md) explains supported layouts and fees.
+
 For each Robinhood launch, read its current finality and source-verification records. Treat source verification as
 exact only when the aggregate and every required component carry the protected source/build/compiler/finalized-creation/
 bytecode `exact_match` authority. A Sourcify match alone is a provider observation, and optional Robinhood Blockscout
