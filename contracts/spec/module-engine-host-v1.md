@@ -361,6 +361,10 @@ Engine has 16,429 bytes of runtime and 29,478 bytes of creation code; its canoni
 640 constructor bytes for a complete 30,118-byte initcode. These are local compiler-parity checks, not an
 accepted source submission or a successful isolated Quote lifecycle review.
 
+The deployment helper currently pins the native Darwin Solc binary. The protected review worker instead pins
+`solc/soljson.js`; that Wasm file is not an executable native compiler and cannot be passed as `MODULE_MODE_SOLC`.
+A native Linux deployment compiler requires its own verified binary pin before this helper can support it.
+
 The converter retains its already verified non-viaIR, no-CBOR build profile because its runtime is explicitly
 bound by `converterCodeHash`, rather than compared to an embedded `type(...).runtimeCode`. Its full compiler
 input and metadata accompany its separate source-verification request. The converter constructor has exactly `(address router,address weth)`;
@@ -401,7 +405,9 @@ CA must separately pass the converter's current history, liquidity, freshness an
 
 `review-compiler-parity.json` records the actual compiler settings, binary hash, full input digest, Engine sizes
 and embedded planner hash. `quote-review.standard-input.json` is the exact complete source inventory used for
-this local profile check. The contributor review must use the same source bytes and independently bind its own
+this local profile check. The retained `build.artifacts.reviewEngine` is only the initial non-viaIR source-inventory
+artifact; actual public Engine byte comparisons must use the IR hashes in `review-compiler-parity.json`.
+The contributor review must use the same source bytes and independently bind its own
 actual subject, request, compiler input, operation cases and results. Source transport or compiler parity alone
 does not provide the V4/router dependencies or address-bit-qualified CREATE2 instance required by a real Quote
 constructor in the isolated worker. The protected review policy is not relaxed by this deployment package.

@@ -13,8 +13,8 @@ export const QUOTE_REVIEW_SETTINGS = Object.freeze({ optimizer: { enabled: true,
 const PROFILE_FILE = 'lib/module-mode/review-engine-contract.ts';
 const PLANNER_FILE = 'src/StockPairedPositionPlannerV3.sol', PLANNER = 'StockPairedPositionPlannerV3';
 const ENGINE_FILE = 'src/module-engine/ModuleQuoteEngineV1.sol', ENGINE = 'ModuleQuoteEngineV1';
-const SOLC_HASHES = new Set(['0ff016aef2396b12d1fc65429d8ea6cf53c2ee4b041bb8925644615ee1c30ab9', // pinned Darwin 0.8.26
-  '35ba6661f3bdaed995fc7af14c405502290cf681b3fd062fe8738cfdf6db14ed']); // protected Linux review compiler
+// This path executes a native binary. The review worker's soljson.js pin is a separate Wasm artifact.
+const SOLC_HASHES = new Set(['0ff016aef2396b12d1fc65429d8ea6cf53c2ee4b041bb8925644615ee1c30ab9']); // pinned Darwin 0.8.26
 function literal(node) {
   if (ts.isObjectLiteralExpression(node)) return Object.fromEntries(node.properties.map(p => {
     need(ts.isPropertyAssignment(p) && (ts.isIdentifier(p.name) || ts.isStringLiteral(p.name)), 'Compiler settings must remain literal');
