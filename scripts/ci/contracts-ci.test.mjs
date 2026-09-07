@@ -18,12 +18,32 @@ test("build, release, and analysis retain all existing contract checks without a
   ]);
   const commands = CONTRACT_CI_RELEASE.map((command) => command.join(" "));
   assert.ok(commands.includes("npm run modules:starter:test"));
-  assert.ok(commands.includes("node --test contracts/scripts/module-mode/operator.test.mjs contracts/scripts/module-mode/source-readback.test.mjs"));
+  assert.ok(commands.includes([
+    "node --test",
+    "contracts/scripts/module-mode/operator.test.mjs",
+    "contracts/scripts/module-mode/source-readback.test.mjs",
+    "contracts/scripts/module-mode/lifecycle-plan.test.mjs",
+    "contracts/scripts/module-mode/operator-dispatch.test.mjs",
+    "contracts/scripts/module-mode/publication-operator.test.mjs",
+    "contracts/scripts/module-mode/verify-launch-source.test.mjs",
+    "contracts/scripts/module-native-v2/deployment.test.mjs",
+    "contracts/scripts/module-engine/deployment.test.mjs",
+  ].join(" ")));
   const starterBuild = "forge build --root ../packages/classic-modules/examples/native-program";
   assert.equal(commands.filter((command) => command === starterBuild).length, 1);
   assert.ok(commands.indexOf(starterBuild) < commands.indexOf("npm run modules:starter:test"));
   assert.match(readFileSync(new URL("../../contracts/test/module-mode/starter/run-tests.sh", import.meta.url), "utf8"),
     /forge test --offline/u);
+  assert.deepEqual(scripts["modules:starter:test"].split(" && "), [
+    "bash contracts/test/module-mode/starter/run-tests.sh -vv",
+    "node --test packages/classic-modules/examples/native-program/tools/package.test.mjs",
+    "node packages/classic-modules/examples/native-program/tools/check-sdk.mjs",
+    "forge test --root packages/classic-modules/examples/engine-program --offline -vv",
+    "node packages/classic-modules/examples/engine-program/tools/check-build.mjs",
+    "node --test packages/classic-modules/examples/engine-program/tools/package.test.mjs",
+    "node packages/classic-modules/examples/engine-program/tools/prepare.mjs --fixture",
+    "node packages/classic-modules/examples/engine-program/tools/check-sdk.mjs",
+  ]);
   assert.ok(commands.includes("npm run contracts:custom-registry-v2:test"));
   assert.ok(commands.includes("npm run contracts:custom-registry-v2:artifacts"));
   assert.ok(commands.includes("npm run contracts:test:forks"));
