@@ -17,6 +17,7 @@ Programmable provides tools to launch coins and applications built with Uniswap 
 | Launch a coin with optional modules | [Module Mode](models/module-mode.md) |
 | Build and submit a reusable module | [Build a module](developers/module-mode.md) |
 | Build a complete custom project | [Custom Launch API](developers/custom-launch.md) |
+| Launch through the API step by step | [Custom Launch quickstart](developers/custom-launch-quickstart.md) |
 | Integrate Module Mode coins | [Module Mode indexing](developers/module-mode-indexing.md) |
 | Integrate Custom Launches on Robinhood | [Custom terminal integration](developers/robinhood-terminal-indexer.md) |
 | Read historical Ethereum launch models | [Classic](models/classic.md) |

@@ -1,5 +1,7 @@
 # Programmable Custom Launch API
 
+Start with [Launch through the API](https://programmable.market/docs/developers/custom-launch-quickstart) for network selection, API keys, fees, funding, submission and recovery. This document is the detailed reference for the supported request versions. Use the selected API's schema and client together.
+
 ## Shared token and hook: MultiRole V2
 
 On Robinhood chain 4663, a token and hook that share one physical contract use the separate MultiRole V2 lane.
@@ -142,7 +144,7 @@ Use only `Authorization: Bearer $PROGRAMMABLE_API_KEY`. No API key argument, req
 name is part of this contract. The key cannot sign or broadcast and cannot bypass server validation. Historical 4.0 supports
 no funding and exact wallet transaction value. A funded 4.1 launch requires positive wallet transaction value and
 the funding plan below; ERC-20 settlement still needs separate proof. Project-owned token
-and hook targets, 3–16 graph targets and all fourteen hook permissions are structural support, not behavior or safety
+and hook targets, 3 to 16 graph targets and all fourteen hook permissions are structural support, not behavior or safety
 claims. `feeBehaviorClaim` is false; generic fee claiming and generic buyback management are not live. External
 indexers may lag or omit chain data, so finalized Router evidence and Programmable indexing state remain distinct.
 Legacy Registry and GitHub intake are closed.
@@ -200,8 +202,8 @@ or unbound references gain no trust and block admission. These checks are not pu
 
 Foundation source commitment:
 `0xe87f5edc2dc839bd87a26a80cb53f14b021e603a1753d27aae3a02862058d730`. By itself it binds reviewed source, not a
-deployed address. Sourcify v2 provider-native `match` is required; exact source authority is the separate protected-build/finalized-bytecode binding. Robinhood Blockscout is optional, unproven and degraded; it cannot
-support an exact-source claim or block or revise finality.
+deployed address. Sourcify v2 provider-native `match` is required; exact source authority is the separate protected-build/finalized-bytecode binding. Robinhood Blockscout is optional; its observations do not establish the protected exact-source claim
+or block or revise finality.
 
 Activated discovery carries non-null V4 `deploymentEvidence` for its deployed roots. Production clients must
 fetch and match the exact deployment ID and descriptor digest, foundation source commitment, finality-policy digest,
@@ -317,7 +319,7 @@ an interface declaration or fallback-only route does not qualify.
 
 CLI `3.3.9` is the current installable release and defaults fresh packs to live profile `3.3.0`. Explicit profile
 `3.4.0` output remains preparatory and is rejected by live capabilities until backend and `.well-known` activation.
-Pending `3.4.0` requires 4-16 targets inclusive of the exact
+Reference profile `3.4.0` requires 4-16 targets inclusive of the exact
 `programmable:settlement-fee-vault:v1`; applicants cannot select another platform fee target. Its release binding is
 `sha256:39ccdfdf8cd61620bf5c62bf07fb8428adbd66d2608b1cf3ad583343116d7ed9`, source SHA-256 is
 `sha256:0a01ee8c22d103343d14b1d3890902e3edeecef25ea84a0f03f23a3fe8f1042b`, and creation/runtime Keccak-256 are
@@ -437,13 +439,13 @@ predictions, evidence digests, canonical hashes and exact source verification bu
 compiler artifacts and evidence files. It accepts no hand written derived hashes. `validate` recomputes those
 commitments and, with `--config`, requires byte identical reproduction of `launch.json`.
 
-Current profile `3.3.0` requires `projectMetadata`: owner-supplied token name and symbol, a useful 20–4,096 UTF-8 byte
+Current profile `3.3.0` requires `projectMetadata`: owner-supplied token name and symbol, a useful 20 to 4,096 UTF-8 byte
 description with at least eight Unicode letters or numbers, non-empty local PNG/JPEG/WebP/GIF bytes, exactly one public
 HTTPS website and exactly one canonical `https://x.com/<handle>` profile. Other link kinds remain optional. The CLI
 binds the exact image digest, byte length, media type, dimensions, and source-manifest file; it never invents or uploads
 metadata. Discovery advertises `requiredForProfileVersions = ["3.2.0","3.3.0","3.4.0"]`,
 `strictMetadataProfileVersions = ["3.3.0","3.4.0"]`, and `legacyMetadataProfileVersions = ["3.2.0"]`, so exact
-`3.2.0`, `3.3.0` and pending `3.4.0` all carry metadata while only exact `3.3.0` and pending `3.4.0` use the strict
+`3.2.0`, `3.3.0` and reference profile `3.4.0` all carry metadata while only exact `3.3.0` and reference profile `3.4.0` use the strict
 current policy and only exact `3.2.0` preserves its older nullable-image semantics.
 
 Use a stable content URI and make HTTPS image bytes browser-readable with CORS. Wallet review fetches the raw bytes

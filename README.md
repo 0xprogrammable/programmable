@@ -51,13 +51,36 @@ Each release defines its network, supported interfaces, funding and wallet trans
 | ---------------------- | --------------------------------------------------------------------- | --------------------------------------------------------- |
 | **Module Mode**        | A coin with a bonding curve and optional, configurable modules       | [Module Mode builder](https://programmable.market/launch/modules) |
 | **Classic (Ethereum)** | A fixed supply token with configurable buy and sell transaction fees  | Open through [Create](https://programmable.market/launch) |
-| **Custom**             | A token or application with its own deterministic hook graph          | Wallet-bound [Custom Launch API](https://programmable.market/developers/api-keys) |
+| **Custom**             | A token or application with its own deterministic hook graph          | [Custom Launch quickstart](https://programmable.market/docs/developers/custom-launch-quickstart) |
 
 A hook is a smart contract attached to a Uniswap v4 pool. The pool calls it at defined points in a transaction, which
 lets the product apply behavior at the pool level. A hook can change fees, accounting, access or other pool behavior,
 but the word hook does not establish safety, compatibility or launch approval.
 
 [Compare the launch models](https://programmable.market/docs/tokens)
+
+## Custom Launch integration
+
+Follow the [API quickstart](./docs/public/developers/custom-launch-quickstart.md) to choose a request format,
+configure fees and funding, create an API key and track the launch through wallet signing and finality.
+
+| Network and contract layout | Integration |
+| --------------------------- | ----------- |
+| Robinhood Chain, separate token and hook contracts | V4 profile and CLI from [live discovery](https://programmable.market/.well-known/programmable.json) |
+| Robinhood Chain, one contract implementing both token and hook | [MultiRole V2 guide](https://api.programmable.market/v4/chains/4663/multi-role-custom-launches/guide.md) |
+| Ethereum Mainnet | [V3 reference](https://programmable.market/developer-reference/custom-launch#quickstart) |
+
+Use `custom-launch:create` for preflight and creation, and `custom-launch:read` for status. Bind the key to the
+intended chain and controller. The API prepares the transaction; the controller wallet signs and broadcasts it.
+
+Robinhood Native20 charges **20 bps (0.20%)** of gross native ETH once per successful buy or sell. The full
+platform fee belongs to Programmable. Creator and pool fees are additional. A creator rate of zero produces
+zero creator rewards while the platform fee still accrues. Read the [fee accounting guide](./docs/public/economics.md)
+for rounding, accruals, claims and analytics coverage.
+
+The MultiRole automatic economic verifier accepts the exact Native20 source recipe and supported constructor
+configuration. Other source code or economic mechanisms return `evidence_required` with the missing verification
+requirements. An API key does not grant arbitrary code a launch permit.
 
 <p align="center">
   <img
@@ -155,9 +178,13 @@ publication, wallet spending or production activation.
 | Custom Launch CLI 1.0.1      | [V1 compatibility asset](https://github.com/programmablehq/PROGRAMMABLE/releases/download/programmable-launch-v1.0.1/programmable-launch-1.0.1.tgz) |
 | Custom Launch V1 OpenAPI     | [live reads and write fence](https://programmable.market/openapi/custom-launch-v1.json)                    |
 | Custom Launch V2 OpenAPI     | [V2 reads, schemas and write fence](https://programmable.market/openapi/custom-launch-v2.json)             |
-| Custom Launch V3 OpenAPI     | [preparatory profile 3.4 contract; live/default remains discovery-bound profile 3.3](https://programmable.market/openapi/custom-launch-v3.json) |
-| Custom Launch V4 OpenAPI     | [Robinhood public self-serve contract](https://programmable.market/openapi/custom-launch-v4.json) |
-| Custom Launch V4 schema      | [Robinhood pack configuration](https://programmable.market/schemas/custom-launch/v4/pack-config.json) |
+| Custom Launch quickstart     | [Choose an API and complete a launch](https://programmable.market/docs/developers/custom-launch-quickstart) |
+| Custom Launch discovery      | [Profiles, capabilities and verified client releases](https://programmable.market/.well-known/programmable.json) |
+| Custom Launch V3 OpenAPI     | [Ethereum V3 schemas; select the profile from capabilities](https://programmable.market/openapi/custom-launch-v3.json) |
+| Custom Launch V4.1 OpenAPI   | [Robinhood V4.1 request contract](https://programmable.market/openapi/custom-launch-v4.1.json) |
+| Custom Launch V4.1 schema    | [Robinhood V4.1 pack configuration](https://programmable.market/schemas/custom-launch/v4.1/pack-config.json) |
+| Custom Launch V4.0 OpenAPI   | [Historical Robinhood V4.0 contract](https://programmable.market/openapi/custom-launch-v4.json) |
+| MultiRole V2 capabilities    | [Shared token and hook contract support](https://api.programmable.market/v4/chains/4663/multi-role-custom-launches/capabilities) |
 | Robinhood terminal integration | [chain-bound Router, finalized feed and fail-closed fixture](https://programmable.market/developer-reference/robinhood-terminal-indexer) |
 | Read-only developer reference | [programmable.market/docs/developers](https://programmable.market/docs/developers)                       |
 | Read-only service status     | [developers.programmable.family/api/v2/status](https://developers.programmable.family/api/v2/status)     |
@@ -166,17 +193,18 @@ publication, wallet spending or production activation.
 Ethereum contract addresses and integration data should come from the versioned manifest rather than screenshots,
 token names or third-party metadata.
 
-V2 and V1 list and single-resource reads remain live for existing wallet-owned requests. Fresh POSTs return
-non-retryable `409 CUSTOM_LAUNCH_V2_READ_ONLY` and `409 CUSTOM_LAUNCH_V1_READ_ONLY`; only V3.3 is the current
-production submission contract. CLI and preflight checks prepare and classify exact bytes, while the API server makes
-the durable decision and exposes no wallet handoff until the per-launch behavior, fee and liquidity evidence required
-by the selected lane is verified. Existing Ethereum fee-certified profiles and their exact stamped PoolKeys remain
-unchanged; they do not establish a Robinhood fee path. The required policy and default configuration for new Robinhood
-V4 API Custom launches is `20 bps` (`0.20%`, `2,000 ppm`) to
-`0xD88539d3c4C460136a733A3Fd60cf6BF269079da`. Existing launches and Ethereum are unchanged. This is not canonical
-onchain enforcement, charged-fee or revenue evidence. Basis, currency, accounting mode, rounding, accrual and claim
-mechanics remain unpublished, and fee-path absence is not itself a Robinhood write blocker. No admission result is an audit or a universal safety, honeypot, liquidity,
-tradeability or fee-behavior guarantee. Legacy Registry and GitHub submission intake is closed.
+Ethereum V2 and V1 preserve historical reads. Fresh POSTs return nonretryable
+`409 CUSTOM_LAUNCH_V2_READ_ONLY` and `409 CUSTOM_LAUNCH_V1_READ_ONLY`; use the advertised V3 profile for new
+Ethereum submissions. Robinhood uses the separate V4 or MultiRole contract selected above.
+
+Native20 rounds the platform fee up to the next wei and accrues it as PoolManager native claims. Anyone can trigger
+a claim, but payment goes only to the fixed recipient `0xD88539d3c4C460136a733A3Fd60cf6BF269079da`.
+Gas and liquidity deposits are separate. A claim withdraws an existing accrual and does not create new revenue.
+Historical launches keep their own fee model, including the separate Ethereum V3 fee-certified 10 bps policy.
+
+The API checks the behavior, fee and liquidity evidence required by the selected profile before wallet handoff.
+Admission does not replace an external audit or establish liquidity, trading readiness or source verification.
+Legacy Registry and GitHub submission intake is closed.
 
 ## Related repositories
 

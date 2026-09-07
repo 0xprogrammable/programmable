@@ -19,6 +19,7 @@
 - [Developers](developers/README.md)
   - [Build a module](developers/module-mode.md)
   - [Index Module Mode launches](developers/module-mode-indexing.md)
+  - [Launch through the API](developers/custom-launch-quickstart.md)
   - [Custom Launch API](developers/custom-launch.md)
   - [Verify a launch](developers/verify.md)
   - [Index launches](developers/indexing.md)

@@ -14,10 +14,15 @@ description: Official Programmable product, source, community and analytics link
 | Custom Launch API guide | [programmable.market/developers/custom-launch-api-v1.md](https://programmable.market/developers/custom-launch-api-v1.md) |
 | Custom Launch V1 OpenAPI | [live reads and write fence](https://programmable.market/openapi/custom-launch-v1.json)                    |
 | Custom Launch V2 OpenAPI | [V2 reads, schemas and write fence](https://programmable.market/openapi/custom-launch-v2.json)                     |
-| Custom Launch V3 OpenAPI | [preparatory profile 3.4 contract; live/default remains discovery-bound profile 3.3](https://programmable.market/openapi/custom-launch-v3.json) |
-| Custom Launch V4 OpenAPI | [Robinhood V4 contract; check live discovery](https://programmable.market/openapi/custom-launch-v4.json) |
-| Custom Launch V4 schema | [Robinhood V4 pack config](https://programmable.market/schemas/custom-launch/v4/pack-config.json) |
-| Custom Launch V4 source status | [post-finality source-verification schema](https://programmable.market/schemas/custom-launch/v4/source-verification-status.json) |
+| Custom Launch V3 OpenAPI | [Ethereum V3 schemas; select the profile from capabilities](https://programmable.market/openapi/custom-launch-v3.json) |
+| Custom Launch quickstart | [Choose an API and complete a launch](../developers/custom-launch-quickstart.md) |
+| Custom Launch discovery | [Profiles, capabilities and client releases](https://programmable.market/.well-known/programmable.json) |
+| Custom Launch V4.1 OpenAPI | [Robinhood V4.1 request contract](https://programmable.market/openapi/custom-launch-v4.1.json) |
+| Custom Launch V4.1 schema | [Robinhood V4.1 pack config](https://programmable.market/schemas/custom-launch/v4.1/pack-config.json) |
+| MultiRole V2 guide | [Shared token and hook contracts](https://api.programmable.market/v4/chains/4663/multi-role-custom-launches/guide.md) |
+| Custom Launch V4.0 OpenAPI | [Historical Robinhood V4.0 contract](https://programmable.market/openapi/custom-launch-v4.json) |
+| Custom Launch V4 schema | [Historical Robinhood V4.0 pack config](https://programmable.market/schemas/custom-launch/v4/pack-config.json) |
+| Custom Launch V4 source status | [Historical V4.0 source-verification schema](https://programmable.market/schemas/custom-launch/v4/source-verification-status.json) |
 | Custom Launch CLI 4.0.0 | [Historical Robinhood V4 source; use live discovery for the current installable release](https://github.com/programmablehq/PROGRAMMABLE/tree/53926119030772040eca34b4796a36353c9da2d2/packages/launch) |
 | Custom Launch API      | [api.programmable.market](https://api.programmable.market)                                                         |
 | Custom API readiness    | [api.programmable.market/readyz](https://api.programmable.market/readyz)                                           |
@@ -27,23 +32,28 @@ description: Official Programmable product, source, community and analytics link
 | Read-only developer API | [developers.programmable.family](https://developers.programmable.family)                                           |
 | X                       | [x.com/ProgrammableHQ](https://x.com/ProgrammableHQ)                                                               |
 | Discord                 | [discord.com/invite/programmable](https://discord.com/invite/programmable)                                         |
-| Dune                    | [Programmable analytics](https://dune.com/0xprogrammable6098/programmable-analytics)                               |
+| Dune                    | [Programmable analytics](https://dune.com/programmablehq/analytics)                               |
 | V4 token                | [Dexscreener](https://dexscreener.com/robinhood/0x3df16f271060e4941c0386047def159f42e629dc0455db623c5b363eeacbcc1d) |
 
-Use `api.programmable.market` for authenticated public V3 general-hook creation and exact-credential-principal lifecycle reads with wallet keys, partner roots or bounded partner subkeys. The
-default profile is revision 3 with `profileVersion: 3.3.0`; it requires and binds canonical project metadata, including
-an exact source-bound image, into the launch hashes. Exact `3.2.0`, `3.1.0` and `3.0.0` requests remain readable and byte-identical retryable under their original immutable policies,
-and revision 2 remains compatible. CLI `3.3.9` defaults to live profile `3.3.0`; explicit profile `3.4.0` output remains
-preparatory and is rejected by live capabilities until backend activation. V2 and V1 history and schemas remain readable, while fresh creation returns
-non-retryable `409 CUSTOM_LAUNCH_V2_READ_ONLY` and `409 CUSTOM_LAUNCH_V1_READ_ONLY`; only V3.3 accepts new submissions.
-Legacy Registry and GitHub submission intake is closed. Use the read-only
-developer service and current deployment manifest when verifying Ethereum source or deployment data. Community posts
-and analytics are useful context but do not replace the contract address, canonical chain record or versioned release evidence.
+Use `api.programmable.market` for authenticated launch requests. Choose the network and contract layout in the
+[quickstart](../developers/custom-launch-quickstart.md), then read the matching live capabilities. Wallet keys,
+partner roots and bounded partner subkeys grant API access within their declared scopes and chain restrictions.
+The controller wallet signs the transaction separately.
 
-Robinhood Chain V4 availability comes from live discovery. Require `publicWrites: true`, `publicAuthorization: true`
-and `releaseReady: true` in both the V4 and chain 4663 entries; stop when a gate is false or missing. The current
-immutable 4.0.0 release, source commit, release manifest and tarball checksum are published at
-`customLaunchApi.versions.v4.cli.release`. Stable schemas and source links alone are not installation authority.
-API-key handoff uses only `$PROGRAMMABLE_API_KEY`. The user separately signs their wallet transaction, and policy
-profiles are selected by the API server. CLI `3.3.9` remains the Ethereum V3 integration. Trading, generic fee claiming,
-buyback management and external indexing require independent evidence.
+For Robinhood V4, require `publicWrites: true`, `publicAuthorization: true` and `releaseReady: true` in both the V4
+and chain 4663 discovery entries. The immutable client release, source commit, manifest and tarball checksum come
+from `customLaunchApi.versions.v4.cli.release`. MultiRole uses its own capabilities, readiness, context and client.
+API-key handoff uses only `$PROGRAMMABLE_API_KEY`.
+
+CLI `3.3.9` serves Ethereum V3. Select the profile advertised by live capabilities; a schema for another profile
+is a reference contract, not permission to submit it. Ethereum V2 and V1 retain history and schemas, while fresh
+creation returns `409 CUSTOM_LAUNCH_V2_READ_ONLY` or `409 CUSTOM_LAUNCH_V1_READ_ONLY`.
+Legacy Registry and GitHub submission intake is closed.
+
+Robinhood Native20 charges 20 bps (0.20%) for Programmable, separately from creator and pool fees. The
+[fees guide](../economics.md) explains the calculation and how the Dune figures count accruals and claims.
+Historical launches retain their own fee models.
+
+Use the read-only developer service and versioned deployment manifest to verify Ethereum deployment data.
+Use canonical chain records to verify launch identity. Source verification, finality, indexing and trading
+readiness each have their own status.
