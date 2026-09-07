@@ -73,6 +73,8 @@ describe("profile-selected Robinhood well-known discovery", () => {
     });
     expect(next.description).toContain("exact server-verified native fee kernel");
     expect(next.description).not.toContain("Its required 20 bps default policy is not a canonical onchain fee-enforcement or revenue claim.");
+    expect(next.customLaunchApi.intake.chainSpecific.robinhood.instructions.join("\n"))
+      .toContain("Native20 charges 20 bps (0.20%)");
   });
 
   it("takes ready authority only from activation and preserves Ethereum and historical routes", async () => {

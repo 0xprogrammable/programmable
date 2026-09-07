@@ -3,7 +3,7 @@ import { PROGRAMMABLE_AGENT_ENTRY } from "@/lib/agent-connection";
 import { V4_API_DISCOVERY, V4_API_PROFILE_VERSION } from "../../custom-launch/v4-api-discovery";
 import { robinhoodV4PublicContractDiscovery, robinhoodV4PublicPolicyDescription } from
   "../../custom-launch/v4-public-contract-discovery";
-import { PROGRAMMABLE_AGENT_INTAKE_V1 } from "../../custom-launch/agent-setup-v1";
+import { programmableAgentIntakeV1 } from "../../custom-launch/agent-setup-v1";
 
 import { resolveCustomRegistryPublicManifestV1 } from
   "./registry-manifest-v1";
@@ -41,7 +41,7 @@ export function programmableWellKnownDocumentV1(
     documentationUrl: "https://developers.programmable.family/",
     sourceUrl: "https://github.com/programmablehq/Developers",
     customLaunchApi: Object.freeze({
-      intake: PROGRAMMABLE_AGENT_INTAKE_V1,
+      intake: programmableAgentIntakeV1(V4_API_PROFILE_VERSION),
       status: "live" as const,
       readStatus: "live" as const,
       apiVersion: "3" as const,
