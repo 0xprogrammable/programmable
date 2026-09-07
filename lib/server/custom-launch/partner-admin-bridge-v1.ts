@@ -3,6 +3,7 @@ import "server-only";
 import { randomBytes, randomUUID } from "node:crypto";
 
 import { getAddress, isAddress } from "viem";
+import { isWebsiteAdminWallet } from "@/lib/admin-access";
 
 import {
   PARTNER_ADMIN_LIST_LIMITS_V1,
@@ -808,6 +809,9 @@ function requireLinkedWallet(principal: AuthenticatedWalletPrincipalV1, value: s
   if (!principal.wallets.some((wallet) =>
     wallet.toLowerCase() === walletAddress.toLowerCase())) {
     throw new BrowserRequestErrorV1(403, "wallet_not_linked");
+  }
+  if (!isWebsiteAdminWallet(walletAddress)) {
+    throw new BrowserRequestErrorV1(403, "admin_wallet_required");
   }
   return walletAddress;
 }

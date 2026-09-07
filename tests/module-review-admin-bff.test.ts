@@ -20,8 +20,8 @@ const TIME = "2026-09-06T02:00:00.000Z";
 const NONCE = "abcdefghijklmnopqrstuv";
 // Real immutable host pins with an explicit pending lifecycle, independent of production activation.
 const pendingRelease = { ...configuredRelease, enabled: false, status: "preview", lifecycleEvidenceDigest: null };
-function setup(options: { wallet?: string; release?: boolean | "pending" } = {}) {
-  const f = moduleReviewAdminFixture(); const wallet = options.wallet ?? f.reviewer;
+function setup(options: { wallet?: string; author?: `0x${string}`; release?: boolean | "pending" } = {}) {
+  const f = moduleReviewAdminFixture(options.author); const wallet = options.wallet ?? f.reviewer;
   const authenticate = vi.fn(async () => ({ privyUserId: "did:privy:test-reviewer", privySessionId: "session-review", wallets: [wallet] }));
   const queue = { schemaVersion: "programmable.modules.review-queue.v1", jobs: [{ ...f.job, plan: null, artifact: null }], nextCursor: null };
   const detail = { schemaVersion: "programmable.modules.review-detail.v1", job: f.job, decisions: [] as ModuleReviewDecisionRecordV1[], attempts: f.detail.attempts };
@@ -97,6 +97,15 @@ describe("Module review admin BFF", () => {
   });
   it("rejects an unlinked wallet before any backend read", async () => {
     const f = setup(); const result = await f.client.handle(new Request(f.read().url.replace(f.wallet, f.subject.author)), "list"); expect(result.status).toBe(403); expect(f.fetchBackend).not.toHaveBeenCalled();
+  });
+  it.each(["list", "decision"] as const)("rejects another linked wallet for %s without forwarding credentials", async operation => {
+    const f = setup({ wallet: "0x2222222222222222222222222222222222222222" });
+    const request = operation === "list" ? f.read()
+      : f.post("decisions", { command: f.command("reject"), hostManifestJson: null });
+    const result = await f.client.handle(request, operation, operation === "list" ? undefined : f.subject.submissionId);
+    expect(result.status).toBe(403);
+    expect((await result.json()).error.code).toBe("admin_wallet_required");
+    expect(f.fetchBackend).not.toHaveBeenCalled();
   });
   it("binds detail to the verified source and preserves original download bytes", async () => {
     const f = setup(); const result = await f.client.handle(f.read(`/${f.subject.submissionId}`), "detail", f.subject.submissionId);
@@ -193,9 +202,12 @@ describe("Module review admin BFF", () => {
     expect([400, 409]).toContain(result.status); expect(f.fetchBackend.mock.calls.every(([, init]) => init?.method === "GET")).toBe(true);
   });
   it("forbids author self-review even when the backend authenticated reads succeed", async () => {
-    const base = moduleReviewAdminFixture(); const f = setup({ wallet: base.subject.author });
+    const base = moduleReviewAdminFixture(); const f = setup({ author: base.reviewer });
     const result = await f.client.handle(f.post("decisions", { command: f.command("reject"), hostManifestJson: null }), "decision", f.subject.submissionId);
-    expect(result.status).toBe(403); expect(f.fetchBackend.mock.calls.every(([, init]) => init?.method === "GET")).toBe(true);
+    expect(result.status).toBe(403);
+    expect((await result.json()).error.code).toBe("MODULE_REVIEW_SELF_DECISION_FORBIDDEN");
+    expect(f.fetchBackend).toHaveBeenCalled();
+    expect(f.fetchBackend.mock.calls.every(([, init]) => init?.method === "GET")).toBe(true);
   });
   it("requires no host pins for a request-changes decision", async () => {
     const f = setup({ release: false }); const result = await f.client.handle(f.post("decisions", { command: f.command("request_changes"), hostManifestJson: null }), "decision", f.subject.submissionId);

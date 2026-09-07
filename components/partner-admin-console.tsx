@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 
 import { useWallet } from "@/components/wallet-provider";
+import { isWebsiteAdminWallet } from "@/lib/admin-access";
 import {
   PARTNER_ADMIN_LIST_LIMITS_V1,
   PARTNER_ADMIN_SCHEMA_V1,
@@ -166,7 +167,8 @@ export function PartnerAdminConsole() {
     openWallet,
     wallet,
   } = useWallet();
-  const account = wallet?.account ?? null;
+  const account = authenticated && isWebsiteAdminWallet(wallet?.account)
+    ? wallet?.account ?? null : null;
   const [partners, setPartners] = useState<PartnerSummaryV1[]>([]);
   const [partnerPagination, setPartnerPagination] =
     useState<PartnerListPaginationV1>(EMPTY_PARTNER_PAGINATION);
@@ -678,7 +680,7 @@ export function PartnerAdminConsole() {
       </p>
       <header className={styles.hero}>
         <div>
-          <p className={styles.kicker}>Admin · <Link href="/admin/modules">Module review</Link></p>
+          <p className={styles.kicker}><Link href="/admin/modules">Admin Dashboard</Link> · Partners</p>
           <h1>Partner access</h1>
           <p>
             Give a partner its own launch infrastructure without sharing a
@@ -702,12 +704,8 @@ export function PartnerAdminConsole() {
         </section>
       ) : !account ? (
         <section className={styles.statePanel}>
-          <h2>{authenticated ? "Link an admin wallet" : "Connect the admin wallet"}</h2>
-          <p>
-            {authenticated
-              ? "Link or select an Ethereum wallet before checking partner access."
-              : "The backend verifies admin access after the wallet session is connected."}
-          </p>
+          <h2>Admin wallet required</h2>
+          <p>Connect the admin wallet to manage partner access.</p>
           <button type="button" disabled={connecting} onClick={openWallet}>
             {connecting
               ? "Connecting wallet"
