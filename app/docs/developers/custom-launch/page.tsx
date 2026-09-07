@@ -140,9 +140,9 @@ const robinhoodV4Lifecycle = [
 ] as const;
 
 const robinhoodV4WalletStatusCommand =
-  "programmable-launch status REQUEST_UUID --api-version 4 --chain-id 4663 --watch --until authorized";
+  "programmable-launch status LAUNCH_ID --api-version 4 --chain-id 4663 --watch --until authorized";
 const robinhoodV4FinalityStatusCommand =
-  "programmable-launch status REQUEST_UUID --api-version 4 --chain-id 4663 --watch --until finalized";
+  "programmable-launch status LAUNCH_ID --api-version 4 --chain-id 4663 --watch --until finalized";
 
 const cliInstallCommands = [
   [
