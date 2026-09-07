@@ -24,6 +24,22 @@ test('wire request rechecks bytes and derives stable identity without inheriting
   assert.equal(Object.hasOwn(packed, 'onchainApproved'), false);
   assert.equal(validateModuleSubmissionRequest(packed).ok, true);
 });
+test('submission wire binds fixed/input metadata into package and request identity', () => {
+  const submitted = request();
+  submitted.descriptor.configuration.fields.minimum.binding = { mode: 'input', default: '10' };
+  submitted.descriptor.configuration.fields.maximum.binding = { mode: 'fixed', value: '100' };
+  const first = parseModuleSubmissionJSON(JSON.stringify(submitted));
+  assert.equal(first.ok, true, JSON.stringify(first));
+  assert.deepEqual(first.request.descriptor.configuration, submitted.descriptor.configuration);
+  const edited = structuredClone(submitted); edited.descriptor.configuration.fields.maximum.binding.value = '200';
+  const second = validateModuleSubmissionRequest(edited);
+  assert.equal(second.ok, true);
+  assert.notEqual(first.packageId, second.packageId);
+  assert.notEqual(first.requestDigest, second.requestDigest);
+  assert.equal(first.familyId, second.familyId);
+  edited.descriptor.configuration.fields.maximum.binding.value = 'invalid';
+  assert.equal(validateModuleSubmissionRequest(edited).errors[0].code, 'OPEN_CONFIG_UINT');
+});
 test('wire parser rejects unknown evidence, duplicate/missing/extra files and source substitution', () => {
   const edits = [
     (x) => { x.approved = true; }, (x) => { x.files[0].verified = true; },

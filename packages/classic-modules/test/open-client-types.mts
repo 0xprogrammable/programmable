@@ -1,5 +1,12 @@
 import { createModuleApiClient, type ModuleSubmissionPage, type ModuleSubmissionResponse, type ModuleReviewStatus, type ModuleReviewCapabilities } from '../src/open-client.mjs';
 import { moduleSubmissionFromPack } from '../src/open-transport.mjs';
+import { resolveOpenConfigBindings, type OpenConfigSchema, type OpenConfigParameterBinding } from '../src/open-packages.mjs';
+
+export function checkParameterBindingTypes() {
+  const binding: OpenConfigParameterBinding = { mode: 'fixed', value: '7' };
+  const schema: OpenConfigSchema = { type: 'uint', binding };
+  return resolveOpenConfigBindings(schema, undefined);
+}
 
 /** Compile-only SDK consumer. This function is not executed by the test suite. */
 export async function checkClientTypes(sourcePack: unknown, apiOrigin: string, apiKey: string) {

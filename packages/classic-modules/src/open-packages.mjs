@@ -3,7 +3,7 @@ import { canonicalJson, familyIdFor, safeRelativePath } from './index.mjs';
 import { assertOpenConfigSchema, compileOpenConfig } from './open-config.mjs';
 import { assertOpenConstraints, evaluateOpenConstraints } from './open-constraints.mjs';
 
-export { assertOpenConfigSchema, compileOpenConfig, OPEN_CONFIG_LIMITS, OpenConfigError } from './open-config.mjs';
+export { assertOpenConfigSchema, compileOpenConfig, resolveOpenConfigBindings, OPEN_CONFIG_LIMITS, OpenConfigError } from './open-config.mjs';
 export { assertOpenConstraints, evaluateOpenConstraints, OPEN_CONSTRAINT_LIMITS, OpenConstraintError } from './open-constraints.mjs';
 
 export const OPEN_PACKAGE_FORMAT = 'programmable.classic.source-package.v0.1';

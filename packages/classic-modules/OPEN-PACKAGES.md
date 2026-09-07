@@ -12,7 +12,7 @@ From the repository root, choose a new destination whose parent exists:
 node packages/classic-modules/examples/open-packages/demo.mjs /tmp/programmable-open-example
 ```
 
-The example creates an explicitly **inert fixture**, descriptor, nested recipient template, bindings, source bundle, two configuration plans for different creator wallets, and a rejected conflict. Its `example.invalid` repository and fixture revision are intentional test data. It is not a deployable module or evidence of the independent-contributor/general-engine acceptance criteria.
+The example creates an explicitly **inert fixture**, descriptor, nested recipient template, bindings, source bundle, two configuration plans for different creator wallets, and a rejected conflict. It also creates free and fixed quote-address templates: two free addresses share one package, an editable default changes, and a fixed-address override fails. Its `example.invalid` repository, addresses and fixture revision are intentional test data. It is not a deployable module or evidence of the independent-contributor/general-engine acceptance criteria.
 
 The destination must not exist. The example uses the real CLI and file-hash checks without executing packaged source. Inspect `plan.json`, `other-wallet-plan.json` and `conflict.json`. The symbolic creator changes between plans; the literal recipient remains the same. A minimum greater than the maximum is rejected while the edited input is preserved.
 
@@ -54,13 +54,39 @@ The entry point is `@programmable/classic-modules/open`. `compileOpenConfig(sche
 | `bool`, `string`, `bytes` | Strict Boolean or bounded UTF-8/hexadecimal data. |
 | `address` | Literal EVM address; mixed-case values require a valid checksum. Zero-address meaning belongs to the admitted field semantics. |
 | `account` | Explicit `{address}` or `{role}` resolved from supplied role bindings. |
-| `asset` | `{asset}` reference to chain ID, address and decimals in the supplied asset map. |
-| `component` | `{component}` reference to a supplied component address. |
+| `asset` | `{asset}` reference to chain ID, address and decimals in the supplied asset map, or literal `{chainId,address,decimals}`. |
+| `component` | `{component}` reference to a supplied component address, or literal `{address}`. |
 | `variant` | A discriminator and selected record branch. |
 
 Optional fields encode `(bool present, T value)`. Absence uses a type-level zero independently of the valid present-value range. Absent, false and present-zero stay distinct. Variants encode `(uint16 branchIndex, bytes branchData)`, using lexically sorted branch indexes and the branch record tuple. Empty records use a fixed `tuple(bool _empty)` false sentinel so they remain decodable. A schema change changes package identity and requires its matching codec.
 
 Normalized values preserve symbolic handles; `bindings` commits their resolved addresses and asset metadata. Address calldata alone does not bind chain or decimals. Binding maps are caller assertions, not signatures, chain readback or authority proofs. Missing required references fail. There is no implicit token amount conversion.
+
+### Free inputs, editable defaults and fixed values
+
+Every existing schema node may declare optional `binding` metadata. Its absence preserves the historical input behavior and encoding. An explicit input without a default still requires launch input when the field is required. Input defaults supply omitted values and remain editable. Fixed values supply omitted values and reject any different normalized input with `OPEN_CONFIG_FIXED_OVERRIDE` and a JSON-pointer path.
+
+```json
+{
+  "type": "record",
+  "fields": {
+    "quoteAsset": {"type":"address","binding":{"mode":"input"}},
+    "windowSeconds": {"type":"uint","min":"1","binding":{"mode":"input","default":"60"}},
+    "recipient": {"type":"account","binding":{"mode":"fixed","value":{"address":"0x1111111111111111111111111111111111111111"}}}
+  },
+  "required": ["quoteAsset","windowSeconds","recipient"]
+}
+```
+
+For a fixed quote-address revision, use `"binding":{"mode":"fixed","value":"0x1111111111111111111111111111111111111111"}` on the same `quoteAsset` field. One input revision can accept different addresses on its admitted chain. A changed fixed value changes the package digest and follows normal revision review; it cannot change an existing launch or create an extra author family. These example addresses make no claim about deployed assets or admissibility.
+
+The same binding rules apply to nested records, arrays and variant values. Fixed optional fields encode as present. Fields omitted without a binding remain absent under the historical optional-field rules. Binding values are validated against their complete schema during package validation, including child bindings, unknown-field rejection and value bounds. Resolution returns fresh data without changing the descriptor or submitted input. Numeric spellings and address case are compared after the existing codec normalization.
+
+Fixed subtrees cannot contain `{role}`, `{asset}` or `{component}` handles because a caller could rebind their context. Use literal account/component addresses or a complete literal asset `{chainId,address,decimals}`. Literal assets produce a `bindings` entry with `reference:null` and normalized metadata; symbolic entries keep their existing reference names. A fixed asset binds all three metadata fields. Asset declarations still require chain and admissibility checks by the host.
+
+`resolveOpenConfigBindings(schema, values, context)` returns `{value,bindings}` through the same validator and resolver as `compileOpenConfig`. API handlers and the UI can share this function; required free fields must be supplied before complete resolution. `undefined` supplies an omitted root only when that root declares a fixed value or input default. `compileOpenTemplate`, `plan-open-template`, package packing and the existing submission transport use this schema directly. No separate submission format or CLI bypass is introduced.
+
+Binding metadata is part of the existing canonical package digest. Unchanged packages keep their IDs, ABI layouts and plan commitments. Recomputed configuration bytes alone do not prove an authorized binding: the server must load the exact admitted package and recompute its values/bytes; the admitted engine must enforce the same package-bound configuration during execution. This SDK change demonstrates local validation and encoding, not onchain enforcement. It does not make shared protocol fees or protected fund rights author-configurable.
 
 Exported `OPEN_CONFIG_LIMITS` bounds depth, nodes, arrays, strings and encoded size. `OPEN_PLAN_LIMITS` bounds 64 instances, 128 supplied packages, 256 preparation links and aggregate JSON size. These are local data-processing limits, not measured onchain execution capacities or permanent catalogue limits. The current codec is EVM-oriented; other runtimes require corresponding codec/engine integration.
 
