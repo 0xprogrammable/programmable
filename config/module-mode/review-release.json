@@ -1,0 +1,74 @@
+{
+  "schemaVersion": "programmable.module-mode-source.v2",
+  "sourceVersion": "module-native-v2",
+  "economicsPolicyId": "0x781124e941c10961779bc0d3ce1606083d16e1af3a03dccbc10d362b81085cc2",
+  "chainId": 4663,
+  "sourceCommit": "17b64b6613108dbc6ffdf767607bde6ea33343cd",
+  "minimumInitialBuyNative": "400000000000000",
+  "tokenCreationCodeHash": "0x445809d9f7a34e959de4a96dec1e1beddfb265755bf28c57c42744adea1128ef",
+  "finalityPolicy": "robinhood-ethereum-finalized-v1",
+  "contracts": {
+    "tokenFactory": {
+      "address": "0x754e8c1ade3c6c4c863590a91f2ed020baf8e779",
+      "runtimeCodeHash": "0x9354ef051bafa1edccb95c91d999e31025c012ee8d93392a78a51d83594845f2"
+    },
+    "positionPlanner": {
+      "address": "0x79a6281fc6910600b0aa73c0439266a6e9399de2",
+      "runtimeCodeHash": "0x1c2e74e2161589f3650fe2955e86da8890178a49b86ab7b742c6eeb80c9a2ae9"
+    },
+    "launchPolicy": {
+      "address": "0xf3ff250759a66edc7893bba9d34daf4ba4ae4caa",
+      "runtimeCodeHash": "0x1c485a64c77174e0b2a78adf2527128792180def26cbab2ca00fcfa74b73ba91"
+    },
+    "positionForwarderFactory": {
+      "address": "0xc9ec66eca31b8bee9479025eb5467bb2926d5e8d",
+      "runtimeCodeHash": "0xbe86703ef1ab24716bddcb5be981d224d891fe1336c68d4daf587cbc105b16d4"
+    },
+    "runtimeFactory": {
+      "address": "0xee5d8f7a17dd14ce86a5b8d745add285f88f9bb4",
+      "runtimeCodeHash": "0xf924c7114ee699300e86975829e109a69fdc3d3df2f3b8893cb83a4c4a7cceae"
+    },
+    "registry": {
+      "address": "0x56251ab2716d3fec1fa44a45acd6f489194360f0",
+      "runtimeCodeHash": "0x6d2e51502e5e4ff5d03562ff3c5fb4cc517953584651188d267206ee49e462ec"
+    },
+    "swapRouterFactory": {
+      "address": "0x22af538f3c7127fe31262bd0a66410f42c8d70e2",
+      "runtimeCodeHash": "0x0da797636dc67063cd494a21685b37b2b3fd61d8e00477d77825a61f1a2d9198"
+    },
+    "hook": {
+      "address": "0xe6d1b4951b4bd4fdcd1746a7d8fbff98a7fce0cc",
+      "runtimeCodeHash": "0xa0c41fbf23b09767c8aa6d54f0543cbc5f0741cd525bca44fb259061f9225633"
+    },
+    "rewardLedger": {
+      "address": "0x4bf80c62c9e9fb5c25f165070189dce957d01982",
+      "runtimeCodeHash": "0x30a1bf80146a303273cf57d36c4b6f4f934299353a1fcfda1b7f321b06462095"
+    },
+    "runtime": {
+      "address": "0x912e7dcae95c6585a0ecab7d53c5d5bc5e26b00a",
+      "runtimeCodeHash": "0x764c4731d4b54598a10ed03a2f0804289848c1910f2836f485ee832f1895655a"
+    },
+    "budgetVault": {
+      "address": "0xc67264f9b6f390c9b5ae6ac6ea3710d3c08171d4",
+      "runtimeCodeHash": "0xefef9bf90bc2a0bec08bbee3546bad80abb5e9f5cdaa0f6ae8fa463720415079"
+    },
+    "swapRouter": {
+      "address": "0x866f4ab06aa022d3f82447c43f493a7d98a990ff",
+      "runtimeCodeHash": "0xe19508a16c26315fa76dfb1abaae3f113d73af9c20d30ca62954b3ef2835b705"
+    },
+    "launcher": {
+      "address": "0x362dac28ac64ce11989a90e0da6715313e0162c5",
+      "runtimeCodeHash": "0x2f4f04402489d12b70b9dbc0ffb15b1bfceaef645b75b18102bc7b1c0af9b753"
+    },
+    "poolManager": {
+      "address": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
+      "runtimeCodeHash": "0xbd3881180b547f5fe817545743cfb4343e96b1bc6640dcd70c106b0066e95626"
+    },
+    "positionManager": {
+      "address": "0x58daec3116aae6d93017baaea7749052e8a04fa7",
+      "runtimeCodeHash": "0xc873e135dc9aaec88489cfbad146b4cb49d6a32e0d80326377784b7ba17670b2"
+    }
+  },
+  "startBlock": "57167553",
+  "releaseDigest": "0xe81f122e0bd21e0984e21c71ffce56f315e82f22e485cc19e0e490d4d5b7bd49"
+}
