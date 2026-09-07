@@ -46,6 +46,19 @@ export const FINAL_BACKUP_SCHEMAS = Object.freeze([
   "programmable_wake_private",
   "supabase_migrations",
 ]);
+// An explicit current profile; the retired Candidate defaults stay unchanged.
+export const MODULE_MODE_RECOVERY_PROFILE = "programmable.module-mode-recovery.v1";
+export const MODULE_MODE_BACKUP_SCHEMAS = Object.freeze(["programmable_custom_launch_api_v1", "supabase_migrations"]);
+const MODULE_RECOVERY_TABLES = Object.freeze(["principals", "wallet_bindings", "api_credentials", "api_credential_scopes",
+  "api_scopes", "module_source_drafts_v1", "module_submission_keys_v1", "module_request_budgets_v1",
+  "module_review_jobs_v1", "module_review_attempts_v1", "module_review_decisions_v1"]);
+function moduleRecoveryProfile(profile, schemas) {
+  if (profile === undefined) return false;
+  if (profile !== MODULE_MODE_RECOVERY_PROFILE || canonicalJson(schemas) !== canonicalJson(MODULE_MODE_BACKUP_SCHEMAS)) {
+    throw new Error("Module recovery profile is invalid");
+  }
+  return true;
+}
 const RESTORE_ROLE_NAMES = Object.freeze([
   "programmable_api_reader",
   "programmable_api_reader_login",
@@ -659,7 +672,7 @@ function parseSourceTarget(
   return { safeTarget, password, username };
 }
 
-function parseRestoreTarget(databaseUrl, isolationId) {
+function parseRestoreTarget(databaseUrl, isolationId, normalizeIpv6 = false) {
   if (!ISOLATION_ID.test(isolationId ?? "")) {
     throw new Error("restore isolation id is invalid");
   }
@@ -697,7 +710,7 @@ function parseRestoreTarget(databaseUrl, isolationId) {
   return {
     safeTarget: Object.freeze({
       isolationId,
-      host: parsed.hostname,
+      host: normalizeIpv6 && parsed.hostname === "[::1]" ? "::1" : parsed.hostname,
       port,
       database: expectedDatabase,
       sslMode: "verify-full",
@@ -760,9 +773,12 @@ function validateBackupRequest(input) {
   const restore = parseRestoreTarget(
     input.restoreDatabaseUrl,
     input.restoreIsolationId,
+    input.profile === MODULE_MODE_RECOVERY_PROFILE,
   );
   const schemas = Object.freeze([...(input.schemas ?? BACKUP_SCHEMAS)]);
+  const moduleRecovery = moduleRecoveryProfile(input.profile, schemas);
   if (
+    !moduleRecovery &&
     canonicalJson(schemas) !== canonicalJson(BACKUP_SCHEMAS) &&
     canonicalJson(schemas) !== canonicalJson(FINAL_BACKUP_SCHEMAS)
   ) {
@@ -783,7 +799,9 @@ function validateBackupRequest(input) {
     restore: restore.safeTarget,
     schemas,
   });
+  if (moduleRecovery) payload.profile = MODULE_MODE_RECOVERY_PROFILE;
   return {
+    ...(moduleRecovery ? { profile: MODULE_MODE_RECOVERY_PROFILE } : {}),
     operationId: input.operationId,
     repositoryCommit: input.repositoryCommit,
     source,
@@ -816,14 +834,47 @@ async function safeExistingFile(filePath) {
 }
 
 async function fileSha256(filePath) {
-  const contents = await readFile(filePath);
-  return {
-    bytes: contents.byteLength,
-    sha256: sha256(contents),
-  };
+  const file = await open(filePath, "r"), hash = createHash("sha256"), buffer = Buffer.alloc(1024 * 1024);
+  let bytes = 0;
+  try {
+    const before = await file.stat();
+    for (;;) {
+      const { bytesRead } = await file.read(buffer, 0, buffer.length, null);
+      if (!bytesRead) break;
+      hash.update(buffer.subarray(0, bytesRead)); bytes += bytesRead;
+    }
+    const after = await file.stat();
+    if (before.size !== bytes || after.size !== bytes || before.mtimeMs !== after.mtimeMs) throw new Error("operator artifact changed while hashing");
+    return { bytes, sha256: `0x${hash.digest("hex")}` };
+  } finally { await file.close(); }
+}
+
+export function validateModuleRecoveryDatabaseEvidence(value) {
+  const proof = value?.moduleRecovery;
+  if (value?.kind !== "programmable-database-backup-restore-evidence" || value.backup?.format !== "pg-custom-v1"
+    || canonicalJson(value.schemas) !== canonicalJson(MODULE_MODE_BACKUP_SCHEMAS) || proof?.profile !== MODULE_MODE_RECOVERY_PROFILE
+    || proof.productionRestorePerformed !== false || proof.independentArchiveCopies !== "unavailable" || proof.rpo !== "unavailable"
+    || !Number.isFinite(proof.restoreElapsedMs) || proof.restoreElapsedMs < 0 || !Number.isFinite(proof.totalElapsedMs)
+    || proof.totalElapsedMs < proof.restoreElapsedMs || !Number.isFinite(Date.parse(proof.sourceCaptureWindow?.startedAt))
+    || !Number.isFinite(Date.parse(proof.sourceCaptureWindow?.finishedAt))
+    || Date.parse(proof.sourceCaptureWindow?.finishedAt) < Date.parse(proof.sourceCaptureWindow?.startedAt)
+    || !Array.isArray(proof.source?.tables) || !Array.isArray(proof.restored?.tables)
+    || canonicalJson(proof.source.tables) !== canonicalJson(proof.restored.tables)
+    || MODULE_RECOVERY_TABLES.some(name => !proof.source.tables.some(table => table.schema === MODULE_MODE_BACKUP_SCHEMAS[0] && table.table === name))
+    || !proof.source.tables.some(table => table.schema === "supabase_migrations" && table.table === "schema_migrations")) {
+    throw new Error("Module recovery database evidence is incomplete");
+  }
+  for (const [side, prefix] of [[proof.source, "source"], [proof.restored, "restored"]]) {
+    if (side.profile !== MODULE_MODE_RECOVERY_PROFILE || side.manifestSha256 !== value[`${prefix}ManifestSha256`]
+      || !SHA256.test(side.manifestSha256) || side.structuralManifestSha256 !== value[`${prefix}StructuralManifestSha256`]
+      || side.portableStructuralManifestSha256 !== value[`${prefix}PortableStructuralManifestSha256`]
+      || side.tableCount !== value.tableCount || side.rowCount !== value.rowCount) throw new Error("Module recovery database commitment differs");
+  }
+  return proof;
 }
 
 function validateStoredEvidence(value, request) {
+  if (request.profile === MODULE_MODE_RECOVERY_PROFILE) validateModuleRecoveryDatabaseEvidence(value);
   const hasSourceStructuralManifest = Object.hasOwn(
     value ?? {},
     "sourceStructuralManifestSha256",
@@ -1053,7 +1104,19 @@ function commandTargetArguments(target, username) {
   ];
 }
 
-function roleBootstrapSql() {
+function roleBootstrapSql(profile) {
+  if (profile === MODULE_MODE_RECOVERY_PROFILE) {
+    // The dedicated local cluster has no production logins or credential material.
+    return ["programmable_custom_launch_api_runtime", "anon", "authenticated", "service_role"].map(role =>
+      `DO $module_roles$ BEGIN IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='${role}') THEN
+        IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='${role}' AND NOT rolcanlogin AND NOT rolsuper
+          AND NOT rolcreatedb AND NOT rolcreaterole AND NOT rolinherit AND NOT rolreplication AND NOT rolbypassrls)
+          OR EXISTS (SELECT 1 FROM pg_auth_members WHERE roleid=(SELECT oid FROM pg_roles WHERE rolname='${role}')
+            OR member=(SELECT oid FROM pg_roles WHERE rolname='${role}')) THEN
+          RAISE EXCEPTION 'local recovery role is not isolated'; END IF;
+        ELSE CREATE ROLE ${role} NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+        END IF; END $module_roles$;`).join("\n");
+  }
   const body = RESTORE_ROLE_NAMES.map(
     (role) => `
       if not exists (
@@ -1359,10 +1422,12 @@ export function canonicalizePostgresAclRows(rows) {
 
 export async function captureDatabaseManifest(
   sql,
-  { schemas: requestedSchemas = BACKUP_SCHEMAS } = {},
+  { schemas: requestedSchemas = BACKUP_SCHEMAS, profile } = {},
 ) {
   const schemas = Object.freeze([...requestedSchemas]);
+  const moduleRecovery = moduleRecoveryProfile(profile, schemas);
   if (
+    !moduleRecovery &&
     canonicalJson(schemas) !== canonicalJson(BACKUP_SCHEMAS) &&
     canonicalJson(schemas) !== canonicalJson(FINAL_BACKUP_SCHEMAS)
   ) {
@@ -1380,7 +1445,7 @@ export async function captureDatabaseManifest(
        where nspname = any($1::text[])
        order by nspname
     `,
-    [FINAL_BACKUP_SCHEMAS],
+    [moduleRecovery ? MODULE_MODE_BACKUP_SCHEMAS : FINAL_BACKUP_SCHEMAS],
   );
   if (
     canonicalJson(schemaInventory.map(({ nspname }) => nspname)) !==
@@ -1435,6 +1500,10 @@ export async function captureDatabaseManifest(
     [schemas],
   );
   const tables = objects.filter(({ object_kind: kind }) => ["p", "r"].includes(kind));
+  if (moduleRecovery && (MODULE_RECOVERY_TABLES.some(name => !tables.some(table => table.schema_name === MODULE_MODE_BACKUP_SCHEMAS[0] && table.object_name === name))
+    || !tables.some(table => table.schema_name === "supabase_migrations" && table.object_name === "schema_migrations"))) {
+    throw new Error("Module recovery source schema is incomplete");
+  }
   const [manifestIdentity] = await sql.unsafe(`
     select current_user::text as current_user,
            role_record.rolsuper
@@ -1444,6 +1513,12 @@ export async function captureDatabaseManifest(
   const restrictedPostgres =
     manifestIdentity?.current_user === "postgres" &&
     manifestIdentity?.rolsuper === false;
+  if (moduleRecovery) {
+    const [role] = await sql.unsafe("select current_user::text as role, rolsuper, rolbypassrls from pg_roles where rolname=current_user");
+    if (role?.role !== "postgres" || (role.rolsuper !== true && role.rolbypassrls !== true)) {
+      throw new Error("Module recovery requires complete owner reads through forced RLS");
+    }
+  }
   const relationOwners = restrictedPostgres
     ? await sql.unsafe(
         `
@@ -1483,6 +1558,39 @@ export async function captureDatabaseManifest(
   for (const table of tables) {
     const schema = quoteIdentifier(table.schema_name);
     const name = quoteIdentifier(table.object_name);
+    if (moduleRecovery) {
+      const hash = createHash("sha256"), identities = createHash("sha256"), rawIntegerSums = {};
+      let count = 0, exactRequestBytes = 0n;
+      // One source request can contain 24 MiB. Stream one row instead of materializing a multi-GiB table.
+      for await (const batch of sql.unsafe(`select pg_catalog.to_jsonb(row_value)::text as row_json
+        from ${schema}.${name} as row_value order by pg_catalog.to_jsonb(row_value)::text collate "C"`).cursor(1)) {
+        for (const row of batch) {
+          if (typeof row.row_json !== "string") throw new Error("Module recovery row is invalid");
+          const bytes = Buffer.from(row.row_json), length = Buffer.alloc(8); length.writeBigUInt64BE(BigInt(bytes.length));
+          hash.update(length).update(bytes); count++;
+          const value = JSON.parse(row.row_json, (_key, value, context) => {
+            if (typeof value !== "number") return value;
+            if (typeof context?.source !== "string") throw new Error("Exact database number decoding requires Node 24");
+            return context.source;
+          });
+          identities.update(canonicalJson(Object.fromEntries(Object.entries(value).filter(([key]) => /(?:_id|_hash|_digest)$/u.test(key)))) + "\n");
+          for (const [key, number] of Object.entries(value)) {
+            if ((typeof number === "string" || typeof number === "number") && /^-?(?:0|[1-9][0-9]{0,127})$/u.test(String(number))) {
+              rawIntegerSums[key] = (BigInt(rawIntegerSums[key] ?? "0") + BigInt(number)).toString();
+            }
+          }
+          if (table.object_name === "module_source_drafts_v1") {
+            if (typeof value.exact_request_bytes !== "string" || !/^\\x[0-9a-f]+$/u.test(value.exact_request_bytes)
+              || value.exact_request_bytes.length % 2 !== 0) throw new Error("Module source bytes are unavailable");
+            exactRequestBytes += BigInt((value.exact_request_bytes.length - 2) / 2);
+          }
+        }
+      }
+      totalRows += count;
+      tableEvidence.push({ schema: table.schema_name, table: table.object_name, rows: count, rowsSha256: `0x${hash.digest("hex")}`,
+        identitiesSha256: `0x${identities.digest("hex")}`, rawIntegerSums, ...(table.object_name === "module_source_drafts_v1" ? { exactRequestBytes: exactRequestBytes.toString() } : {}) });
+      continue;
+    }
     const rows = await readAsRelationOwner(
       table.schema_name,
       table.object_name,
@@ -1999,6 +2107,7 @@ export async function captureDatabaseManifest(
       ) as grant_item on true
       where namespace.nspname = any($1::text[])
          or (
+           ${moduleRecovery ? "false and" : ""}
            default_acl.defaclnamespace = 0
            and pg_catalog.pg_get_userbyid(default_acl.defaclrole)
              = 'programmable_migrator'
@@ -2111,6 +2220,7 @@ export async function captureDatabaseManifest(
     ),
     tableCount: tables.length,
     rowCount: totalRows,
+    ...(moduleRecovery ? { profile: MODULE_MODE_RECOVERY_PROFILE, tables: tableEvidence } : {}),
   });
 }
 
@@ -2132,7 +2242,7 @@ async function openRestoreDatabase({ databaseUrl, sslCaPem }) {
   return { sql };
 }
 
-async function assertRestoreTargetIsEmpty(sql, safeTarget) {
+async function assertRestoreTargetIsEmpty(sql, safeTarget, profile) {
   const [identity] = await sql.unsafe(`
     select
       session_user::text as session_user,
@@ -2166,6 +2276,19 @@ async function assertRestoreTargetIsEmpty(sql, safeTarget) {
   );
   if (Number(footprint?.schema_count) !== 0 || Number(footprint?.object_count) !== 0) {
     throw new Error("isolated restore database is not empty");
+  }
+  if (profile === MODULE_MODE_RECOVERY_PROFILE) {
+    const [isolation] = await sql.unsafe(`select inet_server_addr()::text as server_address,
+      (select rolsuper from pg_roles where rolname=current_user) as superuser,
+      (select count(*)::integer from pg_database where not datistemplate and datname not in ('postgres',current_database())) as other_databases,
+      (select count(*)::integer from pg_namespace where nspname not in ('pg_catalog','information_schema','public') and nspname not like 'pg_%') as extra_schemas,
+      ((select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public')
+       + (select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public')
+       + (select count(*) from pg_type t join pg_namespace n on n.oid=t.typnamespace where n.nspname='public'))::integer as public_objects`);
+    if (!["127.0.0.1", "::1"].includes(safeTarget.host) || !["127.0.0.1", "::1"].includes(isolation?.server_address)
+      || isolation.superuser !== true || isolation.other_databases !== 0 || isolation.extra_schemas !== 0 || isolation.public_objects !== 0) {
+      throw new Error("Module restore requires an empty dedicated local PostgreSQL cluster");
+    }
   }
 }
 
@@ -2210,6 +2333,9 @@ function portableStructuralManifest(manifest) {
 
 export async function createBackupAndRestoreEvidence(input) {
   const request = validateBackupRequest(input);
+  const moduleRecovery = request.profile === MODULE_MODE_RECOVERY_PROFILE;
+  const started = performance.now();
+  let restoreStarted, restoreElapsedMs, sourceWindowStart, sourceWindowEnd;
   request.sourceDatabaseUrl = input.sourceDatabaseUrl;
   request.restoreDatabaseUrl = input.restoreDatabaseUrl;
   const dependencies = validateDependencies(input.dependencies, [
@@ -2266,9 +2392,14 @@ export async function createBackupAndRestoreEvidence(input) {
       sslCaPem: request.restoreSslCaPem,
       safeTarget: request.restore.safeTarget,
     });
-    await assertRestoreEmpty(restoreConnection.sql, request.restore.safeTarget);
+    await assertRestoreEmpty(restoreConnection.sql, request.restore.safeTarget, request.profile);
+    if (moduleRecovery) {
+      await sourceConnection.sql.unsafe("set default_transaction_read_only = on").simple();
+      sourceWindowStart = now().toISOString();
+    }
     const before = await captureManifest(sourceConnection.sql, {
       schemas: request.schemas,
+      ...(moduleRecovery ? { profile: request.profile } : {}),
     });
     if (
       !SHA256.test(before?.manifestSha256 ?? "") ||
@@ -2294,6 +2425,7 @@ export async function createBackupAndRestoreEvidence(input) {
       caPath: sourceCa.filePath,
       applicationName: "programmable-pg-backup",
     });
+    if (moduleRecovery) sourceEnvironment.PGOPTIONS = "-c default_transaction_read_only=on";
     const restoreEnvironment = safeChildEnvironment({
       password: request.restore.password,
       caPath: restoreCa.filePath,
@@ -2357,10 +2489,16 @@ export async function createBackupAndRestoreEvidence(input) {
         expectedBinary: toolCommitments?.pg_dump,
       });
       await chmod(request.backupPath, 0o600);
+      if (moduleRecovery) {
+        const file = await open(request.backupPath, "r+"), directory = await open(path.dirname(request.backupPath), "r");
+        try { await file.sync(); await directory.sync(); } finally { await file.close(); await directory.close(); }
+      }
     }
     const after = await captureManifest(sourceConnection.sql, {
       schemas: request.schemas,
+      ...(moduleRecovery ? { profile: request.profile } : {}),
     });
+    if (moduleRecovery) sourceWindowEnd = now().toISOString();
     if (
       after?.manifestSha256 !== before.manifestSha256 ||
       after?.structuralManifestSha256 !== before.structuralManifestSha256 ||
@@ -2390,6 +2528,7 @@ export async function createBackupAndRestoreEvidence(input) {
       throw new Error("Postgres backup archive listing is empty");
     }
     if (backupFormat === "pg-custom-v1") {
+      restoreStarted = performance.now();
       await executeSafeCommand({
         runner,
         binary: input.psqlBinary ?? "psql",
@@ -2400,7 +2539,7 @@ export async function createBackupAndRestoreEvidence(input) {
           "ON_ERROR_STOP=1",
           ...commandTargetArguments(request.restore.safeTarget, request.restore.username),
           "--command",
-          roleBootstrapSql(),
+          roleBootstrapSql(request.profile),
         ],
         env: restoreEnvironment,
           timeoutMs: 60_000,
@@ -2429,7 +2568,9 @@ export async function createBackupAndRestoreEvidence(input) {
     }
     const restored = await captureManifest(restoreConnection.sql, {
       schemas: request.schemas,
+      ...(moduleRecovery ? { profile: request.profile } : {}),
     });
+    if (moduleRecovery) restoreElapsedMs = performance.now() - restoreStarted;
     if (
       restored?.manifestSha256 !== before.manifestSha256 ||
       !SHA256.test(restored?.structuralManifestSha256 ?? "") ||
@@ -2472,8 +2613,15 @@ export async function createBackupAndRestoreEvidence(input) {
       tableCount: before.tableCount,
       rowCount: before.rowCount,
       postgresVersion,
+      ...(moduleRecovery ? { moduleRecovery: {
+        profile: request.profile, source: before, restored,
+        sourceCaptureWindow: { startedAt: sourceWindowStart, finishedAt: sourceWindowEnd },
+        restoreElapsedMs, totalElapsedMs: performance.now() - started,
+        productionRestorePerformed: false, independentArchiveCopies: "unavailable", rpo: "unavailable",
+      } } : {}),
       createdAt: createdAt.toISOString(),
     });
+    if (moduleRecovery) validateModuleRecoveryDatabaseEvidence(evidence);
     await writeEvidence(request, evidence);
     return Object.freeze({
       kind: "programmable-database-backup-restore-result",
@@ -2483,7 +2631,7 @@ export async function createBackupAndRestoreEvidence(input) {
       evidence,
     });
   } catch (error) {
-    if (backupCreated) {
+    if (backupCreated && !moduleRecovery) {
       await rm(request.backupPath, { force: true }).catch(() => {});
     }
     throw operationalFailure("database backup and isolated restore", error);

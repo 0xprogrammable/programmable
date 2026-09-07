@@ -53,7 +53,7 @@
     "verify:candidate-neutrality": "node scripts/verify-candidate-neutral-production.mjs",
     "verify:candidate-neutrality:build": "node scripts/verify-candidate-neutral-production.mjs --include-build",
     "test:contract-release:ci": "npm run release:custom-launch:v4:backend-bridge:test && vitest run tests/classic-v3-deployment-sequence.test.ts && vitest run tests/deep-release-verifier.test.ts && vitest run tests/deep-v2-release-verifier.test.ts && npm run contracts:classic-v4:release:test && npm run contracts:classic-v4:launcher-upgrade:test && npm run contracts:robinhood:owner-envelope:test && npm run contracts:late-migration:deployment:test",
-    "test:database-runtime:ci": "vitest run tests/website-projection-target.test.ts",
+    "test:database-runtime:ci": "vitest run tests/website-projection-target.test.ts && node --test scripts/test/module-mode-recovery-v1.test.mjs scripts/data-pipeline/cutover-credentials.test.mjs",
     "test:retired-read-model-cutover": "node --test scripts/data-pipeline/cutover-operator.test.mjs scripts/data-pipeline/cutover-runtime.test.mjs scripts/data-pipeline/hosted-db-bootstrap.test.mjs",
     "test:ci-scope": "node --test scripts/ci/classify-verify-paths.test.mjs scripts/ci/verify-interface-workflow.test.mjs scripts/ci/interface-guidance-scope.test.mjs",
     "contracts:bootstrap": "cd contracts && ./scripts/bootstrap-deps.sh",
