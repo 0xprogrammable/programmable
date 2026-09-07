@@ -13,7 +13,7 @@ import { ENGINE_OPERATIONS, type ModuleEngineClient, type ModuleEngineOperation,
 import { fixture, ACCOUNT, QUOTE, TOKEN, addr, hash, CODE_HASH } from "../module-engine-fixture";
 import "./module-engine-ui.css";
 
-const scenarios = ["builder-general", "builder-fixed", "builder-approval", "builder-quote", "console-escrow", "console-unlocked", "console-settlement", "console-refund", "console-stranger", "console-quote", "unavailable"];
+const scenarios = ["builder-general", "builder-library", "builder-fixed", "builder-approval", "builder-quote", "console-escrow", "console-unlocked", "console-settlement", "console-refund", "console-stranger", "console-quote", "unavailable"];
 const scenario = new URLSearchParams(location.search).get("scenario") ?? scenarios[0];
 const test = fixture(), m = test.template.manifest.manifest;
 const settlement = scenario.includes("settlement") || scenario.includes("refund") || scenario.includes("stranger");
@@ -58,6 +58,19 @@ if (quoteProfile) {
   m.revision.operationPermissions = [{ operationId: ENGINE_OPERATIONS.buy, inputRoles: 2, outputRoles: 1, authorization: 0 }, { operationId: ENGINE_OPERATIONS.sell, inputRoles: 1, outputRoles: 2, authorization: 0 }];
 }
 test.template.manifestHash = computeModuleEngineHostManifestHash(test.template.manifest);
+if (scenario === "builder-library") {
+  const fixed = structuredClone(test.template), settlementTemplate = structuredClone(test.template);
+  fixed.manifest.manifest.catalogDefinition.id = "fixed-escrow-v1"; fixed.manifest.manifest.catalogDefinition.title = "Fixed quote escrow";
+  fixed.manifest.manifest.catalogDefinition.summary = "Time-locked deposits with a fixed quote token.";
+  fixed.manifest.manifest.revision.packageId = hash(41); fixed.manifest.manifest.revision.fixedQuoteAsset = QUOTE;
+  fixed.manifestHash = computeModuleEngineHostManifestHash(fixed.manifest);
+  settlementTemplate.manifest.manifest.catalogDefinition.id = "settlement-v1"; settlementTemplate.manifest.manifest.catalogDefinition.title = "Funded settlement";
+  settlementTemplate.manifest.manifest.catalogDefinition.interface = "settlement-v1"; settlementTemplate.manifest.manifest.catalogDefinition.summary = "Fund an obligation for a beneficiary.";
+  settlementTemplate.manifest.manifest.revision.packageId = hash(42);
+  settlementTemplate.manifest.manifest.revision.operationPermissions = [{ operationId: ENGINE_OPERATIONS.request, inputRoles: 2, outputRoles: 0, authorization: 0 }];
+  settlementTemplate.manifestHash = computeModuleEngineHostManifestHash(settlementTemplate.manifest);
+  test.availability.templates.push(fixed, settlementTemplate);
+}
 const baseRead = test.client.readContract.bind(test.client), baseCall = test.client.call.bind(test.client);
 const rpcEvents: string[] = [];
 test.client.readContract = (async (input: { functionName: string; address: Address }) => {
