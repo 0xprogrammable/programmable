@@ -6,6 +6,7 @@ import {
   decodeSocialMetadata,
   sanitizeImageUrl,
   sanitizeWebsiteUrl,
+  sanitizeSocialUrl,
 } from "../lib/onchain/metadata";
 import {
   MAX_METADATA_URL_BYTES,
@@ -70,5 +71,18 @@ describe("UERC20 metadata extraData", () => {
         stringToHex(JSON.stringify({ v: 1, x: oversizedX })),
       ),
     ).toEqual([]);
+  });
+
+  it("reads additional social fields while preserving older v1 envelopes", () => {
+    const extraData = stringToHex(JSON.stringify({ v: 1, x: "https://x.com/example", discord: "https://discord.gg/example", github: "https://github.com/example", gitbook: "https://example.gitbook.io/" }));
+    expect(buildTokenLinks("", extraData)).toEqual([
+      { kind: "x", url: "https://x.com/example" },
+      { kind: "discord", url: "https://discord.gg/example" },
+      { kind: "github", url: "https://github.com/example" },
+      { kind: "gitbook", url: "https://example.gitbook.io/" },
+    ]);
+    expect(buildTokenLinks("", stringToHex(JSON.stringify({ v: 1, discord: "https://discord.gg.evil.com/example", github: "https://github.com.evil.com/example" })))).toEqual([]);
+    expect(sanitizeSocialUrl("gitbook", "https://docs.example.com/")).toBe("https://docs.example.com/");
+    expect(sanitizeSocialUrl("discord", "https://discord.com/invite/example")).toBe("https://discord.com/invite/example");
   });
 });

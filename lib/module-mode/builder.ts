@@ -2,6 +2,7 @@ import { encodeAbiParameters, formatUnits, sha256, stringToHex, type AbiParamete
 import { MAX_METADATA_URL_BYTES, MAX_TOKEN_DESCRIPTION_BYTES, MAX_TOKEN_NAME_BYTES } from "@/lib/metadata-policy";
 import { MAX_TOKEN_IMAGE_UPLOAD_BYTES } from "@/lib/token-image";
 import type { ModuleDiscovery } from "./library";
+import { MODULE_DEFAULT_TOKEN_IMAGE, validateModuleSocialLinks, type ModuleSocialLinks } from "./token-metadata";
 
 import {
   compileOpenConfig,
@@ -58,6 +59,7 @@ export interface ModuleModeState {
   symbol: string;
   description: string;
   tokenImage: ModuleModeImage;
+  socialLinks?: ModuleSocialLinks;
   initialBuyEth: string;
   buyFeePercent: string;
   sellFeePercent: string;
@@ -75,7 +77,7 @@ export interface ModuleModeDraft {
   chainId: 4663;
   quoteAsset: "native-ETH";
   engine: ModuleModeEngineProfile;
-  token: { name: string; symbol: string; description: string; image: Exclude<ModuleModeImage, { kind: "none" }> };
+  token: { name: string; symbol: string; description: string; image: Exclude<ModuleModeImage, { kind: "none" }>; socialLinks?: ModuleSocialLinks };
   initialBuyWei: string;
   totalProgramFundingWei: string;
   totalNativeValueWei: string;
@@ -195,7 +197,7 @@ export const PREVIEW_MODULE_CATALOG: readonly ModuleModeCatalogEntry[] = [
 ];
 
 export function createModuleModeState(): ModuleModeState {
-  return { name: "", symbol: "", description: "", tokenImage: { kind: "none" }, initialBuyEth: "", buyFeePercent: "0", sellFeePercent: "0", selectedModules: [], moduleValues: {}, moduleFundingEth: {} };
+  return { name: "", symbol: "", description: "", tokenImage: { kind: "none" }, socialLinks: {}, initialBuyEth: "", buyFeePercent: "0", sellFeePercent: "0", selectedModules: [], moduleValues: {}, moduleFundingEth: {} };
 }
 
 export function utcDateTimeToSeconds(input: string): string {
@@ -223,7 +225,7 @@ export function durationToSeconds(value: FormValue): string {
 
 export function validateTokenImage(image: ModuleModeImage): string | null {
   if (!image || typeof image !== "object") return "Choose a token image or enter its public HTTPS image URL.";
-  if (image.kind === "none") return "Choose a token image or enter its public HTTPS image URL.";
+  if (image.kind === "none") return null;
   if (image.kind === "uri") {
     try {
       const url = new URL(image.uri);
@@ -372,6 +374,8 @@ export function validateModuleModeDraft(state: ModuleModeState, catalog: readonl
   if (new TextEncoder().encode(description).length > MAX_TOKEN_DESCRIPTION_BYTES) issues.push({ path: "/description", message: `Keep the description within ${MAX_TOKEN_DESCRIPTION_BYTES} UTF-8 bytes.` });
   const imageError = validateTokenImage(state.tokenImage);
   if (imageError) issues.push({ path: "/tokenImage", message: imageError });
+  const social = validateModuleSocialLinks(state.socialLinks);
+  if (!social.ok) issues.push(...social.issues);
   let initialBuyWei = "0";
   try { initialBuyWei = parseExactUnits(state.initialBuyEth, 18); if (BigInt(initialBuyWei) <= 0n || BigInt(initialBuyWei) > (1n << 127n) - 1n) throw new Error(); }
   catch { issues.push({ path: "/initialBuyEth", message: "Enter an ETH amount above 0, with up to 18 decimal places." }); }
@@ -437,15 +441,15 @@ export function validateModuleModeDraft(state: ModuleModeState, catalog: readonl
   const totalNativeValueWei = (BigInt(initialBuyWei) + BigInt(totalProgramFundingWei)).toString();
   if (BigInt(totalNativeValueWei) > (1n << 256n) - 1n) issues.push({ path: "/initialBuyEth", message: "The combined initial buy and program budgets exceed the native value limit." });
   if (issues.length > 0) return { ok: false, issues };
-  const image: Exclude<ModuleModeImage, { kind: "none" }> = state.tokenImage.kind === "uri"
-    ? { kind: "uri", uri: state.tokenImage.uri, contentVerified: false }
+  const image: Exclude<ModuleModeImage, { kind: "none" }> = state.tokenImage.kind === "none" || state.tokenImage.kind === "uri"
+    ? { kind: "uri", uri: state.tokenImage.kind === "none" ? MODULE_DEFAULT_TOKEN_IMAGE : state.tokenImage.uri, contentVerified: false }
     : { kind: "local", sha256: (state.tokenImage as Extract<ModuleModeImage, { kind: "local" }>).sha256, mimeType: "image/webp", bytes: (state.tokenImage as Extract<ModuleModeImage, { kind: "local" }>).bytes };
   const draft = {
     format: "programmable.module-mode.draft.v0.1" as const, status: "preview" as const,
     launchable: false as const, onchainApproved: false as const, walletAuthorizationVerified: false as const,
     chainId: 4663 as const, quoteAsset: "native-ETH" as const,
     engine,
-    token: { name, symbol, description, image }, initialBuyWei, totalProgramFundingWei, totalNativeValueWei,
+    token: { name, symbol, description, image, ...(social.ok && Object.keys(social.links).length ? { socialLinks: social.links } : {}) }, initialBuyWei, totalProgramFundingWei, totalNativeValueWei,
     fees: { creatorBuyBps, creatorSellBps, programmableBps: 20 as const, asset: "native-ETH" as const },
     modules,
   };

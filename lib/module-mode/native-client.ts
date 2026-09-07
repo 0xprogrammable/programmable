@@ -12,6 +12,7 @@ import { MODULE_MODE_DEPENDENCIES, bindActiveModuleModeRelease, moduleAddress, m
 import { bindNativeCatalogEntry, moduleNativeCatalogDigest, nativeCanonicalJson, nativeJson, parseModuleModeAvailability, type ModuleModeAvailability, type NativeModuleModeCatalogEntry } from "./native-catalog";
 import { MODULE_NATIVE_METADATA_TYPE, MODULE_NATIVE_SELECTION_TYPE, moduleNativeApprovalAbi, moduleNativeLaunchAbi, moduleNativePoolParameters, moduleNativeReadAbi, moduleNativeRouterAbi } from "./native-abi";
 import type { ModuleManagementBuildInput } from "./management";
+import { moduleTokenMetadata, normalizeModuleSocialLinks } from "./token-metadata";
 
 export type ModuleNativeClient = Pick<PublicClient, "getChainId" | "getBlock" | "getCode" | "readContract" | "call" | "estimateGas" | "getTransaction" | "waitForTransactionReceipt">;
 export function createModuleNativeClient(): ModuleNativeClient {
@@ -185,7 +186,8 @@ function validateDraft(raw: ModuleModeDraft, availability: ModuleModeAvailabilit
   const { draftId, ...body } = root;
   same(sha256(toHex(nativeCanonicalJson(body))), draftId, "Draft digest");
   moduleRecord(draft.engine, ["id", "version", "label"], "draft.engine");
-  moduleRecord(draft.token, ["name", "symbol", "description", "image"], "draft.token");
+  moduleRecord(draft.token, ["name", "symbol", "description", "image", ...(Object.hasOwn(draft.token, "socialLinks") ? ["socialLinks"] : [])], "draft.token");
+  requireCondition(nativeCanonicalJson(normalizeModuleSocialLinks(draft.token.socialLinks)) === nativeCanonicalJson(draft.token.socialLinks ?? {}), "Social links changed or are not canonical.");
   moduleRecord(draft.fees, ["creatorBuyBps", "creatorSellBps", "programmableBps", "asset"], "draft.fees");
   requireCondition(draft.format === "programmable.module-mode.draft.v0.1" && draft.status === "preview" && draft.launchable === false && draft.onchainApproved === false && draft.walletAuthorizationVerified === false && draft.chainId === 4663 && draft.quoteAsset === "native-ETH" && draft.engine.id === NATIVE_ENGINE_PROFILE.id && draft.engine.version === 1, "Unsupported draft or engine.");
   requireCondition(typeof draft.token.name === "string" && draft.token.name.trim() === draft.token.name && draft.token.name.length > 0 && new TextEncoder().encode(draft.token.name).length <= MAX_TOKEN_NAME_BYTES
@@ -280,7 +282,7 @@ export async function prepareModuleNativeLaunch(input: PrepareModuleNativeLaunch
   const programHash = keccak256(encodeAbiParameters(parseAbiParameters(`bytes32,${MODULE_NATIVE_SELECTION_TYPE}`), [keccak256(toHex("programmable.module-mode.native-program.v1")), checked.selections]));
   const launchKey = keccak256(encodeAbiParameters(parseAbiParameters("bytes32,uint256,address,address,(address source,address launchWallet,address token,address poolManager,bytes32 poolId,bytes32 recipeHash,bytes32 programHash)"),
     [keccak256(toHex("programmable.module-mode.native-binding.v1")), 4663n, pins.runtime.address, pins.hook.address, { source: pins.launcher.address, launchWallet: account, token: predictedToken, poolManager: pins.poolManager.address, poolId, recipeHash, programHash }]));
-  const metadata = { description: checked.draft.token.description, website: "", image: image.uri, extraData: "0x" as Hex };
+  const metadata = moduleTokenMetadata(checked.draft.token.description, image.uri, checked.draft.token.socialLinks);
   const parameters = { name: checked.draft.token.name, symbol: checked.draft.token.symbol, buyCreatorFeeBps: checked.draft.fees.creatorBuyBps, sellCreatorFeeBps: checked.draft.fees.creatorSellBps, creatorSalt, metadata,
     creatorWallets: creators.map(item => item.wallet), creatorSharesBps: creators.map(item => item.shareBps), modules: checked.selections, moduleFunding: checked.funding, initialBuyNative: checked.initialBuy, minimumInitialTokenOut: 1n, deadline };
   const previewTx = transaction(account, pins.launcher.address, encodeLaunch([parameters]), checked.value, "launch", `Launch ${parameters.name} on Robinhood Chain`);

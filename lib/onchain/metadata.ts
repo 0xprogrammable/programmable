@@ -8,11 +8,16 @@ import {
 } from "../metadata-policy";
 import type { TokenLink } from "../tokens";
 
-type SocialMetadataV1 = {
+export type SocialMetadataV1 = {
   v: 1;
   x?: string;
   telegram?: string;
+  discord?: string;
+  github?: string;
+  gitbook?: string;
 };
+export type SocialMetadataKind = Exclude<keyof SocialMetadataV1, "v">;
+const socialKinds: readonly SocialMetadataKind[] = ["x", "telegram", "discord", "github", "gitbook"];
 
 function parseHttpsUrl(
   value: unknown,
@@ -20,7 +25,8 @@ function parseHttpsUrl(
 ) {
   if (
     typeof value !== "string" ||
-    utf8ByteLength(value) > maximumBytes
+    utf8ByteLength(value) > maximumBytes ||
+    /[\s\\\u0000-\u001f\u007f]/u.test(value)
   ) {
     return null;
   }
@@ -29,12 +35,18 @@ function parseHttpsUrl(
     const parsed = new URL(value);
     if (
       parsed.protocol !== "https:" ||
-      !parsed.hostname ||
+      !parsed.hostname.includes(".") ||
       parsed.username ||
-      parsed.password
+      parsed.password ||
+      parsed.port ||
+      utf8ByteLength(parsed.href) > maximumBytes
     ) {
       return null;
     }
+    // These URLs are rendered as links. Never resolve or fetch a contributor's social URL.
+    const hostname = parsed.hostname.toLowerCase();
+    if (!/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]*$/u.test(hostname)
+      || /(?:^|\.)(?:localhost|local|internal|invalid|test)$/u.test(hostname)) return null;
     return parsed;
   } catch {
     return null;
@@ -49,24 +61,21 @@ export function sanitizeImageUrl(value: unknown) {
   return parseHttpsUrl(value)?.toString() ?? null;
 }
 
-function socialLink(kind: "x" | "telegram", value: unknown): TokenLink | null {
+export function sanitizeSocialUrl(kind: SocialMetadataKind, value: unknown): string | null {
   const parsed = parseHttpsUrl(value, MAX_SOCIAL_URL_BYTES);
   if (!parsed) return null;
 
   const hostname = parsed.hostname.toLowerCase();
-  const allowed =
-    kind === "x"
-      ? hostname === "x.com" ||
-        hostname === "www.x.com" ||
-        hostname === "twitter.com" ||
-        hostname === "www.twitter.com"
-      : hostname === "t.me" ||
-        hostname === "www.t.me" ||
-        hostname === "telegram.me" ||
-        hostname === "www.telegram.me";
-  if (!allowed || parsed.pathname === "/") return null;
+  const host = hostname.replace(/^www\./u, "");
+  const allowed = kind === "x" ? ["x.com", "twitter.com"].includes(host)
+    : kind === "telegram" ? ["t.me", "telegram.me"].includes(host)
+      : kind === "discord" ? host === "discord.gg" || (["discord.com", "discordapp.com"].includes(host) && parsed.pathname.startsWith("/invite/"))
+        : kind === "github" ? host === "github.com"
+          // GitBook supports project-owned domains as well as gitbook.io sites.
+          : kind === "gitbook";
+  if (!allowed || (kind !== "gitbook" && parsed.pathname === "/") || parsed.pathname === "/invite/") return null;
 
-  return { kind, url: parsed.toString() };
+  return parsed.toString();
 }
 
 export function decodeSocialMetadata(extraData: Hex): SocialMetadataV1 | null {
@@ -93,20 +102,10 @@ export function decodeSocialMetadata(extraData: Hex): SocialMetadataV1 | null {
     }
 
     const value = candidate as Record<string, unknown>;
-    if (
-      (value.x !== undefined && typeof value.x !== "string") ||
-      (value.telegram !== undefined &&
-        typeof value.telegram !== "string")
-    ) {
+    if (socialKinds.some(kind => value[kind] !== undefined && typeof value[kind] !== "string")) {
       return null;
     }
-    return {
-      v: 1,
-      ...(typeof value.x === "string" ? { x: value.x } : {}),
-      ...(typeof value.telegram === "string"
-        ? { telegram: value.telegram }
-        : {}),
-    };
+    return { v: 1, ...Object.fromEntries(socialKinds.filter(kind => typeof value[kind] === "string").map(kind => [kind, value[kind]])) };
   } catch {
     return null;
   }
@@ -119,10 +118,10 @@ export function buildTokenLinks(website: unknown, extraData: Hex) {
 
   const social = decodeSocialMetadata(extraData);
   if (social) {
-    const x = socialLink("x", social.x);
-    const telegram = socialLink("telegram", social.telegram);
-    if (x) links.push(x);
-    if (telegram) links.push(telegram);
+    for (const kind of socialKinds) {
+      const url = sanitizeSocialUrl(kind, social[kind]);
+      if (url) links.push({ kind, url });
+    }
   }
   return links;
 }

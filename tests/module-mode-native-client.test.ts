@@ -7,6 +7,7 @@ import { MODULE_NATIVE_METADATA_TYPE, MODULE_NATIVE_SELECTION_TYPE, moduleNative
 import { assertModuleNativeRelease, prepareModuleNativeApproval, prepareModuleNativeLaunch, prepareModuleNativeManagementTransaction, prepareModuleNativeSwap, revalidateModuleNativeTransaction, waitForModuleNativeReceipt, ModuleNativeTransactionRevertedError, type ModuleNativeClient, type PreparedModuleNativeTransaction } from "../lib/module-mode/native-client";
 import { managementCoreAbi, type ModuleManagementBuildInput } from "../lib/module-mode/management";
 import { moduleEvidenceFixture, a, h } from "./fixtures/module-mode-evidence";
+import { MODULE_DEFAULT_TOKEN_IMAGE, moduleTokenMetadata } from "../lib/module-mode/token-metadata";
 
 const now = BigInt(Math.floor(Date.now() / 1000));
 type Call = { account?: Address; to: Address; data: Hex; value?: bigint; blockNumber?: bigint };
@@ -133,6 +134,35 @@ function redigest(draft: ModuleModeDraft): ModuleModeDraft {
 }
 
 describe("native wallet transaction adapter", () => {
+  it("binds the default image and every social link into actual launch calldata and the receipt commitment", async () => {
+    const f = harness();
+    const links = { website: "https://example.com/", twitter: "https://x.com/example", telegram: "https://t.me/example", discord: "https://discord.gg/example", github: "https://github.com/example", gitbook: "https://example.gitbook.io/" };
+    const draft = f.draft({ ...f.state, tokenImage: { kind: "none" }, socialLinks: links });
+    const prepared = await prepareModuleNativeLaunch({ client: f.client, availability: f.availability, draft, account: f.f.wallet, creatorSalt: h(500), image: { uri: MODULE_DEFAULT_TOKEN_IMAGE } });
+    const decoded = decodeFunctionData({ abi: moduleNativeLaunchAbi, data: prepared.transaction.data });
+    if (decoded.functionName !== "launch") throw new Error("Expected launch");
+    expect(decoded.args[0].metadata).toEqual(moduleTokenMetadata(f.state.description, MODULE_DEFAULT_TOKEN_IMAGE, links));
+    const data = f.setupReceipt(prepared);
+    expect(await waitForModuleNativeReceipt({ client: f.client, prepared, transactionHash: data.transactionHash })).toMatchObject({ kind: "launch", status: "mined", token: f.f.token });
+    const config = data.receipt.logs.find(log => log.topics[0] === encodeEventTopics({ abi: moduleNativeLaunchAbi, eventName: "ModuleNativeConfigurationBound" })[0])!;
+    const words = decodeAbiParameters(parseAbiParameters("bytes32,bytes32,bytes32"), config.data);
+    config.data = encodeAbiParameters(parseAbiParameters("bytes32,bytes32,bytes32"), [h(999), words[1], words[2]]);
+    await expect(waitForModuleNativeReceipt({ client: f.client, prepared, transactionHash: data.transactionHash })).rejects.toThrow("Image and metadata commitment");
+    await expect(f.launch(draft)).rejects.toThrow("image URI");
+  });
+
+  it("revalidates social metadata independently of the builder and keeps old drafts compatible", async () => {
+    const f = harness();
+    const oldDraft = f.draft();
+    expect(oldDraft.token).not.toHaveProperty("socialLinks");
+    await expect(f.launch(oldDraft)).resolves.toMatchObject({ kind: "launch" });
+    const changed = { ...oldDraft, token: { ...oldDraft.token, socialLinks: { twitter: "https://x.com/example" } } };
+    await expect(f.launch(changed)).rejects.toThrow("Draft digest");
+    await expect(f.launch(redigest({ ...changed, token: { ...changed.token, socialLinks: { twitter: "https://example.com/false-x" } } }))).rejects.toThrow("HTTPS link to X");
+    await expect(f.launch(redigest({ ...changed, token: { ...changed.token, socialLinks: { website: "https://example.com" } } }))).rejects.toThrow("not canonical");
+    await expect(f.launch(redigest(changed))).resolves.toMatchObject({ kind: "launch" });
+  });
+
   it("prepares the exact launch call and never substitutes a preview ID for a registry ID", async () => {
     const fixture = harness(); const prepared = await fixture.launch();
     expect(prepared.transaction).toMatchObject({ chainId: 4663, from: fixture.f.wallet, to: fixture.release.contracts.launcher.address, value: toHex(1000n), action: "launch" });
