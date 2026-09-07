@@ -315,6 +315,19 @@ export function createModuleModeHistoricalAvailabilityReader(input: {
   };
 }
 let historicalReader: ReturnType<typeof createModuleModeHistoricalAvailabilityReader> | undefined;
+/** Discovery only; every digest must still pass the exact release/publication reader before display. */
+export function configuredModuleModeReleaseDigests(): readonly string[] {
+  const historical = moduleRecord(nativeJson(historicalReleases), ["schemaVersion", "releases"], "historicalReleases");
+  if (historical.schemaVersion !== "programmable.module-mode-historical-releases.v1" || !Array.isArray(historical.releases)
+    || historical.releases.length > 32) throw new Error("Invalid historical Module Mode releases.");
+  const candidates: unknown[] = [nativeJson(configuredRelease), ...historical.releases.map(value =>
+    moduleRecord(value, ["release", "catalog"], "historicalReleases.entry").release)];
+  const digests = candidates.map(value => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid Module Mode release discovery.");
+    return moduleHash(Object.getOwnPropertyDescriptor(value, "releaseDigest")?.value, "releaseDiscovery.digest");
+  });
+  return Object.freeze([...new Set(digests)]);
+}
 export function configuredModuleModeCatalog(releaseDigest?: string): unknown {
   if (releaseDigest === undefined || moduleHash(releaseDigest, "catalog.releaseDigest") === configuredRelease.releaseDigest) return configuredCatalog;
   const historical = moduleRecord(nativeJson(historicalReleases), ["schemaVersion", "releases"], "historicalReleases");
