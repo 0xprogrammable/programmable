@@ -4,6 +4,17 @@ description: Package, submit and track deterministic Custom launches with scoped
 
 # Custom Launch API
 
+For a Robinhood token and hook that share one physical contract, use the separate **MultiRole V2** lane.
+Read its public [capabilities](https://api.programmable.market/v4/chains/4663/multi-role-custom-launches/capabilities)
+and check current readiness and context before packing; an unavailable response means stop before authenticated
+submission. The [MultiRole V2 guide](https://api.programmable.market/v4/chains/4663/multi-role-custom-launches/guide.md)
+and [Node 24 client](https://api.programmable.market/v4/chains/4663/multi-role-custom-launches/client.mjs) describe its
+packer and `preflight -> create -> status` flow. Preserve exact bytes and the same idempotency key on retries.
+Preflight/create requires `custom-launch:create`; status/list requires `custom-launch:read`, with the key's chain
+4663 grant and controller binding. Automatic economic recognition currently covers the Native20 recipe;
+unknown economics return `evidence_required`. This is not a generic hook audit. Published documentation is not activation
+or wallet authority. The existing 4.1 profile and CLI remain a separate lane with the rules described below.
+
 Public V3.3 general-hook creation, list and single-resource reads accept wallet keys, partner roots and bounded partner
 subkeys on Ethereum Mainnet. V2 and V1 history and schemas remain available, while fresh authenticated
 `POST /v2/custom-launches` and `POST /v1/custom-launches` stay permanently read only with non-retryable
@@ -97,8 +108,9 @@ V4 metadata images are exactly PNG or single-frame GIF, as published by `metadat
 JPEG, WebP, and animated GIF are rejected by the V4 packer before any network request.
 
 Project-owned token and hook targets at distinct addresses, 3–16 graph targets and all fourteen hook permission bits
-are structurally representable. The active graph assigns one role to each physical target, so a combined token/hook
-at the same address requires a versioned graph and Router release. Structural representation does not prove safety
+are structurally representable in the existing profile. Its graph assigns one role to each physical target. For a
+combined token/hook at the same address, check the separate [MultiRole V2 capabilities](https://api.programmable.market/v4/chains/4663/multi-role-custom-launches/capabilities)
+and guide above; do not split the project to fit the older graph. Structural representation does not prove safety
 or behavior. `feeBehaviorClaim` remains false, generic fee claiming and generic buyback management are not live, and
 outside indexers may lag or omit Robinhood data even after a launch is finalized. Legacy Registry and GitHub intake
 stay closed.

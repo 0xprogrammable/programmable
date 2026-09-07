@@ -3,11 +3,13 @@ import Link from "next/link";
 
 import styles from "@/components/developer-docs.module.css";
 import { DocsShell } from "@/components/docs-shell";
+import { PROGRAMMABLE_AGENT_ENTRY } from "@/lib/agent-connection";
 import { V4_API_PROFILE_VERSION } from "@/lib/custom-launch/v4-api-discovery";
 import { robinhoodV4PublicContractDiscovery, robinhoodV4PublicLaunchRequirements } from "@/lib/custom-launch/v4-public-contract-discovery";
 
 const robinhoodContract = robinhoodV4PublicContractDiscovery(V4_API_PROFILE_VERSION);
 const robinhoodVersion = V4_API_PROFILE_VERSION === "4.1.0" ? "4.1.0" : "4.0.0";
+const multiRoleProject = PROGRAMMABLE_AGENT_ENTRY.workflows.multiRoleProject;
 
 export const metadata: Metadata = {
   title: "Custom Launch API · Programmable",
@@ -309,6 +311,20 @@ export default function CustomLaunchApiDocsPage() {
       <section id="robinhood-v4">
         <div className={styles.sectionIntro}>
           <h2>Check Robinhood V4 availability</h2>
+          {robinhoodVersion === "4.1.0" && (
+            <p>
+              If your token and hook share one physical contract, use the separate{" "}
+              <a href={multiRoleProject.capabilities}>MultiRole V2 capabilities</a>{" "}
+              and check current readiness and context before packing. If unavailable,
+              stop before authenticated submission. Follow the{" "}
+              <a href={multiRoleProject.guide}>MultiRole V2 guide</a> and{" "}
+              <a href={multiRoleProject.client}>Node 24 client</a> for preflight,
+              create and status. Automatic economic recognition currently covers the
+              Native20 recipe; unknown economics return <code>evidence_required</code>.
+              This is not a generic hook audit or wallet authority. The existing 4.1
+              profile and CLI below remain a separate lane.
+            </p>
+          )}
           <p>
             Robinhood Chain Mainnet uses <code>chainId: 4663</code> and{" "}
             <code>eip155:4663</code>. Read both the V4 and chain entries in the{" "}

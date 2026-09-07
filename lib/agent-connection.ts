@@ -31,10 +31,14 @@ export const PROGRAMMABLE_AGENT_ENTRY = Object.freeze({
       robinhood: { chainId: 4663, capabilities: "https://api.programmable.market/v4/chains/4663/capabilities", readiness: "https://api.programmable.market/v4/chains/4663/readiness", openApi: "https://programmable.market/openapi/custom-launch-v4.json" },
     },
     multiRoleProject: {
+      chainId: 4663,
       scopes: ["custom-launch:create", "custom-launch:read"],
+      useWhen: "The token and hook share one physical contract. MultiRole V2 is separate from the existing 4.1 profile.",
       capabilities: "https://api.programmable.market/v4/chains/4663/multi-role-custom-launches/capabilities",
       guide: "https://api.programmable.market/v4/chains/4663/multi-role-custom-launches/guide.md",
-      availability: "Read current capabilities; published documentation does not imply enabled admission.",
+      client: "https://api.programmable.market/v4/chains/4663/multi-role-custom-launches/client.mjs",
+      availability: "Check current capabilities readiness and context before packing or authenticated preflight/create. Published documentation does not imply enabled admission; capabilities may report unavailable.",
+      economicAdmission: "Automatic economic recognition currently covers the Native20 recipe. Unknown economics return evidence_required; this is not a generic hook audit.",
     },
     moduleContribution: {
       scopes: ["modules:submit", "modules:read"],

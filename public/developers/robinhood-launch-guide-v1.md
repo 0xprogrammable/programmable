@@ -4,6 +4,14 @@ Check architecture coverage before building a launch for Robinhood Chain Mainnet
 connects the public reports, API credentials, preflight, immutable request and wallet handoff. It does not activate
 a deployment or authorize a request.
 
+For a token and hook that share one physical contract, the separate **MultiRole V2** lane has its own public
+[capabilities](https://api.programmable.market/v4/chains/4663/multi-role-custom-launches/capabilities),
+[guide](https://api.programmable.market/v4/chains/4663/multi-role-custom-launches/guide.md) and
+[Node 24 client](https://api.programmable.market/v4/chains/4663/multi-role-custom-launches/client.mjs).
+Check its current readiness and context before packing or authenticated preflight/create; unavailable means stop.
+Automatic economic recognition currently covers the Native20 recipe; unknown economics return `evidence_required`.
+This is not a generic hook audit. The 4.1 reports and workflow below remain a separate lane.
+
 ## 1. Check the public reports before building
 
 Confirm the intended chain and reuse the launch details and funding choices already supplied. Then read:
@@ -42,7 +50,7 @@ The other assessments are `requires-exact-preflight`, `platform-change-required`
 | Intended design | Existing format and verification boundary | Next step |
 | --- | --- | --- |
 | `reviewed-native20-seed`: exact seed recipe | One native ETH/token pool, reviewed kernel/token/initializer, no optional module, LP fee 0, tick spacing 60 and the fixed initial price. Positive token-side liquidity and an atomic initial buy require exact server proof. | Use the [native20 example](https://github.com/programmablehq/PROGRAMMABLE/tree/production/packages/launch/examples/robinhood-v4-native20) only if those constraints preserve the intended design and `seedV1` is `proof-available`. Pin the reviewed source and still run preflight. |
-| `combined-token-hook`: same-address token and hook, including a BLOB-style design | `tokenAndHookMayShareAddress: false`: the current graph gives one role to each physical target. | A versioned graph and Router release is required. Keep the intended architecture; splitting contracts changes the design and is not an automatic repair. |
+| `combined-token-hook`: same-address token and hook, including a BLOB-style design | `tokenAndHookMayShareAddress: false`: the 4.1 graph gives one role to each physical target. | Read the separate [MultiRole V2 capabilities](https://api.programmable.market/v4/chains/4663/multi-role-custom-launches/capabilities) and guide above for this architecture. Its current readiness, context and exact-source economic evidence govern admission. Keep the intended architecture; splitting contracts changes the design and is not an automatic repair. |
 | `hook-owned-pol-no-initial-buy`: token-side hook-owned liquidity without a native purchase | A funded 4.1 launch requires an atomic native initial buy and a fresh server USD reference. `funding: none` does not meet that policy. | Preserve the intended no-buy design when it needs a policy/verifier extension. Do not insert a purchase or increase a budget without the controller's intent. |
 | `no-pool`: application or settlement without a pool | The current transport requires one official PoolKey. | A separate versioned transport and verified settlement path are required; do not add a placeholder pool. |
 | `multiple-pools`: multiple official pool keys | Extra graph targets do not create additional official PoolKeys. | A versioned transport with per-pool fee and provenance bindings is required. |
