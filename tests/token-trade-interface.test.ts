@@ -61,20 +61,23 @@ describe("token trade amount interface", () => {
     expect(source).toContain('"Curve price impact"');
     expect(source).toContain("Total execution cost");
     expect(source).toContain("TRADE_SLIPPAGE_PRESET_BPS.map");
-    expect(detailSource).toContain(
-      'token.launchModelVersion === "classic-v4"',
+    expect(source).toMatch(
+      /feePresentation === "classic-v4-hook"\s*\? "Hook swap fee"\s*:\s*"Pool fee"/s,
     );
-    expect(
-      detailSource.match(/feePresentation=\{classicTradeFeePresentation\}/gu),
-    ).toHaveLength(2);
-    expect(detailSource).toContain(
-      "Math.floor(Date.now() / 1_000) + TRADE_QUOTE_VALIDITY_SECONDS",
+    expect(source).toMatch(
+      /feePresentation === "classic-v4-hook"\s*\? "Curve price impact"\s*:\s*"Estimated price impact"/s,
     );
-    expect(detailSource).toContain(
-      "const next = await prepareNextTrade(submitted)",
-    );
-    expect(detailSource).not.toContain(
-      "Math.floor(Date.now() / 1_000) + 1_200",
-    );
+    expect(source).toContain("deadline: String(input.nowSeconds + TRADE_QUOTE_VALIDITY_SECONDS)");
+    expect(source).not.toContain("deadline: String(input.nowSeconds + 1_200)");
+  });
+
+  it("keeps token detail pages informational while the reusable trade component remains available", () => {
+    expect(source).toContain("export function TokenTrade");
+    expect(source).toContain("export function PreparedTradeReview");
+    expect(detailSource).not.toMatch(/<(?:TokenTrade|PreparedTradeReview|CustomMarketTrade)\b/);
+    expect(detailSource).not.toContain('fetch("/api/trade/prepare"');
+    expect(detailSource).not.toContain("prepareNextTrade");
+    expect(detailSource).toContain("<TokenPriceChart");
+    expect(detailSource).toContain("TokenIdentityActions");
   });
 });
