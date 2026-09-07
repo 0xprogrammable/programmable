@@ -132,7 +132,9 @@ test("the current schema profile excludes unrelated global historical role defau
 async function captureFixture(t, changes = {}) {
   const directory = await mkdtemp(path.join(os.tmpdir(), "module-recovery-test-")); t.after(() => rm(directory, { recursive: true, force: true }));
   const source = await databaseFixture(t), manifest = await captureDatabaseManifest(sqlFor(source), PROFILE), commands = [], sourceSql = [];
-  let captures = 0;
+  let captures = 0, snapshotReads = 0;
+  const snapshotIdentity = { backend_pid: 998, database_name: "postgres", session_user: "postgres", current_role: "postgres", server_version_num: 170006,
+    isolation: "repeatable read", read_only: "on", transaction_snapshot: "100:102:101", transaction_started_at: "2026-09-07T12:00:00.000000Z", ...changes.snapshotIdentity };
   const input = { ...PROFILE, operationId: "module-recovery-fixture", repositoryCommit: "a".repeat(40), expectedProjectRef: "mnnvlrqwhfoppogslsje",
     sourceDatabaseUrl: "postgresql://postgres:fixture_source_password@db.mnnvlrqwhfoppogslsje.supabase.co:5432/postgres?sslmode=verify-full",
     sslCaPem: `-----BEGIN CERTIFICATE-----\n${"A".repeat(96)}\n-----END CERTIFICATE-----`,
@@ -140,7 +142,14 @@ async function captureFixture(t, changes = {}) {
     restoreIsolationId: "module_fixture", restoreSslCaPem: TEST_LEAF, restoreBinding: LOCAL_BINDING,
     backupPath: path.join(directory, "database.dump"), evidencePath: path.join(directory, "database-evidence.json"),
     dependencies: {
-      openHostedDatabase: async () => ({ sql: { unsafe: query => { sourceSql.push(query); return pending([]); } } }),
+      openHostedDatabase: async () => ({ sql: { unsafe: query => {
+        sourceSql.push(query);
+        if (query.includes("pg_export_snapshot")) return pending([{ snapshot_id: "00000004-00000012-1", exported_at: "2026-09-07T12:00:00.001000Z", ...snapshotIdentity }]);
+        if (query.includes("pg_current_snapshot")) { snapshotReads++; return pending([{ ...snapshotIdentity, ...(snapshotReads === changes.changeSnapshotAtRead ? { backend_pid: 999 } : {}) }]); }
+        if (query.startsWith("select version,")) return pending([{ version: "0031", name: "fixture_migration", statements: ["fixture DDL bytes"] }]);
+        if (query === "rollback") return pending(Object.assign([], { command: "ROLLBACK" }));
+        return pending([]);
+      } } }),
       inspectModuleRestore: async (binding, target) => ({ ...binding, postmasterStartEpoch: "1788796000", certificateDerSha256: h(88),
         serverVersionNum: 170011, listenerHost: target.host, listenerPort: target.port, platform: "darwin", processOwnerUid: 501 }),
       openRestoreDatabase: async ({ safeTarget }) => ({ sql: { unsafe: query => {
@@ -165,9 +174,12 @@ async function captureFixture(t, changes = {}) {
 test("existing dump/restore orchestration with mocked processes uses read-only source and exact local profile without credential output", async t => {
   const f = await captureFixture(t), result = await createBackupAndRestoreEvidence(f.input);
   const proof = validateModuleRecoveryDatabaseEvidence(result.evidence);
-  assert.deepEqual(f.sourceSql, ["set default_transaction_read_only = on"]);
+  assert.equal(f.sourceSql[0], "set default_transaction_read_only = on");
+  assert.ok(f.sourceSql.includes("begin isolation level repeatable read read only")); assert.equal(f.sourceSql.at(-1), "rollback");
   const dump = f.commands.find(command => command.args.includes("--file"));
   assert.equal(dump.env.PGOPTIONS, "-c default_transaction_read_only=on");
+  assert.equal(dump.args[dump.args.indexOf("--snapshot") + 1], "00000004-00000012-1");
+  assert.equal(dump.args.includes("--serializable-deferrable"), false);
   assert.deepEqual(dump.args.filter((_arg, index, args) => args[index - 1] === "--schema"), MODULE_MODE_BACKUP_SCHEMAS);
   const restore = f.commands.find(command => command.binary === "pg_restore" && command.args.includes("--single-transaction"));
   assert.ok(restore.args.includes("programmable_restore_module_fixture"));
@@ -175,6 +187,8 @@ test("existing dump/restore orchestration with mocked processes uses read-only s
   assert.equal(proof.rpo, "unavailable"); assert.ok(proof.restoreElapsedMs >= 0); assert.equal(proof.productionRestorePerformed, false);
   assert.deepEqual(proof.clientVersions, { pg_dump: "PostgreSQL 17.11", pg_restore: "PostgreSQL 17.11", psql: "PostgreSQL 17.11" });
   assert.equal(proof.localRestore.serverVersionNum, 170011); assert.equal(proof.localRestore.postgresDatabaseEmpty, true);
+  assert.equal(proof.sourceSnapshot.releaseMethod, "ROLLBACK"); assert.equal(proof.sourceSnapshot.identity.server_version_num, 170006);
+  assert.equal(proof.sourceSnapshot.migrations[0].version, "0031");
   assert.equal(JSON.stringify(result).includes("fixture_source_password"), false);
   const idempotent = await createBackupAndRestoreEvidence(f.input); assert.equal(idempotent.changed, false);
 });
@@ -235,6 +249,34 @@ test("source drift rejects the proof and retains the captured archive for inspec
   const f = await captureFixture(t, { drift: true }); await assert.rejects(createBackupAndRestoreEvidence(f.input), /database backup and isolated restore failed/u);
   assert.ok((await stat(f.input.backupPath)).size > 0);
   assert.equal(f.commands.some(command => command.args.includes("--single-transaction")), false);
+  assert.equal(f.sourceSql.at(-1), "rollback");
+});
+for (const snapshotIdentity of [{ read_only: "off" }, { isolation: "read committed" }, { server_version_num: 160011 }]) {
+  test(`rejects an unqualified source snapshot ${JSON.stringify(snapshotIdentity)}`, async t => {
+    const f = await captureFixture(t, { snapshotIdentity });
+    await assert.rejects(createBackupAndRestoreEvidence(f.input), /database backup and isolated restore failed/u);
+    assert.equal(f.commands.length, 0); assert.equal(f.sourceSql.at(-1), "rollback");
+  });
+}
+for (const changeSnapshotAtRead of [1, 2]) {
+  test(`source snapshot identity must remain bound at check ${changeSnapshotAtRead}`, async t => {
+    const f = await captureFixture(t, { changeSnapshotAtRead });
+    await assert.rejects(createBackupAndRestoreEvidence(f.input), /database backup and isolated restore failed/u);
+    assert.equal(f.commands.some(command => command.args.includes("--single-transaction")), false); assert.equal(f.sourceSql.at(-1), "rollback");
+  });
+}
+test("a failed dump rolls back the source snapshot before closing without local DDL", async t => {
+  const f = await captureFixture(t), runner = f.input.dependencies.runCommand;
+  f.input.dependencies.runCommand = async (...args) => { if (args[1].includes("--file")) throw new Error("fixture dump failed"); return runner(...args); };
+  await assert.rejects(createBackupAndRestoreEvidence(f.input), /database backup and isolated restore failed/u);
+  assert.equal(f.sourceSql.at(-1), "rollback"); assert.equal(f.commands.some(command => command.args.includes("--command")), false);
+});
+test("source snapshot is released before the first local mutation and stored proof requires rollback evidence", async t => {
+  const f = await captureFixture(t), runner = f.input.dependencies.runCommand;
+  f.input.dependencies.runCommand = async (...args) => { if (args[1].includes("--command")) assert.equal(f.sourceSql.at(-1), "rollback"); return runner(...args); };
+  const { evidence } = await createBackupAndRestoreEvidence(f.input);
+  const bad = structuredClone(evidence); delete bad.moduleRecovery.sourceSnapshot.releaseMethod;
+  assert.throws(() => validateModuleRecoveryDatabaseEvidence(bad), /snapshot evidence/u);
 });
 test("the explicit Module profile normalizes only literal IPv6 loopback for local libpq commands", async t => {
   const f = await captureFixture(t, { isolation: { server_address: "::1" } });

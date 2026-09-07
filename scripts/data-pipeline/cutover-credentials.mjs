@@ -54,6 +54,43 @@ export const MODULE_MODE_BACKUP_SCHEMAS = Object.freeze(["programmable_custom_la
 const MODULE_RECOVERY_TABLES = Object.freeze(["principals", "wallet_bindings", "api_credentials", "api_credential_scopes",
   "api_scopes", "module_source_drafts_v1", "module_submission_keys_v1", "module_request_budgets_v1",
   "module_review_jobs_v1", "module_review_attempts_v1", "module_review_decisions_v1"]);
+const MODULE_SNAPSHOT_ID = /^[0-9A-F]{8}-[0-9A-F]{8}-[1-9][0-9]*$/iu;
+const MODULE_TRANSACTION_SNAPSHOT = /^[0-9]+:[0-9]+:(?:[0-9]+(?:,[0-9]+)*)?$/u;
+const MODULE_SOURCE_IDENTITY_SQL = `pg_backend_pid()::integer as backend_pid,
+  current_database()::text as database_name, session_user::text as session_user, current_user::text as current_role,
+  current_setting('server_version_num')::integer as server_version_num,
+  current_setting('transaction_isolation') as isolation, current_setting('transaction_read_only') as read_only,
+  pg_current_snapshot()::text as transaction_snapshot,
+  to_char(transaction_timestamp() at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as transaction_started_at`;
+
+function validateModuleSourceIdentity(identity) {
+  if (!isPlainRecord(identity) || !Number.isSafeInteger(identity.backend_pid) || identity.backend_pid <= 0
+    || identity.database_name !== "postgres" || !["postgres", "cli_login_postgres"].includes(identity.session_user)
+    || identity.current_role !== "postgres" || !Number.isInteger(identity.server_version_num) || Math.floor(identity.server_version_num / 10000) !== 17
+    || identity.isolation !== "repeatable read" || identity.read_only !== "on"
+    || typeof identity.transaction_snapshot !== "string" || identity.transaction_snapshot.length > 65536
+    || !MODULE_TRANSACTION_SNAPSHOT.test(identity.transaction_snapshot) || !Number.isFinite(Date.parse(identity.transaction_started_at))) {
+    throw new Error("Module source snapshot identity is invalid");
+  }
+  return identity;
+}
+
+async function assertModuleSourceSnapshot(sql, snapshot) {
+  const [identity] = await sql.unsafe(`select ${MODULE_SOURCE_IDENTITY_SQL}`);
+  if (canonicalJson(validateModuleSourceIdentity(identity)) !== canonicalJson(snapshot.identity)) {
+    throw new Error("Module source snapshot connection changed");
+  }
+}
+
+async function rollbackModuleSource(sql) {
+  let timer;
+  try {
+    const result = await Promise.race([sql.unsafe("rollback").simple(), new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error("Module source rollback timed out")), 10000);
+    })]);
+    if (result.command !== "ROLLBACK") throw new Error("Module source rollback was not acknowledged");
+  } finally { clearTimeout(timer); }
+}
 function moduleRecoveryProfile(profile, schemas) {
   if (profile === undefined) return false;
   if (profile !== MODULE_MODE_RECOVERY_PROFILE || canonicalJson(schemas) !== canonicalJson(MODULE_MODE_BACKUP_SCHEMAS)) {
@@ -979,6 +1016,17 @@ export function validateModuleRecoveryDatabaseEvidence(value) {
     throw new Error("Module local restore evidence is incomplete");
   }
   for (const version of Object.values(proof.clientVersions)) pgVersion(version);
+  const snapshot = proof.sourceSnapshot;
+  validateModuleSourceIdentity(snapshot?.identity);
+  if (snapshot.schemaVersion !== "programmable.module-mode-source-snapshot.v1" || !MODULE_SNAPSHOT_ID.test(snapshot.snapshotId ?? "")
+    || canonicalJson(snapshot.source) !== canonicalJson(value.source) || snapshot.schemaManifestSha256 !== proof.source.structuralManifestSha256
+    || !Number.isFinite(Date.parse(snapshot.exportedAt)) || !Number.isFinite(Date.parse(snapshot.releasedAt)) || snapshot.releaseMethod !== "ROLLBACK"
+    || !Array.isArray(snapshot.migrations) || snapshot.migrations.length < 1 || snapshot.migrations.length > 10000
+    || snapshot.migrations.some(row => !isPlainRecord(row) || !/^[0-9]{1,20}$/u.test(row.version ?? "")
+      || typeof row.name !== "string" || row.name.length > 512 || !SHA256.test(row.statementsSha256 ?? ""))
+    || snapshot.migrationHistorySha256 !== sha256(canonicalJson(snapshot.migrations))) {
+    throw new Error("Module source snapshot evidence is incomplete");
+  }
   for (const [side, prefix] of [[proof.source, "source"], [proof.restored, "restored"]]) {
     if (side.profile !== MODULE_MODE_RECOVERY_PROFILE || side.manifestSha256 !== value[`${prefix}ManifestSha256`]
       || !SHA256.test(side.manifestSha256) || side.structuralManifestSha256 !== value[`${prefix}StructuralManifestSha256`]
@@ -2452,6 +2500,7 @@ export async function createBackupAndRestoreEvidence(input) {
   const started = performance.now();
   let restoreStarted, restoreElapsedMs, sourceWindowStart, sourceWindowEnd;
   let localRestore;
+  let sourceSnapshot, sourceTransactionOpen = false;
   const clientVersions = {};
   request.sourceDatabaseUrl = input.sourceDatabaseUrl;
   request.restoreDatabaseUrl = input.restoreDatabaseUrl;
@@ -2534,6 +2583,16 @@ export async function createBackupAndRestoreEvidence(input) {
         expectedProjectRef: input.expectedProjectRef, sslCaPem: request.sslCaPem });
       await sourceConnection.sql.unsafe("set default_transaction_read_only = on").simple();
       sourceWindowStart = now().toISOString();
+      await sourceConnection.sql.unsafe("set statement_timeout='120s'; set lock_timeout='2s'; set idle_in_transaction_session_timeout='120s'; set transaction_timeout='10min'").simple();
+      await sourceConnection.sql.unsafe("begin isolation level repeatable read read only").simple();
+      sourceTransactionOpen = true;
+      const [exported] = await sourceConnection.sql.unsafe(`select pg_export_snapshot() as snapshot_id,
+        to_char(clock_timestamp() at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as exported_at, ${MODULE_SOURCE_IDENTITY_SQL}`);
+      const { snapshot_id: snapshotId, exported_at: exportedAt, ...identity } = exported ?? {};
+      validateModuleSourceIdentity(identity);
+      if (!MODULE_SNAPSHOT_ID.test(snapshotId ?? "") || !Number.isFinite(Date.parse(exportedAt))) throw new Error("Module source snapshot export is invalid");
+      sourceSnapshot = { schemaVersion: "programmable.module-mode-source-snapshot.v1", source: request.source.safeTarget,
+        snapshotId, exportedAt, identity };
     }
     const before = await captureManifest(sourceConnection.sql, {
       schemas: request.schemas,
@@ -2549,6 +2608,13 @@ export async function createBackupAndRestoreEvidence(input) {
       before.rowCount < 0
     ) {
       throw new Error("source database manifest is invalid");
+    }
+    if (moduleRecovery) {
+      await assertModuleSourceSnapshot(sourceConnection.sql, sourceSnapshot);
+      const migrations = await sourceConnection.sql.unsafe("select version,coalesce(name,'') as name,statements from supabase_migrations.schema_migrations order by version");
+      sourceSnapshot.migrations = migrations.map(({ version, name, statements }) => ({ version, name, statementsSha256: sha256(canonicalJson(statements)) }));
+      sourceSnapshot.migrationHistorySha256 = sha256(canonicalJson(sourceSnapshot.migrations));
+      sourceSnapshot.schemaManifestSha256 = before.structuralManifestSha256;
     }
     const secrets = [
       request.source.password,
@@ -2616,7 +2682,7 @@ export async function createBackupAndRestoreEvidence(input) {
       const dumpArguments = [
         "--format=custom",
         "--compress=6",
-        "--serializable-deferrable",
+        ...(moduleRecovery ? ["--snapshot", sourceSnapshot.snapshotId, "--lock-wait-timeout=2000"] : ["--serializable-deferrable"]),
         ...(request.source.username === "cli_login_postgres"
           ? ["--role", "postgres"]
           : []),
@@ -2630,7 +2696,7 @@ export async function createBackupAndRestoreEvidence(input) {
         binary: input.pgDumpBinary ?? "pg_dump",
         args: dumpArguments,
         env: sourceEnvironment,
-        timeoutMs: 15 * 60_000,
+        timeoutMs: moduleRecovery ? 5 * 60_000 : 15 * 60_000,
         secrets,
         expectedBinary: toolCommitments?.pg_dump,
       });
@@ -2645,6 +2711,7 @@ export async function createBackupAndRestoreEvidence(input) {
       ...(moduleRecovery ? { profile: request.profile } : {}),
     });
     if (moduleRecovery) sourceWindowEnd = now().toISOString();
+    if (moduleRecovery) await assertModuleSourceSnapshot(sourceConnection.sql, sourceSnapshot);
     if (
       after?.manifestSha256 !== before.manifestSha256 ||
       after?.structuralManifestSha256 !== before.structuralManifestSha256 ||
@@ -2653,6 +2720,12 @@ export async function createBackupAndRestoreEvidence(input) {
       after?.rowCount !== before.rowCount
     ) {
       throw new Error("source database changed during the backup window");
+    }
+    if (moduleRecovery) {
+      await rollbackModuleSource(sourceConnection.sql);
+      sourceTransactionOpen = false;
+      sourceSnapshot.releaseMethod = "ROLLBACK";
+      sourceSnapshot.releasedAt = now().toISOString();
     }
     if (backupFormat === "pg-custom-v1") {
       const backupBeforeList = await fileSha256(request.backupPath);
@@ -2764,7 +2837,7 @@ export async function createBackupAndRestoreEvidence(input) {
       postgresVersion,
       ...(moduleRecovery ? { moduleRecovery: {
         profile: request.profile, source: before, restored,
-        localRestore, clientVersions,
+        localRestore, clientVersions, sourceSnapshot,
         sourceCaptureWindow: { startedAt: sourceWindowStart, finishedAt: sourceWindowEnd },
         restoreElapsedMs, totalElapsedMs: performance.now() - started,
         productionRestorePerformed: false, independentArchiveCopies: "unavailable", rpo: "unavailable",
@@ -2786,6 +2859,7 @@ export async function createBackupAndRestoreEvidence(input) {
     }
     throw operationalFailure("database backup and isolated restore", error);
   } finally {
+    if (sourceTransactionOpen && sourceConnection?.sql) await rollbackModuleSource(sourceConnection.sql).catch(() => {});
     if (sourceConnection?.sql) await closeDatabase(sourceConnection.sql).catch(() => {});
     if (restoreConnection?.sql) await closeDatabase(restoreConnection.sql).catch(() => {});
     if (postgresConnection?.sql) await closeDatabase(postgresConnection.sql).catch(() => {});

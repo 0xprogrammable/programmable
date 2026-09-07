@@ -137,7 +137,26 @@ The budget is at most 256 distinct launch blocks and five minutes for point chec
 plus the existing bounded replay per lane. There is no unbounded backfill or new
 RPC quorum implementation.
 
-The database helper captures and compares manifests before and after `pg_dump`.
+The database helper opens one `READ ONLY REPEATABLE READ` source transaction and
+exports its PostgreSQL snapshot. Both source manifests and `pg_dump --snapshot`
+use that same snapshot. It verifies the exporter PID, session/effective role,
+database, server major, transaction timestamp, isolation and transaction snapshot
+before and after the dump. The evidence binds the actual export time, source,
+schema manifest and migration versions/names/statement hashes. An application
+write committed after that cutoff is outside this backup, including a later
+migration or credential revocation; ongoing traffic need not stop.
+
+The exporter is rolled back as soon as the matching source manifests and dump are
+captured, before local restore begins. A successful proof requires the server's
+`ROLLBACK` acknowledgement. The error path also attempts rollback and closes the
+connection. Source queries have a two-minute statement timeout and two-second
+lock timeout, idle transactions expire after two minutes, and the source
+transaction is capped at ten minutes. The Module dump process is capped at five
+minutes with a two-second lock-acquisition timeout; rollback acknowledgement is
+bounded to ten seconds. These settings affect only the recovery sessions. No
+replication slot, production freeze, write fence or source mutation is created.
+
+The database helper compares the two source manifests within that shared snapshot.
 It restores into the inspected local target and compares the restored rows and
 portable structural catalog. Module table rows stream one at a time, including
 exact bytea request bytes. Every table records row count, row/identity hashes and
@@ -170,7 +189,8 @@ production restore, live Blob overwrite or automatic retry command.
 ## Evidence limits and production handoff
 
 The database and Blob capture are separate observations, not a cross-provider
-transaction. Source capture times and source-specific chain cutoffs are explicit.
+transaction. The exported database transaction snapshot, capture times and
+source-specific chain cutoffs are explicit.
 The receipt attests the isolated restore and canonical replay it actually ran.
 It records end-to-end disaster RTO, RPO, independent archive copies and onchain
 asset/claim balances as **unavailable**. The API and index are not the onchain
