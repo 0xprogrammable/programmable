@@ -131,7 +131,7 @@ export default function EconomicsDocsPage() {
         <p>
           Classic creator rewards are the selected swap fee minus the 10 bps
           Programmable share. Robinhood Custom creator rewards accrue separately
-          from the 20 bps platform fee at the project's configured buy or sell rate.
+          from the 20 bps platform fee at the project&apos;s configured buy or sell rate.
           Public template creators receive 10 bps from
           official launches that use their exact template version once that
           separately documented payout path is active.
