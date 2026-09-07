@@ -21,7 +21,7 @@ export type ModuleEngineContractPin = Readonly<{ address: Address; runtimeCodeHa
 export interface ModuleEngineReleaseIdentity {
   schemaVersion: typeof MODULE_ENGINE_RELEASE_SCHEMA; sourceVersion: typeof MODULE_ENGINE_SOURCE_VERSION;
   engineProfile: typeof MODULE_ENGINE_PROFILE; chainId: 4663; sourceCommit: string; startBlock: string;
-  tokenCreationCodeHash: Hex; tokenRuntimeCodeHash: Hex; economicsPolicyId: Hex;
+  tokenCreationCodeHash: Hex; economicsPolicyId: Hex;
   finalityPolicy: typeof MODULE_MODE_FINALITY_POLICY; releaseDigest: Hex;
   contracts: Record<typeof MODULE_ENGINE_CONTRACTS[number], ModuleEngineContractPin>;
 }
@@ -64,7 +64,7 @@ export interface ModuleEngineTemplate {
 export interface ModuleEngineAvailability {
   schemaVersion: typeof MODULE_ENGINE_AVAILABILITY_SCHEMA; release: ModuleEngineRelease | null; templates: ModuleEngineTemplate[]; reason: string | null;
 }
-const IDENTITY_KEYS = ["schemaVersion", "sourceVersion", "engineProfile", "chainId", "sourceCommit", "startBlock", "tokenCreationCodeHash", "tokenRuntimeCodeHash", "economicsPolicyId", "finalityPolicy", "releaseDigest", "contracts"];
+const IDENTITY_KEYS = ["schemaVersion", "sourceVersion", "engineProfile", "chainId", "sourceCommit", "startBlock", "tokenCreationCodeHash", "economicsPolicyId", "finalityPolicy", "releaseDigest", "contracts"];
 function need(value: unknown, message: string): asserts value { if (!value) throw new Error(`Module engine: ${message}`); }
 function same(a: unknown, b: unknown, label: string) { need(nativeCanonicalJson(a) === nativeCanonicalJson(b), `${label} differs.`); }
 export function moduleEngineOptionalHash(value: unknown, label: string): Hex {
@@ -75,7 +75,7 @@ function identity(value: unknown): ModuleEngineReleaseIdentity {
   need(r.schemaVersion === MODULE_ENGINE_RELEASE_SCHEMA && r.sourceVersion === MODULE_ENGINE_SOURCE_VERSION
     && r.engineProfile === MODULE_ENGINE_PROFILE && r.chainId === 4663 && r.finalityPolicy === MODULE_MODE_FINALITY_POLICY, "Unsupported engine release/profile.");
   need(typeof r.sourceCommit === "string" && /^[a-f0-9]{40}$/.test(r.sourceCommit), "Invalid source commit.");
-  moduleUint(r.startBlock, "engine.startBlock", true); moduleHash(r.tokenCreationCodeHash, "engine.tokenCreationCodeHash"); moduleHash(r.tokenRuntimeCodeHash, "engine.tokenRuntimeCodeHash");
+  moduleUint(r.startBlock, "engine.startBlock", true); moduleHash(r.tokenCreationCodeHash, "engine.tokenCreationCodeHash");
   same(moduleHash(r.economicsPolicyId, "engine.economicsPolicyId"), MODULE_MODE_ECONOMICS_POLICY_V2, "Economics policy");
   const pins = moduleRecord(r.contracts, MODULE_ENGINE_CONTRACTS, "engine.contracts"); const addresses = new Set<string>();
   for (const role of MODULE_ENGINE_CONTRACTS) {

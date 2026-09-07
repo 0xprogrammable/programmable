@@ -36,6 +36,8 @@ export const moduleEngineReadAbi = parseAbi([
   "function families(bytes32 familyId) view returns (address author,address wallet)",
   "function familyFeeEligibility(bytes32 familyId) view returns (bool eligible,bytes32 reviewDigest)",
   "function creator() view returns (address)", "function contextHash() view returns (bytes32)",
+  "function name() view returns (string)", "function graffiti() view returns (bytes32)",
+  "function getUERC20Address(string name,string symbol,uint8 decimals,address creator,bytes32 graffiti) view returns (address)",
   "function totalSupply() view returns (uint256)", "function decimals() view returns (uint8)", "function symbol() view returns (string)",
   "function balanceOf(address actor) view returns (uint256)", "function allowance(address actor,address spender) view returns (uint256)",
   "function credit(address actor) view returns (uint256)", "function totalLiability() view returns (uint256)", "function unlockTime() view returns (uint256)",

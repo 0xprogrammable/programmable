@@ -11,8 +11,9 @@ export function parseModuleEngineConfigurationAbi(value: unknown): readonly Modu
   function inspect(value: unknown, depth: number, root: boolean): void {
     if (++nodes > 256 || depth > 12 || !value || typeof value !== "object") throw new Error("Engine configuration ABI exceeds its structural limit.");
     const object = value as Record<string, unknown>, arg = moduleRecord(object, [root ? "path" : "name", "type", ...(Object.hasOwn(object, "components") ? ["components"] : [])], "engine.configurationAbi");
-    if (root) { if (!Array.isArray(arg.path) || arg.path.length > 16 || arg.path.some(key => typeof key !== "string" || key.length > 128)) throw new Error("Invalid engine configuration path."); }
-    else if (typeof arg.name !== "string" || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(arg.name)) throw new Error("Engine tuple components require names.");
+    const reserved = ["__proto__", "prototype", "constructor"];
+    if (root) { if (!Array.isArray(arg.path) || arg.path.length > 16 || arg.path.some(key => typeof key !== "string" || !/^(?:[A-Za-z_][A-Za-z0-9_]{0,63}|0|[1-9][0-9]{0,2})$/.test(key) || reserved.includes(key))) throw new Error("Invalid engine configuration path."); }
+    else if (typeof arg.name !== "string" || !/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(arg.name) || reserved.includes(arg.name)) throw new Error("Engine tuple components require names.");
     if (typeof arg.type !== "string" || arg.type.length > 128 || !/^(?:tuple|address|bool|string|bytes(?:[1-9]|[12][0-9]|3[0-2])?|uint(?:8|16|24|32|40|48|56|64|72|80|88|96|104|112|120|128|136|144|152|160|168|176|184|192|200|208|216|224|232|240|248|256)?)(?:\[(?:[1-9][0-9]{0,2})?\])*$/.test(arg.type)) throw new Error("Unsupported engine configuration ABI type.");
     const dimensions = [...arg.type.matchAll(/\[([0-9]*)\]/g)]; if (dimensions.length + depth > 12 || dimensions.some(item => item[1] && Number(item[1]) > 256)) throw new Error("Engine ABI array exceeds its bound.");
     if (arg.type.split("[")[0] === "tuple") {

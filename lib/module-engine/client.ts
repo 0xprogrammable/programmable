@@ -90,9 +90,16 @@ async function boundLaunch(client: ModuleEngineClient, block: BoundBlock, tokenV
   const id = moduleHash(await read(client, host, "launchIdOf", [token], block.blockNumber, moduleEngineHostAbi), "launchId");
   const r = launchRecord(await read(client, host, "getLaunch", [id], block.blockNumber, moduleEngineHostAbi)); same(r.token, token, "Launch token"); same(r.launchId, id, "Launch ID");
   const expectedId = keccak256(encodeAbiParameters(parseAbiParameters("uint256,address,address,bytes32,bytes32"), [4663n, host, token, r.revisionId, r.configurationHash])); same(r.launchId, expectedId, "Derived launch ID");
-  await Promise.all([code(client, r.engine, r.engineCodeHash, block.blockNumber), code(client, token, block.release.tokenRuntimeCodeHash, block.blockNumber)]);
-  const [engineId, creator, supply, decimals, contextHash] = await Promise.all([read(client, host, "engineLaunchId", [r.engine], block.blockNumber, moduleEngineHostAbi), read(client, token, "creator", [], block.blockNumber), read(client, token, "totalSupply", [], block.blockNumber), read(client, token, "decimals", [], block.blockNumber), read(client, r.engine, "contextHash", [], block.blockNumber)]);
+  const [tokenCode] = await Promise.all([client.getCode({ address: token, blockNumber: block.blockNumber }), code(client, r.engine, r.engineCodeHash, block.blockNumber)]);
+  need(tokenCode && tokenCode !== "0x", "Launch token has no deployed runtime.");
+  const [engineId, creator, supply, decimals, contextHash, tokenName, tokenSymbol, tokenGraffiti] = await Promise.all([read(client, host, "engineLaunchId", [r.engine], block.blockNumber, moduleEngineHostAbi), read(client, token, "creator", [], block.blockNumber), read(client, token, "totalSupply", [], block.blockNumber), read(client, token, "decimals", [], block.blockNumber), read(client, r.engine, "contextHash", [], block.blockNumber), read(client, token, "name", [], block.blockNumber), read(client, token, "symbol", [], block.blockNumber), read(client, token, "graffiti", [], block.blockNumber)]);
   same(engineId, id, "Engine registration"); same(creator, host, "Token creator"); need(supply === SUPPLY && decimals === 18, "Token supply or decimals differ.");
+  need(typeof tokenName === "string" && typeof tokenSymbol === "string", "Token metadata getters are unavailable.");
+  const graffiti = moduleEngineOptionalHash(tokenGraffiti, "token graffiti");
+  const factoryToken = await read(client, block.release.contracts.tokenFactory.address, "getUERC20Address", [tokenName, tokenSymbol, 18, host, graffiti], block.blockNumber);
+  same(factoryToken, token, "Factory token address");
+  const expectedToken = getCreate2Address({ from: block.release.contracts.tokenFactory.address, salt: keccak256(encodeAbiParameters(parseAbiParameters("string,string,uint8,address,bytes32"), [tokenName, tokenSymbol, 18, host, graffiti])), bytecodeHash: block.release.tokenCreationCodeHash });
+  same(expectedToken, token, "Factory CREATE2 token identity");
   same(contextHash, keccak256(encodeAbiParameters(parseAbiParameters(ENGINE_CONTEXT), [contextFor(block.release, r)])), "Engine context"); return r;
 }
 export async function readModuleEngineLaunch(input: { client: ModuleEngineClient; release: ModuleEngineRelease; token: Address; blockNumber?: bigint }): Promise<ModuleEngineLaunchRecord> {

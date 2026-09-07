@@ -7,10 +7,10 @@ import { computeModuleEngineHostManifestHash, computeModuleEngineReleaseDigest, 
 import { ENGINE_OPERATIONS, predictModuleEngineAddress, type ModuleEngineClient, type ModuleEngineLaunchRecord } from "@/lib/module-engine/client";
 export const addr = (n: number) => `0x${n.toString(16).padStart(40, "0")}` as Address;
 export const hash = (n: number) => `0x${n.toString(16).padStart(64, "0")}` as Hex;
-export const CODE = "0x60006000" as Hex, CODE_HASH = keccak256(CODE), ACCOUNT = addr(90), QUOTE = addr(91), TOKEN = addr(92), ENGINE = addr(93);
+export const CODE = "0x60006000" as Hex, CODE_HASH = keccak256(CODE), ACCOUNT = addr(90), QUOTE = addr(91), TOKEN = getCreate2Address({ from: addr(3), salt: keccak256(encodeAbiParameters(parseAbiParameters("string,string,uint8,address,bytes32"), ["Escrow", "ESC", 18, addr(1), hash(98)])), bytecodeHash: CODE_HASH }).toLowerCase() as Address, ENGINE = addr(93);
 const abi = parseAbi(["function contextHash() view returns (bytes32)", "function initialize(bytes) returns (bytes32)", "function execute((bytes32 operationId,address actor,address recipient,address inputAsset,uint256 inputAmount,address outputAsset,uint256 minimumOutput,uint256 deadline,uint256 nonce,bytes data)) payable returns (bytes)"]);
 export function fixture() {
-  const identity = { schemaVersion: MODULE_ENGINE_RELEASE_SCHEMA, sourceVersion: MODULE_ENGINE_SOURCE_VERSION, engineProfile: MODULE_ENGINE_PROFILE, chainId: 4663 as const, sourceCommit: "a".repeat(40), startBlock: "1", tokenCreationCodeHash: CODE_HASH, tokenRuntimeCodeHash: CODE_HASH, economicsPolicyId: MODULE_MODE_ECONOMICS_POLICY_V2, finalityPolicy: MODULE_MODE_FINALITY_POLICY,
+  const identity = { schemaVersion: MODULE_ENGINE_RELEASE_SCHEMA, sourceVersion: MODULE_ENGINE_SOURCE_VERSION, engineProfile: MODULE_ENGINE_PROFILE, chainId: 4663 as const, sourceCommit: "a".repeat(40), startBlock: "1", tokenCreationCodeHash: CODE_HASH, economicsPolicyId: MODULE_MODE_ECONOMICS_POLICY_V2, finalityPolicy: MODULE_MODE_FINALITY_POLICY,
     contracts: Object.fromEntries(MODULE_ENGINE_CONTRACTS.map((key, i) => [key, { address: addr(i + 1), runtimeCodeHash: CODE_HASH }])) as ModuleEngineRelease["contracts"] };
   const release: ModuleEngineRelease = { ...identity, releaseDigest: computeModuleEngineReleaseDigest(identity), enabled: true, status: "active", deploymentEvidenceDigest: hash(1), sourceVerificationDigest: hash(2), lifecycleEvidenceDigest: hash(3) };
   const schema = { type: "record" as const, required: ["unlockTime"], fields: { unlockTime: { type: "uint" as const, bits: 256, min: "1" } } };
@@ -51,6 +51,10 @@ export function fixture() {
     if (functionName === "decimals") return address === QUOTE ? 6 : 18;
     if (functionName === "totalSupply") return 10n ** 27n;
     if (functionName === "creator") return host;
+    if (functionName === "name") return "Escrow";
+    if (functionName === "symbol") return "ESC";
+    if (functionName === "graffiti") return hash(98);
+    if (functionName === "getUERC20Address") return getCreate2Address({ from: release.contracts.tokenFactory.address, salt: keccak256(encodeAbiParameters(parseAbiParameters("string,string,uint8,address,bytes32"), args as [string,string,number,Address,Hex])), bytecodeHash: CODE_HASH });
     if (functionName === "launchIdOf" || functionName === "engineLaunchId") return state.launch.launchId;
     if (functionName === "getLaunch") return state.launch;
     if (functionName === "contextHash") return keccak256(encodeAbiParameters(parseAbiParameters(ENGINE_CONTEXT), [{ host, launchId: state.launch.launchId, token: state.launch.token, creator: ACCOUNT, quoteAsset: QUOTE, feeCollector: host }]));
