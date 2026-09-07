@@ -5,10 +5,12 @@ import {
   PROGRAMMABLE_LAUNCH_STAMP_ROUTER_V1_ABI,
 } from "@/components/launch-stamp-docs-contract";
 import { V4_TOKEN_ADDRESS } from "@/components/docs-public-policy";
+import { PROGRAMMABLE_AGENT_ENTRY } from "@/lib/agent-connection";
 import { V4_API_PROFILE_VERSION } from "@/lib/custom-launch/v4-api-discovery";
 import { robinhoodV4PublicContractDiscovery, robinhoodV4PublicLaunchRequirements } from "@/lib/custom-launch/v4-public-contract-discovery";
 
 const customLaunchApiOrigin = "https://api.programmable.market";
+const multiRoleProject = PROGRAMMABLE_AGENT_ENTRY.workflows.multiRoleProject;
 const robinhoodContract = robinhoodV4PublicContractDiscovery(V4_API_PROFILE_VERSION);
 const robinhoodProfileVersion = V4_API_PROFILE_VERSION === "4.1.0" ? "4.1.0" : "4.0.0";
 const robinhoodLaunchRequirements = robinhoodV4PublicLaunchRequirements(V4_API_PROFILE_VERSION);
@@ -101,6 +103,15 @@ export function buildDeveloperDocsMarkdown(): string {
     "Ethereum RPC authentication: provider-specific",
     "Read-only Developer API: https://developers.programmable.family",
     "",
+    ...(robinhoodProfileVersion === "4.1.0" ? [
+      "## Shared token and hook: MultiRole V2",
+      "",
+      "On Robinhood chain 4663, a token and hook that share one physical contract use the separate MultiRole V2 lane. The existing 4.1 profile, CLI and graph rules remain a separate contract; do not split the project or substitute profile fields to get past its distinct-role requirement.",
+      `Read [MultiRole V2 capabilities](${multiRoleProject.capabilities}) without a key and check current readiness and context before packing. If unavailable, stop before authenticated submission. Follow the [MultiRole V2 guide](${multiRoleProject.guide}) and [Node 24 client](${multiRoleProject.client}) for the exact packer and preflight -> create -> status flow. Preserve request bytes and the idempotency key on retries.`,
+      "Preflight/create requires custom-launch:create; status/list requires custom-launch:read, with the key's chain 4663 grant and controller binding. Automatic economic recognition currently covers the Native20 recipe. Unknown economics return evidence_required; this is not a generic hook audit or wallet authority. Published documentation does not imply enabled admission.",
+      "The following 4.1 release, funding and CLI instructions apply to the existing profile; MultiRole uses its own capabilities and guide above.",
+      "",
+    ] : []),
     "## Custom Launch API availability",
     "",
     `Public V3.3 creation, preflight, list and single-resource reads are live for wallet keys, partner roots and bounded partner subkeys on Ethereum Mainnet at ${customLaunchApiOrigin}/v3/custom-launches. V2 and V1 history and schemas remain readable; fresh creation returns non-retryable \`409 CUSTOM_LAUNCH_V2_READ_ONLY\` and \`409 CUSTOM_LAUNCH_V1_READ_ONLY\`. Only V3.3 accepts new submissions. Legacy Registry and GitHub submission intake is closed.`,
@@ -421,6 +432,8 @@ export function buildProgrammableLlmsIndex(): string {
     "",
     "- [Agent guide](https://programmable.market/agents.md): product, website paths, launch and module workflows, credentials and recovery.",
     "- [Agent discovery](https://programmable.market/api/agent): machine-readable links to all workflows and their live capabilities.",
+    `- [MultiRole V2 capabilities](${multiRoleProject.capabilities}): start here when a Robinhood token and hook share one physical contract; check current readiness and context. The existing 4.1 profile remains a separate lane.`,
+    `- [MultiRole V2 guide](${multiRoleProject.guide}) and [Node 24 client](${multiRoleProject.client}): use the documented packer and preflight -> create -> status flow. Automatic economic recognition currently covers the Native20 recipe; unknown economics return evidence_required. Published links do not imply enabled admission or a generic hook audit.`,
     "- [Module contributions](https://programmable.market/developers/module-mode-api-v1.md): build, package, submit and track a reusable module.",
     "",
     ]),

@@ -5,6 +5,8 @@ import { NextRequest } from "next/server";
 import { describe, expect, it } from "vitest";
 
 import { GET as getApiIndex } from "../app/api/route";
+import { GET as getAgentDiscovery } from "../app/api/agent/route";
+import { GET as getAgentGuide } from "../app/agents.md/route";
 import { GET as getUnknownApi } from "../app/api/[...path]/route";
 import {
   GET as getRetiredPredictionApi,
@@ -15,6 +17,7 @@ import { GET as getHomeMarkdown } from "../app/index.md/route";
 import { GET as getOpenApi } from "../app/openapi.json/route";
 import {
   programmableHomeMarkdown,
+  programmableLlmsFullFallback,
   programmableLlmsIndex,
 } from "../lib/developer-docs-content";
 import { negotiatePageRepresentation } from "../lib/content-negotiation";
@@ -29,6 +32,49 @@ const ORIGIN = "https://programmable.market";
 const CUSTOM_LAUNCH_API_ORIGIN = "https://api.programmable.market";
 
 describe("agent-readable public surface", () => {
+  it("routes shared token/hook projects from official entries to the separate MultiRole contract", async () => {
+    const response = getAgentDiscovery();
+    expect(response.status).toBe(200);
+    const discovery = await response.json();
+    const base = `${CUSTOM_LAUNCH_API_ORIGIN}/v4/chains/4663/multi-role-custom-launches`;
+    const multiRole = discovery.workflows.multiRoleProject;
+    expect(multiRole).toMatchObject({
+      chainId: 4663,
+      scopes: ["custom-launch:create", "custom-launch:read"],
+      capabilities: `${base}/capabilities`,
+      guide: `${base}/guide.md`,
+      client: `${base}/client.mjs`,
+    });
+    expect(multiRole.availability).toContain("may report unavailable");
+    expect(discovery.workflows.customLaunch.robinhood.capabilities).toBe(
+      `${CUSTOM_LAUNCH_API_ORIGIN}/v4/chains/4663/capabilities`,
+    );
+    expect(discovery.workflows.moduleContribution.scopes).toEqual([
+      "modules:submit", "modules:read",
+    ]);
+
+    const publicDocs = [
+      await getAgentGuide().text(),
+      await getDeveloperMarkdown().text(),
+      programmableLlmsIndex,
+      programmableLlmsFullFallback,
+      ...[
+        "public/developers/custom-launch-api-v1.md",
+        "public/developers/robinhood-launch-guide-v1.md",
+        "docs/public/developers/custom-launch.md",
+      ].map((path) => readFileSync(path, "utf8")),
+    ];
+    for (const text of publicDocs) {
+      for (const url of [multiRole.capabilities, multiRole.guide, multiRole.client]) {
+        expect(text).toContain(url);
+      }
+      expect(text).toContain("Native20");
+      expect(text).toContain("evidence_required");
+      expect(text).toContain("4.1");
+      expect(text).toContain("context");
+    }
+  });
+
   it("makes llms.txt product-first and states the exact public identity boundary", () => {
     expect(programmableLlmsIndex).toMatch(/^# Programmable\n/u);
     expect(programmableLlmsIndex).toContain("## When to use Programmable");

@@ -1,5 +1,23 @@
 # Programmable Custom Launch API
 
+## Shared token and hook: MultiRole V2
+
+On Robinhood chain 4663, a token and hook that share one physical contract use the separate MultiRole V2 lane.
+The existing 4.1 profile, CLI and distinct-role graph remain their own contract. Do not split the project or
+substitute profile fields to force it through that older graph.
+
+Read public [MultiRole V2 capabilities](https://api.programmable.market/v4/chains/4663/multi-role-custom-launches/capabilities)
+without a key and check current readiness and context before packing. If unavailable, stop before authenticated
+submission. Follow the [MultiRole V2 guide](https://api.programmable.market/v4/chains/4663/multi-role-custom-launches/guide.md)
+and [Node 24 client](https://api.programmable.market/v4/chains/4663/multi-role-custom-launches/client.mjs) for the exact
+packer and `preflight -> create -> status` flow. Preserve exact request bytes and the same idempotency key on retries.
+Preflight/create requires `custom-launch:create`; status/list requires `custom-launch:read`, with the key's chain
+4663 grant and controller binding. The controller separately reviews, signs and broadcasts the wallet transaction.
+
+Automatic economic recognition currently covers the Native20 recipe. Unknown economics return `evidence_required`;
+report the missing evidence without claiming a generic hook audit. Published URLs do not imply enabled admission.
+The 4.1 funding and CLI instructions below apply to that existing profile; MultiRole uses its own guide above.
+
 ## Start with the launch details
 
 The shared intake is published at `customLaunchApi.intake` in [live discovery](https://programmable.market/.well-known/programmable.json). Complete it before following either chain-specific guide.
@@ -130,8 +148,9 @@ Before choosing an architecture, read the separate
 [response schema](https://programmable.market/schemas/custom-launch/coverage/v1.json). `readiness.status: ready`
 describes the service. Check `structuralFormat` and `verifierCoverage` separately: the current format uses one role
 per physical target, explicitly reports `tokenAndHookMayShareAddress: false`, and represents one native ETH/token
-pool. Same-address token/hooks, no-pool designs and multiple pool keys require a versioned transport extension.
-Preserve the intended project architecture; do not split a token/hook just to satisfy the older format.
+pool. For a same-address token/hook, check the separate [MultiRole V2 lane](#shared-token-and-hook-multirole-v2)
+and its current capabilities. No-pool designs and multiple pool keys still need their own compatible transport
+and evidence. Preserve the intended project architecture; do not split a token/hook just to satisfy the older format.
 
 The report always has `requestAuthorization.requestAuthorized: false`. Listed hook permissions and funding models
 are declarations, not execution evidence. `proof-available` applies only to the named server adapter and its exact
