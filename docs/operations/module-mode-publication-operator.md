@@ -69,13 +69,21 @@ wallet requests. Manifest construction before acceptance remains available throu
 the existing canonical `manifest` command. The wallet plan itself requires the
 real accepted decision.
 
-For each selected module, the plan has three sequential operations:
+For each selected Native V1 module, the plan has three sequential operations:
 
 1. Deploy its no-argument factory with the canonical salt and exact protected
    worker creation bytes. Both providers must report vacant code and zero nonce.
 2. Register the new contributor family with the API-authenticated author, fixed
    family salt, reward wallet and immutable source request digest.
 3. Admit the package revision with its exact factory/code/manifest/callback pins.
+
+Native V2 publication requires an explicit `--fee-eligibility` JSON tuple chosen
+before acceptance. The accepted manifest binds `eligible` and `reviewDigest`.
+A nonzero digest produces the existing owner-only `setFamilyFeeEligibility` call
+before revision admission; false/zero keeps the untouched default. Publication
+checks the exact `familyFeeEligibility` getter, and a supplied setter transaction
+must match owner, calldata, canonical receipt and event. Native V1 keeps its
+original inputs and calls.
 
 This first-family operator deliberately refuses to overwrite or transfer an
 existing family, revision or deployment. Existing-family revision workflows and
@@ -146,7 +154,26 @@ This wallet operator does not publish those artifacts or enable launches.
 canary uses an empty module array and 0% creator fee. The module canary uses the
 actual accepted modules and a positive whole-percent creator fee, for example
 100 bps, so the backend can prove both creator and contributor accrual. The
-platform fee remains the deployed 20 bps in both cases.
+platform fee is 20 bps for Native V1. Native V2 binds its separate economics
+policy: 10 bps protocol plus a 20 bps author pool only when the launch contains
+an eligible family. Its plain canary therefore has 10 bps and its module canary
+has 30 bps in total platform fees; creator fees remain separate.
+
+V2 obtains each selection's `feeEligibility` from its accepted, hash-bound host
+manifest. The caller cannot supply an alternative eligibility field in the
+action. Before launch, both providers must return that exact family eligibility
+and the hook's matching `previewRecipe`. The V2 recipe includes the economics
+policy and the hash of every selected family, eligibility flag and review digest.
+Eligible families are sorted and deduplicated; repeated selections of one family
+do not multiply its author allocation. V2 permits up to 16 distinct packages and
+eight eligible families. V1 retains its eight distinct-family bound.
+
+The V2 launch calldata includes the derived `expectedRecipeHash`. A changed
+eligibility review blocks preparation or the final arm refresh instead of
+silently changing the wallet payload. After inclusion, the operator checks the
+exact `NativeEconomicsBound` event and the hook's saved per-selection snapshot,
+pool fee and ledger fee. Later operations use that saved launch snapshot, so a
+later registry eligibility decision is not substituted into an existing pool.
 
 A launch action has this shape; all amounts are decimal base-unit strings and the
 addresses, salt, names, expiry and configuration must be deliberately selected:
@@ -196,6 +223,34 @@ must be positive, and the recipient is always the reviewed owner. Both providers
 must confirm that the token belongs to that owner's native launcher record. The
 receipt must contain the matching native trade event and amounts.
 
+Native V2 also supports the two exact-output canary operations:
+
+```ts
+{
+  kind: "buyExactOutput" | "sellExactOutput", canaryKind: "plain" | "modules",
+  token: Address, tokenCodeHash: Hex,
+  amount: string, maximumInput: string, deadline: string,
+  launch: { plan: originalLaunchPlan, evidence: verifiedLaunchReceipt }
+}
+```
+
+Here `amount` is the positive exact requested output, in token units for a buy or
+wei for a sell. `maximumInput` is the positive input ceiling in the other asset.
+Both values must be below the released native engine's signed amount bound.
+An exact-output buy sends exactly `maximumInput` wei. The runtime-pinned router
+atomically refunds `maximumInput - nativeAmount` to the caller and preserves its
+pre-existing balance. An exact-output sell sends no ETH and requires a separate
+token approval covering the chosen maximum input. Unspent approved tokens remain
+with the owner; they are not an ETH refund.
+
+Simulation and receipt checks require the exact output and an actual positive
+input no larger than the ceiling. V2 evidence reports `refundNative` calculated
+from the exact input ceiling and verified router result/event. This calculation
+uses the pinned router's successful atomic settlement semantics; it is not an
+independent wallet-balance-difference observation. The operator never raises a
+ceiling or changes an expired deadline. V1 operation plans retain their original
+exact-input behavior.
+
 Embed the original complete launch plan and its actual verified receipt output as
 JSON objects in `launch`; filenames or locally invented receipt claims are not
 accepted. Every subsequent operation re-reads that transaction and its canonical
@@ -230,6 +285,29 @@ It binds distinct tokens and six distinct transaction hashes to the same release
 The backend native lifecycle collector must then independently re-observe these
 receipts, module instances, fee accounting and Ethereum-finalized checkpoints.
 Only its separate validated artifact can satisfy the lifecycle activation gate.
+
+For Native V2, keep five operation records per canary: `launch`, `buy`, `sell`,
+`buyExactOutput`, and `sellExactOutput`. Preserve original creator recipients
+until this complete proof is collected. The existing V2 reference converter
+requires all ten actual transactions and the V2 economics event:
+
+```sh
+node contracts/scripts/module-native-v2/lifecycle.mjs \
+  --identity "$MODULE_RELEASE_IDENTITY" \
+  --canaries "$MODULE_ACTUAL_V2_CANARIES" \
+  --output "$MODULE_LIFECYCLE_PLAN" \
+  --source-root "$MODULE_CLEAN_CONTRACT_SOURCE_ROOT"
+```
+
+The operation plan's `sourceCommit` names the current reviewed operator source.
+Its `identity.sourceCommit` continues to name the actually deployed contracts.
+The unchanged wallet source-authority helper requires the operation plan to match
+the clean current production commit and its fresh hosted Verify evidence. The
+wallet builder has no source-root override. The later V2 lifecycle converter's
+existing `--source-root` selects the clean contract source for its mandatory
+identity/build comparison. It produces transaction references only; the original
+backend collector still independently verifies receipts, fees and Ethereum
+finality before activation.
 
 ## Existing management flow
 
