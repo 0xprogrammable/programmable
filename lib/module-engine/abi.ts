@@ -1,4 +1,5 @@
 import { parseAbi, parseAbiParameters } from "viem";
+import { managementCoreAbi } from "@/lib/module-mode/management";
 
 export const ENGINE_CONTEXT = "(address host,bytes32 launchId,address token,address creator,address quoteAsset,address feeCollector)";
 export const ENGINE_OPERATION = "(bytes32 operationId,address actor,address recipient,address inputAsset,uint256 inputAmount,address outputAsset,uint256 minimumOutput,uint256 deadline,uint256 nonce,bytes data)";
@@ -42,3 +43,4 @@ export const moduleEngineReadAbi = parseAbi([
   "function poolId() view returns (bytes32)", "function quoteDecimals() view returns (uint8)",
 ]);
 export const moduleEngineTradeLimitsParameters = parseAbiParameters("(uint256 minimumEthFees,uint160 sqrtPriceLimitX96,bytes conversionRoute) limits");
+export const moduleEngineLedgerAbi = [...managementCoreAbi, ...parseAbi(["event FeesClaimed(address indexed beneficiary,address indexed recipient,address indexed caller,uint256 amount)"])] as const;

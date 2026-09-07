@@ -1,4 +1,4 @@
-import { concatHex, decodeAbiParameters, decodeEventLog, decodeFunctionResult, encodeAbiParameters, encodeEventTopics, encodeFunctionData, erc20Abi, getCreate2Address, keccak256, parseAbiParameters, toHex, type Abi, type Address, type Hex, type TransactionReceipt } from "viem";
+import { concatHex, decodeAbiParameters, decodeEventLog, decodeFunctionResult, encodeAbiParameters, encodeEventTopics, encodeFunctionData, erc20Abi, getCreate2Address, keccak256, parseAbi, parseAbiParameters, toHex, type Abi, type Address, type Hex, type TransactionReceipt } from "viem";
 import { compileOpenConfig, type OpenConfigValue } from "@/packages/classic-modules/src/open-config.mjs";
 import { evaluateOpenConstraints } from "@/packages/classic-modules/src/open-constraints.mjs";
 import { encodeProgramConfiguration, validateTokenImage } from "@/lib/module-mode/builder";
@@ -7,7 +7,7 @@ import { nativeCanonicalJson } from "@/lib/module-mode/native-catalog";
 import { moduleAddress, moduleBytes, moduleHash, moduleUint } from "@/lib/module-mode/release";
 import { MODULE_DEFAULT_TOKEN_IMAGE, moduleTokenMetadata, type ModuleSocialLinks } from "@/lib/module-mode/token-metadata";
 import { MAX_TOKEN_DESCRIPTION_BYTES, MAX_TOKEN_NAME_BYTES } from "@/lib/metadata-policy";
-import { ENGINE_CONTEXT, moduleEngineConstructorParameters, moduleEngineHostAbi, moduleEngineLaunchParameters, moduleEnginePlanParameters, moduleEngineReadAbi, moduleEngineTradeLimitsParameters } from "./abi";
+import { ENGINE_CONTEXT, moduleEngineConstructorParameters, moduleEngineHostAbi, moduleEngineLaunchParameters, moduleEngineLedgerAbi, moduleEnginePlanParameters, moduleEngineReadAbi, moduleEngineTradeLimitsParameters } from "./abi";
 import { bindActiveModuleEngineRelease, bindModuleEngineTemplate, ENGINE_ZERO_ADDRESS as ZERO, ENGINE_ZERO_HASH as ZERO_HASH, MODULE_ENGINE_CONTRACTS, MODULE_ENGINE_SOURCE_ID, moduleEngineOptionalHash, parseModuleEngineAvailability, type ModuleEngineAvailability, type ModuleEnginePermission, type ModuleEngineRelease, type ModuleEngineTemplate } from "./catalog";
 
 export type ModuleEngineClient = ModuleNativeClient;
@@ -29,7 +29,8 @@ export interface PreparedModuleEngineOperation extends PreparedBase {
   readonly operation: Readonly<ModuleEngineOperation>; readonly result: Hex;
 }
 export interface PreparedModuleEngineApproval extends PreparedBase { readonly kind: "approve"; readonly token: Address; readonly spender: Address; readonly amount: bigint }
-export type PreparedModuleEngineTransaction = PreparedModuleEngineLaunch | PreparedModuleEngineOperation | PreparedModuleEngineApproval;
+export interface PreparedModuleEngineClaim extends PreparedBase { readonly kind: "claim"; readonly token: Address; readonly launchId: Hex; readonly revisionId: Hex; readonly planHash: Hex; readonly recipient: Address; readonly minimumAmount: bigint; readonly claimedBefore: bigint }
+export type PreparedModuleEngineTransaction = PreparedModuleEngineLaunch | PreparedModuleEngineOperation | PreparedModuleEngineApproval | PreparedModuleEngineClaim;
 export interface ModuleEngineApprovalRequired { kind: "approval-required"; token: Address; spender: Address; amount: bigint; currentAllowance: bigint }
 export interface ModuleEngineReceiptResult {
   sourceKind: "module-engine-v1"; status: "mined"; finalized: false; indexed: false; kind: PreparedModuleEngineTransaction["kind"];
@@ -245,15 +246,15 @@ export function noteModuleEngineSubmission(prepared: PreparedModuleEngineTransac
 /** Only call after a definite preflight failure or explicit wallet rejection; an uncertain send stays blocked. */
 export function releaseModuleEnginePreparation(prepared: PreparedModuleEngineTransaction) { const binding = preparations.get(prepared); if (binding?.state === "pending") binding.state = "ready"; }
 function receiptResult(receipt: TransactionReceipt, kind: PreparedModuleEngineTransaction["kind"], extra: Partial<Pick<ModuleEngineReceiptResult, "token" | "launch" | "outputAmount">> = {}): ModuleEngineReceiptResult { return { sourceKind: "module-engine-v1", status: "mined", finalized: false, indexed: false, kind, transactionHash: receipt.transactionHash, blockNumber: receipt.blockNumber, blockHash: receipt.blockHash, ...extra }; }
-function event(receipt: TransactionReceipt, address: Address, eventName: string): Record<string, unknown> {
+function event(receipt: TransactionReceipt, address: Address, eventName: string, abi: Abi = moduleEngineHostAbi): Record<string, unknown> {
   const matches: Record<string, unknown>[] = [];
   for (const log of receipt.logs) {
     if (log.address.toLowerCase() !== address.toLowerCase()) continue;
-    let decoded; try { decoded = decodeEventLog({ abi: moduleEngineHostAbi, data: log.data, topics: log.topics, strict: true }); } catch { continue; }
+    let decoded; try { decoded = decodeEventLog({ abi, data: log.data, topics: log.topics, strict: true }); } catch { continue; }
     if (decoded.eventName !== eventName) continue;
     need(!log.removed && log.transactionHash === receipt.transactionHash && log.blockHash === receipt.blockHash && log.blockNumber === receipt.blockNumber, "Engine event has a different block/transaction.");
-    const args = decoded.args as unknown as Record<string, unknown>, shape = moduleEngineHostAbi.find(item => item.type === "event" && item.name === eventName); need(shape?.type === "event", "Unknown event ABI.");
-    equal(encodeEventTopics({ abi: moduleEngineHostAbi, eventName, args } as never), log.topics, "Canonical event topics");
+    const args = decoded.args as unknown as Record<string, unknown>, shape = abi.find(item => item.type === "event" && item.name === eventName); need(shape?.type === "event", "Unknown event ABI.");
+    equal(encodeEventTopics({ abi, eventName, args } as never), log.topics, "Canonical event topics");
     const values = shape.inputs.filter(item => !item.indexed); same(encodeAbiParameters(values, values.map(item => args[item.name!])), log.data, "Canonical event payload"); matches.push(args);
   }
   need(matches.length === 1, `Expected exactly one ${eventName} event from the released host.`); return matches[0];
@@ -290,11 +291,12 @@ export async function verifyModuleEngineApprovalReceipt(input: { client: ModuleE
 }
 export async function observeModuleEngineReceipt(prepared: PreparedModuleEngineTransaction, transactionHash: Hex): Promise<ModuleEngineReceiptResult> {
   const binding = preparations.get(prepared); need(binding && binding.state === "submitted", "Engine submission has no bound preparation."); same(transactionHash, binding.hash, "Submitted transaction hash");
-  const { client } = binding, receipt = await client.waitForTransactionReceipt({ hash: transactionHash, confirmations: 1, timeout: 60_000, retryCount: 1 });
+  const { client } = binding; need(await client.getChainId() === 4663, "Receipt RPC is on another chain.");
+  const receipt = await client.waitForTransactionReceipt({ hash: transactionHash, confirmations: 1, timeout: 60_000, retryCount: 1 });
   const [transaction, block] = await Promise.all([client.getTransaction({ hash: transactionHash }), client.getBlock({ blockNumber: receipt.blockNumber })]);
   same(transaction.hash, transactionHash, "Transaction hash"); same(receipt.transactionHash, transactionHash, "Receipt hash"); same(transaction.from, prepared.account, "Transaction sender"); same(transaction.to, prepared.transaction.to, "Transaction target"); same(transaction.input, prepared.transaction.data, "Transaction calldata");
   same(receipt.from, transaction.from, "Receipt sender"); same(receipt.to, transaction.to, "Receipt target"); same(transaction.blockHash, receipt.blockHash, "Transaction block"); same(block.hash, receipt.blockHash, "Canonical receipt block");
-  need(transaction.value === BigInt(prepared.transaction.value) && transaction.chainId === 4663 && transaction.blockNumber === receipt.blockNumber && receipt.blockNumber > prepared.blockNumber, "Transaction value, chain or block differs.");
+  need(transaction.value === BigInt(prepared.transaction.value) && transaction.chainId === 4663 && transaction.blockNumber === receipt.blockNumber && block.number === receipt.blockNumber && receipt.blockNumber > prepared.blockNumber, "Transaction value, chain or block differs.");
   if (receipt.status === "reverted") throw new ModuleEngineTransactionRevertedError(transactionHash, receipt.blockNumber, receipt.blockHash);
   const result = await binding.receipt(receipt); same((await client.getBlock({ blockNumber: receipt.blockNumber })).hash, receipt.blockHash, "Canonical receipt after readback"); return result;
 }
@@ -316,4 +318,93 @@ export async function quoteModuleEngineTrade(input: Parameters<typeof prepareMod
   const intent = { ...input.intent, minimumOutput, data: encodeAbiParameters(moduleEngineTradeLimitsParameters, [{ ...limits, minimumEthFees }]) };
   const bounded = await prepareModuleEngineOperation({ ...input, intent });
   return { kind: "trade-quote" as const, output, grossQuote, tokenAmount, platformEth, creatorEth, minimumOutput, minimumEthFees, prepared: bounded };
+}
+
+export interface ModuleEngineSettlementRequest { requestId: Hex; payer: Address; beneficiary: Address; amount: bigint; refundAfter: bigint; obligationHash: Hex; status: 1 | 2 | 3 }
+export interface ModuleEngineAdministration {
+  launch: ModuleEngineLaunchRecord; blockNumber: bigint; timestamp: bigint; quoteDecimals: number; actor: Address;
+  permissions: readonly ModuleEnginePermission[];
+  escrow?: { credit: bigint; unlockTime: bigint; totalLiability: bigint };
+  settlement?: { minimumWindow: bigint; maximumWindow: bigint; totalLiability: bigint; request: ModuleEngineSettlementRequest | null; canFulfill: boolean; canRefund: boolean };
+  fees: { claimable: bigint; claimed: bigint; contributionByLaunch: bigint; treasury: Address; administrator: Address; creatorWallets: Address[]; creatorSharesBps: number[]; adminRevision: bigint; buyPlatformBps: number; sellPlatformBps: number; buyCreatorBps: number; sellCreatorBps: number };
+}
+/** The displayed admin powers come from the bound contract and actor; catalog labels grant no powers. */
+export async function readModuleEngineAdministration(input: { client: ModuleEngineClient; release: ModuleEngineRelease; template: ModuleEngineTemplate; token: Address; account: Address; requestId?: Hex }): Promise<ModuleEngineAdministration> {
+  const block = await assertModuleEngineRelease(input), launch = await boundLaunch(input.client, block, input.token), template = await assertTemplate(input.client, block, input.template, false), actor = moduleAddress(input.account, "account");
+  same(launch.revisionId, template.manifest.manifest.revision.packageId, "Administration template");
+  const ledger = block.release.contracts.ledger.address, ledgerRead = (fn: string, args: readonly unknown[]) => read(input.client, ledger, fn, args, block.blockNumber, moduleEngineLedgerAbi);
+  const [claimable, claimed, contributed, treasury, administrator, recipients, quoteDecimals, buy, sell] = await Promise.all([
+    ledgerRead("claimable", [actor]), ledgerRead("claimedBy", [actor]), ledgerRead("contributionByPool", [launch.launchId, actor]), ledgerRead("treasury", []), ledgerRead("rewardAdmin", []), ledgerRead("creatorRecipients", [launch.launchId]), read(input.client, launch.quoteAsset, "decimals", [], block.blockNumber),
+    read(input.client, block.release.contracts.host.address, "feeTerms", [launch.launchId, true], block.blockNumber, moduleEngineHostAbi), read(input.client, block.release.contracts.host.address, "feeTerms", [launch.launchId, false], block.blockNumber, moduleEngineHostAbi),
+  ]);
+  const [wallets, shares, adminRevision] = recipients as [Address[], number[], bigint], buyFees = buy as [number, number], sellFees = sell as [number, number];
+  need([10, 30].includes(buyFees[0]) && buyFees[0] === sellFees[0] && buyFees[1] === launch.buyCreatorFeeBps && sellFees[1] === launch.sellCreatorFeeBps, "Stored fee terms differ.");
+  const result: ModuleEngineAdministration = { launch, blockNumber: block.blockNumber, timestamp: block.timestamp, quoteDecimals: Number(quoteDecimals), actor, permissions: template.manifest.manifest.revision.operationPermissions,
+    fees: { claimable: uint(claimable, "claimable"), claimed: uint(claimed, "claimed"), contributionByLaunch: uint(contributed, "contribution"), treasury: moduleAddress(treasury, "treasury"), administrator: moduleAddress(administrator, "administrator"), creatorWallets: wallets.map(wallet => moduleAddress(wallet, "creator recipient")), creatorSharesBps: shares, adminRevision: uint(adminRevision, "admin revision"), buyPlatformBps: buyFees[0], sellPlatformBps: sellFees[0], buyCreatorBps: buyFees[1], sellCreatorBps: sellFees[1] } };
+  const engineRead = (fn: string, args: readonly unknown[] = []) => read(input.client, launch.engine, fn, args, block.blockNumber);
+  const profile = template.manifest.manifest.catalogDefinition.interface;
+  if (profile === "escrow-v1") {
+    const [credit, unlockTime, totalLiability] = await Promise.all([engineRead("credit", [actor]), engineRead("unlockTime"), engineRead("totalLiability")]);
+    result.escrow = { credit: uint(credit, "credit"), unlockTime: uint(unlockTime, "unlock time"), totalLiability: uint(totalLiability, "total liability") };
+  }
+  if (profile === "settlement-v1") {
+    const [minimumWindow, maximumWindow, totalLiability, requestValue] = await Promise.all([engineRead("minimumWindow"), engineRead("maximumWindow"), engineRead("totalLiability"), input.requestId ? engineRead("requests", [moduleHash(input.requestId, "requestId")]) : null]);
+    let request: ModuleEngineSettlementRequest | null = null;
+    if (requestValue) { const [payer, beneficiary, amount, refundAfter, obligationHash, status] = requestValue as [Address, Address, bigint, bigint, Hex, number]; need([1, 2, 3].includes(status), "This request does not exist in the bound engine."); request = { requestId: input.requestId!, payer: moduleAddress(payer, "payer"), beneficiary: moduleAddress(beneficiary, "beneficiary"), amount: uint(amount, "request amount", true), refundAfter: uint(refundAfter, "refund time", true), obligationHash: moduleHash(obligationHash, "obligation hash"), status: status as 1 | 2 | 3 }; }
+    const allowed = (operationId: Hex) => result.permissions.some(p => p.operationId === operationId && (p.authorization === 0 || actor === launch.creator));
+    result.settlement = { minimumWindow: uint(minimumWindow, "minimum window", true), maximumWindow: uint(maximumWindow, "maximum window", true), totalLiability: uint(totalLiability, "total liability"), request,
+      canFulfill: Boolean(request && request.status === 1 && actor === launch.creator && block.timestamp < request.refundAfter && allowed(ENGINE_OPERATIONS.fulfill)),
+      canRefund: Boolean(request && request.status === 1 && actor === request.payer && block.timestamp >= request.refundAfter && allowed(ENGINE_OPERATIONS.refund)) };
+  }
+  await canonical(input.client, block); return result;
+}
+export function moduleEngineDepositIntent(quoteAsset: Address, actor: Address, amount: bigint): ModuleEngineOperationIntent { need(amount > 0n, "Enter a positive deposit."); return { operationId: ENGINE_OPERATIONS.deposit, recipient: actor, inputAsset: quoteAsset, inputAmount: amount, outputAsset: ZERO, minimumOutput: 0n, data: "0x" }; }
+export function moduleEngineWithdrawalIntent(quoteAsset: Address, recipient: Address, amount: bigint): ModuleEngineOperationIntent { need(amount > 0n, "Enter a positive withdrawal."); return { operationId: ENGINE_OPERATIONS.withdraw, recipient, inputAsset: ZERO, inputAmount: 0n, outputAsset: quoteAsset, minimumOutput: amount, data: encodeAbiParameters(parseAbiParameters("uint256"), [amount]) }; }
+export function moduleEngineSettlementRequestIntent(input: { quoteAsset: Address; actor: Address; beneficiary: Address; amount: bigint; refundAfter: bigint; obligationHash: Hex }): ModuleEngineOperationIntent {
+  need(input.amount > 0n, "Enter a positive funded amount."); return { operationId: ENGINE_OPERATIONS.request, recipient: input.actor, inputAsset: input.quoteAsset, inputAmount: input.amount, outputAsset: ZERO, minimumOutput: 0n, data: encodeAbiParameters(parseAbiParameters("address,uint256,bytes32"), [moduleAddress(input.beneficiary, "beneficiary"), input.refundAfter, moduleHash(input.obligationHash, "obligationHash")]) };
+}
+export function moduleEngineSettlementPaymentIntent(input: { quoteAsset: Address; request: ModuleEngineSettlementRequest; kind: "fulfill" | "refund"; evidenceHash?: Hex }): ModuleEngineOperationIntent {
+  need(input.request.status === 1, "This request is already closed."); return { operationId: ENGINE_OPERATIONS[input.kind], recipient: input.kind === "fulfill" ? input.request.beneficiary : input.request.payer, inputAsset: ZERO, inputAmount: 0n, outputAsset: input.quoteAsset, minimumOutput: input.request.amount,
+    data: input.kind === "fulfill" ? encodeAbiParameters(parseAbiParameters("bytes32,bytes32"), [input.request.requestId, moduleHash(input.evidenceHash, "evidenceHash")]) : encodeAbiParameters(parseAbiParameters("bytes32"), [input.request.requestId]) };
+}
+export async function prepareModuleEngineClaim(input: { client: ModuleEngineClient; release: ModuleEngineRelease; token: Address; account: Address; recipient: Address }): Promise<PreparedModuleEngineClaim> {
+  const release = freeze(bindActiveModuleEngineRelease(input.release)), block = await assertModuleEngineRelease({ client: input.client, release }), launch = await boundLaunch(input.client, block, input.token), account = moduleAddress(input.account, "account"), recipient = moduleAddress(input.recipient, "claim recipient"), ledger = release.contracts.ledger.address;
+  need(recipient !== ledger, "Choose an external claim recipient.");
+  const [claimable, alreadyClaimed] = await Promise.all([read(input.client, ledger, "claimable", [account], block.blockNumber, moduleEngineLedgerAbi), read(input.client, ledger, "claimedBy", [account], block.blockNumber, moduleEngineLedgerAbi)]);
+  const minimumAmount = uint(claimable, "claimable ETH", true), claimedBefore = uint(alreadyClaimed, "claimed ETH"), expiresAt = deadline(block.timestamp);
+  const transaction = tx(account, ledger, encodeFunctionData({ abi: moduleEngineLedgerAbi, functionName: "claimTo", args: [recipient] }), 0n, "manage", "Claim your accrued engine fees in ETH");
+  const simulated = await simulate(input.client, block, transaction); need(decodeFunctionResult({ abi: moduleEngineLedgerAbi, functionName: "claimTo", data: simulated.data }) === minimumAmount, "Claim simulation differs from the ledger balance.");
+  const prepared: PreparedModuleEngineClaim = { sourceKind: "module-engine-v1", kind: "claim", account, releaseDigest: release.releaseDigest, blockNumber: block.blockNumber, expiresAt, gasEstimate: simulated.gasEstimate, transaction: { ...transaction, gas: toHex(simulated.gasEstimate * 12n / 10n) }, token: launch.token, launchId: launch.launchId, revisionId: launch.revisionId, planHash: launch.planHash, recipient, minimumAmount, claimedBefore };
+  return bind(prepared, { client: input.client, release, refresh: async () => { const current = await assertModuleEngineRelease({ client: input.client, release }); need(current.timestamp <= expiresAt, "Claim preview expired."); const live = await boundLaunch(input.client, current, launch.token); same(live.planHash, launch.planHash, "Claim launch plan"); const currentClaimable = uint(await read(input.client, ledger, "claimable", [account], current.blockNumber, moduleEngineLedgerAbi), "claimable ETH"); need(currentClaimable >= minimumAmount, "Fee balance changed. Review the claim again."); await simulate(input.client, current, transaction); }, receipt: receipt => verifyModuleEngineClaimReceipt({ client: input.client, release, launch, account, recipient, minimumAmount, claimedBefore, receipt }) });
+}
+export async function verifyModuleEngineClaimReceipt(input: { client: ModuleEngineClient; release: ModuleEngineRelease; launch: ModuleEngineLaunchRecord; account: Address; recipient: Address; minimumAmount: bigint; claimedBefore: bigint; receipt: TransactionReceipt }): Promise<ModuleEngineReceiptResult> {
+  const block = await receiptBlock(input.client, input.release, input.receipt), launch = await boundLaunch(input.client, block, input.launch.token); same(launch.planHash, input.launch.planHash, "Claim launch plan");
+  const args = event(input.receipt, block.release.contracts.ledger.address, "FeesClaimed", moduleEngineLedgerAbi); same(args.beneficiary, input.account, "Claim beneficiary"); same(args.caller, input.account, "Claim caller"); same(args.recipient, input.recipient, "Claim recipient"); const outputAmount = uint(args.amount, "claimed amount", true); need(outputAmount >= input.minimumAmount, "Claim is below the reviewed balance.");
+  const claimed = uint(await read(input.client, block.release.contracts.ledger.address, "claimedBy", [input.account], block.blockNumber, moduleEngineLedgerAbi), "claimed total"); need(claimed >= input.claimedBefore + outputAmount, "Claimed ledger total was not updated."); await canonical(input.client, block); return receiptResult(input.receipt, "claim", { token: launch.token, launch, outputAmount });
+}
+
+/** Only actual converter/factory pools are offered. Multihop routes can also be supplied to the bounded trade API. */
+export async function readModuleEngineQuoteAsset(input: { client: ModuleEngineClient; release: ModuleEngineRelease; template: ModuleEngineTemplate; quoteAsset: Address; account: Address; existingToken?: Address }) {
+  const block = await assertModuleEngineRelease(input), template = await assertTemplate(input.client, block, input.template, !input.existingToken), quoteAsset = moduleAddress(input.quoteAsset, "quoteAsset");
+  if (input.existingToken) { const launch = await boundLaunch(input.client, block, input.existingToken); same(launch.quoteAsset, quoteAsset, "Launch quote asset"); same(launch.revisionId, template.manifest.manifest.revision.packageId, "Launch quote template"); }
+  const { catalogDefinition: definition, revision } = template.manifest.manifest;
+  if (revision.fixedQuoteAsset !== ZERO) same(quoteAsset, revision.fixedQuoteAsset, "Fixed quote asset");
+  const [quoteCode, rawDecimals, rawBalance] = await Promise.all([input.client.getCode({ address: quoteAsset, blockNumber: block.blockNumber }), read(input.client, quoteAsset, "decimals", [], block.blockNumber), read(input.client, quoteAsset, "balanceOf", [input.account], block.blockNumber)]);
+  need(quoteCode && quoteCode !== "0x", "Quote token is not deployed."); const decimals = Number(rawDecimals); need(Number.isInteger(decimals) && decimals >= 0 && decimals <= 18, "Quote decimals are unsupported.");
+  const routes: { label: string; data: Hex }[] = [];
+  if (definition.interface === "quote-v1") {
+    const config = compileOpenConfig(definition.schema, definition.defaults, { roles: { launchWallet: input.account }, assets: { quote: { chainId: "4663", address: quoteAsset, decimals } } });
+    const bytes = encodeProgramConfiguration(definition.configurationAbi.map(arg => ({ type: arg.type, path: [...arg.path] })), config); same(keccak256(bytes), revision.fixedConfigurationHash, "Fixed quote configuration");
+    const [poolManager, , , , converter, converterHash] = decodeAbiParameters(parseAbiParameters("address,address,address,address,address,bytes32,uint256,address"), bytes);
+    same(poolManager, block.release.contracts.poolManager.address, "Quote PoolManager"); await code(input.client, converter, converterHash, block.blockNumber);
+    const converterAbi = parseAbi(["function weth() view returns (address)", "function factory() view returns (address)", "function getPool(address,address,uint24) view returns (address)"]);
+    const [wethValue, factoryValue] = await Promise.all([read(input.client, converter, "weth", [], block.blockNumber, converterAbi), read(input.client, converter, "factory", [], block.blockNumber, converterAbi)]);
+    const weth = moduleAddress(wethValue, "converter WETH"), factory = moduleAddress(factoryValue, "converter factory");
+    if (quoteAsset === weth) routes.push({ label: "Unwrap WETH to ETH", data: "0x" });
+    else for (const fee of [100, 500, 3000, 10_000]) {
+      const pool = moduleAddress(await read(input.client, factory, "getPool", [quoteAsset, weth, fee], block.blockNumber, converterAbi), "conversion pool", true);
+      if (pool !== ZERO) { const poolCode = await input.client.getCode({ address: pool, blockNumber: block.blockNumber }); if (poolCode && poolCode !== "0x") routes.push({ label: `Quote → WETH · ${fee / 10_000}% pool`, data: concatHex([quoteAsset, toHex(fee, { size: 3 }), weth]) }); }
+    }
+  }
+  await canonical(input.client, block); return { address: quoteAsset, decimals, balance: uint(rawBalance, "quote balance"), blockNumber: block.blockNumber, routes };
 }
