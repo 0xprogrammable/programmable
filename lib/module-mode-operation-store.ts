@@ -1,5 +1,5 @@
 import { sha256, toHex, type Address, type Hex } from "viem";
-import type { PreparedModuleNativeLaunch, PreparedModuleNativeManagement } from "./module-mode/native-client";
+import type { ModuleNativeAuthorWalletChange, PreparedModuleNativeLaunch, PreparedModuleNativeManagement } from "./module-mode/native-client";
 import type { ModuleEngineFeeChange, PreparedModuleEngineTransaction } from "./module-engine/client";
 import { moduleAddress, moduleHash, moduleRecord, moduleUint } from "./module-mode/release";
 
@@ -25,13 +25,18 @@ type OperationBinding = Readonly<{
   token: Address;
   transactionHash: Hex | null;
 }>;
-export type ModuleNativeWalletOperation = OperationBinding & Readonly<{
+type ModuleNativeWalletOperationV1 = OperationBinding & Readonly<{
   version: 1;
   /** Existing v1 records predate the source discriminator and remain byte compatible. */
   sourceKind?: never;
   kind: "launch" | "manage";
   launch: Readonly<{ draftId: Hex; poolId: Hex; recipeHash: Hex; launchKey: Hex; minimumTokenOut: string }> | null;
 }>;
+export type ModuleNativeAuthorWalletOperation = OperationBinding & Readonly<{
+  version: 4; sourceKind?: never; kind: "manage"; launch: null;
+  authorWalletChange: ModuleNativeAuthorWalletChange;
+}>;
+export type ModuleNativeWalletOperation = ModuleNativeWalletOperationV1 | ModuleNativeAuthorWalletOperation;
 type ModuleEngineWalletOperationV2 = OperationBinding & Readonly<{
   version: 2;
   sourceKind: "module-engine-v1";
@@ -71,6 +76,7 @@ function identity(record: object): Hex {
 export function parseModuleModeOperation(raw: string, account: string): ModuleModeOperation {
   if (raw.length > MAX_RECORD_LENGTH) throw new Error("The saved transaction record cannot be read. Check your wallet activity before continuing.");
   const decoded = JSON.parse(raw);
+  if (decoded?.version === 4) return parseNativeAuthorOperation(decoded, account);
   if (decoded?.version === 3) return parseEngineFeeOperation(decoded, account);
   if (decoded?.version === 2) return parseEngineOperation(decoded, account);
   const value = moduleRecord(decoded, ["version", "id", "kind", "chainId", "account", "target", "value", "calldataHash", "releaseDigest", "preparedBlock", "createdAtMs", "token", "launch", "transactionHash"], "operation");
@@ -89,6 +95,20 @@ export function parseModuleModeOperation(raw: string, account: string): ModuleMo
   const id = moduleHash(value.id, "operation.id");
   if (identity(bound) !== id) throw new Error("The saved transaction record changed. Check your wallet activity before continuing.");
   return Object.freeze({ ...bound, ...(launch ? { launch: Object.freeze(launch) } : {}), id, transactionHash: value.transactionHash === null ? null : moduleHash(value.transactionHash, "operation.transactionHash") });
+}
+
+function parseNativeAuthorOperation(decoded: unknown, account: string): ModuleNativeAuthorWalletOperation {
+  const value = moduleRecord(decoded, ["version", "id", "kind", "chainId", "account", "target", "value", "calldataHash", "releaseDigest", "preparedBlock", "createdAtMs", "token", "launch", "authorWalletChange", "transactionHash"], "authorOperation");
+  if (value.version !== 4 || value.kind !== "manage" || value.chainId !== 4663 || value.value !== "0" || value.launch !== null || !Number.isSafeInteger(value.createdAtMs) || Number(value.createdAtMs) <= 0) throw new Error("The saved author wallet operation is invalid.");
+  const actor = moduleAddress(value.account, "operation.account");
+  if (actor !== moduleAddress(account, "operation.expectedAccount")) throw new Error("The saved transaction belongs to a different wallet.");
+  const change = moduleRecord(value.authorWalletChange, ["launchId", "poolId", "recipeHash", "launchKey", "packageId", "familyId", "author", "previousWallet", "recipient"], "authorOperation.change");
+  const authorWalletChange = Object.freeze({ launchId: moduleHash(change.launchId, "launchId"), poolId: moduleHash(change.poolId, "poolId"), recipeHash: moduleHash(change.recipeHash, "recipeHash"), launchKey: moduleHash(change.launchKey, "launchKey"), packageId: moduleHash(change.packageId, "packageId"), familyId: moduleHash(change.familyId, "familyId"), author: moduleAddress(change.author, "author"), previousWallet: moduleAddress(change.previousWallet, "previousWallet"), recipient: moduleAddress(change.recipient, "recipient") });
+  if (authorWalletChange.author !== actor || authorWalletChange.previousWallet === authorWalletChange.recipient) throw new Error("The saved author authority or recipient is invalid.");
+  const bound = { version: 4 as const, kind: "manage" as const, chainId: 4663 as const, account: actor, target: moduleAddress(value.target, "operation.target"), value: "0", calldataHash: moduleHash(value.calldataHash, "calldataHash"), releaseDigest: moduleHash(value.releaseDigest, "releaseDigest"), preparedBlock: moduleUint(value.preparedBlock, "preparedBlock", true), createdAtMs: Number(value.createdAtMs), token: moduleAddress(value.token, "token"), launch: null, authorWalletChange };
+  const id = moduleHash(value.id, "operation.id");
+  if (identity(bound) !== id) throw new Error("The saved transaction record changed. Check your wallet activity before continuing.");
+  return Object.freeze({ ...bound, id, transactionHash: value.transactionHash === null ? null : moduleHash(value.transactionHash, "transactionHash") });
 }
 
 function parseEngineOperation(decoded: unknown, account: string): ModuleEngineWalletOperationV2 {
@@ -190,6 +210,10 @@ export async function beginModuleModeOperation(prepared: RecoveryPreparation, su
       claim: prepared.kind === "claim" ? { recipient: prepared.recipient, minimumAmount: prepared.minimumAmount.toString(), claimedBefore: prepared.claimedBefore.toString() } : null };
     return persistOperation(prepared, bound, store);
   }
+  if (prepared.kind === "manage" && prepared.authorWalletChange) {
+    const bound = { version: 4 as const, kind: "manage" as const, chainId: 4663 as const, account: moduleAddress(prepared.account, "operation.account"), target: moduleAddress(prepared.transaction.to, "operation.target"), value: BigInt(prepared.transaction.value).toString(), calldataHash: sha256(prepared.transaction.data), releaseDigest: prepared.releaseDigest, preparedBlock: prepared.blockNumber.toString(), createdAtMs: store.now(), token: prepared.token, launch: null, authorWalletChange: prepared.authorWalletChange };
+    return persistOperation(prepared, bound, store);
+  }
   const bound = { version: 1 as const, kind: prepared.kind, chainId: 4663 as const, account: moduleAddress(prepared.account, "operation.account"),
     target: moduleAddress(prepared.transaction.to, "operation.target"), value: BigInt(prepared.transaction.value).toString(), calldataHash: sha256(prepared.transaction.data),
     releaseDigest: prepared.releaseDigest, preparedBlock: prepared.blockNumber.toString(), createdAtMs: store.now(),
@@ -252,5 +276,5 @@ export function subscribeToModuleModeOperation(account: string | undefined, onCh
 }
 export function moduleModeOperationPath(operation: ModuleModeOperation): string {
   if (operation.sourceKind === "module-engine-v1") return `${operation.kind === "launch" || operation.kind === "approve" ? "/launch/modules" : `/launch/modules/manage/${operation.token}`}?sourceKind=module-engine-v1&releaseDigest=${operation.releaseDigest}`;
-  return operation.kind === "launch" ? "/launch/modules" : `/launch/modules/manage/${operation.token}`;
+  return operation.kind === "launch" ? "/launch/modules" : `/launch/modules/manage/${operation.token}${operation.version === 4 ? `?releaseDigest=${operation.releaseDigest}` : ""}`;
 }

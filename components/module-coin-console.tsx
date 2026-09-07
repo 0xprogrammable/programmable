@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { ArrowLeft, ArrowUpRight, RefreshCw } from "lucide-react";
 import { formatUnits, isAddress, type Address, type Hex } from "viem";
 import { useWallet } from "@/components/wallet-provider";
@@ -9,7 +9,8 @@ import { moduleModeSubmissionIsUncertain, switchModuleModeNetwork, useModuleMode
 import { ModuleSchemaField } from "@/components/module-mode-fields";
 import { ROBINHOOD_BLOCK_EXPLORER_URL } from "@/lib/chains";
 import { configurationFromForm, defaultSchemaValue, parseExactUnits, type FormValue } from "@/lib/module-mode/builder";
-import { createModuleNativeClient, ModuleNativeTransactionRevertedError, prepareModuleNativeManagementTransaction, waitForModuleNativeReceipt, type PreparedModuleNativeManagement } from "@/lib/module-mode/native-client";
+import { createModuleNativeClient, ModuleNativeTransactionRevertedError, prepareModuleNativeManagementTransaction, waitForModuleNativeReceipt, type PreparedModuleNativeManagement, type ModuleNativeReceiptResult } from "@/lib/module-mode/native-client";
+import { ModuleNativeAuthorWalletControls, ModuleNativeAuthorWalletReview, ModuleNativeAuthorWalletResult } from "./module-native-author-wallet";
 import { parseModuleModeAvailability, type ModuleModeAvailability } from "@/lib/module-mode/native-catalog";
 import { moduleHash } from "@/lib/module-mode/release";
 import { managementActionProblem, moduleManagementChainMatches, readModuleManagementSnapshot,
@@ -51,6 +52,8 @@ export function ModuleCoinConsole({ token, releaseDigest }: { token: Address; re
   const [phase, setPhase] = useState<Phase>("idle");
   const [prepared, setPrepared] = useState<ConsolePrepared | null>(null);
   const [hash, setHash] = useState<Hex | null>(null);
+  const [authorReceipt, setAuthorReceipt] = useState<ModuleNativeReceiptResult["authorWalletChange"]>();
+  const reviewTrigger = useRef<HTMLElement | null>(null);
   const generation = useRef(0);
   const operation = useRef(false);
   const account = wallet.wallet?.account ?? null;
@@ -88,7 +91,8 @@ export function ModuleCoinConsole({ token, releaseDigest }: { token: Address; re
   const prepare = async (intent: ModuleManagementIntent) => {
     if (operation.current || saved.blocked || ["wallet", "pending", "unconfirmed", "checking"].includes(phase)) return;
     if (!walletReady || !onChain || !account || !availability?.release) { setError("Connect your wallet on Robinhood Chain before reviewing an action."); return; }
-    operation.current = true; setError(""); setPrepared(null); setHash(null); setPhase("preparing");
+    reviewTrigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    operation.current = true; setError(""); setPrepared(null); setHash(null); setAuthorReceipt(undefined); setPhase("preparing");
     try {
       const block = await client.getBlock({ blockTag: "latest" });
       const result = await prepareModuleNativeManagementTransaction({ client, release: availability.release, catalog: availability.catalog,
@@ -111,7 +115,8 @@ export function ModuleCoinConsole({ token, releaseDigest }: { token: Address; re
       const sentHash: Hex = await wallet.sendModuleModeTransaction(prepared);
       submittedHash = sentHash; setHash(sentHash); setPhase("pending");
       try { durableOperation = await rememberModuleModeTransactionHash(durableOperation, sentHash); activeOperation.current = durableOperation; } catch { /* The original durable record still prevents a resend. */ }
-      await waitForModuleNativeReceipt({ client, prepared, transactionHash: sentHash });
+      const result = await waitForModuleNativeReceipt({ client, prepared, transactionHash: sentHash });
+      setAuthorReceipt(result.authorWalletChange);
       await clearModuleModeOperation(durableOperation); activeOperation.current = null;
       setPhase("mined"); setPrepared(null); setLoading(true); await refresh();
     } catch (caught) {
@@ -134,11 +139,13 @@ export function ModuleCoinConsole({ token, releaseDigest }: { token: Address; re
     if (!record || record.kind !== "manage" || record.token.toLowerCase() !== token.toLowerCase() || operation.current) return;
     operation.current = true; setError(""); setPhase("checking");
     try {
-      if (prepared && activeOperation.current?.id === record.id) await waitForModuleNativeReceipt({ client, prepared, transactionHash });
+      let result: ModuleNativeReceiptResult;
+      if (prepared && activeOperation.current?.id === record.id) result = await waitForModuleNativeReceipt({ client, prepared, transactionHash });
       else {
         const originalRelease = await fetchModuleModeOperationRelease(record.releaseDigest);
-        await recoverModuleModeOperation({ client, operation: record, release: originalRelease, transactionHash });
+        result = await recoverModuleModeOperation({ client, operation: record, release: originalRelease, transactionHash });
       }
+      setAuthorReceipt(result.authorWalletChange);
       await clearModuleModeOperation(record); activeOperation.current = null; setHash(transactionHash);
       setPhase("mined"); setPrepared(null); setLoading(true); await refresh();
     } catch (caught) {
@@ -156,9 +163,12 @@ export function ModuleCoinConsole({ token, releaseDigest }: { token: Address; re
     unavailable={!loading && !error && availability?.release === null} walletReady={walletReady} onChain={onChain}
     phase={displayPhase} prepared={preparedMatchesCoin ? prepared : null} hash={hash ?? (recoveryHere ? saved.operation?.transactionHash ?? null : null)} error={error || saved.error || ""}
     recoveryOperation={saved.operation && !recoveryHere ? saved.operation : undefined} recoveryBlocked={saved.blocked}
+    authorReceipt={authorReceipt}
+    authorControlsContent={currentSnapshot && availability?.release ? <ModuleNativeAuthorWalletControls key={`${availability.release.releaseDigest}:${currentSnapshot.blockHash}:${actor}`} client={client} release={availability.release} catalog={availability.catalog} token={token} actor={actor ?? null}
+      disabled={saved.blocked || loading || !walletReady || !onChain || !["idle", "mined", "reverted"].includes(displayPhase)} onPrepare={intent => { void prepare(intent); }} /> : undefined}
     onPrepare={intent => { void prepare(intent); }} onConfirm={() => { void confirm(); }}
     onCheckReceipt={transactionHash => { void checkReceipt(transactionHash); }}
-    onCancel={() => { if (phase === "review") { setPrepared(null); setPhase("idle"); } }} onRefresh={() => { setLoading(true); void refresh(); }}
+    onCancel={() => { if (phase === "review") { setPrepared(null); setPhase("idle"); window.setTimeout(() => reviewTrigger.current?.focus(), 0); } }} onRefresh={() => { setLoading(true); void refresh(); }}
     onWallet={wallet.openWallet} onSwitch={() => { setError(""); void switchModuleModeNetwork(wallet.switchNetwork).catch(caught => setError(errorMessage(caught))); }} />;
 }
 
@@ -171,6 +181,8 @@ export interface ModuleCoinConsoleViewProps {
   onWallet: () => void; onSwitch: () => void;
   recoveryOperation?: ModuleModeOperation;
   recoveryBlocked?: boolean;
+  authorControlsContent?: ReactNode;
+  authorReceipt?: ModuleNativeReceiptResult["authorWalletChange"];
 }
 
 /** Separate presentation lets browser QA supply clearly labelled fixtures without a production bypass. */
@@ -186,7 +198,7 @@ export function ModuleCoinConsoleView(props: ModuleCoinConsoleViewProps) {
     <header className={styles.heading}>
       <span className={styles.eyebrow}>Coin controls · Robinhood Chain</span>
       <h1 id="module-coin-console-title">{snapshot ? `Manage ${snapshot.name}` : "Manage your coin"}</h1>
-      <p>Fund your modules, claim ETH and manage creator fee recipients.</p>
+      <p>Fund your modules, claim ETH and manage fee recipients.</p>
       <a className={styles.tokenLink} href={`${ROBINHOOD_BLOCK_EXPLORER_URL}/token/${props.token}`} target="_blank" rel="noreferrer">{snapshot?.symbol ? `${snapshot.symbol} · ` : ""}{shortAddress(props.token)}<ArrowUpRight size={14} aria-hidden="true" /></a>
     </header>
 
@@ -198,6 +210,7 @@ export function ModuleCoinConsoleView(props: ModuleCoinConsoleViewProps) {
     {loading && !snapshot ? <section className={styles.empty} aria-busy="true"><h2>Loading coin controls</h2><p>Checking this coin and your available balances.</p></section> : null}
 
     {prepared && phase === "review" && !props.recoveryBlocked ? <PreparedReview prepared={prepared} onConfirm={props.onConfirm} onCancel={props.onCancel} /> : null}
+    {props.authorReceipt && phase === "mined" && !prepared ? <ModuleNativeAuthorWalletResult result={props.authorReceipt} /> : null}
     {props.recoveryOperation ? <section className={styles.receipt} aria-label="Previous transaction"><strong>Previous transaction needs confirmation</strong><p>Check the previous transaction before starting another action.</p><Link className={styles.secondaryButton} href={moduleModeOperationPath(props.recoveryOperation)}>Open transaction recovery</Link></section>
       : props.hash || phase === "unconfirmed" ? <ReceiptStatus key={`${props.hash ?? "unknown"}:${phase === "mined"}`} phase={phase} hash={props.hash} onCheckReceipt={props.onCheckReceipt} /> : null}
 
@@ -206,6 +219,7 @@ export function ModuleCoinConsoleView(props: ModuleCoinConsoleViewProps) {
         <div className={styles.sectionHeading}><h2 id="coin-modules-heading">Your modules</h2><span>{snapshot.instances.length}</span></div>
         {snapshot.instances.length === 0 ? <div className={styles.plain}><h3>Plain coin</h3><p>This coin has no extra modules. Your creator fee controls are available below.</p></div> : snapshot.instances.map(instance => <InstancePanel key={`${instance.instanceId}:${snapshot.actor}`} instance={instance} snapshot={snapshot} disabled={disabled} onPrepare={props.onPrepare} />)}
         <FeeRecipients key={`${snapshot.launch.poolId}:${snapshot.fees.adminRevision}:${snapshot.fees.wallets.join(":")}:${snapshot.actor}`} snapshot={snapshot} disabled={disabled} onPrepare={props.onPrepare} />
+        {props.authorControlsContent}
       </section>
       <aside className={styles.sidebar} aria-labelledby="fee-claims-heading">
         <span className={styles.eyebrow}>Your fee balance</span><h2 id="fee-claims-heading">{native(snapshot.fees.claimable)} <span>ETH</span></h2>
@@ -222,11 +236,11 @@ function PreparedReview({ prepared, onConfirm, onCancel }: { prepared: ConsolePr
   const review = useRef<HTMLElement>(null);
   useEffect(() => { review.current?.focus(); review.current?.scrollIntoView({ behavior: "instant", block: "nearest" }); }, []);
   return <section className={styles.review} tabIndex={-1} ref={review} aria-labelledby="management-review-heading">
-    <span className={styles.eyebrow}>Review transaction</span><h2 id="management-review-heading">Confirm the change</h2>
-    <p>{prepared.transaction.description}</p>
+    <span className={styles.eyebrow}>Review transaction</span><h2 id="management-review-heading">{prepared.authorWalletChange ? "Change author reward wallet" : "Confirm the change"}</h2>
+    {prepared.authorWalletChange ? <ModuleNativeAuthorWalletReview change={prepared.authorWalletChange} /> : <p>{prepared.transaction.description}</p>}
     <dl className={styles.facts}>
       <div><dt>Wallet</dt><dd>{prepared.transaction.from}</dd></div><div><dt>ETH sent</dt><dd>{native(BigInt(prepared.transaction.value))} ETH</dd></div>
-      <div><dt>Valid until</dt><dd>{timestamp(prepared.expiresAt)}</dd></div><div><dt>Network cost</dt><dd>Shown by your wallet</dd></div>
+      <div><dt>{prepared.authorWalletChange ? "Preview valid until" : "Valid until"}</dt><dd>{timestamp(prepared.expiresAt)}</dd></div><div><dt>Network cost</dt><dd>Shown by your wallet</dd></div>
     </dl>
     <details className={styles.details}><summary>Contract details</summary><dl className={styles.facts}><div><dt>Contract</dt><dd>{prepared.transaction.to}</dd></div><div><dt>Action selector</dt><dd>{prepared.transaction.data.slice(0, 10)}</dd></div></dl></details>
     <div className={styles.actions}><button className={styles.primaryButton} type="button" onClick={onConfirm}>Confirm in wallet</button><button className={styles.secondaryButton} type="button" onClick={onCancel}>Cancel</button></div>

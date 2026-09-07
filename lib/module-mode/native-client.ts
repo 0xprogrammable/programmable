@@ -46,7 +46,15 @@ export interface PreparedModuleNativeSwap extends PreparedBase {
   readonly feeComponents: { creatorBps: number; platformBps: number; poolProtocolPips: number; poolLpPips: number };
 }
 export interface PreparedModuleNativeApproval extends PreparedBase { readonly kind: "approve"; readonly token: Address; readonly amount: bigint }
-export interface PreparedModuleNativeManagement extends PreparedBase { readonly kind: "manage"; readonly token: Address }
+export interface ModuleNativeAuthorWalletChange {
+  readonly launchId: Hex; readonly poolId: Hex; readonly recipeHash: Hex; readonly launchKey: Hex;
+  readonly packageId: Hex; readonly familyId: Hex; readonly author: Address; readonly previousWallet: Address; readonly recipient: Address;
+}
+export interface ModuleNativeAuthorWalletReceipt {
+  readonly familyId: Hex; readonly author: Address; readonly previousWallet: Address; readonly recipient: Address;
+  readonly previewChanged: boolean; readonly subsequentlyChanged: boolean;
+}
+export interface PreparedModuleNativeManagement extends PreparedBase { readonly kind: "manage"; readonly token: Address; readonly authorWalletChange?: ModuleNativeAuthorWalletChange }
 export type PreparedModuleNativeTransaction = PreparedModuleNativeLaunch | PreparedModuleNativeSwap | PreparedModuleNativeApproval | PreparedModuleNativeManagement;
 export interface ModuleNativeApprovalRequired { kind: "approval-required"; token: Address; spender: Address; amount: bigint; currentAllowance: bigint }
 export interface ModuleNativeImageBinding { uri: string; sourceSha256?: Hex }
@@ -61,6 +69,7 @@ const pending = new WeakSet<PreparedModuleNativeTransaction>();
 export interface ModuleNativeReceiptResult {
   status: "mined"; finalized: false; indexed: false; transactionHash: Hex; blockNumber: bigint; blockHash: Hex;
   kind: PreparedModuleNativeTransaction["kind"]; token?: Address; launch?: ModuleNativeLaunchRecord;
+  authorWalletChange?: ModuleNativeAuthorWalletReceipt;
 }
 export class ModuleNativeTransactionRevertedError extends Error {
   readonly code = "MODULE_NATIVE_TRANSACTION_REVERTED";
@@ -504,40 +513,67 @@ export async function prepareModuleNativeManagementTransaction(input: ModuleMana
   const intent = frozen(nativeJson(input.intent)) as ModuleManagementBuildInput["intent"];
   const context: ModuleManagementBuildInput = Object.freeze({ client, release, catalog, token, actor: account, intent, deadline: input.deadline });
   // Dynamic import avoids a runtime cycle: management reads use this module's authenticated release and launch helpers.
-  const { buildModuleManagementTransaction } = await import("./management");
+  const { buildModuleManagementTransaction, managementCoreAbi } = await import("./management");
   const reconstruct = async () => {
     const candidate = await buildModuleManagementTransaction(context);
-    const target = intent.kind === "program" ? release.contracts.runtime.address
+    const target = intent.kind === "rotate-author" ? release.contracts.registry.address : intent.kind === "program" ? release.contracts.runtime.address
       : intent.kind === "fund" || intent.kind === "claim" ? release.contracts.budgetVault.address : release.contracts.rewardLedger.address;
     requireCondition(candidate.transaction.chainId === 4663 && candidate.expiresAt === context.deadline, "Management chain or deadline changed.");
     same(candidate.transaction.from, account, "Management actor"); same(candidate.transaction.to, target, "Management target");
     const value = uint(BigInt(candidate.transaction.value), "management.value");
     requireCondition(value === (intent.kind === "fund" ? uint(intent.amountWei, "management.funding", true) : 0n), "Management value changed.");
     const data = moduleBytes(candidate.transaction.data, "management.calldata", 65_536);
+    if (intent.kind === "rotate-author") {
+      requireCondition(candidate.authorWalletChange, "Author wallet binding is unavailable.");
+      same(candidate.authorWalletChange.author, account, "Registered author");
+      same(candidate.authorWalletChange.packageId, intent.packageId, "Author package");
+      same(candidate.authorWalletChange.recipient, intent.recipient, "Author recipient");
+      same(data, encodeFunctionData({ abi: managementCoreAbi, functionName: "changeAuthorWallet", args: [candidate.authorWalletChange.familyId, candidate.authorWalletChange.recipient] }), "Author wallet calldata");
+    } else requireCondition(!candidate.authorWalletChange, "Unexpected author wallet binding.");
     requireCondition(data.length >= 10 && typeof candidate.description === "string" && candidate.description.length > 0 && candidate.description.length <= 65_536, "Invalid management transaction description or calldata.");
     requireCondition(typeof candidate.blockNumber === "bigint" && candidate.blockNumber >= BigInt(release.startBlock), "Management snapshot block is unavailable.");
     const hash = moduleHash(candidate.blockHash, "management.blockHash");
     const canonical = await client.getBlock({ blockNumber: candidate.blockNumber });
     requireCondition(canonical.number === candidate.blockNumber, "Management snapshot block number changed."); same(canonical.hash, hash, "Management snapshot block");
     requireCondition(canonical.timestamp < context.deadline && Math.abs(Date.now() / 1000 - Number(canonical.timestamp)) <= 120, "Management review expired or RPC state is stale. Prepare again.");
-    return { transaction: transaction(account, target, data, value, "manage", candidate.description), blockNumber: candidate.blockNumber, gasEstimate: gasReserve(candidate.gasEstimate) };
+    return { transaction: transaction(account, target, data, value, "manage", candidate.description), blockNumber: candidate.blockNumber, gasEstimate: gasReserve(candidate.gasEstimate), ...(candidate.authorWalletChange ? { authorWalletChange: candidate.authorWalletChange } : {}) };
   };
   const candidate = await reconstruct();
   const prepared: PreparedModuleNativeManagement = { kind: "manage", token, transaction: candidate.transaction, account, releaseDigest: release.releaseDigest,
-    blockNumber: candidate.blockNumber, expiresAt: context.deadline, gasEstimate: candidate.gasEstimate };
+    blockNumber: candidate.blockNumber, expiresAt: context.deadline, gasEstimate: candidate.gasEstimate, ...(candidate.authorWalletChange ? { authorWalletChange: candidate.authorWalletChange } : {}) };
   return seal(prepared, { client, release,
     refresh: async () => {
       const current = await reconstruct();
       for (const field of ["from", "to", "data", "value"] as const) same(current.transaction[field], prepared.transaction[field], `Reviewed management ${field}`);
       requireCondition(current.transaction.description === prepared.transaction.description, "Management effects changed. Prepare again.");
+      requireCondition(nativeCanonicalJson(current.authorWalletChange ?? null) === nativeCanonicalJson(prepared.authorWalletChange ?? null), "Author wallet binding changed. Prepare again.");
       return current.gasEstimate;
     },
     receipt: async receipt => {
+      if (prepared.authorWalletChange) return verifyModuleNativeAuthorWalletReceipt({ client, release, token, account, change: prepared.authorWalletChange, receipt });
       const block = await assertModuleNativeRelease({ client, release, blockNumber: receipt.blockNumber });
       await boundLaunch(client, block, token); await assertCanonical(client, block);
       return receiptResult(receipt, "manage", { token });
     },
   });
+}
+
+/** Canonical Registry receipt and family readback; an intervening permitted rotation is reported, never resent. */
+export async function verifyModuleNativeAuthorWalletReceipt(input: { client: ModuleNativeClient; release: ModuleModeRelease; token: Address; account: Address; change: ModuleNativeAuthorWalletChange; receipt: TransactionReceipt }): Promise<ModuleNativeReceiptResult> {
+  const { client, release, change, receipt } = input;
+  requireCondition(receipt.status === "success", "Author wallet transaction did not succeed.");
+  same(receipt.from, input.account, "Author receipt wallet"); same(receipt.to, release.contracts.registry.address, "Author receipt registry");
+  same(change.author, input.account, "Registered author");
+  const { readModuleNativeAuthorWalletAtBlock, managementCoreAbi } = await import("./management");
+  const current = await readModuleNativeAuthorWalletAtBlock({ client, release, token: input.token, packageId: change.packageId, blockNumber: receipt.blockNumber });
+  for (const key of ["launchId", "poolId", "recipeHash", "launchKey", "packageId", "familyId", "author"] as const) same(current[key], change[key], `Author ${key}`);
+  const event = oneEvent(receipt, release.contracts.registry.address, managementCoreAbi, "AuthorWalletChanged");
+  same(event.familyId, change.familyId, "Author event family"); same(event.wallet, change.recipient, "Author event recipient");
+  const previousWallet = moduleAddress(event.previousWallet, "author.previousWallet");
+  const block = await client.getBlock({ blockNumber: receipt.blockNumber });
+  requireCondition(block.number === receipt.blockNumber, "Author receipt block number changed."); same(block.hash, receipt.blockHash, "Author receipt block");
+  return receiptResult(receipt, "manage", { token: input.token, authorWalletChange: { familyId: change.familyId, author: change.author, previousWallet, recipient: change.recipient,
+    previewChanged: previousWallet.toLowerCase() !== change.previousWallet.toLowerCase(), subsequentlyChanged: current.previousWallet.toLowerCase() !== change.recipient.toLowerCase() } });
 }
 
 /** Only in-memory preparations made by this module can cross the wallet boundary. A signing attempt consumes the review. */
@@ -576,7 +612,7 @@ function oneEvent(receipt: TransactionReceipt, address: Address, abi: Abi, event
   }
   requireCondition(events.length === 1, `Expected exactly one ${eventName} event from the bound contract.`); return events[0];
 }
-function receiptResult(receipt: TransactionReceipt, kind: PreparedModuleNativeTransaction["kind"], rest: { token?: Address; launch?: ModuleNativeLaunchRecord } = {}): ModuleNativeReceiptResult {
+function receiptResult(receipt: TransactionReceipt, kind: PreparedModuleNativeTransaction["kind"], rest: Pick<ModuleNativeReceiptResult, "token" | "launch" | "authorWalletChange"> = {}): ModuleNativeReceiptResult {
   return { status: "mined", finalized: false, indexed: false, transactionHash: receipt.transactionHash, blockNumber: receipt.blockNumber, blockHash: receipt.blockHash, kind, ...rest };
 }
 export async function waitForModuleNativeReceipt(input: { client: ModuleNativeClient; prepared: PreparedModuleNativeTransaction; transactionHash: Hex }): Promise<ModuleNativeReceiptResult> {

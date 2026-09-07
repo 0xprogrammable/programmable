@@ -11,6 +11,8 @@ import type { PreparedModuleEngineOperation } from "../../../lib/module-engine/c
 import type { ModuleManagementSnapshot } from "../../../lib/module-mode/management";
 export { ModuleNativeTransactionRevertedError } from "../../../lib/module-mode/native-client";
 export { managementActionProblem, managementCoreAbi, moduleManagementChainMatches } from "../../../lib/module-mode/management";
+export async function readModuleNativeAuthorWallets() { throw new Error("Author getters are not installed in this recovery-only fixture."); }
+export async function verifyModuleNativeAuthorWalletReceipt() { throw new Error("Author receipts require the dedicated real-client fixture."); }
 
 // Test-only adapters. The server substitutes these imports; no product route imports this file.
 export const release = bindActiveModuleModeRelease(moduleEvidenceFixture().release);

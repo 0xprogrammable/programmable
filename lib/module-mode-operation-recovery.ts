@@ -1,7 +1,7 @@
 import { decodeFunctionData, encodeAbiParameters, encodeFunctionData, erc20Abi, keccak256, sha256, type AbiParameterToPrimitiveType, type Hex } from "viem";
 import { moduleNativeLaunchAbiFor } from "./module-mode/native-abi";
 import { managementCoreAbi } from "./module-mode/management";
-import { ModuleNativeTransactionRevertedError, readModuleNativeLaunch, type ModuleNativeClient, type ModuleNativeReceiptResult } from "./module-mode/native-client";
+import { ModuleNativeTransactionRevertedError, readModuleNativeLaunch, verifyModuleNativeAuthorWalletReceipt, type ModuleNativeClient, type ModuleNativeReceiptResult } from "./module-mode/native-client";
 import { parseModuleModeAvailability } from "./module-mode/native-catalog";
 import { bindActiveModuleModeRelease, moduleHash, type ModuleModeRelease } from "./module-mode/release";
 import { parseModuleModeOperation, type ModuleModeOperation } from "./module-mode-operation-store";
@@ -60,6 +60,14 @@ export async function recoverModuleModeOperation(input: {
   requireMatch(sha256(tx.input) === operation.calldataHash && tx.value === BigInt(operation.value), "transaction data and value");
   requireMatch(same(tx.blockHash, receipt.blockHash) && same(block.hash, receipt.blockHash) && tx.blockNumber === receipt.blockNumber && block.number === receipt.blockNumber, "canonical block");
   requireMatch(receipt.blockNumber > BigInt(operation.preparedBlock) && receipt.blockNumber >= BigInt(release.startBlock), "preparation block");
+  if (operation.version === 4) {
+    requireMatch(same(operation.target, release.contracts.registry.address) && tx.value === 0n, "author registry and zero value");
+    const decoded = decodeFunctionData({ abi: managementCoreAbi, data: tx.input });
+    requireMatch(decoded.functionName === "changeAuthorWallet" && same(decoded.args[0], operation.authorWalletChange.familyId) && same(decoded.args[1], operation.authorWalletChange.recipient), "author wallet function and recipients");
+    requireMatch(same(tx.input, encodeFunctionData({ abi: managementCoreAbi, functionName: "changeAuthorWallet", args: [operation.authorWalletChange.familyId, operation.authorWalletChange.recipient] })), "canonical author calldata");
+    if (receipt.status === "reverted") throw new ModuleNativeTransactionRevertedError(transactionHash, receipt.blockNumber, receipt.blockHash);
+    return verifyModuleNativeAuthorWalletReceipt({ client: input.client, release, token: operation.token, account: operation.account, change: operation.authorWalletChange, receipt });
+  }
   const allowedTargets = operation.kind === "launch" ? [release.contracts.launcher.address] : [release.contracts.runtime.address, release.contracts.budgetVault.address, release.contracts.rewardLedger.address];
   requireMatch(allowedTargets.some(target => same(target, operation.target)), "release contract");
   if (receipt.status === "reverted") throw new ModuleNativeTransactionRevertedError(transactionHash, receipt.blockNumber, receipt.blockHash);
