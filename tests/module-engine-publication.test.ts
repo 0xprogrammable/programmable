@@ -1,4 +1,5 @@
 import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { run } from "../ops/module-mode-publication/main";
@@ -12,26 +13,53 @@ import { MODULE_ENGINE_CONTRACTS, MODULE_ENGINE_SOURCE_ID, computeModuleEngineRe
 import { ENGINE_REVISION, moduleEngineHostAbi, moduleEngineReadAbi } from "../lib/module-engine/abi";
 import { parseReviewJob, parseReviewPlan, reviewDigest, type ReviewJob, type ReviewAttempt } from "../lib/module-mode/review-contract";
 import type { ModuleEngineBuildArtifactV1, ModuleEngineBuildPlanV1 } from "../lib/module-mode/review-engine-types";
-import { createAuthenticatedReviewReader, requireAuthenticatedReview } from "../ops/module-mode-publication/review";
+import { MODULE_ENGINE_CONTEXT_ABI_V1, MODULE_ENGINE_CONSTRUCTOR_ABI_V1 } from "../lib/module-mode/review-engine-types";
+import { createAuthenticatedReviewReader, NATIVE_SETTINGS, requireAuthenticatedReview } from "../ops/module-mode-publication/review";
 import { createEngineHostPreparation, prepareEnginePublication, type EnginePublicationDefinition, type EnginePublicationPlan } from "../ops/module-mode-publication/core-engine";
 import { observeEnginePublicationReadback, readEnginePublicationOwner } from "../ops/module-mode-publication/rpc-engine";
 import type { PublicationProvider } from "../ops/module-mode-publication/rpc";
 import { computeModuleReviewDecisionDigestV1, type ModuleReviewDecisionRecordV1 } from "../lib/server/module-mode/review-decision-wire-v1";
 import { validateModuleSubmissionRequest } from "../packages/classic-modules/src/open-transport.mjs";
 import { createModuleReviewClient } from "../lib/server/module-mode/review-client";
-import { verifyModuleEngineBuildArtifactV1 } from "../lib/module-mode/review-engine-contract";
+import { materializeModuleEngineRuntimeV1, moduleEngineStandardInputV1, verifyModuleEngineBuildArtifactV1 } from "../lib/module-mode/review-engine-contract";
 import { createReviewedModuleEngineManifest } from "../lib/module-mode/review-engine-manifest";
 
 vi.mock("server-only", () => ({}));
 const reviewer = WEBSITE_ADMIN_WALLET.toLowerCase() as Address;
 // Exact backend-owned compiler fixture; worker receipts and authentication here are synthetic test doubles.
 // Never submit, review, publish, or sign these fixtures.
-async function fixture() {
+const scopedPrefixes = ["openzeppelin/contracts/", "openzeppelin/uniswap-hooks/", "uniswap/blocknumberish/", "uniswap/liquidity-launcher/", "uniswap/uerc20-factory/", "uniswap/v4-core/", "uniswap/v4-periphery/", "solady/src/"];
+async function fixture(scopedAliases = false) {
   expect(frozen.evidenceClass).toBe("synthetic-parser-fixture-not-review-or-publication-authority");
-  const source = structuredClone(frozen.source), checked = validateModuleSubmissionRequest(source);
+  const source = structuredClone(frozen.source);
+  if (scopedAliases) {
+    // Same eight scoped source paths as the existing source-alias fixture; no compiler is run.
+    const content = "// exact source bytes\npragma solidity 0.8.26;\n", sha256 = createHash("sha256").update(content).digest("hex");
+    for (const prefix of scopedPrefixes) {
+      const path = `dependencies/scoped/${prefix}Probe.sol`;
+      source.files.push({ path, sha256, encoding: "base64", bytes: Buffer.from(content).toString("base64") }); source.descriptor.source.files.push({ path, sha256 });
+    }
+  }
+  const checked = validateModuleSubmissionRequest(source);
   if (!checked.ok) throw new Error("Invalid test source");
-  const subject = { ...frozen.subject, requestDigest: checked.requestDigest }, plan = structuredClone(frozen.plan) as ModuleEngineBuildPlanV1;
-  const artifact = structuredClone(frozen.artifact) as ModuleEngineBuildArtifactV1;
+  const subject = { ...frozen.subject, requestDigest: checked.requestDigest }, plan = { ...structuredClone(frozen.plan), requestDigest: checked.requestDigest } as ModuleEngineBuildPlanV1;
+  let artifact = structuredClone(frozen.artifact) as ModuleEngineBuildArtifactV1;
+  if (scopedAliases) {
+    // Rebind only synthetic fixture identities/instances to its extended source inventory.
+    const cases = artifact.cases.map(c => {
+      const context = { ...c.context, launchId: reviewDigest("programmable.modules.engine-review-launch.v1", { requestDigest: checked.requestDigest, caseId: c.id }) };
+      const constructorArgs = encodeAbiParameters(MODULE_ENGINE_CONSTRUCTOR_ABI_V1, [context, c.configBytes]), runtimeBytecode = materializeModuleEngineRuntimeV1(artifact.engine, constructorArgs);
+      return { ...c, context, contextHash: keccak256(encodeAbiParameters([{ type: "tuple", components: MODULE_ENGINE_CONTEXT_ABI_V1 }], [context])), constructorArgs,
+        constructorHash: keccak256(constructorArgs), initCodeHash: keccak256(`${artifact.engine.creationBytecode}${constructorArgs.slice(2)}`), runtimeBytecode, runtimeCodeHash: keccak256(runtimeBytecode) };
+    });
+    const planDigest = reviewDigest("programmable.modules.engine-build-plan.v1", plan), { artifactDigest: _old, ...original } = artifact; void _old;
+    const contents = { ...original, subject, packageId: checked.packageId, familyId: checked.familyId, planDigest, cases,
+      sourceManifestHash: reviewDigest("programmable.modules.source-manifest.v1", source.descriptor),
+      compiler: { ...artifact.compiler, completeInputHash: reviewDigest("programmable.modules.compiler-input.v1", moduleEngineStandardInputV1(source, subject, plan)) },
+      tests: { ...artifact.tests, requestDigest: checked.requestDigest, planDigest, cases: artifact.tests.cases.map((c, i) => ({ ...c, constructorHash: cases[i].constructorHash, runtimeCodeHash: cases[i].runtimeCodeHash })) } };
+    artifact = { ...contents, artifactDigest: reviewDigest("programmable.modules.engine-build.v1", contents) };
+    verifyModuleEngineBuildArtifactV1(artifact, subject, plan, source);
+  }
   const job: ReviewJob = { subject, state: "built", reviewRevision: 2, plan, planDigest: artifact.planDigest, artifact, attempt: 1, lastError: null, createdAt: "2026-09-07T01:00:00.000Z", updatedAt: "2026-09-07T01:10:00.000Z" };
   const identityFields = { sourceCommit: "a".repeat(40), runId: "123", runAttempt: "1", workflowRef: "programmablehq/programmable-open-hook-v2-internal/.github/workflows/protected-module-review-v1.yml@refs/heads/main" };
   const base = { attempt: 1, requestDigest: subject.requestDigest, planDigest: artifact.planDigest, errorCode: null };
@@ -98,6 +126,33 @@ function providers(f: Awaited<ReturnType<typeof fixture>>, plan: EnginePublicati
 }
 
 describe("Engine publication through the existing authenticated operator", () => {
+  it("reads all eight scoped source aliases through the authenticated reader and canonical accepted publication", async () => {
+    const f = await fixture(true), input = moduleEngineStandardInputV1(f.source, f.subject, f.plan);
+    for (const prefix of scopedPrefixes) {
+      expect(input.sources[`@${prefix}Probe.sol`].content).toBe("// exact source bytes\npragma solidity 0.8.26;\n");
+      expect(Object.hasOwn(input.sources, `dependencies/scoped/${prefix}Probe.sol`)).toBe(false);
+    }
+    const accepted = await f.accept(), publication = prepareEnginePublication(accepted, f.release, f.definition, reviewer);
+    expect(publication.manifest).toEqual(f.host.manifest);
+    expect(publication.calls.map(call => call.action)).toEqual(["registerReviewedFamily", "approveRevision"]);
+    expect(() => requireAuthenticatedReview(structuredClone(accepted))).toThrow("authenticated");
+  });
+  it.each(["input", "compiler", "image", "settings", "reproducible", "worker"])("keeps scoped Engine %s provenance exact after profile dispatch", async field => {
+    const f = await fixture(true), compiler = f.artifact.compiler as unknown as Record<string, unknown>;
+    if (field === "input") {
+      const sources = Object.fromEntries(f.source.files.filter(file => file.path.endsWith(".sol")).map(file => [file.path, { content: Buffer.from(file.bytes, "base64").toString("utf8") }]));
+      compiler.completeInputHash = reviewDigest("programmable.modules.compiler-input.v1", { language: "Solidity", sources, settings: NATIVE_SETTINGS });
+    }
+    if (field === "compiler") compiler.binarySha256 = `sha256:${"11".repeat(32)}`;
+    if (field === "image") compiler.imageDigest = `sha256:${"11".repeat(32)}`;
+    if (field === "settings") compiler.settingsHash = h(90);
+    if (field === "reproducible") compiler.reproducible = false;
+    if (field === "worker") {
+      const identity = { ...f.detail.attempts[0].workerIdentity!, workflowRef: "unreviewed-workflow" }, { identityDigest: _old, ...contents } = identity; void _old;
+      f.detail.attempts[0].workerIdentity = { ...contents, identityDigest: reviewDigest("programmable.modules.worker-identity.v1", contents) };
+    }
+    f.redigest(); await expect(f.reader.read(f.subject.submissionId)).rejects.toThrow();
+  });
   it("reads the exact backend engine build and prepares the complete Host admission without availability", async () => {
     const f = await fixture(); expect(parseReviewJob(f.job)).toEqual(f.job);
     expect(() => prepareEnginePublication(f.built, f.release, f.definition, reviewer)).toThrow("accepted");
