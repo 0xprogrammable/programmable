@@ -103,11 +103,11 @@ export function ModuleModeLaunchHost() {
     setReceiptChecking(true);
     try {
       const receipt = await waitForModuleNativeReceipt({ client, prepared, transactionHash });
-      if (record) clearModuleModeOperation(record);
+      if (record) await clearModuleModeOperation(record);
       if (mounted.current) setFlow((current) => current.transactionHash === transactionHash ? { ...current, phase: "mined", receipt, message: undefined } : current);
     } catch (error) {
       const reverted = error instanceof ModuleNativeTransactionRevertedError && error.transactionHash === transactionHash;
-      if (reverted && record) { try { clearModuleModeOperation(record); } catch { /* Keep the durable record until it can be checked again. */ } }
+      if (reverted && record) { try { await clearModuleModeOperation(record); } catch { /* Keep the durable record until it can be checked again. */ } }
       if (mounted.current) setFlow((current) => current.transactionHash === transactionHash ? { ...current, phase: reverted ? "reverted" : "receipt-unavailable", message: reverted ? "The transaction reverted. No coin was created. Gas may still have been charged." : "Confirmation is taking longer than usual. View the transaction or check its confirmation again." } : current);
     } finally { if (mounted.current) setReceiptChecking(false); }
   }
@@ -119,11 +119,11 @@ export function ModuleModeLaunchHost() {
     try {
       const originalRelease = await fetchModuleModeOperationRelease(record.releaseDigest);
       const receipt = await recoverModuleModeOperation({ client, operation: record, release: originalRelease, transactionHash });
-      clearModuleModeOperation(record);
+      await clearModuleModeOperation(record);
       if (mounted.current) setFlow(current => ({ ...current, operation: record, phase: "mined", transactionHash, receipt, message: undefined }));
     } catch (error) {
       const reverted = error instanceof ModuleNativeTransactionRevertedError && error.transactionHash === transactionHash;
-      if (reverted) { try { clearModuleModeOperation(record); } catch { /* Retain the record if browser storage is unavailable. */ } }
+      if (reverted) { try { await clearModuleModeOperation(record); } catch { /* Retain the record if browser storage is unavailable. */ } }
       if (mounted.current) setFlow(current => ({ ...current, operation: record, phase: reverted ? "reverted" : record.transactionHash ? "receipt-unavailable" : "uncertain",
         ...(reverted ? { transactionHash } : {}), message: reverted ? "The transaction reverted. No coin was created. Gas may still have been charged." : conciseError(error) }));
     } finally { busy.current = false; if (mounted.current) setReceiptChecking(false); }
@@ -183,7 +183,7 @@ export function ModuleModeLaunchHost() {
       walletAttempted = true;
       const transactionHash = await sendModuleModeTransaction(prepared);
       submitted.current = transactionHash;
-      try { durableOperation = rememberModuleModeTransactionHash(durableOperation, transactionHash); } catch { /* The original durable record still blocks a resend. */ }
+      try { durableOperation = await rememberModuleModeTransactionHash(durableOperation, transactionHash); } catch { /* The original durable record still blocks a resend. */ }
       // A returned hash remains evidence even if the wallet changes while its dialog is open.
       if (mounted.current) {
         setFlow({ phase: "pending", prepared, draft, transactionHash, operation: durableOperation });
@@ -191,7 +191,7 @@ export function ModuleModeLaunchHost() {
       }
     } catch (error) {
       const uncertain = moduleModeSubmissionIsUncertain(error, walletAttempted);
-      if (!uncertain && durableOperation) { try { clearModuleModeOperation(durableOperation); } catch { /* An unreadable record must continue to block new submissions. */ } }
+      if (!uncertain && durableOperation) { try { await clearModuleModeOperation(durableOperation); } catch { /* An unreadable record must continue to block new submissions. */ } }
       if (!mounted.current) return;
       if (uncertain) submitted.current = "uncertain";
       setFlow({ phase: uncertain ? "uncertain" : "error", draft, ...(uncertain && activePreparation ? { prepared: activePreparation } : {}), ...(durableOperation && uncertain ? { operation: durableOperation } : {}), message: uncertain ? "Check your wallet activity to see whether the transaction was sent. Your saved request will remain here after you reload." : isModuleModeWalletRejection(error) ? "Wallet request cancelled." : conciseError(error) });
