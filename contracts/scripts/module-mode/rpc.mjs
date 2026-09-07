@@ -4,7 +4,7 @@ import { resolveReviewedRobinhoodProviderCommitments } from '../robinhood-custom
 import { OFFICIAL, address, bytes, canonicalJson, digest, exactKeys, hash, hexQuantity, need, uint } from './core.mjs';
 import { REPOSITORY_ROOT } from './build.mjs';
 
-const METHODS = new Set(['eth_chainId', 'eth_getBlockByNumber', 'eth_getTransactionCount', 'eth_getBalance', 'eth_getCode', 'eth_call', 'eth_estimateGas', 'eth_getTransactionByHash', 'eth_getTransactionReceipt']);
+const METHODS = new Set(['eth_chainId', 'eth_getBlockByNumber', 'eth_getTransactionCount', 'eth_getBalance', 'eth_getCode', 'eth_getStorageAt', 'eth_call', 'eth_estimateGas', 'eth_getTransactionByHash', 'eth_getTransactionReceipt']);
 const MAX_BYTES = 4 * 1024 * 1024;
 export async function reviewedProviders(environment = process.env) {
   const urls = [environment.ROBINHOOD_MAINNET_RPC_URL_PRIMARY, environment.ROBINHOOD_MAINNET_RPC_URL_SECONDARY];

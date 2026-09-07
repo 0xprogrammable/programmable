@@ -7,7 +7,7 @@ import { fixtures, params, addr } from '../module-mode/test-fixtures.mjs';
 import { buildPlan, digest } from '../module-mode/core.mjs';
 import { evidenceBytes, evidenceDigest } from '../module-mode/evidence.mjs';
 import { operatorSourceProfile, startOperator } from '../module-mode/operator.mjs';
-import { walletRequest, prepareWalletRequest, revalidateWalletRequest } from '../module-mode/rpc.mjs';
+import { rpcClient, walletRequest, prepareWalletRequest, revalidateWalletRequest } from '../module-mode/rpc.mjs';
 import { assertContinuationPlan, walletRetryRequest } from '../module-mode/recovery.mjs';
 import { ECONOMICS_POLICY_ID } from '../module-native-v2/core.mjs';
 import { assertQuotePlan, assertQuoteProfile, assertQuoteIdentity, buildQuotePlan, quoteInfrastructureIdentity, quoteReviewConfiguration,
@@ -203,6 +203,41 @@ function providersFor(original, overrides = {}) {
   return { plan, providers, blockNumber, blockHash, readLog };
 }
 const ceilings = { maxGas: '4000000', maxFeePerGas: '100', maxPriorityFeePerGas: '1' };
+test('Quote WETH bindings traverse the shared RPC transport for both slots and providers at the bound block', async () => {
+  const { plan } = fixture();
+  for (const stepIndex of [0, 1]) {
+    const f = providersFor(plan, { deployed: QUOTE_ROLES.slice(0, stepIndex) }), transported = [];
+    const providers = f.providers.map((provider, index) => ({ ...provider,
+      rpc: rpcClient(`https://provider${index}.invalid/rpc`, provider.providerId, async (_url, options) => {
+        assert.equal(options.method, 'POST'); assert.equal(options.redirect, 'error');
+        const request = JSON.parse(options.body); assert.equal(request.jsonrpc, '2.0');
+        transported.push({ index, method: request.method, params: request.params });
+        const result = await provider.rpc(request.method, request.params);
+        return new Response(JSON.stringify({ jsonrpc: '2.0', id: request.id, result }), { status: 200 });
+      }) }));
+    const result = await observeQuoteStage(f.plan, stepIndex, providers);
+    assert.equal(result.state, 'vacant-simulated');
+    assert.deepEqual(result.quoteBindings.wethProxy, proxyObservation(f.plan, '48', f.blockHash));
+    const storageReads = transported.filter(call => call.method === 'eth_getStorageAt');
+    assert.equal(storageReads.length, 4);
+    for (const index of [0, 1]) for (const slot of [WETH_IMPLEMENTATION_SLOT, WETH_ADMIN_SLOT]) {
+      assert.deepEqual(storageReads.filter(call => call.index === index && call.params[1] === slot),
+        [{ index, method: 'eth_getStorageAt', params: [f.plan.dependencies.weth.address, slot, f.blockNumber] }]);
+    }
+    assert.equal(transported.filter(call => call.method === 'eth_getCode' && call.params[0] === addr(90)
+      && call.params[1] === f.blockNumber).length, 2, 'Both providers verify the bound implementation runtime');
+  }
+});
+test('Shared RPC transport blocks write, signing, debug and impersonation methods before transport', async () => {
+  let requests = 0;
+  const rpc = rpcClient('https://provider.invalid/rpc', 'fixture', async () => { requests++; throw new Error('Unexpected transport'); });
+  for (const method of ['eth_sendTransaction', 'eth_sendRawTransaction', 'eth_sign', 'eth_signTransaction', 'personal_sign',
+    'eth_signTypedData_v4', 'wallet_sendCalls', 'debug_traceTransaction', 'debug_traceCall', 'anvil_impersonateAccount',
+    'hardhat_impersonateAccount', 'anvil_setStorageAt', 'hardhat_setStorageAt', 'evm_setAutomine']) {
+    await assert.rejects(rpc(method, []), /RPC method is outside the read-only inventory/);
+  }
+  assert.equal(requests, 0);
+});
 test('Both stages use one bound block for real dependency links, CREATE2 simulation and gas estimates', async () => {
   const { plan } = fixture();
   for (const stepIndex of [0, 1]) {
