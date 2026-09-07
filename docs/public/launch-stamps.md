@@ -1,29 +1,26 @@
 ---
-description: Verify canonical Programmable Router provenance for future Classic and Custom launches
+description: Verify the onchain origin of a Custom Launch without confusing provenance with market support
 ---
 
 # Launch stamps
 
-The `ProgrammableLaunchStampRouterV1` contract is the provenance root for future Router based Programmable launches on Ethereum. A successful Router transaction records the launch identity, token, hook, PoolManager, pool and launch kind in one atomic execution.
+A launch stamp records that a canonical Programmable Router executed a launch and bound its token, hook, pool and components to one launch identity. Integrators verify the Router deployment, transaction receipt, events and contract lookups against the manifest for that chain and source version.
 
-| Field       | Current value                                                                                            |
-| ----------- | -------------------------------------------------------------------------------------------------------- |
-| Network     | Ethereum Mainnet                                                                                         |
-| Router      | `0x8622DD5bAb44185f2A458ac90384Ac99248f8d56`                                                             |
-| Start block | `25717612`                                                                                               |
-| Scope       | Future Router based launches only                                                                        |
-| Manifest    | [developers.programmable.family/api/v2/manifest](https://developers.programmable.family/api/v2/manifest) |
+## Select the correct source
 
-## What a stamp establishes
+| Launch source | Provenance interface |
+| --- | --- |
+| Robinhood Custom with separate token and hook contracts | Launch Stamp Router V1 and the [V4 finalized feed](https://api.programmable.market/v4/chains/4663/finalized-custom-launches) |
+| Robinhood Custom with a shared token and hook contract | Launch Stamp Router V2 and the [MultiRole finalized feed](https://api.programmable.market/v4/chains/4663/multi-role-custom-launches/finalized) |
+| Ethereum Router launches | Router V1 under the [Ethereum deployment manifest](https://developers.programmable.family/api/v2/manifest) |
+| Module Mode | Native launcher events and getters in the [Module Mode indexer contract](https://programmable.market/api/module-mode/indexer/v1) |
 
-A valid stamp establishes that the exact canonical Router executed and recorded the launch, and that the record binds the listed token, hook and pool to one launch id. Integrators can verify the runtime code, immutable bindings, events and lookup results against the public manifest and ABI.
+Module Mode has its own provenance interface. Do not reject a verified Module Mode coin because it lacks a Custom Router stamp. A token and hook can share an address in MultiRole; apply the V2 role rules rather than the V1 requirement for distinct component roles.
 
-## What a stamp does not establish
+## Verify a stamp
 
-A stamp does not establish current liquidity, safety, audit coverage, sellability, price quality or support in an external terminal. Historical launches are not retroactively stamped, and a direct call to another factory does not create Router provenance.
+Read deployment addresses, runtime hashes, ABI, start block and finality rules from the source's published manifest. Confirm the exact successful transaction and correlate its events, then replay the relevant registry lookups at the same canonical block. Store both the API request identifier and onchain Router launch identifier when present; they are different identifiers.
 
-The public canary records one finalized Custom graph launch and is included in the developer manifest so an integration can test the complete verification path against a known transaction.
+A valid stamp establishes origin and the recorded component bindings. It does not establish an audit, safe behavior, current liquidity, sellability, a price or support in an external terminal. Direct calls to another factory and historical launches do not acquire a stamp retroactively.
 
-{% content-ref url="developers/verify.md" %}
-[verify.md](developers/verify.md)
-{% endcontent-ref %}
+Use the [Robinhood integration guide](developers/robinhood-terminal-indexer.md) for Custom V1 and MultiRole V2, or [Verify a launch](developers/verify.md) for the Ethereum Router contract.

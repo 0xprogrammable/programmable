@@ -52,7 +52,7 @@ The intake receipt records that the package was received. Read the separate revi
 
 A coin records the module revisions and configuration selected at launch. Later catalog changes do not alter that record. Management actions may change only the state permitted by the deployed contracts.
 
-Indexer integration depends on the launch source version, not module names or categories. A new module using an existing source version keeps the same launch event and identity format. Read [Index Module Mode launches](https://programmable.market/developer-reference/module-mode-indexing) before adding an engine or changing an identity interface.
+Indexer integration depends on the launch source version, not module names or categories. A new module using an existing source version keeps the same launch event and identity format. Read [Index Module Mode launches](https://programmable.market/docs/developers/module-mode-indexing) before adding an engine or changing an identity interface.
 
 ## Contributor rewards
 

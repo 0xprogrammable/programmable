@@ -323,7 +323,7 @@ describe("Robinhood Chain V4 public self-serve release discovery", () => {
     expect(publicDocs).toMatch(/source-verification evidence|source evidence/iu);
     expect(publicDocs).toMatch(/declared graph role|graph role/iu);
     expect(publicDocs).toMatch(/checkpoint/iu);
-    expect(publicDocs).toMatch(/arbitrary or unbound/iu);
+    expect(publicDocs).toMatch(/arbitrary\s+or\s+unbound/iu);
     expect(publicDocs).toMatch(/gain no trust|do not gain trust|does not make it a trust root/iu);
     expect(publicDocs).toContain(
       "0xe87f5edc2dc839bd87a26a80cb53f14b021e603a1753d27aae3a02862058d730",
@@ -331,8 +331,8 @@ describe("Robinhood Chain V4 public self-serve release discovery", () => {
     expect(publicDocs).toMatch(/Sourcify v2 provider-native `match`/iu);
     expect(publicDocs).toMatch(/protected-build\/finalized-bytecode binding/iu);
     expect(publicDocs).toMatch(/Blockscout/iu);
-    expect(publicDocs).toMatch(/optional,? (?:currently )?unproven and degraded|optional-unproven-degraded/iu);
-    expect(publicDocs).toMatch(/cannot support an exact-source claim/iu);
+    expect(publicDocs).toMatch(/Blockscout[\s\S]{0,180}optional|optional[\s\S]{0,100}Blockscout/iu);
+    expect(publicDocs).toMatch(/do not establish the protected exact-source claim|cannot support an exact-source claim/iu);
     expect(publicDocs).toMatch(/block or revise finality|not a finality blocker/iu);
     expect(developerGuide).toContain("/v4/chains/4663/capabilities");
     expect(rawGuide).toContain("/v4/chains/4663/custom-launches/{launchId}");

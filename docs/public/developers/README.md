@@ -1,58 +1,33 @@
 ---
-description: Find the launch, module contribution and indexing API for your project
+description: APIs for custom launches, reusable modules and launch discovery
 ---
 
-# Developer reference
+# Developers
 
-Choose the interface for the task you want to complete.
+Use the Custom Launch API to deploy your own token and hook project, the module contribution API to publish reusable behavior, or the public indexing interfaces to integrate launched coins into another product.
 
 | Task | Guide |
 | --- | --- |
-| Launch your own token and hook | [Launch through the API](custom-launch-quickstart.md) |
-| Read exact Custom Launch fields and limits | [Custom Launch API](custom-launch.md) |
+| Launch through the API | [Custom Launch quickstart](custom-launch-quickstart.md) |
+| Read exact fields, versions and error codes | [Custom Launch API reference](custom-launch.md) |
 | Build and submit a reusable module | [Module contribution](module-mode.md) |
-| Index Module Mode coins | [Module Mode indexing](module-mode-indexing.md) |
-| Index Custom Launches on Robinhood | [Robinhood terminal integration](robinhood-terminal-indexer.md) |
-| Read schemas and service discovery | [API reference](machine-readable.md) |
+| Index coins in a terminal, explorer or wallet | [Choose an indexing source](indexing.md) |
+| Find schemas, ABIs and client releases | [Machine-readable reference](machine-readable.md) |
 
-## Custom Launch APIs
+## Choose the network and contract layout
 
-Use `https://api.programmable.market` for authenticated Custom Launch requests. Robinhood Chain uses chain ID `4663`; Ethereum Mainnet uses chain ID `1`.
+Robinhood Chain uses chain ID `4663`. Separate token and hook contracts use V4; a single contract implementing both roles uses MultiRole V2. Ethereum Mainnet uses chain ID `1` and its own V3 integration. Each API defines the accepted package, fee behavior, evidence and wallet handoff.
 
-On Robinhood, separate token and hook contracts use V4. A token and hook in one contract use [MultiRole V2](https://api.programmable.market/v4/chains/4663/multi-role-custom-launches/guide.md). MultiRole recognizes the exact Native20 reference contracts and supported constructor configuration. Other source or economic behavior can require additional verification, identified by `evidence_required`.
-
-Read [live discovery](https://programmable.market/.well-known/programmable.json) before choosing a client. For V4, require `publicWrites`, `publicAuthorization` and `releaseReady` in both the V4 and chain entries. For MultiRole, read its complete context and readiness. Download and verify the immutable client release advertised for the selected API.
-
-Robinhood Native20 charges **20 bps (0.20%)** of gross native ETH per successful buy or sell for Programmable. Creator fees and pool fees are additional. [Fees and revenue](../economics.md) explains the calculation, recipients and daily Dune statistics.
+Resolve the supported profile and immutable client release from [live discovery](https://programmable.market/.well-known/programmable.json). For V4, match the version and chain readiness fields. For MultiRole, read its complete context and economic requirements. The quickstart provides the commands for both layouts.
 
 ## API keys and wallet signing
 
-Create or reuse a suitable key in the [API-key manager](https://programmable.market/developers/api-keys). Launch creation and preflight need `custom-launch:create`; status and wallet-handoff reads need `custom-launch:read`. The key also needs the intended chain grant and controller binding.
+Create a key in the [API-key manager](https://programmable.market/developers/api-keys). Creation and preflight require `custom-launch:create`; status and wallet-handoff reads require `custom-launch:read`. The key also needs the intended chain grant and controller binding. Keep the secret in `PROGRAMMABLE_API_KEY` and out of source control, logs and chat messages.
 
-Store the secret as `PROGRAMMABLE_API_KEY`. The key and CLI never sign or broadcast. The controller reviews and signs the exact transaction in a wallet after the API authorizes it.
+The API key and CLI never sign or broadcast. The controller reviews and signs the authorized transaction in its wallet. Partner roots and subkeys follow the scope, chain and lineage rules in `customLaunchApi.partnerCredentials`; rotating a key does not add wallet authority.
 
-Integrations using a partner root or subkey follow `customLaunchApi.partnerCredentials` in discovery. A partner root can read every launch attributed to its partner; a subkey reads its stable lineage. Rotation preserves that lineage's history and does not add scopes, chain grants or wallet authority.
+## Fees and indexing
 
-## Track a V4 launch
+Robinhood Native20 charges **20 bps (0.20%)** of gross native ETH per successful buy or sell for Programmable. Creator fees and pool fees are additional. [Fees and revenue](../economics.md) explains each model and how rewards and revenue are counted.
 
-Use the returned `resource.launchId` as `LAUNCH_ID`, not the support `requestId`:
-
-```sh
-programmable-launch status LAUNCH_ID --api-version 4 --chain-id 4663 --watch --until authorized
-```
-
-Review, sign and send the authorized wallet transaction, then use the same command with `--until finalized`. For MultiRole, use its client's status commands and the returned `statusUrl`.
-
-V4 states are `received`, `validating`, `action_required`, `authorized`, `awaiting_wallet_signature`, `wallet_action_required`, `submitted`, `sequencer_soft_confirmed`, `ethereum_posted`, `finalized` and `failed`. `action_required` is remediation, not a wallet action. Source verification starts after finality; indexing and trading support are separate results.
-
-## Read public deployment data
-
-The Developer API at `https://developers.programmable.family` is read only and requires no API key. Its [manifest](https://developers.programmable.family/api/v2/manifest) describes the supported Ethereum launch sources, addresses, ABI and finality policy. Its [launch feed](https://developers.programmable.family/api/v2/launches) publishes normalized records.
-
-Use the [indexing guide](indexing.md) to choose the canonical source for each chain and launch model. Module Mode and Custom Launches have separate source contracts. Optional charts and prices do not determine whether a verified launch exists.
-
-## Version compatibility
-
-API profile versions and client package versions identify different things. Read the matching pair from discovery. Historical V4 `4.0.0` requests retain their original schema; profile `4.1.0` defines its own funding and initial-buy requirements. Ethereum V3 uses its own client, including the immutable `3.3.9` release, and must not be used to submit a Robinhood request.
-
-Ethereum V1 and V2 preserve existing reads. New submissions return `CUSTOM_LAUNCH_V1_READ_ONLY` or `CUSTOM_LAUNCH_V2_READ_ONLY`. Use the advertised Ethereum V3 contract for new requests. The [complete reference](custom-launch.md) documents the retained versions and error codes.
+Public indexing reads require no launch API key. Module Mode, Custom V4, MultiRole V2 and Ethereum records use their own source verifiers. Use the chain and token address as coin identity, retain valid launches when optional metadata is missing, and keep provenance separate from trading support.

@@ -1,41 +1,33 @@
 ---
-description: Compare Programmable launch models and understand how their token, market and fee paths differ
+description: Choose between a configured coin and a project with its own contracts
 ---
 
 # Launch models
 
-Choose Module Mode for a coin with configurable modules, or Custom Launches for a complete project with its own contracts. The release determines the network and supported market. Classic documents the Ethereum launch model.
+Programmable offers Module Mode and Custom Launches on Robinhood Chain. Module Mode uses a shared launch engine with configurable modules. Custom Launches accept a project's own source and contract structure. Classic is the fixed supply Ethereum launch model.
 
-| Model              | What it creates                                                            | Market                                        | Access                                |
-| ------------------ | -------------------------------------------------------------------------- | --------------------------------------------- | ------------------------------------- |
-| Module Mode | A coin with a bonding curve and configurable modules | Determined by the active engine | [Module Mode](https://programmable.market/launch/modules) |
-| Classic            | Fixed supply tokens with configurable buy and sell transaction fees        | ETH on Uniswap v4                             | Open through Create                   |
-| Custom             | Tokens or applications that need their own deterministic hook graph         | The pool and route in the authorized transaction | Wallet-bound Custom Launch API       |
+| Model | Configuration | Market and execution | Starting point |
+| --- | --- | --- | --- |
+| Module Mode | Coin details, creator fees and optional reusable modules | Native ETH bonding curve under the selected engine | [Module builder](https://programmable.market/launch/modules) |
+| Custom Launch | Your token, hook, dependencies and deployment plan | The market and settlement path supported by the chosen API profile | [API quickstart](developers/custom-launch-quickstart.md) |
+| Classic on Ethereum | Fixed supply token with selected buy and sell fees | An ETH pool on Uniswap v4 | [Classic reference](models/classic.md) |
 
 ## Module Mode
 
-Module Mode provides the base coin, launch identity and runtime. Optional modules declare their configuration and required capabilities. The builder checks compatibility and presents the selected configuration before the wallet transaction.
+Module Mode supplies the base coin, bonding curve and launch identity. You choose its settings and any compatible modules. The builder reads the current catalog, validates the configuration and shows the costs before wallet confirmation. Each coin records the module versions it uses; a later catalog update does not silently replace them.
 
-Read [Module Mode](models/module-mode.md) for the launch and management flow, or [Build a module](developers/module-mode.md) to contribute a program.
+Read [Module Mode](models/module-mode.md) for launching and managing a coin. Developers can use [Build a module](developers/module-mode.md) to contribute reusable behavior.
 
-## What is a hook
+## Custom Launch
 
-A hook is a smart contract attached to a Uniswap v4 pool. The pool calls it at defined points in a transaction, such as before or after a swap. This lets a product apply behavior at the pool level instead of relying only on a website or a separate trading interface.
+Custom Launch is for projects that need their own contract logic or deployment structure. On Robinhood, separate token and hook contracts use the V4 API. A single contract that acts as both token and hook uses MultiRole V2. Ethereum uses its own V3 integration. The API checks the exact package and returns the transaction for the controller wallet to review.
 
-The hook's permissions define when it can run, while its code defines what it actually does. A hook can change fees, accounting, access or other pool behavior, but the word hook does not by itself establish safety, compatibility or launch approval.
+Supported layouts do not imply support for every possible contract. The selected profile defines the required permissions, fee behavior, source evidence and funding. The [Custom Launch guide](models/custom.md) explains these boundaries, and the [quickstart](developers/custom-launch-quickstart.md) leads through a request.
 
-## Classic
+## How hooks work
 
-Classic creates a fixed supply of one billion tokens and initializes its ETH pool in one transaction signed by the creator. The full supply enters a permanently locked one sided Uniswap v4 position. Before signing, the creator chooses the buy transaction fee, sell transaction fee, reward destination and Initial Buy custody.
+A Uniswap v4 hook is a contract that the PoolManager calls at declared points in a pool operation, such as before or after a swap. Its permissions select those callback points; its code defines what happens there. Hooks can implement fee logic, accounting or access rules. Their behavior and trading compatibility depend on the actual contracts and the route that executes them.
 
-{% content-ref url="models/classic.md" %}
-[classic.md](models/classic.md)
-{% endcontent-ref %}
+## Fees
 
-## Custom
-
-Custom releases are for products whose behavior cannot be represented by the Classic settings. A hook is code that can change how a Uniswap v4 pool behaves during a transaction. Each Custom request identifies the exact source bundle, graph, permissions, transaction fees, dependencies, transaction construction and controller wallet. Preparation uses a wallet key, partner root or bounded partner subkey; [wallet keys are managed here](https://programmable.market/developers/api-keys). Signing remains with the controller wallet rather than the API credential or a project name.
-
-{% content-ref url="models/custom.md" %}
-[custom.md](models/custom.md)
-{% endcontent-ref %}
+The launch review separates creator fees, platform fees, module rewards, liquidity funding and network gas. Read [Fees and revenue](economics.md) for the rates and recipients attached to each launch version.

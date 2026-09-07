@@ -1,6 +1,8 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "regions": ["fra1"],
+  "regions": [
+    "fra1"
+  ],
   "trailingSlash": false,
   "headers": [
     {
@@ -14,21 +16,6 @@
     }
   ],
   "redirects": [
-    {
-      "source": "/docs/developers/module-mode-indexing",
-      "destination": "/developer-reference/module-mode-indexing",
-      "permanent": false
-    },
-    {
-      "source": "/docs/developers/module-mode",
-      "destination": "/developer-reference/module-mode",
-      "permanent": false
-    },
-    {
-      "source": "/docs/developers/robinhood-terminal-indexer",
-      "destination": "/developer-reference/robinhood-terminal-indexer",
-      "permanent": false
-    },
     {
       "source": "/markets",
       "destination": "/explore",

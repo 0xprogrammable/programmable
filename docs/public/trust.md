@@ -1,29 +1,29 @@
 ---
-description: Understand the evidence boundaries behind API preparation, wallet execution and onchain provenance
+description: What source, execution and provenance checks establish
 ---
 
 # Verification and risk
 
-Programmable does not treat one green check as proof of the whole lifecycle. Caller-declared source evidence, API preparation, wallet execution, chain finality, Router provenance and public indexing answer different questions and can succeed or fail independently.
+A launch has several kinds of evidence: the submitted source, the build, the simulated transaction, wallet execution, finality and its public source record. Each answers a different question. Programmable keeps them separate in the API and indexing interfaces.
 
-## Bundle evidence
+## Source and execution evidence
 
-Each Custom request binds one source descriptor, manifest digest, graph bundle and set of agent evidence digests. The platform checks their shape and internal bindings. It does not fetch the evidence, reproduce the build or adopt the agent's claims. A changed bundle is a new launch subject even when the project name remains unchanged.
+A Custom request binds the exact package, component graph and configuration required by its profile. Caller declarations identify evidence but do not make it authoritative. Profiles that require a protected build or economic proof bind those results to the source, compiler, settings and deployed bytecode. A provider's source match alone does not replace that binding.
 
-## API preparation
+Simulation evaluates the exact transaction and context used for the launch. It does not establish every possible behavior of the project. Changed source, constructor values, permissions or transaction bytes may require a new request or fresh evidence.
 
-A `prepared` result means the exact artifact exists, while the signed permit and wallet transaction are still null. An `authorized` result supplies the permit-attached transaction, but it is not wallet-signed or broadcast. The API key cannot authorize the wallet; the controller inspects, signs and broadcasts separately.
+## Wallet authority
 
-## Finality and public projection
+An API key allows scoped API operations. It does not control the launching wallet. A prepared artifact can exist before a wallet transaction is authorized. Once the API supplies an authorized handoff, the controller reviews the network, destination, value and effects before signing.
 
-A transaction is not complete merely because a wallet submitted it. The receipt must succeed, reach the required finality and agree with the canonical launch identity. The website and APIs can then publish the record, but stale price data or an unavailable chart remains a separate limitation.
+## Finality and indexing
 
-## Independent review
+A broadcast transaction needs a successful receipt and the finality evidence required by the source. Indexers verify the canonical launch identity before publishing it. Source verification, market data and trading support remain separate results; a chart or token name cannot establish origin.
 
-The Programmable contracts in the public product repository have not undergone an external audit or public security contest. Internal review, tests, static analysis and reproducible release evidence are useful but do not replace independent review.
+## Security review
 
-## User risk
+The public Programmable contracts have not undergone an external audit or public security contest. Tests, internal review and reproducible builds help evaluate a release, but do not replace an independent audit. A launch stamp records provenance and is not a security endorsement.
 
-Token transactions can be irreversible. Tokens can be volatile, illiquid or lose all value. Verify the connected wallet, network, contract address, transaction destination and value before signing. Programmable does not provide financial advice or guarantee a token's quality, future price or trading activity.
+Contract interactions can be irreversible. Review the token address, permissions and transaction effects, including the rules that may limit transfers or trading. Holding V4 does not create equity, a claim on protocol revenue or a guaranteed return.
 
-Security sensitive reports belong in the private reporting path of the affected [Programmable repository](https://github.com/programmablehq). Do not post private keys, access tokens, signatures or unpublished exploit details in a public issue.
+Report vulnerabilities through the private security reporting channel of the affected [Programmable repository](https://github.com/programmablehq). Keep credentials, signatures and unpublished exploit details out of public issues.

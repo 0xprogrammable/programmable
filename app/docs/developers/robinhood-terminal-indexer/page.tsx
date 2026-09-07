@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import styles from "@/components/developer-docs.module.css";
+import { V4_API_PROFILE_VERSION } from "@/lib/custom-launch/v4-api-discovery";
 import { DocsAddress } from "@/components/docs-address";
 import { DocsShell } from "@/components/docs-shell";
 
@@ -20,7 +21,9 @@ const WELL_KNOWN_URL =
 const CAPABILITIES_URL = `${API_ORIGIN}/v4/chains/4663/capabilities`;
 const READINESS_URL = `${API_ORIGIN}/v4/chains/4663/readiness`;
 const FINALIZED_FEED_URL = `${API_ORIGIN}/v4/chains/4663/finalized-custom-launches`;
-const OPENAPI_URL = "/openapi/custom-launch-v4.json";
+const OPENAPI_URL = V4_API_PROFILE_VERSION === "4.1.0"
+  ? "/openapi/custom-launch-v4.1.json"
+  : "/openapi/custom-launch-v4.json";
 const ABI_URL = "/contracts/robinhood/ProgrammableLaunchStampRouterV1.abi.json";
 const FIXTURE_URL = "/fixtures/robinhood-terminal-indexer-v1.json";
 
@@ -285,6 +288,8 @@ do {
 } while (cursor);`;
 
 const sections = [
+  { id: "launch-sources", label: "Choose a source" },
+  { id: "multi-role-v2", label: "MultiRole V2" },
   { id: "boundary", label: "Current boundary" },
   { id: "identity", label: "Identity and label" },
   { id: "binding", label: "Router and registry" },
@@ -310,6 +315,23 @@ export default function RobinhoodTerminalIndexerPage() {
       <p className={styles.bodyCopy}>Module Mode uses a native launch source. Follow the
         {" "}<a href="/developer-reference/module-mode-indexing">Module Mode indexing reference</a> for those
         coins. Both sources can share an index keyed by chain and token address.</p>
+      <section id="launch-sources">
+        <div className={styles.sectionIntro}>
+          <h2>Choose the Custom Launch source</h2>
+          <p>Separate token and hook contracts use V4 with Router V1. Shared-role projects use MultiRole V2 with Router V2. Each has its own feed, schema and finality projection. The V1 reference below applies to the separate-contract source.</p>
+        </div>
+        <p className={styles.bodyCopy}>Use the chain and token address as coin identity. Select the verifier by Router protocol and source version. Module names, project names and optional charts do not determine whether a verified launch exists.</p>
+      </section>
+      <section id="multi-role-v2">
+        <div className={styles.sectionIntro}>
+          <h2>Index MultiRole V2 launches</h2>
+          <p>Read <a href={`${API_ORIGIN}/v4/chains/4663/multi-role-custom-launches/capabilities`}>MultiRole capabilities</a> and its complete context, then traverse the public <a href={`${API_ORIGIN}/v4/chains/4663/multi-role-custom-launches/finalized`}>finalized feed</a>. The Router protocol is <code>programmable.multi-role-launch-stamp-router.v2</code>.</p>
+        </div>
+        <p className={styles.bodyCopy}>The list uses <code>programmable.multi-role-finalized-metadata-list.v2</code> and each record uses <code>programmable.multi-role-finalized-metadata.v2</code>. Pass opaque cursors unchanged until <code>nextCursor</code> is null. Keep <code>apiLaunchId</code> separate from <code>onchainLaunchId</code>, and use <code>market.token</code> for coin identity.</p>
+        <p className={styles.bodyCopy}>A physical component with <code>roleMask: 3</code> implements both token and hook roles. Those addresses may be equal. Preserve its complete role mask and runtime binding; do not apply the V1 distinct-role rules or event decoder to V2.</p>
+        <p className={styles.bodyCopy}>In this projection, <code>onchain.blockNumber</code>, <code>blockHash</code> and <code>transactionHash</code> identify L2 inclusion. <code>ethereumPosting</code> and <code>ethereumFinalizedCheckpoint</code> identify separate L1 evidence. Require the published V2 protected finality and original source, request and artifact bindings.</p>
+        <p className={styles.bodyCopy}>External source publication may be <code>not_verified</code> and indexer publication <code>not_claimed</code>. Preserve these results independently from protected finality. V4&apos;s different exact-source response contract does not apply to the V2 projection. Follow the <a href={`${API_ORIGIN}/v4/chains/4663/multi-role-custom-launches/guide.md`}>MultiRole integration contract</a> for the complete fields and verification rules.</p>
+      </section>
       <section id="boundary">
         <div className={styles.sectionIntro}>
           <h2>Resolve activation from the live authority</h2>

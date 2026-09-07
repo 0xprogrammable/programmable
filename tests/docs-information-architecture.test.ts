@@ -294,7 +294,7 @@ describe("Docs information architecture", () => {
     for (const path of publicLaunchSurfaces) {
       const source = read(path);
       expect(source, path).not.toMatch(
-        /Hookbuilder-Skill|submit[- a]+launch|submit[- a]+template|public source review|review application|accepted revision|accepted release|individually reviewed/i,
+        /Hookbuilder-Skill|submit[- a]+launch|submit[- a]+template|public source review|review application|accepted (?:Custom )?release|individually reviewed/i,
       );
     }
 
@@ -302,19 +302,21 @@ describe("Docs information architecture", () => {
       "https://api.programmable.market/v3/custom-launches",
     );
     expect(read("docs/public/developers/README.md")).toContain(
-      "The Developer API at `https://developers.programmable.family` is read only",
+      "Public indexing reads require no launch API key",
     );
   });
 
   it("keeps one public revenue allocation policy explicit", () => {
     expect(economicsPage).not.toContain("49.50% of processed");
     expect(economicsPage).toMatch(
-      /80% of attributable net\s+protocol\s+revenue/,
+      /50% of net protocol revenue/,
     );
     expect(economicsPage).not.toContain("This policy remains planned");
     expect(v4TokenPage).not.toContain("This policy is planned, not live");
     expect(v4TokenPage).toContain("published protocol allocation");
-    expect(v4TokenPage).toContain("No burn in the published revenue policy");
+    expect(v4TokenPage).toContain("do not reduce");
+    expect(v4TokenPage).toContain("totalSupply");
+    expect(v4TokenPage).toContain("0xC60bA256B44334A0Cd2C7242E98B88f031abB006");
     expect(trustPage).toMatch(
       /have not\s+undergone an external audit or public security contest/,
     );

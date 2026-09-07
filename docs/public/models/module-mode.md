@@ -35,12 +35,14 @@ Each launch records the exact module versions and configuration it used. Publish
 
 ## Fees and contributor rewards
 
-The launch review shows creator fees, protocol fees and any module charges separately. The native ETH engine uses an additive 0.20% protocol fee. With eligible module families, half of that protocol fee is shared equally among those families. Without eligible families, the protocol receives the full fee. Creator fees and module operating budgets are separate.
+The launch review separates the coin creator's fee, the platform charge and any module operating budget. Creator fees can be set up to 10% under the active engine. Module author rewards accrue from qualifying use and are shared among the eligible module families selected for the coin.
 
-Contributor rewards come from qualifying fees after a module is admitted and used. A submission or review acceptance alone does not create a payout. The author and reward wallet are recorded with the module revision.
+Fee contracts are versioned. The allocation policy is 10 bps for Programmable and 20 bps in total for module authors. The deployed `module-native-v1` engine retains its 20 bps total fee and 10/10 split when eligible modules are used. Read [Fees and revenue](../economics.md#module-mode) for the policy, deployed-version rules and treatment of launches without eligible modules.
+
+The author and reward wallet are recorded with the module revision. Submission or review acceptance alone does not generate a payout.
 
 ## Build a module
 
 You can build a module yourself or with an AI agent. Submit the source, configuration, management interface and required evidence through the API. The review checks its implementation and compatibility before a version can enter the public catalog.
 
-Read [Build a module](https://programmable.market/developer-reference/module-mode) for the contribution workflow and [Index Module Mode launches](https://programmable.market/developer-reference/module-mode-indexing) for integration rules. The catalog is read from the service; documentation does not maintain a separate list of modules.
+Read [Build a module](https://programmable.market/docs/developers/module-mode) for the contribution workflow and [Index Module Mode launches](https://programmable.market/docs/developers/module-mode-indexing) for integration rules. The catalog is read from the service; documentation does not maintain a separate list of modules.

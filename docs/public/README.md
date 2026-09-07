@@ -1,46 +1,37 @@
 ---
-description: Launch coins, contribute modules and integrate Programmable records
+description: Coin launches, reusable modules and custom applications on Uniswap v4
 cover: .gitbook/assets/programmable-warm-night-v3.gif
 coverY: 0
 ---
 
 # Programmable
 
-Programmable provides tools to launch coins and applications built with Uniswap v4.
+Programmable is a platform for launching coins and applications on Uniswap v4. Creators configure a coin with reusable modules or build a project with its own contracts. The platform prepares the launch, records its onchain origin and publishes the information that wallets, explorers and trading applications need to identify it.
 
-**Module Mode** creates a coin with a bonding curve and optional, configurable modules. **Custom Launches** create a project with its own contracts, hook and execution logic. Each launch path has a versioned interface and deployment record.
+The purpose is to make token behavior part of the product. A coin can have rules for fees, access, accounting or other activity through the contracts connected to its market. Those rules belong to the deployed code and continue to apply when someone uses another compatible interface.
 
-## Start here
+## Choose a launch path
 
-| Task | Reference |
+| Launch path | Use it for |
 | --- | --- |
-| Launch a coin with optional modules | [Module Mode](models/module-mode.md) |
-| Build and submit a reusable module | [Build a module](developers/module-mode.md) |
-| Build a complete custom project | [Custom Launch API](developers/custom-launch.md) |
-| Launch through the API step by step | [Custom Launch quickstart](developers/custom-launch-quickstart.md) |
-| Integrate Module Mode coins | [Module Mode indexing](developers/module-mode-indexing.md) |
-| Integrate Custom Launches on Robinhood | [Custom terminal integration](developers/robinhood-terminal-indexer.md) |
-| Read historical Ethereum launch models | [Classic](models/classic.md) |
+| [Module Mode](models/module-mode.md) | A coin with a bonding curve, creator fees and optional modules selected in the builder. |
+| [Custom Launch](models/custom.md) | A token, hook or application with its own source code and deployment structure, submitted through the API. |
+| [Classic on Ethereum](models/classic.md) | The fixed supply Ethereum model with configurable buy and sell fees. |
 
-## Launch and manage
+Open [Create](https://programmable.market/launch) to start a launch, or [Explore](https://programmable.market/explore/robinhood) to view indexed coins. The [launch guide](creators/launch.md) explains configuration, funding and wallet confirmation.
 
-Open [Create](https://programmable.market/launch) to choose a launch path. Review the configuration, fees, initial buy, funding and transaction before confirming with your wallet. After verification and indexing, the coin appears in [Explore](https://programmable.market/explore/robinhood) and the launching wallet's profile. A coin's controls expose the management actions supported by its deployed contracts.
+## Creators, module authors and the protocol
 
-## Developers and agents
+Coin creators choose the settings and creator fees supported by their launch path. Module authors publish reusable behavior that other creators can select and earn rewards when their eligible modules are used. Custom developers control their project's code within the selected API's contract and evidence requirements.
 
-Start with the [agent guide](https://programmable.market/agents.md) and [machine-readable discovery](https://programmable.market/api/agent). They link to the current API contracts, capability checks, CLI releases and website actions. Read current deployment addresses and supported versions from discovery rather than copying them from an example.
+Programmable receives the platform share of trading fees. Its revenue policy allocates half of net protocol revenue to V4 buybacks and burns. [Fees and revenue](economics.md) explains each fee model and the distinction between protocol revenue, creator rewards and module author rewards. The [V4 token page](v4-token.md) covers the main token, its liquidity fees and burn accounting.
 
-Module contributions are submitted through the API with an author wallet, reward wallet, exact source package and configuration. The review and publication process is described in the contribution guide. The catalog is maintained by the service and does not require a separate list in these docs.
+## Build and integrate
 
-## Indexing
+Start with [Developers](developers/README.md) for the Custom Launch API, module contribution workflow and indexing guides. Each interface publishes its supported versions, deployment data and machine-readable contract. An API key grants access to launch preparation; the controller wallet signs the transaction.
 
-A coin is identified by its chain and token address. Its launch source provides the evidence that it belongs to Programmable. Module Mode and Custom Launches have different source interfaces and share a common token and pool identity model. Indexing a coin and supporting its trading behavior are separate integration tasks.
+Integrators identify a coin by its chain and contract address, then verify the relevant launch source. Module Mode and Custom Launches use different source interfaces. [Index launches](developers/indexing.md) explains how to ingest both without maintaining a list of coin names or module names.
 
-Read [Index launches](developers/indexing.md) to select the source and follow its verification, finality and checkpoint rules.
+## Community and public records
 
-## Official sources
-
-- [Website](https://programmable.market)
-- [API](https://api.programmable.market)
-- [Public repository](https://github.com/programmablehq/PROGRAMMABLE)
-- [Developer reference](developers/README.md)
+Follow [Programmable on X](https://x.com/ProgrammableHQ), join [Discord](https://discord.com/invite/programmable), read the source on [GitHub](https://github.com/programmablehq), and track launches, earned fees and burns on [Dune](https://dune.com/programmablehq/analytics). The [official links](reference/official-links.md) page collects the product and developer entry points.

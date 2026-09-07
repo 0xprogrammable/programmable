@@ -61,7 +61,7 @@ describe("public Module Mode indexing contract", () => {
       .toBe(readFileSync("docs/public/developers/module-mode-indexing.md", "utf8"));
     const redirects = await nextConfig.redirects!();
     for (const name of ["module-mode", "module-mode-indexing", "robinhood-terminal-indexer"]) {
-      expect(redirects).toContainEqual({ source: `/docs/developers/${name}`, destination: `/developer-reference/${name}`, permanent: false });
+      expect(redirects).not.toContainEqual({ source: `/docs/developers/${name}`, destination: `/developer-reference/${name}`, permanent: false });
     }
   });
 });

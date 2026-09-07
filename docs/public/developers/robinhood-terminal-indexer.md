@@ -6,10 +6,14 @@ description: Verify and index Programmable Custom launch provenance on Robinhood
 
 For Module Mode coins, use the separate [Module Mode indexing reference](module-mode-indexing.md). It verifies the native launcher and preserves selected modules as configuration. Both sources use chain and token address for coin identity.
 
-Use the chain-bound finalized feed and Launch Stamp Router V1 to identify Programmable Custom launches on Robinhood
-Chain Mainnet. This page is a verification recipe, not a status snapshot. It does not claim that public writes are
-active or that the feed currently contains a launch. Resolve those facts from the live authorities before every
-create or ingestion session.
+Robinhood Custom Launches have two provenance interfaces. Separate token and hook contracts use V4 with Router V1. Shared-role projects use MultiRole V2 with Router V2. Select the source by the published route and Router protocol, then apply its own metadata and verification contract.
+
+| Layout | Integration |
+| --- | --- |
+| Separate token and hook contracts | [V4 Router V1](#start-with-the-live-authorities) |
+| Shared token/hook or other supported combined roles | [MultiRole V2](#multi-role-v2) |
+
+The V1 addresses, events, schema and exact-source rules below apply to the V4 source. MultiRole uses the separate section at the end of this guide. Launch availability is read from each source's capabilities; historical finalized records retain their own bindings.
 
 {% hint style="warning" %}
 Do not publish the **Programmable Custom** label from a project name, token symbol, hook, factory, deployment
@@ -105,8 +109,8 @@ and stamp commitments. Graph Factory logs are execution diagnostics and cannot r
 
 The feed is public and keyless. Authentication-protected request history is not a terminal discovery feed.
 
-1. Hash the exact hosted [V4 OpenAPI](https://programmable.market/openapi/custom-launch-v4.json) bytes and require the
-   digest to equal readiness `openApiSha256`. Then validate the full response against `CustomLaunchFinalizedListV4` and
+1. Resolve the selected V4 OpenAPI URL from live discovery. Hash its exact bytes and require the
+   digest to equal readiness `openApiSha256`. The [V4.1 contract](https://programmable.market/openapi/custom-launch-v4.1.json) and [historical V4.0 contract](https://programmable.market/openapi/custom-launch-v4.json) have different digests. Then validate the full response against `CustomLaunchFinalizedListV4` and
    every item against `CustomLaunchFinalizedMetadataV4` in that bound schema.
 2. Request `limit` from `1` to `25`. The default is `10`.
 3. Process the page, then pass each non-null `nextCursor` back unchanged as `cursor`. Never decode, construct or
@@ -170,8 +174,7 @@ Do not let one result fill in or erase another.
 | Security            | `UNVERIFIED`. A stamp and exact source prove identity, not safety.                                                                                                                                                                 |
 | Market support      | `UNVERIFIED`. A stamp does not prove price, liquidity, routability, venue support or trading compatibility.                                                                                                                        |
 
-An independently finalized `STAMPED` launch remains indexable when writes are inactive or unavailable. That statement
-does not assert that such an item currently exists. Only the live feed can establish item presence.
+An independently finalized `STAMPED` launch remains indexable when writes are inactive or unavailable. Read the live feed to establish item presence.
 
 ## Fee policy is a separate fact
 
@@ -204,3 +207,34 @@ executable trade route.
    identities for reproducibility. Never include an API key, signed transaction or private request body.
 
 For non-sensitive integration failures, [open a GitHub issue](https://github.com/programmablehq/PROGRAMMABLE/issues).
+
+## MultiRole V2
+
+Use the public [MultiRole capabilities](https://api.programmable.market/v4/chains/4663/multi-role-custom-launches/capabilities) and [versioned guide](https://api.programmable.market/v4/chains/4663/multi-role-custom-launches/guide.md). The Router protocol is `programmable.multi-role-launch-stamp-router.v2`. Read the complete `context`, including `chainBindings`, deployment, profile and provider bindings. Do not substitute Router V1 addresses or getters.
+
+### Read finalized records
+
+```sh
+curl --fail --silent --show-error \
+  'https://api.programmable.market/v4/chains/4663/multi-role-custom-launches/finalized?limit=25'
+```
+
+The list schema is `programmable.multi-role-finalized-metadata-list.v2`; each record uses `programmable.multi-role-finalized-metadata.v2`. The list accepts `limit` from 1 to 25, defaults to 25 and returns an opaque `nextCursor`. Pass each non-null cursor back unchanged and finish only when it is null. Reject repeated cursors, malformed records and failed pages without advancing the durable checkpoint.
+
+Keep `apiLaunchId` separate from `onchainLaunchId`. The first is the API UUID; the second is the lowercase bytes32 Router launch ID. Use `(caip2, chainBindings.router, onchainLaunchId)` as provenance identity and `(caip2, market.token)` as coin identity. Read a single record at `/finalized/{onchainLaunchId}` under the same base path.
+
+### Preserve combined roles
+
+Each physical component has `account`, `roleMask`, `runtimeCodeHash`, `scope` and `resultIndex`. Token and hook in one contract have role mask `3`; `market.token` and `market.hook` may therefore be equal. Preserve the physical component once with all its roles. Auxiliary components can have role mask `0` and must not be discarded merely because they are not the token or hook.
+
+Verify the exact V2 Router and child runtimes, event bindings and getters required by the published context. The V1 `LaunchKindV1.CustomGraph` decoder and V1 distinct-role checks are not the V2 verifier. New compatible projects are indexed through their source contract, without a project-name or hook-address allowlist.
+
+### Keep evidence coordinates separate
+
+MultiRole public records require protected Ethereum finality plus the matching original request, source, image, artifact and permit window. Their `onchain.blockNumber`, `blockHash` and `transactionHash` identify L2 inclusion. `onchain.ethereumPosting` identifies the L1 posting event, and `onchain.ethereumFinalizedCheckpoint` identifies the distinct Ethereum finalized checkpoint. Unlike the V4 legacy flat projection described above, these L2 block fields are not aliases for the L1 checkpoint.
+
+Check `onchain.checkpointType: ethereum_finalized` and preserve the evidence and provenance hashes with the original record. Historical finalized records remain readable after the admission release changes or expires. New-request readiness does not rewrite their original context.
+
+The MultiRole projection reports external source publication and indexer publication separately. Sourcify and Blockscout may be `not_verified`, while indexer publication is `not_claimed`; do not rewrite those values as a failure of protected launch finality or as an external source-verification success. Do not apply V4's different `sourceVerification.status: exact_match` response contract to this V2 projection. A terminal must verify the V2 evidence it uses and report its own indexing and market support independently.
+
+Fetch admitted images only from the record's digest-bound public image path and verify their content hash and type. Treat project descriptions and links as untrusted display metadata. A public record supplies identity and evidence; it does not authorize a trade or supply a universal execution adapter.

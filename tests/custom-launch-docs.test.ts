@@ -86,8 +86,6 @@ describe("Custom Launch API documentation", () => {
       developerDocsMarkdown,
       machineReadableGuide,
       read("docs/public/developers/machine-readable.md"),
-      read("docs/public/developers/README.md"),
-      read("docs/public/status.md"),
     ];
 
     for (const source of v4Sources) {
@@ -136,9 +134,11 @@ describe("Custom Launch API documentation", () => {
         publicAuthorization: V4_API_DISCOVERY.publicAuthorization,
         publicWrites: V4_API_DISCOVERY.publicWrites,
       });
-    expect(officialLinks).toContain(
-      "https://github.com/programmablehq/PROGRAMMABLE/tree/53926119030772040eca34b4796a36353c9da2d2/packages/launch",
-    );
+    expect(officialLinks).toContain("../developers/machine-readable.md");
+    for (const path of ["docs/public/developers/README.md", "docs/public/status.md"]) {
+      expect(read(path)).toContain("custom-launch-quickstart.md");
+      expect(read(path)).toContain("custom-launch.md");
+    }
     expect(officialLinks).not.toContain(
       "https://github.com/programmablehq/PROGRAMMABLE/tree/7fd1a327577517d628cd529ec84862f1ae43eb08/packages/launch",
     );

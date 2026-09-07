@@ -13,5 +13,5 @@ it("keeps the module host guide outside the externally managed docs namespace", 
   expect(page).toContain("Launches + modules");
   expect(readFileSync("components/module-contribution-entry.tsx", "utf8")).toContain(`href="${path}"`);
   const config = JSON.parse(readFileSync("vercel.json", "utf8"));
-  expect(config.redirects).toContainEqual({ source: "/docs/developers/module-mode", destination: path, permanent: false });
+  expect(config.redirects).not.toContainEqual({ source: "/docs/developers/module-mode", destination: path, permanent: false });
 });
