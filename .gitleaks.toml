@@ -6,7 +6,10 @@ description = "Module Mode pins the verified public token creation-bytecode comm
 targetRules = ["generic-api-key"]
 condition = "AND"
 regexTarget = "line"
-paths = ['''^config/module-mode/robinhood\.preview\.json$''']
+paths = [
+  '''^config/module-mode/robinhood\.preview\.json$''',
+  '''^config/module-mode/historical-releases\.json$''',
+]
 regexes = ['''^\s*"tokenCreationCodeHash": "0x445809d9f7a34e959de4a96dec1e1beddfb265755bf28c57c42744adea1128ef",\s*$''']
 
 [[allowlists]]
@@ -18,12 +21,26 @@ paths = ['''^tests/module-mode-provenance\.test\.ts$''']
 regexes = ['''^\s*tokenCreationCodeHash: "0x445809d9f7a34e959de4a96dec1e1beddfb265755bf28c57c42744adea1128ef",\s*$''']
 
 [[allowlists]]
+description = "Module Engine index fixture uses deterministic test bytecode hashes and CREATE2 token coordinates"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+paths = ['''^tests/fixtures/module-engine-index\.json$''']
+regexes = [
+  '''^\s*"tokenCreationCodeHash": "0xd2ee78b8bc95f6a8df6f94c6e4c0a49d77639f5b7697eaf06b0c6b6b38134766",\s*$''',
+  '''^\s*"token": "0x38665576617c205e3cac17a3eefa8bd6475dcc34",\s*$''',
+  '''^\s*"tokenRuntimeCodeHash": "0x21f0bf03dc072ce066e4a72c64fee2b8178bcabc2a69853977b29c45240460c2",\s*$''',
+  '''^\s*"primaryToken": "0x38665576617c205e3cac17a3eefa8bd6475dcc34",\s*$''',
+]
+
+[[allowlists]]
 description = "Module launchers assign a public numeric liquidity amount, not a credential"
 targetRules = ["generic-api-key"]
 condition = "AND"
 regexTarget = "line"
 paths = [
   '''^contracts/src/module-mode/engine/ModuleNativeLaunchV1\.sol$''',
+  '''^contracts/src/module-mode/engine/ModuleNativeLaunchV2\.sol$''',
   '''^contracts/src/classic-modules/ClassicModuleLaunchV1\.sol$''',
 ]
 regexes = ['''^\s*liquidity\.tokenLiquidityAmount = liquidity\.position\.amount1;\s*$''']
