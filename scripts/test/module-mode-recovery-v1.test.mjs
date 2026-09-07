@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { X509Certificate } from "node:crypto";
 import { chmod, mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -6,15 +7,72 @@ import test from "node:test";
 import { PGlite } from "@electric-sql/pglite";
 import { canonicalJson, sha256 } from "../data-pipeline/hosted-db-operator-core.mjs";
 import { BACKUP_SCHEMAS, MODULE_MODE_BACKUP_SCHEMAS, MODULE_MODE_RECOVERY_PROFILE,
-  captureDatabaseManifest, createBackupAndRestoreEvidence, validateModuleRecoveryDatabaseEvidence } from "../data-pipeline/cutover-credentials.mjs";
+  captureDatabaseManifest, createBackupAndRestoreEvidence, inspectModuleRestore, moduleRestoreTlsOptions, validateModuleRecoveryDatabaseEvidence } from "../data-pipeline/cutover-credentials.mjs";
 import { loadRecoveryIndexTools, main, replayRecoveryIndex, validateRecoveryConfig, verifyRecoveryCapsule } from "../module-mode-recovery-v1.mjs";
 
+const TEST_LEAF = "-----BEGIN CERTIFICATE-----\nMIIDKDCCAhCgAwIBAgIUCTC5m2grfu2ukN7oMfeSSrbLUS0wDQYJKoZIhvcNAQEL\nBQAwJDEiMCAGA1UEAwwZTW9kdWxlIHJlY292ZXJ5IHRlc3QgbGVhZjAeFw0yNjA5\nMDcxNTU1MjZaFw0zNjA5MDQxNTU1MjZaMCQxIjAgBgNVBAMMGU1vZHVsZSByZWNv\ndmVyeSB0ZXN0IGxlYWYwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQDA\ngf7+/UGt5WX+Sjpyx6yx1kLioQHE+/c1baN46rclPStAPew6zbEzXYAhL8lP+BPo\n6vStcGME0ciitJJ9LSWUo5PRMtkLkqYqXmuW01fODDRwp3IzUYckaj6kAy0bFFpO\nO2nG6r/5h+EgAHUfbrookP8PdVtm1n6SKqFtPM5gSsOCkNg8XiTh88fzdAOoSCpV\nYGcAVcJDFpYoaUM1u4zO29GExzvpKKTKvtmBLbWku+OtCj6V/oqfFIlm8insaGzz\nrcvHgAn6S03elAH5vGQbqBrg8bdBaZmIWoByPGfjaifk9LgIb1JJptiCGmHmp4BL\nv39EehQukmZVdrfjETbDAgMBAAGjUjBQMAwGA1UdEwEB/wQCMAAwIQYDVR0RBBow\nGIcEfwAAAYcQAAAAAAAAAAAAAAAAAAAAATAdBgNVHQ4EFgQUEl5h2CfLVz4PRL9d\nq4g16Vv9JBQwDQYJKoZIhvcNAQELBQADggEBAKvEF/vbj7jOqvhGeA5OJyc17M+R\n4W6RdPwhhjs3jmLreZlgboMPnGOx5FuJLPxGMUF9lUufmE7MWYICkorOAzJ9jVxK\nniJfxp5FXkQqKPn5IV4FgfJ+qc5BFcpwpCSKNEaGhiyUZK9Hr+TlaSUFD9Qw4Yyg\nFLBwuc4DyRQH0O9VcFNqUWeu7r4ox0dBHgSgUxJ3DJH4dJGANuyE6v7bhOEkwWsX\n8mizMmwFVcusIvkcA7/qVFxBsGT731Ut3SfkjOm9QhOB4gsw0BUAceIX8icYPExL\nIxGkXgtCPU7F1yS1cxga7n+/ZrnxVsIHCRT9pM9e9aya0kINW0126PUnZlk=\n-----END CERTIFICATE-----\n";
+const LOCAL_BINDING = { dataDirectory: "/private/fixture/data", postmasterPid: 1234, systemIdentifier: "7682821037906232164",
+  postgres: { file: "/private/fixture/bin/postgres", bytes: 10, sha256: "0x"+"a".repeat(64) },
+  pgControlData: { file: "/private/fixture/bin/pg_controldata", bytes: 11, sha256: "0x"+"b".repeat(64) } };
 const PROFILE = { schemas: MODULE_MODE_BACKUP_SCHEMAS, profile: MODULE_MODE_RECOVERY_PROFILE };
 const API = "programmable_custom_launch_api_v1";
 const REQUIRED = ["principals", "wallet_bindings", "api_credentials", "api_credential_scopes", "api_scopes",
   "module_submission_keys_v1", "module_request_budgets_v1", "module_review_jobs_v1", "module_review_attempts_v1", "module_review_decisions_v1"];
 const h = n => `0x${BigInt(n).toString(16).padStart(64, "0")}`;
 const pending = rows => { const promise = Promise.resolve(rows); promise.simple = () => promise; return promise; };
+
+function localInspectionFixture(changes = {}) {
+  const binding = LOCAL_BINDING, target = { host: "127.0.0.1", port: 5439 };
+  const identity = { backend_pid: 1235, server_version_num: 170011, data_directory: binding.dataDirectory,
+    system_identifier: binding.systemIdentifier, postmaster_start_epoch: "1788796000", ssl_cert_file: "server.crt", ssl_key_file: "server.key", ssl: true,
+    ...changes.sql };
+  const dependencies = {
+    platform: changes.platform ?? "darwin", uid: 501,
+    lstat: async file => ({ isDirectory: () => file === binding.dataDirectory, isFile: () => file !== binding.dataDirectory,
+      isSymbolicLink: () => false, uid: 501, mode: file === binding.dataDirectory ? 0o700
+        : file.includes("/bin/") ? 0o755 : file.endsWith("server.key") && changes.publicKeyFile ? 0o644 : 0o600 }),
+    realpath: async file => file.startsWith("/proc/") ? binding.postgres.file : file,
+    fileSha256: async file => { const tool = file === binding.postgres.file ? binding.postgres : binding.pgControlData; return { bytes: tool.bytes, sha256: tool.sha256 }; },
+    readFile: async file => file.endsWith("server.crt") ? TEST_LEAF
+      : `1234\n${binding.dataDirectory}\n1788796000\n5439\n\n127.0.0.1\n12345 678\nready\n`,
+    run: async (file, args) => {
+      if (args[0] === "--version") return { stdout: `${path.basename(file)} (PostgreSQL) ${changes.serverToolVersion ?? "17.11"}` };
+      if (file === binding.pgControlData.file) return { stdout: `Database system identifier: ${changes.controlId ?? binding.systemIdentifier}` };
+      if (file === "/bin/ps") return { stdout: args[1] === "1234" ? `501 1 ${changes.executable ?? binding.postgres.file}`
+        : `501 ${changes.backendParent ?? 1234} postgres: local verifier` };
+      if (file.endsWith("/lsof")) return { stdout: `p${changes.listenerPid ?? 1234}\nf5\nn127.0.0.1:5439\n` };
+      throw new Error("unexpected OS inspection");
+    },
+  };
+  return { binding, target, options: { sql: { unsafe: () => pending([identity]) }, dependencies } };
+}
+test("local restore inspection binds the listener, postmaster, control ID and SQL child on Darwin and Linux", async () => {
+  for (const platform of ["darwin", "linux"]) {
+    const f = localInspectionFixture({ platform }), result = await inspectModuleRestore(f.binding, f.target, TEST_LEAF, f.options);
+    assert.equal(result.postmasterPid, 1234); assert.equal(result.serverVersionNum, 170011); assert.equal(result.platform, platform);
+    assert.equal(result.certificateDerSha256, sha256(new X509Certificate(TEST_LEAF).raw));
+  }
+});
+for (const [label, changes] of [
+  ["a remote-loopback tunnel owns the local listener", { listenerPid: 4321 }],
+  ["SQL returns a foreign backend PID lineage", { backendParent: 4321 }],
+  ["postmaster runs a different binary", { executable: "/usr/local/foreign/postgres" }],
+  ["control system identifier differs", { controlId: "987654321" }],
+  ["the actual server uses a different major", { sql: { server_version_num: 160011 } }],
+  ["the local server tool uses a different major", { serverToolVersion: "18.0" }],
+  ["the local key is not private", { publicKeyFile: true }],
+  ["the OS has no supported inspection", { platform: "win32" }],
+]) test(`local restore rejects ${label}`, async () => {
+  const f = localInspectionFixture(changes);
+  await assert.rejects(inspectModuleRestore(f.binding, f.target, TEST_LEAF, f.options), /Module|Postgres/u);
+});
+test("each new Node TLS connection requires the exact single self-signed leaf and matching host", () => {
+  const certificate = new X509Certificate(TEST_LEAF), peer = certificate.toLegacyObject(), options = moduleRestoreTlsOptions(TEST_LEAF, "127.0.0.1");
+  assert.equal(options.rejectUnauthorized, true); assert.equal(options.checkServerIdentity("127.0.0.1", peer), undefined);
+  assert.match(options.checkServerIdentity("127.0.0.1", { ...peer, raw: Buffer.from("other leaf") }).message, /TLS peer differs/u);
+  assert.ok(moduleRestoreTlsOptions(TEST_LEAF, "192.0.2.1").checkServerIdentity("192.0.2.1", peer) instanceof Error);
+  assert.throws(() => moduleRestoreTlsOptions(TEST_LEAF + TEST_LEAF, "127.0.0.1"), /leaf/u);
+});
 function sqlFor(db) {
   return { unsafe(query, parameters = []) {
     const result = db.query(query, parameters).then(value => value.rows);
@@ -79,14 +137,16 @@ async function captureFixture(t, changes = {}) {
     sourceDatabaseUrl: "postgresql://postgres:fixture_source_password@db.mnnvlrqwhfoppogslsje.supabase.co:5432/postgres?sslmode=verify-full",
     sslCaPem: `-----BEGIN CERTIFICATE-----\n${"A".repeat(96)}\n-----END CERTIFICATE-----`,
     restoreDatabaseUrl: "postgresql://postgres:fixture_restore_password@127.0.0.1:5439/programmable_restore_module_fixture?sslmode=verify-full",
-    restoreIsolationId: "module_fixture", restoreSslCaPem: `-----BEGIN CERTIFICATE-----\n${"B".repeat(96)}\n-----END CERTIFICATE-----`,
+    restoreIsolationId: "module_fixture", restoreSslCaPem: TEST_LEAF, restoreBinding: LOCAL_BINDING,
     backupPath: path.join(directory, "database.dump"), evidencePath: path.join(directory, "database-evidence.json"),
     dependencies: {
       openHostedDatabase: async () => ({ sql: { unsafe: query => { sourceSql.push(query); return pending([]); } } }),
-      openRestoreDatabase: async () => ({ sql: { unsafe: query => {
-        if (query.includes("session_user")) return pending([{ session_user: "postgres", current_role: "postgres", database_name: "programmable_restore_module_fixture", server_port: 5439, in_recovery: false }]);
+      inspectModuleRestore: async (binding, target) => ({ ...binding, postmasterStartEpoch: "1788796000", certificateDerSha256: h(88),
+        serverVersionNum: 170011, listenerHost: target.host, listenerPort: target.port, platform: "darwin", processOwnerUid: 501 }),
+      openRestoreDatabase: async ({ safeTarget }) => ({ sql: { unsafe: query => {
+        if (query.includes("session_user")) return pending([{ session_user: "postgres", current_role: "postgres", database_name: safeTarget.database, server_port: 5439, in_recovery: false }]);
         if (query.includes("schema_count")) return pending([{ schema_count: 0, object_count: 0 }]);
-        if (query.includes("server_address")) return pending([{ server_address: "127.0.0.1", superuser: true, other_databases: 0, extra_schemas: 0, public_objects: 0, ...(changes.isolation ?? {}) }]);
+        if (query.includes("server_address")) return pending([{ server_address: "127.0.0.1", superuser: true, other_databases: 0, extra_schemas: 0, public_objects: 0, ...(safeTarget.database === "postgres" ? changes.postgresIsolation : changes.isolation) }]);
         throw new Error("unexpected restore query");
       } } }),
       closeHostedDatabase: async () => {},
@@ -95,7 +155,7 @@ async function captureFixture(t, changes = {}) {
       runCommand: async (binary, args, options) => {
         commands.push({ binary, args, env: options.env });
         assert.ok(!JSON.stringify(args).includes("fixture_source_password")); assert.ok(!JSON.stringify(args).includes("fixture_restore_password"));
-        if (args.includes("--version")) return { stdout: Buffer.from("pg_dump (PostgreSQL) 17.10") };
+        if (args.includes("--version")) return { stdout: Buffer.from(`${path.basename(binary)} (PostgreSQL) ${changes.versions?.[path.basename(binary)] ?? "17.11"}`) };
         if (args.includes("--file")) await writeFile(args[args.indexOf("--file") + 1], "PGDMP fixture bytes, not a real pg_dump", { mode: 0o600 });
         return { stdout: Buffer.from("fixture archive listing") };
       },
@@ -111,8 +171,10 @@ test("existing dump/restore orchestration with mocked processes uses read-only s
   assert.deepEqual(dump.args.filter((_arg, index, args) => args[index - 1] === "--schema"), MODULE_MODE_BACKUP_SCHEMAS);
   const restore = f.commands.find(command => command.binary === "pg_restore" && command.args.includes("--single-transaction"));
   assert.ok(restore.args.includes("programmable_restore_module_fixture"));
-  assert.ok(f.commands.find(command => command.binary === "psql").args.join(" ").includes("NOLOGIN"));
+  assert.ok(f.commands.find(command => command.binary === "psql" && !command.args.includes("--version")).args.join(" ").includes("NOLOGIN"));
   assert.equal(proof.rpo, "unavailable"); assert.ok(proof.restoreElapsedMs >= 0); assert.equal(proof.productionRestorePerformed, false);
+  assert.deepEqual(proof.clientVersions, { pg_dump: "PostgreSQL 17.11", pg_restore: "PostgreSQL 17.11", psql: "PostgreSQL 17.11" });
+  assert.equal(proof.localRestore.serverVersionNum, 170011); assert.equal(proof.localRestore.postgresDatabaseEmpty, true);
   assert.equal(JSON.stringify(result).includes("fixture_source_password"), false);
   const idempotent = await createBackupAndRestoreEvidence(f.input); assert.equal(idempotent.changed, false);
 });
@@ -122,6 +184,30 @@ for (const isolation of [{ server_address: "10.2.3.4" }, { superuser: false }, {
     assert.equal(f.commands.length, 0); assert.equal(f.sourceSql.length, 0);
   });
 }
+for (const postgresIsolation of [{ extra_schemas: 1 }, { public_objects: 1 }]) {
+  test(`rejects application objects in the separate postgres database ${JSON.stringify(postgresIsolation)}`, async t => {
+    const f = await captureFixture(t, { postgresIsolation }); await assert.rejects(createBackupAndRestoreEvidence(f.input), /database backup and isolated restore failed/u);
+    assert.equal(f.commands.length, 0); assert.equal(f.sourceSql.length, 0);
+  });
+}
+for (const program of ["pg_dump", "pg_restore", "psql"]) {
+  test(`requires Postgres 17 for ${program} before dump or target DDL`, async t => {
+    const f = await captureFixture(t, { versions: { [program]: "16.11" } });
+    await assert.rejects(createBackupAndRestoreEvidence(f.input), /database backup and isolated restore failed/u);
+    assert.equal(f.commands.some(command => !command.args.includes("--version")), false);
+  });
+}
+test("local identity is rechecked around fresh mutating connections and a changed binding stops the next restore", async t => {
+  const f = await captureFixture(t), inspect = f.input.dependencies.inspectModuleRestore, runner = f.input.dependencies.runCommand;
+  let inspections = 0, mutated = false;
+  f.input.dependencies.inspectModuleRestore = async (...args) => { inspections++; if (mutated) throw new Error("local binding changed"); return inspect(...args); };
+  f.input.dependencies.runCommand = async (...args) => {
+    if (args[0] === "psql" && args[1].includes("--command")) { assert.equal(inspections, 4); mutated = true; }
+    return runner(...args);
+  };
+  await assert.rejects(createBackupAndRestoreEvidence(f.input), /database backup and isolated restore failed/u);
+  assert.equal(f.commands.some(command => command.args.includes("--single-transaction")), false);
+});
 test("source drift rejects the proof and retains the captured archive for inspection", async t => {
   const f = await captureFixture(t, { drift: true }); await assert.rejects(createBackupAndRestoreEvidence(f.input), /database backup and isolated restore failed/u);
   assert.ok((await stat(f.input.backupPath)).size > 0);
@@ -186,7 +272,7 @@ const ARCHIVE_KINDS = ["source", "compiler", "dependencies", "abi", "review", "d
 function configFixture() {
   return { schemaVersion: "programmable.module-mode-recovery-config.v1", operationId: "recovery-fixture", repositoryCommit: "a".repeat(40),
     expectedSourceProjectRef: "mnnvlrqwhfoppogslsje", sourceDatabaseUrlFile: "/private/input/source-url", sourceCaFile: "/private/input/source-ca",
-    restoreIsolationId: "module_fixture", restoreDatabaseUrlFile: "/private/input/restore-url", restoreCaFile: "/private/input/restore-ca",
+    restoreBinding: LOCAL_BINDING, restoreIsolationId: "module_fixture", restoreDatabaseUrlFile: "/private/input/restore-url", restoreCaFile: "/private/input/restore-ca",
     blobFile: "/private/input/index.json", blobEtag: '"' + "a".repeat(32) + '"', blobSha256: h(7), blobBytes: 500,
     backendBaseUrl: "https://fixture.example/", websiteTokenFile: "/private/input/website-token",
     archiveFiles: ARCHIVE_KINDS.map(kind => ({ kind, file: `/private/input/${kind}.bin`, bytes: 1, sha256: h(8) })),

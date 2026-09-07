@@ -10,7 +10,7 @@ import { promisify } from "node:util";
 import { build, version as esbuildVersion } from "esbuild";
 import { canonicalJson, sha256 } from "./data-pipeline/hosted-db-operator-core.mjs";
 import { createBackupAndRestoreEvidence, MODULE_MODE_BACKUP_SCHEMAS, MODULE_MODE_RECOVERY_PROFILE,
-  validateModuleRecoveryDatabaseEvidence } from "./data-pipeline/cutover-credentials.mjs";
+  validateModuleRecoveryDatabaseEvidence, validateModuleRestoreBinding } from "./data-pipeline/cutover-credentials.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const execute = promisify(execFile);
@@ -28,7 +28,8 @@ const absolute = value => typeof value === "string" && path.isAbsolute(value) &&
 
 export function validateRecoveryConfig(value) {
   record(value, ["schemaVersion", "operationId", "repositoryCommit", "expectedSourceProjectRef", "sourceDatabaseUrlFile", "sourceCaFile",
-    "restoreIsolationId", "restoreDatabaseUrlFile", "restoreCaFile", "blobFile", "blobEtag", "blobSha256", "blobBytes", "backendBaseUrl", "websiteTokenFile", "archiveFiles", "tools"], "CONFIG_INVALID");
+    "restoreIsolationId", "restoreDatabaseUrlFile", "restoreCaFile", "restoreBinding", "blobFile", "blobEtag", "blobSha256", "blobBytes", "backendBaseUrl", "websiteTokenFile", "archiveFiles", "tools"], "CONFIG_INVALID");
+  try { validateModuleRestoreBinding(value.restoreBinding); } catch { fail("LOCAL_RESTORE_BINDING_INVALID"); }
   requireValue(value.schemaVersion === "programmable.module-mode-recovery-config.v1" && COMMIT.test(value.repositoryCommit)
     && /^[a-z0-9][a-z0-9._-]{7,63}$/u.test(value.operationId) && /^[a-z0-9]{20}$/u.test(value.expectedSourceProjectRef)
     && /^[a-z0-9][a-z0-9_-]{7,31}$/u.test(value.restoreIsolationId) && /^"[0-9a-f]{32}"$/u.test(value.blobEtag)
@@ -233,6 +234,7 @@ export async function captureModuleRecovery(config, outputDirectory, confirmatio
       operationId: config.operationId, repositoryCommit: head, expectedProjectRef: config.expectedSourceProjectRef,
       allowedSourceUsernames: ["postgres", "cli_login_postgres"],
       sourceDatabaseUrl, sslCaPem, restoreDatabaseUrl, restoreIsolationId: config.restoreIsolationId, restoreSslCaPem,
+      restoreBinding: config.restoreBinding,
       backupPath: path.join(outputDirectory, "database.dump"), evidencePath: path.join(outputDirectory, "database-evidence.json"),
       pgDumpBinary: config.tools.pg_dump.file, pgRestoreBinary: config.tools.pg_restore.file, psqlBinary: config.tools.psql.file,
       toolCommitments: Object.fromEntries(Object.entries(config.tools).map(([key, value]) => [key, { bytes: value.bytes, sha256: value.sha256 }])) });

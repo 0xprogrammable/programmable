@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, X509Certificate } from "node:crypto";
 import { execFile } from "node:child_process";
 import {
   constants as fsConstants,
@@ -7,11 +7,13 @@ import {
   mkdtemp,
   open,
   readFile,
+  realpath,
   rm,
 } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
+import { checkServerIdentity } from "node:tls";
 
 import postgres from "postgres";
 
@@ -58,6 +60,105 @@ function moduleRecoveryProfile(profile, schemas) {
     throw new Error("Module recovery profile is invalid");
   }
   return true;
+}
+export function validateModuleRestoreBinding(value) {
+  if (!isPlainRecord(value) || canonicalJson(Object.keys(value).sort()) !== canonicalJson(["dataDirectory", "pgControlData", "postgres", "postmasterPid", "systemIdentifier"].sort())
+    || typeof value.dataDirectory !== "string" || !path.isAbsolute(value.dataDirectory) || value.dataDirectory.includes("\0")
+    || !Number.isSafeInteger(value.postmasterPid) || value.postmasterPid <= 1
+    || !/^[1-9][0-9]{0,19}$/u.test(value.systemIdentifier ?? "") || BigInt(value.systemIdentifier) > 18446744073709551615n) {
+    throw new Error("Module local restore binding is invalid");
+  }
+  for (const tool of [value.postgres, value.pgControlData]) {
+    if (!isPlainRecord(tool) || canonicalJson(Object.keys(tool).sort()) !== canonicalJson(["bytes", "file", "sha256"])
+      || typeof tool.file !== "string" || !path.isAbsolute(tool.file) || !Number.isSafeInteger(tool.bytes) || tool.bytes <= 0
+      || !SHA256.test(tool.sha256 ?? "")) throw new Error("Module local server tool binding is invalid");
+  }
+  return value;
+}
+
+function moduleRestoreCertificate(pem) {
+  if (typeof pem !== "string" || (pem.match(/-----BEGIN CERTIFICATE-----/gu) ?? []).length !== 1
+    || !/^-----BEGIN CERTIFICATE-----[\s\S]+-----END CERTIFICATE-----$/u.test(pem.trim())) throw new Error("Module local TLS leaf is invalid");
+  const certificate = new X509Certificate(pem);
+  if (pem.trim().replaceAll("\r\n", "\n") !== certificate.toString().trim()
+    || certificate.ca || certificate.subject !== certificate.issuer || !certificate.verify(certificate.publicKey)
+    || Date.parse(certificate.validFrom) > Date.now() || Date.parse(certificate.validTo) <= Date.now()) {
+    throw new Error("Module restore requires its own valid self-signed non-CA TLS leaf");
+  }
+  return certificate;
+}
+
+export function moduleRestoreTlsOptions(pem, host) {
+  const certificate = moduleRestoreCertificate(pem);
+  return { rejectUnauthorized: true, ca: certificate.toString(), checkServerIdentity: (_hostname, peer) => {
+    if (!Buffer.isBuffer(peer.raw) || !peer.raw.equals(certificate.raw)) return new Error("Module local TLS peer differs");
+    return checkServerIdentity(host, peer);
+  } };
+}
+
+// PID and listener ownership are local OS observations, never assertions from a remote SQL server.
+// Every new libpq connection also trusts only this local non-CA server leaf.
+export async function inspectModuleRestore(binding, target, sslCaPem, { sql, dependencies = {} } = {}) {
+  validateModuleRestoreBinding(binding);
+  const ops = { lstat, readFile, realpath, fileSha256, run: executeFile, platform: process.platform, uid: process.getuid?.(), ...dependencies };
+  if (!["darwin", "linux"].includes(ops.platform) || !Number.isSafeInteger(ops.uid)) throw new Error("Module local process inspection is unavailable");
+  const privatePath = async (file, directory = false) => {
+    const stat = await ops.lstat(file);
+    if ((directory ? !stat.isDirectory() : !stat.isFile()) || stat.isSymbolicLink() || stat.uid !== ops.uid
+      || (stat.mode & 0o777) !== (directory ? 0o700 : 0o600) || await ops.realpath(file) !== file) throw new Error("Module local data path is not private");
+  };
+  await privatePath(binding.dataDirectory, true);
+  for (const name of ["postmaster.pid", "server.crt", "server.key"]) await privatePath(path.join(binding.dataDirectory, name));
+  const pidLines = (await ops.readFile(path.join(binding.dataDirectory, "postmaster.pid"), "utf8")).trimEnd().split("\n");
+  if (Number(pidLines[0]) !== binding.postmasterPid || pidLines[1] !== binding.dataDirectory || Number(pidLines[3]) !== target.port
+    || !/^[1-9][0-9]*$/u.test(pidLines[2] ?? "") || pidLines[7]?.trim() !== "ready") throw new Error("Module local postmaster identity differs");
+  const certificate = moduleRestoreCertificate(sslCaPem);
+  if ((await ops.readFile(path.join(binding.dataDirectory, "server.crt"), "utf8")).trim() !== sslCaPem.trim()) throw new Error("Module local TLS leaf differs");
+  const env = { PATH: "/usr/bin:/bin:/usr/sbin:/sbin", LC_ALL: "C" };
+  const run = async (file, args) => String((await ops.run(file, args, { env, timeout: 10000, maxBuffer: 1024 * 1024 })).stdout).trim();
+  for (const [key, program] of [["postgres", "postgres"], ["pgControlData", "pg_controldata"]]) {
+    const tool = binding[key], stat = await ops.lstat(tool.file);
+    if (!stat.isFile() || stat.isSymbolicLink() || ![0, ops.uid].includes(stat.uid) || (stat.mode & 0o022) !== 0
+      || await ops.realpath(tool.file) !== tool.file || canonicalJson(await ops.fileSha256(tool.file)) !== canonicalJson({ bytes: tool.bytes, sha256: tool.sha256 })) {
+      throw new Error("Module local server binary differs");
+    }
+    pgVersion(await run(tool.file, ["--version"]), program);
+  }
+  const control = await run(binding.pgControlData.file, [binding.dataDirectory]);
+  if (control.match(/^Database system identifier:\s+([0-9]+)$/mu)?.[1] !== binding.systemIdentifier) throw new Error("Module local control identity differs");
+  const processRow = async pid => {
+    const row = (await run("/bin/ps", ["-p", String(pid), "-o", "uid=,ppid=,comm="])).match(/^\s*([0-9]+)\s+([0-9]+)\s+(.+)$/u);
+    if (!row || Number(row[1]) !== ops.uid) throw new Error("Module local process owner differs");
+    return { parent: Number(row[2]), command: row[3] };
+  };
+  const postmaster = await processRow(binding.postmasterPid);
+  const executable = ops.platform === "linux" ? await ops.realpath(`/proc/${binding.postmasterPid}/exe`) : postmaster.command;
+  if (executable !== binding.postgres.file) throw new Error("Module local postmaster executable differs");
+  const listeners = (await run(ops.platform === "darwin" ? "/usr/sbin/lsof" : "/usr/bin/lsof",
+    ["-nP", "-iTCP:" + target.port, "-sTCP:LISTEN", "-Fpn"])).split("\n");
+  const listenerPids = listeners.filter(line => line.startsWith("p")).map(line => Number(line.slice(1)));
+  const addresses = listeners.filter(line => line.startsWith("n")).map(line => line.slice(1));
+  if (listenerPids.length !== 1 || listenerPids[0] !== binding.postmasterPid || addresses.length !== 1
+    || addresses[0] !== (target.host === "::1" ? "[::1]:" : "127.0.0.1:") + target.port) throw new Error("Module local listener is not the bound postmaster");
+  let serverVersionNum = null;
+  if (sql) {
+    const [identity] = await sql.unsafe(`select pg_backend_pid()::integer as backend_pid,
+      current_setting('server_version_num')::integer as server_version_num,
+      current_setting('data_directory') as data_directory,
+      (select system_identifier::text from pg_control_system()) as system_identifier,
+      floor(extract(epoch from pg_postmaster_start_time()))::bigint::text as postmaster_start_epoch,
+      current_setting('ssl_cert_file') as ssl_cert_file, current_setting('ssl_key_file') as ssl_key_file,
+      (select ssl from pg_stat_ssl where pid=pg_backend_pid()) as ssl`);
+    if (identity?.data_directory !== binding.dataDirectory || identity.system_identifier !== binding.systemIdentifier
+      || identity.postmaster_start_epoch !== pidLines[2] || identity.ssl_cert_file !== "server.crt" || identity.ssl_key_file !== "server.key"
+      || identity.ssl !== true || !Number.isInteger(identity.server_version_num) || Math.floor(identity.server_version_num / 10000) !== 17
+      || !Number.isSafeInteger(identity.backend_pid) || (await processRow(identity.backend_pid)).parent !== binding.postmasterPid) {
+      throw new Error("Module SQL connection is not a child of the bound local Postgres 17 server");
+    }
+    serverVersionNum = identity.server_version_num;
+  }
+  return { ...binding, postmasterStartEpoch: pidLines[2], certificateDerSha256: sha256(certificate.raw), serverVersionNum,
+    listenerHost: target.host, listenerPort: target.port, platform: ops.platform, processOwnerUid: ops.uid };
 }
 const RESTORE_ROLE_NAMES = Object.freeze([
   "programmable_api_reader",
@@ -799,9 +900,12 @@ function validateBackupRequest(input) {
     restore: restore.safeTarget,
     schemas,
   });
-  if (moduleRecovery) payload.profile = MODULE_MODE_RECOVERY_PROFILE;
+  if (moduleRecovery) {
+    payload.profile = MODULE_MODE_RECOVERY_PROFILE;
+    payload.restoreBinding = validateModuleRestoreBinding(input.restoreBinding);
+  }
   return {
-    ...(moduleRecovery ? { profile: MODULE_MODE_RECOVERY_PROFILE } : {}),
+    ...(moduleRecovery ? { profile: MODULE_MODE_RECOVERY_PROFILE, restoreBinding: payload.restoreBinding } : {}),
     operationId: input.operationId,
     repositoryCommit: input.repositoryCommit,
     source,
@@ -864,6 +968,17 @@ export function validateModuleRecoveryDatabaseEvidence(value) {
     || !proof.source.tables.some(table => table.schema === "supabase_migrations" && table.table === "schema_migrations")) {
     throw new Error("Module recovery database evidence is incomplete");
   }
+  const binding = proof.localRestore;
+  validateModuleRestoreBinding(binding?.binding);
+  if (!Number.isInteger(binding.serverVersionNum) || Math.floor(binding.serverVersionNum / 10000) !== 17
+    || !/^[1-9][0-9]*$/u.test(binding.postmasterStartEpoch ?? "") || !SHA256.test(binding.certificateDerSha256 ?? "")
+    || !["127.0.0.1", "::1"].includes(binding.listenerHost) || binding.listenerHost !== value.restore?.host
+    || binding.listenerPort !== value.restore?.port || !["darwin", "linux"].includes(binding.platform)
+    || !Number.isSafeInteger(binding.processOwnerUid) || binding.processOwnerUid < 0 || binding.postgresDatabaseEmpty !== true
+    || canonicalJson(Object.keys(proof.clientVersions ?? {}).sort()) !== canonicalJson(["pg_dump", "pg_restore", "psql"])) {
+    throw new Error("Module local restore evidence is incomplete");
+  }
+  for (const version of Object.values(proof.clientVersions)) pgVersion(version);
   for (const [side, prefix] of [[proof.source, "source"], [proof.restored, "restored"]]) {
     if (side.profile !== MODULE_MODE_RECOVERY_PROFILE || side.manifestSha256 !== value[`${prefix}ManifestSha256`]
       || !SHA256.test(side.manifestSha256) || side.structuralManifestSha256 !== value[`${prefix}StructuralManifestSha256`]
@@ -2224,11 +2339,11 @@ export async function captureDatabaseManifest(
   });
 }
 
-async function openRestoreDatabase({ databaseUrl, sslCaPem }) {
+async function openRestoreDatabase({ databaseUrl, sslCaPem, profile, safeTarget }) {
   const parsed = new URL(databaseUrl);
   parsed.searchParams.delete("sslmode");
   const sql = postgres(parsed.toString(), {
-    ssl: { rejectUnauthorized: true, ca: sslCaPem },
+    ssl: profile === MODULE_MODE_RECOVERY_PROFILE ? moduleRestoreTlsOptions(sslCaPem, safeTarget.host) : { rejectUnauthorized: true, ca: sslCaPem },
     max: 1,
     prepare: false,
     connect_timeout: 8,
@@ -2242,7 +2357,7 @@ async function openRestoreDatabase({ databaseUrl, sslCaPem }) {
   return { sql };
 }
 
-async function assertRestoreTargetIsEmpty(sql, safeTarget, profile) {
+async function assertRestoreTargetIsEmpty(sql, safeTarget, profile, allowedRestoreDatabase = safeTarget.database) {
   const [identity] = await sql.unsafe(`
     select
       session_user::text as session_user,
@@ -2280,11 +2395,11 @@ async function assertRestoreTargetIsEmpty(sql, safeTarget, profile) {
   if (profile === MODULE_MODE_RECOVERY_PROFILE) {
     const [isolation] = await sql.unsafe(`select inet_server_addr()::text as server_address,
       (select rolsuper from pg_roles where rolname=current_user) as superuser,
-      (select count(*)::integer from pg_database where not datistemplate and datname not in ('postgres',current_database())) as other_databases,
+      (select count(*)::integer from pg_database where datname not in ('template0','template1','postgres',$1)) as other_databases,
       (select count(*)::integer from pg_namespace where nspname not in ('pg_catalog','information_schema','public') and nspname not like 'pg_%') as extra_schemas,
       ((select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public')
        + (select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public')
-       + (select count(*) from pg_type t join pg_namespace n on n.oid=t.typnamespace where n.nspname='public'))::integer as public_objects`);
+       + (select count(*) from pg_type t join pg_namespace n on n.oid=t.typnamespace where n.nspname='public'))::integer as public_objects`, [allowedRestoreDatabase]);
     if (!["127.0.0.1", "::1"].includes(safeTarget.host) || !["127.0.0.1", "::1"].includes(isolation?.server_address)
       || isolation.superuser !== true || isolation.other_databases !== 0 || isolation.extra_schemas !== 0 || isolation.public_objects !== 0) {
       throw new Error("Module restore requires an empty dedicated local PostgreSQL cluster");
@@ -2292,10 +2407,10 @@ async function assertRestoreTargetIsEmpty(sql, safeTarget, profile) {
   }
 }
 
-function pgVersion(stdout) {
+function pgVersion(stdout, expectedProgram) {
   const value = Buffer.isBuffer(stdout) ? stdout.toString("utf8") : String(stdout ?? "");
   const match = PG_TOOL_VERSION.exec(value);
-  if (!match || Number(match[1]) !== 17) {
+  if (!match || Number(match[1]) !== 17 || (expectedProgram && !value.trim().startsWith(expectedProgram + " (PostgreSQL) "))) {
     throw new Error("Postgres 17 client tools are required");
   }
   return `PostgreSQL ${match[0]}`;
@@ -2336,6 +2451,8 @@ export async function createBackupAndRestoreEvidence(input) {
   const moduleRecovery = request.profile === MODULE_MODE_RECOVERY_PROFILE;
   const started = performance.now();
   let restoreStarted, restoreElapsedMs, sourceWindowStart, sourceWindowEnd;
+  let localRestore;
+  const clientVersions = {};
   request.sourceDatabaseUrl = input.sourceDatabaseUrl;
   request.restoreDatabaseUrl = input.restoreDatabaseUrl;
   const dependencies = validateDependencies(input.dependencies, [
@@ -2345,6 +2462,7 @@ export async function createBackupAndRestoreEvidence(input) {
     "closeHostedDatabase",
     "captureDatabaseManifest",
     "assertRestoreTargetIsEmpty",
+    "inspectModuleRestore",
     "now",
   ]);
   const runner = dependencies.runCommand ?? runCommand;
@@ -2356,6 +2474,7 @@ export async function createBackupAndRestoreEvidence(input) {
   const assertRestoreEmpty =
     dependencies.assertRestoreTargetIsEmpty ?? assertRestoreTargetIsEmpty;
   const now = dependencies.now ?? (() => new Date());
+  const inspectRestore = dependencies.inspectModuleRestore ?? inspectModuleRestore;
   const toolCommitments = input.toolCommitments;
   if (
     toolCommitments !== undefined &&
@@ -2374,6 +2493,7 @@ export async function createBackupAndRestoreEvidence(input) {
   }
   let sourceConnection;
   let restoreConnection;
+  let postgresConnection;
   let sourceCa;
   let restoreCa;
   let backupCreated = false;
@@ -2382,7 +2502,8 @@ export async function createBackupAndRestoreEvidence(input) {
     if (existing) return existing;
     sourceCa = await createTemporaryCa(request.sslCaPem);
     restoreCa = await createTemporaryCa(request.restoreSslCaPem);
-    sourceConnection = await openSource({
+    if (moduleRecovery) await inspectRestore(request.restoreBinding, request.restore.safeTarget, request.restoreSslCaPem);
+    if (!moduleRecovery) sourceConnection = await openSource({
       databaseUrl: input.sourceDatabaseUrl,
       expectedProjectRef: input.expectedProjectRef,
       sslCaPem: request.sslCaPem,
@@ -2391,9 +2512,26 @@ export async function createBackupAndRestoreEvidence(input) {
       databaseUrl: input.restoreDatabaseUrl,
       sslCaPem: request.restoreSslCaPem,
       safeTarget: request.restore.safeTarget,
+      ...(moduleRecovery ? { profile: request.profile } : {}),
     });
+    const inspectConnectedRestore = async () => {
+      if (!moduleRecovery) return;
+      const result = await inspectRestore(request.restoreBinding, request.restore.safeTarget, request.restoreSslCaPem, { sql: restoreConnection.sql });
+      const { dataDirectory, postgres, pgControlData, postmasterPid, systemIdentifier, ...observation } = result;
+      localRestore = { binding: { dataDirectory, postgres, pgControlData, postmasterPid, systemIdentifier }, ...observation, postgresDatabaseEmpty: true };
+    };
+    await inspectConnectedRestore();
     await assertRestoreEmpty(restoreConnection.sql, request.restore.safeTarget, request.profile);
     if (moduleRecovery) {
+      const postgresUrl = new URL(input.restoreDatabaseUrl); postgresUrl.pathname = "/postgres";
+      const postgresTarget = { ...request.restore.safeTarget, database: "postgres" };
+      postgresConnection = await openRestore({ databaseUrl: postgresUrl.toString(), sslCaPem: request.restoreSslCaPem,
+        safeTarget: postgresTarget, profile: request.profile });
+      await inspectRestore(request.restoreBinding, postgresTarget, request.restoreSslCaPem, { sql: postgresConnection.sql });
+      await assertRestoreEmpty(postgresConnection.sql, postgresTarget, request.profile, request.restore.safeTarget.database);
+      await closeDatabase(postgresConnection.sql); postgresConnection = undefined;
+      sourceConnection = await openSource({ databaseUrl: input.sourceDatabaseUrl,
+        expectedProjectRef: input.expectedProjectRef, sslCaPem: request.sslCaPem });
       await sourceConnection.sql.unsafe("set default_transaction_read_only = on").simple();
       sourceWindowStart = now().toISOString();
     }
@@ -2444,7 +2582,15 @@ export async function createBackupAndRestoreEvidence(input) {
       secrets,
       expectedBinary: toolCommitments?.pg_dump,
     });
-    const postgresVersion = pgVersion(versionResult.stdout);
+    const postgresVersion = pgVersion(versionResult.stdout, moduleRecovery ? "pg_dump" : undefined);
+    if (moduleRecovery) {
+      clientVersions.pg_dump = postgresVersion;
+      for (const [program, binary] of [["pg_restore", input.pgRestoreBinary ?? "pg_restore"], ["psql", input.psqlBinary ?? "psql"]]) {
+        const result = await executeSafeCommand({ runner, binary, args: ["--version"], env: restoreEnvironment,
+          timeoutMs: 15_000, secrets, expectedBinary: toolCommitments?.[program] });
+        clientVersions[program] = pgVersion(result.stdout, program);
+      }
+    }
     let backupFormat;
     let listResult;
     if (before.tableCount === 0 && before.rowCount === 0) {
@@ -2529,6 +2675,7 @@ export async function createBackupAndRestoreEvidence(input) {
     }
     if (backupFormat === "pg-custom-v1") {
       restoreStarted = performance.now();
+      await inspectConnectedRestore();
       await executeSafeCommand({
         runner,
         binary: input.psqlBinary ?? "psql",
@@ -2546,6 +2693,7 @@ export async function createBackupAndRestoreEvidence(input) {
           secrets,
           expectedBinary: toolCommitments?.psql,
         });
+      await inspectConnectedRestore();
       const backupBeforeRestore = await fileSha256(request.backupPath);
       await executeSafeCommand({
         runner,
@@ -2561,6 +2709,7 @@ export async function createBackupAndRestoreEvidence(input) {
           secrets,
           expectedBinary: toolCommitments?.pg_restore,
         });
+      await inspectConnectedRestore();
       const backupAfterRestore = await fileSha256(request.backupPath);
       if (canonicalJson(backupAfterRestore) !== canonicalJson(backupBeforeRestore)) {
         throw new Error("Postgres backup changed during isolated restore");
@@ -2615,6 +2764,7 @@ export async function createBackupAndRestoreEvidence(input) {
       postgresVersion,
       ...(moduleRecovery ? { moduleRecovery: {
         profile: request.profile, source: before, restored,
+        localRestore, clientVersions,
         sourceCaptureWindow: { startedAt: sourceWindowStart, finishedAt: sourceWindowEnd },
         restoreElapsedMs, totalElapsedMs: performance.now() - started,
         productionRestorePerformed: false, independentArchiveCopies: "unavailable", rpo: "unavailable",
@@ -2638,6 +2788,7 @@ export async function createBackupAndRestoreEvidence(input) {
   } finally {
     if (sourceConnection?.sql) await closeDatabase(sourceConnection.sql).catch(() => {});
     if (restoreConnection?.sql) await closeDatabase(restoreConnection.sql).catch(() => {});
+    if (postgresConnection?.sql) await closeDatabase(postgresConnection.sql).catch(() => {});
     if (sourceCa?.directory) {
       await rm(sourceCa.directory, { recursive: true, force: true }).catch(() => {});
     }

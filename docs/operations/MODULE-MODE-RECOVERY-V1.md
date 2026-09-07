@@ -33,13 +33,36 @@ SQL mutation, migration, credential rotation or provider configuration is expose
 
 The only database mutation target is
 `programmable_restore_<restoreIsolationId>` on literal `127.0.0.1` or `::1`, with
-an explicit port and `sslmode=verify-full`. The server must independently report
-a loopback address and a `postgres` superuser. Apart from that target and the
-standard `postgres` database, the cluster must have no other nontemplate database.
-There must be no application schema or public object before restore. A remote
-server reached through a local tunnel does not satisfy the server-address check.
-Provisioning this disposable local cluster and its CA is an operator prerequisite;
-this command does not provision a service or modify an existing shared cluster.
+an explicit port and `sslmode=verify-full`. The operator must have started this
+new disposable PostgreSQL 17 cluster and supplied its exact `restoreBinding`.
+The verifier binds its private canonical data directory, `postmaster.pid`,
+postmaster PID and executable, pinned `postgres`/`pg_controldata` bytes and control
+system identifier. OS inspection must show that this postmaster owns the sole
+loopback TCP listener on that port. The connected SQL backend must be its child
+and must report the same directory, control identifier, startup time, TLS files
+and PostgreSQL 17 server version. A loopback URL and a reported loopback server
+address alone do not prove isolation. Linux uses `/proc/<pid>/exe`, `/bin/ps` and
+`/usr/bin/lsof`; macOS uses `/bin/ps` and `/usr/sbin/lsof`. Missing inspection tools
+or any other platform fail closed.
+
+The local TLS trust input must contain exactly one currently valid, self-signed
+certificate with `CA:false`, identical to the cluster's `server.crt`. Its private
+key is the cluster's own `server.key`; both files and `postmaster.pid` must be
+private regular `0600` files in the operator-owned `0700` data directory. SQL must
+report these exact relative TLS filenames. Every Node connection additionally
+pins the exact certificate DER and verifies the host. Every new `psql` and
+`pg_restore` connection uses this single leaf with libpq `verify-full`; additional
+CA certificates and fallback trust stores are not accepted. The local identity is
+rechecked immediately before and after those mutations. A substituted listener
+cannot authenticate with a different certificate, even when the earlier SQL
+connection remains open.
+
+Only the target, `postgres`, `template0` and `template1` may exist, including
+databases marked as templates. The target and a separately authenticated
+connection to `postgres` must both contain no application schema or public object.
+The server must report a `postgres` superuser. Provisioning the disposable cluster,
+its binaries and private TLS leaf is an operator prerequisite; this command does
+not provision a service or modify an existing shared cluster.
 
 `pg_dump`, `pg_restore` and `psql` must be explicit canonical files with known byte
 counts and SHA-256 commitments. The existing helper checks each commitment before
@@ -48,6 +71,8 @@ execution and requires PostgreSQL 17 client tools. Restore uses
 creates only the required inert local role names. Existing roles must already be
 nonprivileged `NOLOGIN` roles with no membership edges. Production passwords are
 never restored or included in receipts.
+All three client versions and the connected server version are checked separately
+and recorded together with the local process and certificate binding.
 
 ## Inputs
 
@@ -67,7 +92,8 @@ Required configuration keys:
 | `expectedSourceProjectRef` | Independently verified 20-character project ref |
 | `sourceDatabaseUrlFile`, `sourceCaFile` | Existing owner/JIT URL and verified source CA custody files |
 | `restoreIsolationId` | 8–32 character identifier of the dedicated local target |
-| `restoreDatabaseUrlFile`, `restoreCaFile` | Local target URL and CA custody files |
+| `restoreDatabaseUrlFile`, `restoreCaFile` | Local target URL and the single local TLS leaf custody files |
+| `restoreBinding` | Exactly `{dataDirectory, postmasterPid, systemIdentifier, postgres, pgControlData}`; `systemIdentifier` is the decimal control-system ID, each binary is `{file, bytes, sha256}` |
 | `blobFile`, `blobEtag`, `blobBytes`, `blobSha256` | Actual bytes and original quoted ETag of `website-index/robinhood/launches-v1.json`, maximum 16 MiB |
 | `backendBaseUrl`, `websiteTokenFile` | Existing HTTPS Module collector origin and server credential custody file |
 | `tools` | Exactly `pg_dump`, `pg_restore`, `psql`, each `{file, bytes, sha256}` |
@@ -170,6 +196,11 @@ node --test scripts/test/module-mode-recovery-v1.test.mjs \
 The tests include an actual PGlite data-archive round trip with source bytes,
 revocation and review data, large integer accounting, target-isolation negatives,
 source drift, secret-free process arguments and actual shared Engine source replay.
+Isolation regressions include a remote-loopback tunnel listener, foreign SQL PID
+lineage, application objects in `postgres`, a different client/server major and a
+different or multiple TLS leaf. A real native-runtime check must additionally
+demonstrate libpq acceptance of the local `CA:false` leaf and rejection of another
+leaf before using that runtime for a recovery drill.
 Mocked process tests are labeled as orchestration tests; they do not attest a
 native PostgreSQL or hosted provider drill. These tests run in the existing
 `test:database-runtime:ci` command after its existing projection-target suite;
