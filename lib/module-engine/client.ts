@@ -4,10 +4,10 @@ import { evaluateOpenConstraints } from "@/packages/classic-modules/src/open-con
 import { validateTokenImage } from "@/lib/module-mode/builder";
 import { createModuleNativeClient, type ModuleNativeClient, type ModuleNativeWalletTransaction } from "@/lib/module-mode/native-client";
 import { nativeCanonicalJson } from "@/lib/module-mode/native-catalog";
-import { moduleAddress, moduleBytes, moduleHash, moduleUint } from "@/lib/module-mode/release";
+import { moduleAddress, moduleBytes, moduleHash, moduleRecord, moduleUint } from "@/lib/module-mode/release";
 import { MODULE_DEFAULT_TOKEN_IMAGE, moduleTokenMetadata, type ModuleSocialLinks } from "@/lib/module-mode/token-metadata";
 import { MAX_TOKEN_DESCRIPTION_BYTES, MAX_TOKEN_NAME_BYTES } from "@/lib/metadata-policy";
-import { ENGINE_CONTEXT, moduleEngineConstructorParameters, moduleEngineHostAbi, moduleEngineLaunchParameters, moduleEngineLedgerAbi, moduleEnginePlanParameters, moduleEngineReadAbi, moduleEngineTradeLimitsParameters } from "./abi";
+import { ENGINE_CONTEXT, moduleEngineAuthorWalletAbi, moduleEngineConstructorParameters, moduleEngineHostAbi, moduleEngineLaunchParameters, moduleEngineLedgerAbi, moduleEnginePlanParameters, moduleEngineReadAbi, moduleEngineTradeLimitsParameters } from "./abi";
 import { bindActiveModuleEngineRelease, bindModuleEngineTemplate, ENGINE_ZERO_ADDRESS as ZERO, ENGINE_ZERO_HASH as ZERO_HASH, MODULE_ENGINE_CONTRACTS, MODULE_ENGINE_SOURCE_ID, moduleEngineOptionalHash, parseModuleEngineAvailability, type ModuleEngineAvailability, type ModuleEnginePermission, type ModuleEngineRelease, type ModuleEngineTemplate } from "./catalog";
 import { encodeModuleEngineConfiguration } from "./configuration";
 
@@ -31,11 +31,22 @@ export interface PreparedModuleEngineOperation extends PreparedBase {
 }
 export interface PreparedModuleEngineApproval extends PreparedBase { readonly kind: "approve"; readonly token: Address; readonly spender: Address; readonly amount: bigint }
 export interface PreparedModuleEngineClaim extends PreparedBase { readonly kind: "claim"; readonly token: Address; readonly launchId: Hex; readonly revisionId: Hex; readonly planHash: Hex; readonly recipient: Address; readonly minimumAmount: bigint; readonly claimedBefore: bigint }
-export type PreparedModuleEngineTransaction = PreparedModuleEngineLaunch | PreparedModuleEngineOperation | PreparedModuleEngineApproval | PreparedModuleEngineClaim;
+export type ModuleEngineFeeChange =
+  | Readonly<{ kind: "rotate-creator"; index: number; previousWallet: Address; recipient: Address; shareBps: number }>
+  | Readonly<{ kind: "replace-creators"; previousWallets: readonly Address[]; recipients: readonly Address[]; sharesBps: readonly number[]; expectedAdminRevision: bigint; deadline: bigint; authority: "treasury" | "reward-admin" }>
+  | Readonly<{ kind: "rotate-author"; familyId: Hex; author: Address; previousWallet: Address; recipient: Address }>;
+export type ModuleEngineFeeChangeIntent =
+  | { kind: "rotate-creator"; index: number; recipient: Address }
+  | { kind: "replace-creators"; recipients: readonly Address[] }
+  | { kind: "rotate-author"; familyId: Hex; recipient: Address };
+export type PreparedModuleEngineFeeChange = PreparedBase & Readonly<{ token: Address; launchId: Hex; revisionId: Hex; planHash: Hex }> & ModuleEngineFeeChange;
+export type PreparedModuleEngineTransaction = PreparedModuleEngineLaunch | PreparedModuleEngineOperation | PreparedModuleEngineApproval | PreparedModuleEngineClaim | PreparedModuleEngineFeeChange;
+export function isModuleEngineFeeTransaction(prepared: PreparedModuleEngineTransaction): prepared is PreparedModuleEngineFeeChange { return ["rotate-creator", "replace-creators", "rotate-author"].includes(prepared.kind); }
 export interface ModuleEngineApprovalRequired { kind: "approval-required"; token: Address; spender: Address; amount: bigint; currentAllowance: bigint }
 export interface ModuleEngineReceiptResult {
   sourceKind: "module-engine-v1"; status: "mined"; finalized: false; indexed: false; kind: PreparedModuleEngineTransaction["kind"];
   transactionHash: Hex; blockNumber: bigint; blockHash: Hex; token?: Address; launch?: ModuleEngineLaunchRecord; outputAmount?: bigint;
+  feeChange?: { changes: readonly { previousWallet: Address; recipient: Address; index?: number; familyId?: Hex }[]; previewChanged: boolean; subsequentlyChanged: boolean };
 }
 export class ModuleEngineTransactionRevertedError extends Error {
   readonly code = "MODULE_ENGINE_TRANSACTION_REVERTED";
@@ -146,10 +157,11 @@ function operationFor(intent: ModuleEngineOperationIntent, account: Address, exp
   return { operationId: moduleHash(intent.operationId, "operationId"), actor: account, recipient: moduleAddress(intent.recipient, "recipient"), inputAsset: moduleAddress(intent.inputAsset, "inputAsset", true), inputAmount: uint(intent.inputAmount, "inputAmount"), outputAsset: moduleAddress(intent.outputAsset, "outputAsset", true), minimumOutput: uint(intent.minimumOutput, "minimumOutput"), deadline: expiresAt, nonce, data: moduleBytes(intent.data, "operation.data", 16_384) };
 }
 function emptyOperation(): ModuleEngineOperation { return { operationId: ZERO_HASH, actor: ZERO, recipient: ZERO, inputAsset: ZERO, inputAmount: 0n, outputAsset: ZERO, minimumOutput: 0n, deadline: 0n, nonce: 0n, data: "0x" }; }
-async function simulate(client: ModuleEngineClient, block: BoundBlock, transaction: ModuleNativeWalletTransaction) {
+async function simulate(client: ModuleEngineClient, block: BoundBlock, transaction: ModuleNativeWalletTransaction, returnsNothing = false) {
   const request = { account: transaction.from, to: transaction.to, data: transaction.data, value: BigInt(transaction.value), blockNumber: block.blockNumber };
-  const [result, gasEstimate] = await Promise.all([client.call(request), client.estimateGas(request)]); need(result.data && result.data !== "0x", "Simulation returned no result.");
-  need(gasEstimate > 0n && gasEstimate <= 30_000_000n, "Transaction gas is outside the supported limit."); await canonical(client, block); return { data: result.data, gasEstimate };
+  const [result, gasEstimate] = await Promise.all([client.call(request), client.estimateGas(request)]);
+  need(returnsNothing ? !result.data || result.data === "0x" : result.data && result.data !== "0x", "Simulation returned an unexpected result.");
+  need(gasEstimate > 0n && gasEstimate <= 30_000_000n, "Transaction gas is outside the supported limit."); await canonical(client, block); return { data: result.data ?? "0x", gasEstimate };
 }
 function tx(account: Address, to: Address, data: Hex, value: bigint, action: ModuleNativeWalletTransaction["action"], description: string): ModuleNativeWalletTransaction { return { chainId: 4663, from: account, to, data, value: toHex(value), action, description }; }
 function bind<T extends PreparedModuleEngineTransaction>(prepared: T, binding: Omit<Binding, "state">) { freeze(prepared); preparations.set(prepared, { ...binding, state: "ready" }); return prepared; }
@@ -253,8 +265,8 @@ export async function revalidateModuleEngineTransaction(prepared: PreparedModule
 export function noteModuleEngineSubmission(prepared: PreparedModuleEngineTransaction, hash: Hex) { const binding = preparations.get(prepared); need(binding && binding.state === "pending", "No pending verified engine request."); binding.hash = moduleHash(hash, "transactionHash"); binding.state = "submitted"; }
 /** Only call after a definite preflight failure or explicit wallet rejection; an uncertain send stays blocked. */
 export function releaseModuleEnginePreparation(prepared: PreparedModuleEngineTransaction) { const binding = preparations.get(prepared); if (binding?.state === "pending") binding.state = "ready"; }
-function receiptResult(receipt: TransactionReceipt, kind: PreparedModuleEngineTransaction["kind"], extra: Partial<Pick<ModuleEngineReceiptResult, "token" | "launch" | "outputAmount">> = {}): ModuleEngineReceiptResult { return { sourceKind: "module-engine-v1", status: "mined", finalized: false, indexed: false, kind, transactionHash: receipt.transactionHash, blockNumber: receipt.blockNumber, blockHash: receipt.blockHash, ...extra }; }
-function event(receipt: TransactionReceipt, address: Address, eventName: string, abi: Abi = moduleEngineHostAbi): Record<string, unknown> {
+function receiptResult(receipt: TransactionReceipt, kind: PreparedModuleEngineTransaction["kind"], extra: Partial<Pick<ModuleEngineReceiptResult, "token" | "launch" | "outputAmount" | "feeChange">> = {}): ModuleEngineReceiptResult { return { sourceKind: "module-engine-v1", status: "mined", finalized: false, indexed: false, kind, transactionHash: receipt.transactionHash, blockNumber: receipt.blockNumber, blockHash: receipt.blockHash, ...extra }; }
+function events(receipt: TransactionReceipt, address: Address, eventName: string, abi: Abi): Record<string, unknown>[] {
   const matches: Record<string, unknown>[] = [];
   for (const log of receipt.logs) {
     if (log.address.toLowerCase() !== address.toLowerCase()) continue;
@@ -265,7 +277,11 @@ function event(receipt: TransactionReceipt, address: Address, eventName: string,
     equal(encodeEventTopics({ abi, eventName, args } as never), log.topics, "Canonical event topics");
     const values = shape.inputs.filter(item => !item.indexed); same(encodeAbiParameters(values, values.map(item => args[item.name!])), log.data, "Canonical event payload"); matches.push(args);
   }
-  need(matches.length === 1, `Expected exactly one ${eventName} event from the released host.`); return matches[0];
+  return matches;
+}
+function event(receipt: TransactionReceipt, address: Address, eventName: string, abi: Abi = moduleEngineHostAbi): Record<string, unknown> {
+  const matches = events(receipt, address, eventName, abi);
+  need(matches.length === 1, `Expected exactly one ${eventName} event from the released contract.`); return matches[0];
 }
 async function receiptBlock(client: ModuleEngineClient, release: ModuleEngineRelease, receipt: TransactionReceipt) { need(receipt.status === "success", "Receipt was not successful."); const block = await assertModuleEngineRelease({ client, release, blockNumber: receipt.blockNumber }); same(block.blockHash, receipt.blockHash, "Receipt block"); return block; }
 export async function verifyModuleEngineLaunchReceipt(input: { client: ModuleEngineClient; release: ModuleEngineRelease; expected: ModuleEngineLaunchRecord; receipt: TransactionReceipt }): Promise<ModuleEngineReceiptResult> {
@@ -367,6 +383,140 @@ export async function readModuleEngineAdministration(input: { client: ModuleEngi
   await canonical(input.client, block); return result;
 }
 export function moduleEngineDepositIntent(quoteAsset: Address, actor: Address, amount: bigint): ModuleEngineOperationIntent { need(amount > 0n, "Enter a positive deposit."); return { operationId: ENGINE_OPERATIONS.deposit, recipient: actor, inputAsset: quoteAsset, inputAmount: amount, outputAsset: ZERO, minimumOutput: 0n, data: "0x" }; }
+export interface ModuleEngineFeeControlsSnapshot {
+  releaseDigest: Hex; launch: ModuleEngineLaunchRecord; actor: Address; blockNumber: bigint;
+  creatorWallets: readonly Address[]; creatorSharesBps: readonly number[]; adminRevision: bigint;
+  treasury: Address; administrator: Address;
+  authors: readonly { familyId: Hex; author: Address; wallet: Address }[];
+}
+function creatorRecipients(value: unknown) {
+  need(Array.isArray(value) && value.length === 3, "Invalid creator recipients.");
+  const [wallets, shares, revision] = value;
+  need(Array.isArray(wallets) && wallets.length >= 1 && wallets.length <= 10 && Array.isArray(shares) && shares.length === wallets.length, "Invalid creator recipient count.");
+  need(shares.every(share => Number.isInteger(share) && share > 0 && share <= 10_000) && shares.reduce((sum, share) => sum + share, 0) === 10_000, "Invalid fixed creator shares.");
+  return { creatorWallets: wallets.map(wallet => moduleAddress(wallet, "creator wallet")), creatorSharesBps: shares as number[], adminRevision: uint(revision, "admin revision") };
+}
+async function feeFamilies(client: ModuleEngineClient, block: BoundBlock, launch: ModuleEngineLaunchRecord): Promise<Hex[]> {
+  const value = await read(client, block.release.contracts.host.address, "getRevision", [launch.revisionId], block.blockNumber, moduleEngineHostAbi);
+  need(Array.isArray(value) && value.length === 4 && Array.isArray(value[3]) && value[3].length <= 8, "Invalid fee family binding.");
+  return [...new Set([moduleHash(value[0]?.familyId, "revision family"), ...value[3].map(family => moduleHash(family, "eligible family"))])];
+}
+async function feeControlsAt(input: { client: ModuleEngineClient; template: ModuleEngineTemplate; token: Address; account: Address }, block: BoundBlock): Promise<ModuleEngineFeeControlsSnapshot> {
+  const launch = await boundLaunch(input.client, block, input.token), template = await assertTemplate(input.client, block, input.template, false);
+  same(launch.revisionId, template.manifest.manifest.revision.packageId, "Fee controls revision");
+  const families = await feeFamilies(input.client, block, launch), ledger = block.release.contracts.ledger.address;
+  const [recipients, treasury, administrator, authors] = await Promise.all([
+    read(input.client, ledger, "creatorRecipients", [launch.launchId], block.blockNumber, moduleEngineLedgerAbi),
+    read(input.client, ledger, "treasury", [], block.blockNumber, moduleEngineLedgerAbi),
+    read(input.client, ledger, "rewardAdmin", [], block.blockNumber, moduleEngineLedgerAbi),
+    Promise.all(families.map(async familyId => {
+      const value = await read(input.client, block.release.contracts.registry.address, "families", [familyId], block.blockNumber, moduleEngineAuthorWalletAbi);
+      need(Array.isArray(value) && value.length === 2, "Invalid registered author.");
+      return { familyId, author: moduleAddress(value[0], "registered author"), wallet: moduleAddress(value[1], "author fee wallet") };
+    })),
+  ]);
+  return { releaseDigest: block.release.releaseDigest, launch, actor: moduleAddress(input.account, "account"), blockNumber: block.blockNumber,
+    ...creatorRecipients(recipients), treasury: moduleAddress(treasury, "treasury"), administrator: moduleAddress(administrator, "administrator"), authors };
+}
+export async function readModuleEngineFeeControls(input: { client: ModuleEngineClient; release: ModuleEngineRelease; template: ModuleEngineTemplate; token: Address; account: Address }): Promise<ModuleEngineFeeControlsSnapshot> {
+  const block = await assertModuleEngineRelease(input), result = await feeControlsAt(input, block);
+  await canonical(input.client, block); return freeze(result);
+}
+function feeChangeFromIntent(intent: ModuleEngineFeeChangeIntent, snapshot: ModuleEngineFeeControlsSnapshot, expiresAt: bigint): ModuleEngineFeeChange {
+  if (intent.kind === "rotate-creator") {
+    moduleRecord(intent, ["kind", "index", "recipient"], "fee change");
+    need(Number.isInteger(intent.index) && intent.index >= 0 && intent.index < snapshot.creatorWallets.length, "Invalid creator slot.");
+    const previousWallet = snapshot.creatorWallets[intent.index], recipient = moduleAddress(intent.recipient, "new creator wallet");
+    same(previousWallet, snapshot.actor, "Current creator recipient authority"); need(recipient !== previousWallet, "Choose a different fee wallet.");
+    return { kind: intent.kind, index: intent.index, previousWallet, recipient, shareBps: snapshot.creatorSharesBps[intent.index] };
+  }
+  if (intent.kind === "replace-creators") {
+    moduleRecord(intent, ["kind", "recipients"], "fee change");
+    const authority = snapshot.actor === snapshot.treasury ? "treasury" : "reward-admin";
+    same(snapshot.actor, authority === "treasury" ? snapshot.treasury : snapshot.administrator, "Creator recipient administrator");
+    need(Array.isArray(intent.recipients) && intent.recipients.length === snapshot.creatorWallets.length, "Preserve every fixed creator share.");
+    return { kind: intent.kind, previousWallets: [...snapshot.creatorWallets], recipients: intent.recipients.map(wallet => moduleAddress(wallet, "new creator wallet")), sharesBps: [...snapshot.creatorSharesBps], expectedAdminRevision: snapshot.adminRevision, deadline: expiresAt, authority };
+  }
+  need(intent.kind === "rotate-author", "Unsupported fee change.");
+  moduleRecord(intent, ["kind", "familyId", "recipient"], "fee change");
+  const familyId = moduleHash(intent.familyId, "family"), author = snapshot.authors.find(item => item.familyId === familyId);
+  need(author, "This family does not belong to the bound coin revision."); same(author.author, snapshot.actor, "Registered author authority");
+  const recipient = moduleAddress(intent.recipient, "new author fee wallet"); need(recipient !== author.wallet, "Choose a different fee wallet.");
+  return { kind: intent.kind, familyId, author: author.author, previousWallet: author.wallet, recipient };
+}
+/** Each recipient change uses the same private preparation and wallet lifecycle as launch and claims. */
+export async function prepareModuleEngineFeeChange(input: { client: ModuleEngineClient; release: ModuleEngineRelease; template: ModuleEngineTemplate; token: Address; account: Address; intent: ModuleEngineFeeChangeIntent }): Promise<PreparedModuleEngineFeeChange> {
+  const release = freeze(bindActiveModuleEngineRelease(input.release)), template = freeze(bindModuleEngineTemplate(input.template, release));
+  const account = moduleAddress(input.account, "account"), token = moduleAddress(input.token, "token"), block = await assertModuleEngineRelease({ client: input.client, release });
+  const snapshot = await feeControlsAt({ client: input.client, template, token, account }, block), expiresAt = deadline(block.timestamp);
+  const change = feeChangeFromIntent(input.intent, snapshot, expiresAt), launch = snapshot.launch;
+  const target = change.kind === "rotate-author" ? release.contracts.registry.address : release.contracts.ledger.address;
+  let data: Hex;
+  if (change.kind === "rotate-creator") data = encodeFunctionData({ abi: moduleEngineLedgerAbi, functionName: "changeCreatorWallet", args: [launch.launchId, BigInt(change.index), change.recipient] });
+  else if (change.kind === "replace-creators") data = encodeFunctionData({ abi: moduleEngineLedgerAbi, functionName: "replaceCreatorWallets", args: [launch.launchId, [...change.recipients], change.expectedAdminRevision, change.deadline] });
+  else data = encodeFunctionData({ abi: moduleEngineAuthorWalletAbi, functionName: "changeAuthorWallet", args: [change.familyId, change.recipient] });
+  const transaction = tx(account, target, data, 0n, "manage", change.kind === "rotate-author" ? "Change your family's future author fee wallet; accrued claims stay with their current wallets" : "Change future creator fee recipients; fixed shares and accrued claims stay unchanged");
+  const simulation = await simulate(input.client, block, transaction, true);
+  const prepared: PreparedModuleEngineFeeChange = { ...change, sourceKind: "module-engine-v1", account, releaseDigest: release.releaseDigest, blockNumber: block.blockNumber,
+    expiresAt, gasEstimate: simulation.gasEstimate, transaction: { ...transaction, gas: toHex(simulation.gasEstimate * 12n / 10n) }, token: launch.token, launchId: launch.launchId, revisionId: launch.revisionId, planHash: launch.planHash };
+  // Snapshot-derived intent is immutable; UI edits can never change the pending request.
+  const intent: ModuleEngineFeeChangeIntent = change.kind === "rotate-creator" ? { kind: change.kind, index: change.index, recipient: change.recipient }
+    : change.kind === "replace-creators" ? { kind: change.kind, recipients: [...change.recipients] }
+    : { kind: change.kind, familyId: change.familyId, recipient: change.recipient };
+  return bind(prepared, { client: input.client, release, refresh: async () => {
+    const current = await assertModuleEngineRelease({ client: input.client, release }); need(current.timestamp <= expiresAt, "Fee change preview expired. Review again.");
+    const live = await feeControlsAt({ client: input.client, template, token, account }, current);
+    same(live.launch.planHash, launch.planHash, "Fee change launch plan"); same(live.launch.launchId, launch.launchId, "Fee change launch");
+    const refreshed = feeChangeFromIntent(intent, live, expiresAt);
+    const serializable = (value: ModuleEngineFeeChange) => value.kind === "replace-creators" ? { ...value, expectedAdminRevision: value.expectedAdminRevision.toString(), deadline: value.deadline.toString() } : value;
+    equal(serializable(refreshed), serializable(change), "Recipients, fixed shares or authority changed. Review again");
+    await simulate(input.client, current, transaction, true);
+  }, receipt: receipt => verifyModuleEngineFeeChangeReceipt({ client: input.client, release, launch, account, change, receipt }) });
+}
+/** Receipt events prove this transaction; later same-block rotations are reported without inventing a failed send. */
+export async function verifyModuleEngineFeeChangeReceipt(input: { client: ModuleEngineClient; release: ModuleEngineRelease; launch: ModuleEngineLaunchRecord; account: Address; change: ModuleEngineFeeChange; receipt: TransactionReceipt }): Promise<ModuleEngineReceiptResult> {
+  const block = await receiptBlock(input.client, input.release, input.receipt), launch = await boundLaunch(input.client, block, input.launch.token);
+  same(launch.launchId, input.launch.launchId, "Fee change launch"); same(launch.revisionId, input.launch.revisionId, "Fee change revision"); same(launch.planHash, input.launch.planHash, "Fee change plan");
+  const change = input.change, account = moduleAddress(input.account, "account"), ledger = block.release.contracts.ledger.address;
+  const result: NonNullable<ModuleEngineReceiptResult["feeChange"]> = { changes: [], previewChanged: false, subsequentlyChanged: false };
+  if (change.kind === "rotate-author") {
+    const registry = block.release.contracts.registry.address; same(input.receipt.to, registry, "Author registry"); same(input.receipt.from, account, "Author transaction wallet");
+    need((await feeFamilies(input.client, block, launch)).includes(change.familyId), "Author family differs from the bound launch revision.");
+    const args = event(input.receipt, registry, "AuthorWalletChanged", moduleEngineAuthorWalletAbi);
+    same(args.familyId, change.familyId, "Author family"); same(args.wallet, change.recipient, "New author fee wallet");
+    const value = await read(input.client, registry, "families", [change.familyId], block.blockNumber, moduleEngineAuthorWalletAbi);
+    need(Array.isArray(value) && value.length === 2, "Invalid author readback"); same(value[0], account, "Registered author"); same(value[0], change.author, "Reviewed author");
+    const previousWallet = moduleAddress(args.previousWallet, "Previous author fee wallet"), currentWallet = moduleAddress(value[1], "Current author fee wallet");
+    result.changes = [{ familyId: change.familyId, previousWallet, recipient: change.recipient }]; result.previewChanged = previousWallet !== change.previousWallet; result.subsequentlyChanged = currentWallet !== change.recipient;
+  } else {
+    same(input.receipt.to, ledger, "Creator ledger"); same(input.receipt.from, account, "Creator transaction wallet");
+    const current = creatorRecipients(await read(input.client, ledger, "creatorRecipients", [launch.launchId], block.blockNumber, moduleEngineLedgerAbi));
+    if (change.kind === "rotate-creator") {
+      const args = event(input.receipt, ledger, "CreatorWalletChanged", moduleEngineLedgerAbi);
+      same(args.poolId, launch.launchId, "Creator launch"); need(args.index === BigInt(change.index), "Creator slot differs."); same(args.previousWallet, account, "Creator self rotation"); same(args.previousWallet, change.previousWallet, "Old creator wallet"); same(args.newWallet, change.recipient, "New creator wallet");
+      need(current.creatorSharesBps[change.index] === change.shareBps, "Fixed creator share changed.");
+      result.changes = [{ index: change.index, previousWallet: change.previousWallet, recipient: change.recipient }]; result.subsequentlyChanged = current.creatorWallets[change.index] !== change.recipient;
+    } else {
+      const args = event(input.receipt, ledger, "CreatorRecipientsReplaced", moduleEngineLedgerAbi);
+      same(args.poolId, launch.launchId, "Creator launch"); same(args.administrator, account, "Creator administrator");
+      need(args.adminRevision === change.expectedAdminRevision + 1n && current.adminRevision >= change.expectedAdminRevision + 1n, "Administrative revision was not advanced.");
+      need(Array.isArray(args.wallets), "Invalid confirmed creator recipients.");
+      equal(args.wallets.map(wallet => moduleAddress(wallet, "confirmed creator wallet")), change.recipients, "Confirmed creator recipients"); equal(current.creatorSharesBps, change.sharesBps, "Fixed creator shares");
+      const authority = await read(input.client, ledger, change.authority === "treasury" ? "treasury" : "rewardAdmin", [], block.blockNumber, moduleEngineLedgerAbi); same(authority, account, "Administrative authority");
+      const changes = events(input.receipt, ledger, "CreatorWalletChanged", moduleEngineLedgerAbi), previous = [...change.recipients], seen = new Set<number>();
+      for (const item of changes) {
+        same(item.poolId, launch.launchId, "Changed creator launch"); const index = Number(uint(item.index, "creator index"));
+        need(Number.isSafeInteger(index) && index < previous.length && !seen.has(index), "Duplicate or invalid creator change event."); seen.add(index);
+        same(item.newWallet, change.recipients[index], "Confirmed creator slot"); need(item.effectiveCreatorFeesReceived === args.effectiveCreatorFeesReceived, "Creator accrual boundary differs.");
+        previous[index] = moduleAddress(item.previousWallet, "Previous creator wallet"); need(previous[index] !== change.recipients[index], "Invalid unchanged creator event.");
+      }
+      result.changes = previous.map((previousWallet, index) => ({ index, previousWallet, recipient: change.recipients[index] }));
+      result.previewChanged = previous.some((wallet, index) => wallet !== change.previousWallets[index]);
+      result.subsequentlyChanged = current.creatorWallets.some((wallet, index) => wallet !== change.recipients[index]);
+    }
+  }
+  await canonical(input.client, block); return receiptResult(input.receipt, change.kind, { token: launch.token, launch, feeChange: result });
+}
 export function moduleEngineWithdrawalIntent(quoteAsset: Address, recipient: Address, amount: bigint): ModuleEngineOperationIntent { need(amount > 0n, "Enter a positive withdrawal."); return { operationId: ENGINE_OPERATIONS.withdraw, recipient, inputAsset: ZERO, inputAmount: 0n, outputAsset: quoteAsset, minimumOutput: amount, data: encodeAbiParameters(parseAbiParameters("uint256"), [amount]) }; }
 export function moduleEngineSettlementRequestIntent(input: { quoteAsset: Address; actor: Address; beneficiary: Address; amount: bigint; refundAfter: bigint; obligationHash: Hex }): ModuleEngineOperationIntent {
   need(input.amount > 0n, "Enter a positive funded amount."); return { operationId: ENGINE_OPERATIONS.request, recipient: input.actor, inputAsset: input.quoteAsset, inputAmount: input.amount, outputAsset: ZERO, minimumOutput: 0n, data: encodeAbiParameters(parseAbiParameters("address,uint256,bytes32"), [moduleAddress(input.beneficiary, "beneficiary"), input.refundAfter, moduleHash(input.obligationHash, "obligationHash")]) };

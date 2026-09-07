@@ -46,4 +46,13 @@ export const moduleEngineReadAbi = parseAbi([
   "function poolId() view returns (bytes32)", "function quoteDecimals() view returns (uint8)",
 ]);
 export const moduleEngineTradeLimitsParameters = parseAbiParameters("(uint256 minimumEthFees,uint160 sqrtPriceLimitX96,bytes conversionRoute) limits");
-export const moduleEngineLedgerAbi = [...managementCoreAbi, ...parseAbi(["event FeesClaimed(address indexed beneficiary,address indexed recipient,address indexed caller,uint256 amount)"])] as const;
+export const moduleEngineLedgerAbi = [...managementCoreAbi, ...parseAbi([
+  "event FeesClaimed(address indexed beneficiary,address indexed recipient,address indexed caller,uint256 amount)",
+  "event CreatorWalletChanged(bytes32 indexed poolId,uint256 indexed index,address indexed previousWallet,address newWallet,uint256 effectiveCreatorFeesReceived)",
+  "event CreatorRecipientsReplaced(bytes32 indexed poolId,address indexed administrator,uint256 indexed adminRevision,address[] wallets,uint256 effectiveCreatorFeesReceived)",
+])] as const;
+export const moduleEngineAuthorWalletAbi = parseAbi([
+  "function families(bytes32 familyId) view returns (address author,address wallet)",
+  "function changeAuthorWallet(bytes32 familyId,address rewardWallet)",
+  "event AuthorWalletChanged(bytes32 indexed familyId,address indexed previousWallet,address indexed wallet)",
+]);

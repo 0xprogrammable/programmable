@@ -7,8 +7,9 @@ import { parseExactUnits, utcDateTimeToSeconds } from "@/lib/module-mode/builder
 import { moduleAddress, moduleHash } from "@/lib/module-mode/release";
 import type { ModuleEngineRelease, ModuleEngineTemplate } from "@/lib/module-engine/catalog";
 import { moduleEngineUtcTimestamp } from "@/lib/module-engine/presentation";
-import { createModuleEngineClient, ENGINE_OPERATIONS, moduleEngineDepositIntent, moduleEngineSettlementPaymentIntent, moduleEngineSettlementRequestIntent, moduleEngineTradeIntent, moduleEngineWithdrawalIntent, prepareModuleEngineApproval, prepareModuleEngineClaim, prepareModuleEngineOperation, quoteModuleEngineTrade, readModuleEngineAdministration, readModuleEngineQuoteAsset, type ModuleEngineAdministration, type ModuleEngineApprovalRequired, type ModuleEngineClient, type PreparedModuleEngineTransaction } from "@/lib/module-engine/client";
+import { createModuleEngineClient, ENGINE_OPERATIONS, isModuleEngineFeeTransaction, prepareModuleEngineFeeChange, type ModuleEngineFeeChangeIntent, type ModuleEngineReceiptResult, moduleEngineDepositIntent, moduleEngineSettlementPaymentIntent, moduleEngineSettlementRequestIntent, moduleEngineTradeIntent, moduleEngineWithdrawalIntent, prepareModuleEngineApproval, prepareModuleEngineClaim, prepareModuleEngineOperation, quoteModuleEngineTrade, readModuleEngineAdministration, readModuleEngineQuoteAsset, type ModuleEngineAdministration, type ModuleEngineApprovalRequired, type ModuleEngineClient, type PreparedModuleEngineTransaction } from "@/lib/module-engine/client";
 import { ModuleEngineTransactionReview, type ModuleEngineWalletActions } from "./module-engine-transaction-review";
+import { ModuleEngineFeeControls, ModuleEngineFeeChangeReceipt } from "./module-engine-fee-controls";
 import styles from "@/components/module-mode-builder.module.css";
 import engineStyles from "./module-engine-ui.module.css";
 
@@ -22,6 +23,8 @@ export function ModuleEngineConsole({ release, template, token, client: supplied
   const [routes, setRoutes] = useState<{ label: string; data: Hex }[]>([]); const [route, setRoute] = useState("");
   const [prepared, setPrepared] = useState<PreparedModuleEngineTransaction | null>(null); const [approval, setApproval] = useState<ModuleEngineApprovalRequired | null>(null);
   const [busy, setBusy] = useState(false); const [error, setError] = useState<string | null>(null); const [notice, setNotice] = useState<string | null>(null);
+  const [feeReceipt, setFeeReceipt] = useState<{ account: Address; result: ModuleEngineReceiptResult } | null>(null);
+  const feeReturnFocus = useRef<HTMLElement | null>(null);
   const errorFocus = useRef<HTMLParagraphElement>(null);
   useEffect(() => { if (error) errorFocus.current?.focus(); }, [error]);
   const step = moduleModeWalletStep(wallet), profile = template.manifest.manifest.catalogDefinition.interface;
@@ -33,7 +36,7 @@ export function ModuleEngineConsole({ release, template, token, client: supplied
   const canPrepare = Boolean(current && selected && (selected !== "fulfill" || current.settlement?.canFulfill) && (selected !== "refund" || current.settlement?.canRefund) && (selected !== "withdraw" || current.escrow && current.escrow.credit > 0n && current.timestamp >= current.escrow.unlockTime));
   const humanError = (caught: unknown) => caught instanceof Error ? caught.message.replace(/^Module engine: /, "") : "The current coin state could not be verified.";
   function edit(change: () => void) { change(); setPrepared(null); setApproval(null); setError(null); }
-  function backToEdit() { const id = prepared?.kind === "approve" ? "engine-operation-approval-review" : prepared?.kind === "claim" ? "engine-claim-review" : "engine-action-review"; setPrepared(null); requestAnimationFrame(() => document.getElementById(id)?.focus()); }
+  function backToEdit() { if (prepared && isModuleEngineFeeTransaction(prepared)) { setPrepared(null); requestAnimationFrame(() => feeReturnFocus.current?.focus()); return; } const id = prepared?.kind === "approve" ? "engine-operation-approval-review" : prepared?.kind === "claim" ? "engine-claim-review" : "engine-action-review"; setPrepared(null); requestAnimationFrame(() => document.getElementById(id)?.focus()); }
   async function refresh() {
     if (!wallet.account) return; setBusy(true); setError(null);
     try { const account = moduleAddress(wallet.account, "account"); const state = await readModuleEngineAdministration({ client, release, template, token, account, ...(requestId.trim() ? { requestId: moduleHash(requestId.trim(), "request ID") } : {}) }); setSnapshot(state); if (profile === "quote-v1") { const quote = await readModuleEngineQuoteAsset({ client, release, template, quoteAsset: state.launch.quoteAsset, account, existingToken: token }); setRoutes(quote.routes); setRoute(quote.routes[0]?.data ?? ""); } }
@@ -62,6 +65,11 @@ export function ModuleEngineConsole({ release, template, token, client: supplied
       if (result.kind === "approval-required") setApproval(result); else setPrepared(result);
     } catch (caught) { setError(humanError(caught)); } finally { setBusy(false); }
   }
+  async function prepareFeeChange(intent: ModuleEngineFeeChangeIntent) {
+    if (!wallet.account) return; feeReturnFocus.current = document.activeElement as HTMLElement | null; setBusy(true); setError(null); setNotice(null);
+    try { const account = moduleAddress(wallet.account, "account"); assertModuleModeWalletUnchanged(wallet, account); setPrepared(await prepareModuleEngineFeeChange({ client, release, template, token, account, intent })); }
+    catch (caught) { setError(humanError(caught)); } finally { setBusy(false); }
+  }
   async function prepareClaim() {
     if (!wallet.account) return; setBusy(true); setError(null);
     try { const account = moduleAddress(wallet.account, "account"); setPrepared(await prepareModuleEngineClaim({ client, release, token, account, recipient: account })); } catch (caught) { setError(humanError(caught)); } finally { setBusy(false); }
@@ -75,6 +83,7 @@ export function ModuleEngineConsole({ release, template, token, client: supplied
     try {
       assertModuleModeWalletUnchanged(wallet, prepared.account); if (prepared.releaseDigest !== release.releaseDigest) throw new Error("The selected source release changed. Review again.");
       const result = await onSubmit(prepared);
+      setFeeReceipt(result.feeChange ? { account: prepared.account, result } : null);
       if (prepared.kind === "execute" && prepared.operation.operationId === ENGINE_OPERATIONS.request) { const [id] = decodeAbiParameters(parseAbiParameters("bytes32"), prepared.result); setRequestId(id); }
       setPrepared(null); setApproval(null); setSnapshot(null); setNotice(`Transaction mined: ${result.transactionHash}. Refresh balances to see the updated state. Finality is still pending.`);
     } catch (caught) { setError(humanError(caught)); } finally { setBusy(false); }
@@ -97,9 +106,11 @@ export function ModuleEngineConsole({ release, template, token, client: supplied
         {selected === "buy" || selected === "sell" ? <><div className={styles.field}><label htmlFor="engine-operation-route">Fee conversion route <span>Fixed by template</span></label><input id="engine-operation-route" readOnly value={routes.find(item => item.data === route)?.label ?? "No fixed route is available"} /></div><p className={styles.help}>Platform: {(current.fees.buyPlatformBps / 100).toFixed(2)}%. Creator: {selected === "buy" ? current.fees.buyCreatorBps / 100 : current.fees.sellCreatorBps / 100}%. The review uses a current contract simulation and 1% slippage limits for output and ETH fee conversion.</p></> : null}
       </fieldset><div className={engineStyles.actions}><button id="engine-action-review" type="submit" className={styles.primaryButton} disabled={busy || blocked || !canPrepare || Boolean(prepared)}>Review {selected === "fulfill" ? "fulfillment" : selected === "refund" ? "refund" : selected === "deposit" ? "deposit" : selected === "withdraw" ? "withdrawal" : selected === "request" ? "request" : "trade"}</button></div>{!canPrepare ? <p className={styles.help}>This action is not currently authorized for your wallet or its time condition has not been reached. Refresh to check again.</p> : null}</form> : null}
       <section className={styles.formPanel}><h2>ETH fee claims</h2><dl className={styles.reviewRows}><div><dt>Claimable by your wallet</dt><dd>{formatUnits(current.fees.claimable, 18)} ETH</dd></div><div><dt>Already claimed</dt><dd>{formatUnits(current.fees.claimed, 18)} ETH</dd></div><div><dt>Accrued from this launch</dt><dd>{formatUnits(current.fees.contributionByLaunch, 18)} ETH</dd></div></dl><p className={styles.help}>Creator, author and platform allocations accrue to their entitled wallets. This claim withdraws your wallet’s total fee balance in this ledger to your wallet.</p><div className={engineStyles.actions}><button id="engine-claim-review" type="button" className={styles.secondaryButton} disabled={busy || blocked || current.fees.claimable === 0n || Boolean(prepared)} onClick={() => void prepareClaim()}>Review ETH claim</button></div></section>
+      <ModuleEngineFeeControls key={token + ":" + release.releaseDigest + ":" + current.actor} client={client} release={release} template={template} token={token} account={current.actor} disabled={busy || blocked || step !== "prepare" || Boolean(prepared)} onPrepare={prepareFeeChange} />
     </div> : <p className={styles.help}>Refresh to load your available actions and fee balances.</p>}
     {approval && !prepared ? <div className={engineStyles.notice} role="status"><p>Allow the contract to use exactly {current ? formatUnits(approval.amount, approval.token === token ? 18 : current.quoteDecimals) : approval.amount.toString()} tokens for this action.</p><button id="engine-operation-approval-review" type="button" className={styles.secondaryButton} disabled={busy || blocked} onClick={() => void prepareApproval()}>{approval.currentAllowance > 0n ? "Review allowance reset" : "Review exact approval"}</button></div> : null}
     {prepared ? <ModuleEngineTransactionReview prepared={prepared} busy={busy} disabled={blocked || step !== "prepare"} onConfirm={() => void confirm()} onEdit={backToEdit} quoteAsset={current?.launch.quoteAsset} quoteDecimals={current?.quoteDecimals} /> : null}
+    {!prepared && feeReceipt?.account === wallet.account?.toLowerCase() && feeReceipt?.result.launch?.token === token.toLowerCase() ? <ModuleEngineFeeChangeReceipt result={feeReceipt.result} /> : null}
     {blocked ? <p className={engineStyles.notice} role="status">{blockedReason ?? "Resolve the pending operation before sending another transaction."}</p> : null}
     {error ? <p ref={errorFocus} tabIndex={-1} className={styles.fieldError} role="alert">{error}</p> : null}{notice ? <p className={engineStyles.notice} role="status">{notice}</p> : null}
   </section>;

@@ -6,8 +6,8 @@ import { parseModuleModeAvailability } from "./module-mode/native-catalog";
 import { bindActiveModuleModeRelease, moduleHash, type ModuleModeRelease } from "./module-mode/release";
 import { parseModuleModeOperation, type ModuleModeOperation } from "./module-mode-operation-store";
 import { bindActiveModuleEngineRelease, ENGINE_ZERO_HASH, parseModuleEngineAvailability, type ModuleEngineRelease } from "./module-engine/catalog";
-import { moduleEngineHostAbi, moduleEnginePlanParameters } from "./module-engine/abi";
-import { ModuleEngineTransactionRevertedError, readModuleEngineLaunch, verifyModuleEngineApprovalReceipt, verifyModuleEngineClaimReceipt, verifyModuleEngineLaunchReceipt, verifyModuleEngineOperationReceipt, type ModuleEngineClient, type ModuleEngineOperation, type ModuleEngineReceiptResult } from "./module-engine/client";
+import { moduleEngineAuthorWalletAbi, moduleEngineHostAbi, moduleEnginePlanParameters } from "./module-engine/abi";
+import { ModuleEngineTransactionRevertedError, readModuleEngineLaunch, verifyModuleEngineFeeChangeReceipt, type ModuleEngineFeeChange, verifyModuleEngineApprovalReceipt, verifyModuleEngineClaimReceipt, verifyModuleEngineLaunchReceipt, verifyModuleEngineOperationReceipt, type ModuleEngineClient, type ModuleEngineOperation, type ModuleEngineReceiptResult } from "./module-engine/client";
 
 function requireMatch(condition: unknown, label: string): asserts condition {
   if (!condition) throw new Error(`The transaction does not match the saved ${label}. Check the hash in your wallet activity.`);
@@ -99,7 +99,8 @@ export async function recoverModuleEngineOperation(input: {
   requireMatch(sha256(tx.input) === operation.calldataHash && tx.value === BigInt(operation.value), "transaction data and value");
   requireMatch(same(tx.blockHash, receipt.blockHash) && same(block.hash, receipt.blockHash) && tx.blockNumber === receipt.blockNumber && block.number === receipt.blockNumber, "canonical block");
   requireMatch(receipt.blockNumber > BigInt(operation.preparedBlock) && receipt.blockNumber >= BigInt(release.startBlock), "preparation block");
-  const target = operation.kind === "approve" ? operation.token : operation.kind === "claim" ? release.contracts.ledger.address : release.contracts.host.address;
+  const target = operation.kind === "approve" ? operation.token : operation.kind === "rotate-author" ? release.contracts.registry.address
+    : operation.kind === "claim" || operation.version === 3 ? release.contracts.ledger.address : release.contracts.host.address;
   requireMatch(same(operation.target, target), "engine release contract");
   const readBoundLaunch = async () => {
     requireMatch(operation.launch, "engine launch binding");
@@ -110,7 +111,20 @@ export async function recoverModuleEngineOperation(input: {
   };
 
   let result: ModuleEngineReceiptResult;
-  if (operation.kind === "approve") {
+  if (operation.version === 3) {
+    const saved = operation.feeChange;
+    const change: ModuleEngineFeeChange = saved.kind === "replace-creators" ? { ...saved, expectedAdminRevision: BigInt(saved.expectedAdminRevision), deadline: BigInt(saved.deadline) } : saved;
+    requireMatch(change.kind === operation.kind && tx.value === 0n, "fee change kind and value");
+    const data = change.kind === "rotate-author"
+      ? encodeFunctionData({ abi: moduleEngineAuthorWalletAbi, functionName: "changeAuthorWallet", args: [change.familyId, change.recipient] })
+      : change.kind === "rotate-creator"
+        ? encodeFunctionData({ abi: managementCoreAbi, functionName: "changeCreatorWallet", args: [operation.launch.launchId, BigInt(change.index), change.recipient] })
+        : encodeFunctionData({ abi: managementCoreAbi, functionName: "replaceCreatorWallets", args: [operation.launch.launchId, [...change.recipients], change.expectedAdminRevision, change.deadline] });
+    requireMatch(same(data, tx.input), "canonical fee change data");
+    if (receipt.status === "reverted") throw new ModuleEngineTransactionRevertedError(transactionHash, receipt.blockNumber, receipt.blockHash);
+    requireMatch(receipt.status === "success", "receipt status");
+    result = await verifyModuleEngineFeeChangeReceipt({ client: input.client, release, launch: await readBoundLaunch(), account: operation.account, change, receipt });
+  } else if (operation.kind === "approve") {
     requireMatch(operation.approval && same(operation.approval.spender, release.contracts.host.address) && tx.value === 0n, "bounded engine spender");
     const decoded = decodeFunctionData({ abi: erc20Abi, data: tx.input });
     requireMatch(decoded.functionName === "approve" && same(decoded.args[0], operation.approval.spender) && decoded.args[1] === BigInt(operation.approval.amount), "engine approval");
