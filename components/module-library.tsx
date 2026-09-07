@@ -25,7 +25,7 @@ export function ModuleCategoryIcon({ category, size = 22 }: { category: ModuleCa
 
 export function ModuleAuthor({ entry }: { entry: ModuleModeCatalogEntry }) {
   const author = moduleDiscovery(entry).author;
-  return author ? <Link href={`/profile/${author}`} className={styles.author} title={`Module author ${author}`}>By {moduleAuthorLabel(entry)}</Link> : null;
+  return author ? <Link href={`/profile?account=${author}&chain=4663`} className={styles.author} title={`Module author ${author}`}>By {moduleAuthorLabel(entry)}</Link> : null;
 }
 
 export function ModuleLibrary({ catalog, selectedIds, onAdd, onRemove }: {
