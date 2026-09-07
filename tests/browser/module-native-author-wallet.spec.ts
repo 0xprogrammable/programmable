@@ -87,10 +87,11 @@ test("a newer saved operation of the same wallet takes priority over the old act
   await expect(page.getByRole("button", { name: "Check confirmation" })).toBeVisible();
   await page.getByRole("button", { name: "Confirm elsewhere and save next claim" }).click();
   const otherHash = "0x" + "b".repeat(64), field = page.getByRole("textbox", { name: "Transaction hash", exact: true });
-  await expect(field).toHaveValue(otherHash); await page.getByRole("button", { name: "Release wallet A receipt" }).click();
+  await expect(field).toHaveValue(otherHash);
   await page.getByRole("button", { name: "Check confirmation" }).click();
   await expect.poll(() => page.evaluate(() => window.__nativeAuthorRace.receiptRequests.at(-1))).toBe(otherHash);
   await expect(page.getByRole("alert")).toContainText("transaction hash"); await expect(field).toHaveValue(otherHash);
+  await page.getByRole("button", { name: "Release wallet A receipt" }).click();
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem("programmable:module-operation:v1:4663:" + window.__nativeAuthorRace.actor)!).transactionHash)).toBe(otherHash);
   await expect(page.getByRole("region", { name: "Author wallet change result" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Manage Author controls fixture", exact: true })).toBeVisible();

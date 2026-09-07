@@ -62,7 +62,7 @@ function ModuleCoinConsoleAccount({ token, releaseDigest, wallet }: { token: Add
   const mounted = useRef(true);
   const reviewTrigger = useRef<HTMLElement | null>(null);
   const generation = useRef(0);
-  const operation = useRef(false);
+  const operation = useRef<{ recordId: Hex | null } | null>(null);
   const account = wallet.wallet?.account ?? null;
   const saved = useModuleModeOperation(account ?? undefined);
   const activeOperation = useRef<ModuleModeOperation | null>(null);
@@ -113,24 +113,27 @@ function ModuleCoinConsoleAccount({ token, releaseDigest, wallet }: { token: Add
     if (operation.current || saved.blocked || ["wallet", "pending", "unconfirmed", "checking"].includes(phase)) return;
     if (!walletReady || !onChain || !account || !availability?.release) { setError("Connect your wallet on Robinhood Chain before reviewing an action."); return; }
     reviewTrigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    operation.current = true; setError(""); setPrepared(null); setHash(null); setAuthorReceipt(undefined); setFlowOperationId(null); setPhase("preparing");
+    const work = { recordId: null }; operation.current = work;
+    setError(""); setPrepared(null); setHash(null); setAuthorReceipt(undefined); setFlowOperationId(null); setPhase("preparing");
     try {
       const block = await client.getBlock({ blockTag: "latest" });
       if (!mounted.current) return;
       const result = await prepareModuleNativeManagementTransaction({ client, release: availability.release, catalog: availability.catalog,
         token, actor: account, intent, deadline: block.timestamp + 300n });
-      if (mounted.current) { setPrepared(result); setPhase("review"); }
-    } catch (caught) { if (mounted.current) { setError(errorMessage(caught)); setPhase("idle"); } }
-    finally { operation.current = false; }
+      if (mounted.current && operation.current === work) { setPrepared(result); setPhase("review"); }
+    } catch (caught) { if (mounted.current && operation.current === work) { setError(errorMessage(caught)); setPhase("idle"); } }
+    finally { if (operation.current === work) operation.current = null; }
   };
   const confirm = async () => {
     if (!prepared || !preparedMatchesCoin || phase !== "review" || operation.current || saved.blocked) return;
-    operation.current = true; setError(""); setPhase("wallet");
+    const work: { recordId: Hex | null } = { recordId: null }; operation.current = work;
+    setError(""); setPhase("wallet");
     let submittedHash: Hex | null = null;
     let durableOperation: ModuleModeOperation | null = null;
     let providerCalled = false;
     try {
       durableOperation = await beginModuleModeOperation(prepared);
+      work.recordId = durableOperation.id;
       activeOperation.current = durableOperation;
       if (!ownsFlow(durableOperation)) { await clearModuleModeOperation(durableOperation); return; }
       setFlowOperationId(durableOperation.id);
@@ -150,25 +153,28 @@ function ModuleCoinConsoleAccount({ token, releaseDigest, wallet }: { token: Add
       if (current) setError(errorMessage(caught));
       // Uncertain wallet/RPC responses retain the prepared request only for receipt verification.
       if (caught instanceof ModuleNativeTransactionRevertedError && caught.transactionHash === submittedHash) {
-        if (durableOperation) { try { await clearModuleModeOperation(durableOperation); activeOperation.current = null; } catch { /* Retain the record until storage is available. */ } }
+        if (durableOperation) { try { await clearModuleModeOperation(durableOperation); if (activeOperation.current?.id === durableOperation.id) activeOperation.current = null; } catch { /* Retain the record until storage is available. */ } }
         if (current) { setPhase("reverted"); setPrepared(null); }
       }
       else if (submittedHash) { if (current) setPhase("pending"); }
       else if (moduleModeSubmissionIsUncertain(caught, providerCalled)) { if (current) setPhase("unconfirmed"); }
       else {
-        if (durableOperation) { try { await clearModuleModeOperation(durableOperation); activeOperation.current = null; } catch { /* Failed cleanup must continue to block another send. */ } }
+        if (durableOperation) { try { await clearModuleModeOperation(durableOperation); if (activeOperation.current?.id === durableOperation.id) activeOperation.current = null; } catch { /* Failed cleanup must continue to block another send. */ } }
         if (current) { setPhase("idle"); setPrepared(null); }
       }
-    } finally { operation.current = false; }
+    } finally { if (operation.current === work) operation.current = null; }
   };
   const checkReceipt = async (transactionHash: Hex) => {
     let record: ModuleModeOperation | null;
     try { record = currentRecord(); } catch (caught) { setError(errorMessage(caught)); return; }
-    if (!record || record.sourceKind === "module-engine-v1" || record.account.toLowerCase() !== actor || record.kind !== "manage" || record.token.toLowerCase() !== token.toLowerCase() || operation.current) return;
-    operation.current = true; setError(""); setPhase("checking"); setFlowOperationId(record.id);
+    if (!record || record.sourceKind === "module-engine-v1" || record.account.toLowerCase() !== actor || record.kind !== "manage" || record.token.toLowerCase() !== token.toLowerCase() || operation.current?.recordId === record.id) return;
+    const preparedForRecord = prepared && preparedMatchesCoin && flowOperationId === record.id && activeOperation.current?.id === record.id ? prepared : null;
+    const work = { recordId: record.id }; operation.current = work; activeOperation.current = record;
+    if (!preparedForRecord) setPrepared(null);
+    setError(""); setPhase("checking"); setFlowOperationId(record.id);
     try {
       let result: ModuleNativeReceiptResult;
-      if (prepared && preparedMatchesCoin && activeOperation.current?.id === record.id) result = await waitForModuleNativeReceipt({ client, prepared, transactionHash });
+      if (preparedForRecord) result = await waitForModuleNativeReceipt({ client, prepared: preparedForRecord, transactionHash });
       else {
         const originalRelease = await fetchModuleModeOperationRelease(record.releaseDigest);
         result = await recoverModuleModeOperation({ client, operation: record, release: originalRelease, transactionHash });
@@ -181,10 +187,10 @@ function ModuleCoinConsoleAccount({ token, releaseDigest, wallet }: { token: Add
       const current = ownsFlow(record);
       if (current) setError(errorMessage(caught));
       if (caught instanceof ModuleNativeTransactionRevertedError && caught.transactionHash === transactionHash) {
-        try { await clearModuleModeOperation(record); activeOperation.current = null; } catch { /* Keep the record available for another read. */ }
+        try { await clearModuleModeOperation(record); if (activeOperation.current?.id === record.id) activeOperation.current = null; } catch { /* Keep the record available for another read. */ }
         if (current) { setHash(transactionHash); setPhase("reverted"); setPrepared(null); }
       } else if (current) setPhase(hash || record.transactionHash ? "pending" : "unconfirmed");
-    } finally { operation.current = false; }
+    } finally { if (operation.current === work) operation.current = null; }
   };
   const currentSnapshot = snapshot && snapshot.actor === (actor ?? null) ? snapshot : null;
   const recoveryHere = saved.operation?.sourceKind !== "module-engine-v1" && saved.operation?.account.toLowerCase() === actor && saved.operation?.kind === "manage" && saved.operation.token.toLowerCase() === token.toLowerCase();
