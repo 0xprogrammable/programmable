@@ -1,6 +1,6 @@
 import configuredCatalog from "@/config/module-mode/catalog.json";
 import { moduleDiscovery } from "@/lib/module-mode/library";
-import { moduleNativeCatalogDigest, type ModuleModeAvailability } from "@/lib/module-mode/native-catalog";
+import { bindNativeCatalogEntry, moduleNativeCatalogDigest, type ModuleModeAvailability } from "@/lib/module-mode/native-catalog";
 import { moduleAddress } from "@/lib/module-mode/release";
 import type { PublicModuleDetails } from "@/lib/module-mode/public-details";
 import { bindModuleModeCatalogFile, readModuleModeAvailability } from "./catalog";
@@ -11,8 +11,8 @@ export function resolvePublicModuleDetails(availability: ModuleModeAvailability,
   if (!availability.release) return null;
   try {
     const publications = bindModuleModeCatalogFile(catalogFile, availability.release).entries;
-    const availableByPackage = new Map(availability.catalog.filter(entry => entry.status === "available" && "nativeBinding" in entry)
-      .map(entry => [(entry as { nativeBinding: { packageId: string } }).nativeBinding.packageId.toLowerCase(), entry]));
+    const availableByPackage = new Map(availability.catalog.filter(entry => entry.status === "available").map(bindNativeCatalogEntry)
+      .map(entry => [entry.nativeBinding.packageId.toLowerCase(), entry]));
     const items = publications.flatMap(({ entry, review }) => {
       const active = availableByPackage.get(entry.nativeBinding.packageId.toLowerCase());
       if (!active || moduleNativeCatalogDigest(active) !== moduleNativeCatalogDigest(entry)) return [];

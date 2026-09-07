@@ -2,17 +2,16 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { ModuleDetailDialog } from "@/components/module-detail-dialog";
 import { bindActiveModuleModeRelease } from "@/lib/module-mode/release";
-import { MODULE_MODE_AVAILABILITY_SCHEMA, type ModuleModeAvailability } from "@/lib/module-mode/native-catalog";
+import { bindNativeCatalogEntry, MODULE_MODE_AVAILABILITY_SCHEMA, type ModuleModeAvailability } from "@/lib/module-mode/native-catalog";
 import { moduleDetailsForLaunch, readPublicModuleDetailsResponse } from "@/lib/module-mode/public-details";
 import { resolvePublicModuleDetails } from "@/lib/server/module-mode/public-details";
 import configuredRelease from "@/config/module-mode/robinhood.preview.json";
 import configuredCatalog from "@/config/module-mode/catalog.json";
-import type { RobinhoodModuleLaunch } from "@/lib/robinhood-launches";
 
 // Exercises the pure join with published fixture bytes; no RPC authentication is claimed by this test.
 function availability(): ModuleModeAvailability {
   return { schemaVersion: MODULE_MODE_AVAILABILITY_SCHEMA, release: bindActiveModuleModeRelease(configuredRelease),
-    catalog: structuredClone(configuredCatalog.entries.map(publication => publication.entry)) as ModuleModeAvailability["catalog"], reason: null };
+    catalog: structuredClone(configuredCatalog.entries.map(publication => bindNativeCatalogEntry(publication.entry))), reason: null };
 }
 
 describe("public module details", () => {
@@ -43,7 +42,7 @@ describe("public module details", () => {
   it("keeps missing historical revisions visible without using another family version", () => {
     const result = resolvePublicModuleDetails(availability(), configuredCatalog)!;
     const details = result.items[0];
-    const launch = { sourceReleaseDigest: result.releaseDigest, modulePackageIds: [details.packageId], moduleFamilyIds: [details.familyId] } as RobinhoodModuleLaunch;
+    const launch = { sourceReleaseDigest: result.releaseDigest, modulePackageIds: [details.packageId], moduleFamilyIds: [details.familyId] };
     expect(moduleDetailsForLaunch(launch, result)[0].details).toEqual(details);
     for (const change of [{ modulePackageIds: [`0x${"02".repeat(32)}`] }, { moduleFamilyIds: [`0x${"03".repeat(32)}`] }, { sourceReleaseDigest: `0x${"04".repeat(32)}` }]) {
       const modules = moduleDetailsForLaunch({ ...launch, ...change }, result);

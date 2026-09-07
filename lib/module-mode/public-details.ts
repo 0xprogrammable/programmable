@@ -38,7 +38,7 @@ export function readPublicModuleDetailsResponse(value: unknown): PublicModuleDet
 }
 
 /** A current module with the same family name is never a substitute for the coin's exact revision. */
-export function moduleDetailsForLaunch(launch: RobinhoodModuleLaunch, details: PublicModuleDetails | null) {
+export function moduleDetailsForLaunch(launch: Pick<RobinhoodModuleLaunch, "sourceReleaseDigest" | "modulePackageIds" | "moduleFamilyIds">, details: PublicModuleDetails | null) {
   const matchingRelease = details?.releaseDigest.toLowerCase() === launch.sourceReleaseDigest.toLowerCase();
   return launch.modulePackageIds.map((packageId, index) => ({
     packageId,
