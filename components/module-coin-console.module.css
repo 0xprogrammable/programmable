@@ -51,11 +51,6 @@
 .console :is(a, button, input, summary):focus-visible, .review:focus-visible { outline: 2px solid #f4f2e9; outline-offset: 4px; }
 .layout { align-items: start; display: grid; gap: 32px; grid-template-columns: minmax(0, 1fr) 304px; }
 .modules, .sidebar { min-width: 0; }
-.trade { border: 1px solid var(--mc-line); border-radius: 16px; margin-bottom: 32px; padding: 24px; scroll-margin-top: 112px; }
-.trade h2 { font-size: 24px; font-weight: 500; letter-spacing: -0.02em; line-height: 32px; margin: 0 0 16px; overflow-wrap: anywhere; }
-.tradeSides { display: flex; gap: 8px; margin-bottom: 16px; }
-.tradeSides > button { flex: 1; }
-.trade form > button { width: 100%; }
 .sectionHeading { margin-bottom: 16px; }
 .sectionHeading h2, .recipients h2, .empty h2, .review h2 { font-size: 24px; font-weight: 500; letter-spacing: -0.02em; line-height: 32px; margin: 0; }
 .sectionHeading > span { color: var(--mc-muted); font-size: 14px; }
@@ -123,7 +118,7 @@
   .heading h1 { font-size: 30px; line-height: 36px; }
   .heading > p { font-size: 16px; line-height: 24px; }
   .walletBar { align-items: stretch; flex-direction: column; }
-  .module, .sidebar, .review, .plain, .empty, .trade { padding: 16px; }
+  .module, .sidebar, .review, .plain, .empty { padding: 16px; }
   .readGrid, .review .facts { grid-template-columns: minmax(0, 1fr); }
   .moduleTitle { gap: 8px; }
   .budgetLine { align-items: start; }
