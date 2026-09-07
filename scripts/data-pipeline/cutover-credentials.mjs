@@ -2393,7 +2393,7 @@ async function assertRestoreTargetIsEmpty(sql, safeTarget, profile, allowedResto
     throw new Error("isolated restore database is not empty");
   }
   if (profile === MODULE_MODE_RECOVERY_PROFILE) {
-    const [isolation] = await sql.unsafe(`select inet_server_addr()::text as server_address,
+    const [isolation] = await sql.unsafe(`select host(inet_server_addr()) as server_address,
       (select rolsuper from pg_roles where rolname=current_user) as superuser,
       (select count(*)::integer from pg_database where datname not in ('template0','template1','postgres',$1)) as other_databases,
       (select count(*)::integer from pg_namespace where nspname not in ('pg_catalog','information_schema','public') and nspname not like 'pg_%') as extra_schemas,
