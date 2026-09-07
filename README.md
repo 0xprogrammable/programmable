@@ -16,10 +16,8 @@
 
 <h1 align="center">Programmable</h1>
 
-<h3 align="center">Shape what assets can do</h3>
-
 <p align="center">
-  The public application, Ethereum contracts, read model and maintained product documentation for Programmable.
+  The public application, contracts, indexing and documentation for Programmable.
 </p>
 
 <p align="center">
@@ -39,30 +37,20 @@
 Programmable is a launch platform for Uniswap v4 products. This repository contains the Next.js application, the
 contract workspace, the public read model and the evidence that binds what the product shows to deployed code.
 
-Classic is the direct launch model for a fixed supply token, a permanently locked ETH pool and configurable creator
-rewards. Custom is the deterministic bundle model for products that need their own hook, application logic or
-execution graph. Public V3.3 general-hook creation and wallet-owned lifecycle reads are live on Ethereum Mainnet. V2
-and V1 history and schemas remain readable, while fresh authenticated POSTs are permanently read-only with
-non-retryable `409 CUSTOM_LAUNCH_V2_READ_ONLY` and `409 CUSTOM_LAUNCH_V1_READ_ONLY` responses. On Ethereum, only V3.3 accepts new
-submissions. CLI `3.3.9` is the current installable release and defaults to live profile `3.3.0`. Explicit profile
-`3.4.0` output remains preparatory and is rejected by live capabilities until the backend activates that profile.
-Each release defines its funding and signing path. User-funded flows keep the connected wallet in control of its own
-transaction.
+Module Mode creates a coin with a bonding curve and optional, configurable modules. Contributors submit reusable
+programs through the API with their source, configuration, management interface, author wallet and reward wallet.
+Custom Launches create complete projects with their own contracts and execution logic.
 
-Robinhood Chain V4 targets a public self-serve launch path. Read the live
-[discovery manifest](https://programmable.market/.well-known/programmable.json) and require `publicWrites: true`,
-`publicAuthorization: true` and `releaseReady: true` in both the V4 and chain 4663 entries. Stop while any gate is
-false or missing. Verify the immutable CLI 4.0.0 release coordinates published in discovery before creating a request.
-Use one platform API key for its granted chains; users separately review and sign their onchain transaction and pay gas.
-The required
-default policy for new Robinhood V4 API Custom launches is 20 bps to the published recipient; it is not proof of
-canonical onchain fee enforcement, a charged fee or platform revenue, and fee-path absence is not itself a write blocker.
+Start with the [agent guide](https://programmable.market/agents.md) and
+[discovery](https://programmable.market/api/agent) for current API contracts, capability checks and CLI releases.
+Each release defines its network, supported interfaces, funding and wallet transaction requirements.
 
 ## Launch models
 
 | Model                  | What it creates                                                       | Access                                                    |
 | ---------------------- | --------------------------------------------------------------------- | --------------------------------------------------------- |
-| **Classic**            | A fixed supply token with configurable buy and sell transaction fees  | Open through [Create](https://programmable.market/launch) |
+| **Module Mode**        | A coin with a bonding curve and optional, configurable modules       | [Module Mode builder](https://programmable.market/launch/modules) |
+| **Classic (Ethereum)** | A fixed supply token with configurable buy and sell transaction fees  | Open through [Create](https://programmable.market/launch) |
 | **Custom**             | A token or application with its own deterministic hook graph          | Wallet-bound [Custom Launch API](https://programmable.market/developers/api-keys) |
 
 A hook is a smart contract attached to a Uniswap v4 pool. The pool calls it at defined points in a transaction, which
@@ -81,7 +69,7 @@ but the word hook does not establish safety, compatibility or launch approval.
 
 ## How public state is built
 
-1. A launch request is normalized under the active Classic or Custom release.
+1. A launch request is validated under the selected version of its launch model.
 2. The active release authenticates and submits the required transaction under its published signer and funding
    policy.
 3. The required network confirms the transaction and the launch reaches the required finality.
@@ -90,6 +78,18 @@ but the word hook does not establish safety, compatibility or launch approval.
 
 Canonical launch identity remains visible when optional market data is unavailable. The application does not invent
 valuation, liquidity, provenance or provider support from a token name, ticker or image.
+
+## Module development and indexing
+
+- [Module Mode](./docs/public/models/module-mode.md): configuration, launch and management.
+- [Contribution guide](./docs/public/developers/module-mode.md): package requirements, API submission and review.
+- [Contributor reference](./docs/architecture/module-mode-contributor-starter.md): source layout, host interfaces and build checks.
+- [Indexer guide](./docs/public/developers/module-mode-indexing.md): source discovery, ABI, identity, finality and checkpoints.
+- [Indexer contract](https://programmable.market/api/module-mode/indexer/v1): machine-readable ABI and integration fields.
+
+Indexers recognize the launch source version and store module selections as configuration. Adding a module within
+that version does not require an indexer to recognize its name. Historical module revisions remain attached to their
+original coins. New engine versions require their published source adapter.
 
 ## Repository map
 

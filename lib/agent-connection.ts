@@ -58,6 +58,14 @@ export const PROGRAMMABLE_AGENT_ENTRY = Object.freeze({
       website: "https://programmable.market/launch/modules",
       transactionAuthority: "connected-wallet",
     },
+    moduleIndexing: {
+      chainId: 4663,
+      authenticationRequired: false,
+      contract: "https://programmable.market/api/module-mode/indexer/v1",
+      guide: "https://programmable.market/developer-reference/module-mode-indexing",
+      markdown: "https://programmable.market/developers/module-mode-indexing-v1.md",
+      sourceIdentity: "Index by launch source version. Module identifiers are configuration, not an allowlist.",
+    },
   },
   authentication: {
     environmentVariable: "PROGRAMMABLE_API_KEY",

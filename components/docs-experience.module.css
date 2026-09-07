@@ -1540,7 +1540,7 @@
     display: flex;
     font-size: 14px;
     line-height: 1.4;
-    min-height: 42px;
+    min-height: 44px;
     padding: 10px;
   }
 
@@ -1635,7 +1635,7 @@
 
   .mobileNavSearch .search input {
     font-size: 16px;
-    height: 42px;
+    height: 44px;
   }
 
   .mobileNavBody {

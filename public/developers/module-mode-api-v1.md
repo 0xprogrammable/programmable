@@ -15,7 +15,7 @@ The package descriptor requires two nonzero EVM addresses:
 - `author` is the contributor's wallet. It must match the authenticated wallet that owns the Module contributions API key. A wallet string alone does not establish ownership.
 - `rewardWallet` is the payout wallet submitted for this immutable module revision. It may differ from `author`. Supplying it does not claim control over that wallet or prove that any rewards exist.
 
-Create a key for **Module contributions** in the website's authenticated developer key settings when that deployment offers this capability. Its scopes are exactly `modules:submit` and `modules:read`. Existing Custom launches keys do not gain those scopes automatically. Keys are secrets; source files, descriptors, output artifacts and command-line arguments must not contain them.
+Create a key with **Launches + modules** access in the website's authenticated developer key settings, or use an existing key with `modules:submit` and `modules:read`. Module operations require those two scopes. Existing keys keep their original permissions. Keys are secrets; source files, descriptors, output artifacts and command-line arguments must not contain them.
 
 The CLI reads only `PROGRAMMABLE_MODULES_API_KEY` for authentication. Inject it through your agent's secret environment or a secret manager. Do not pass it as an argument or put a literal key in shell history. Capabilities are public and receive no Authorization header.
 

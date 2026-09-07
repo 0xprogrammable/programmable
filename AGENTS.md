@@ -34,3 +34,11 @@
 - Never expose secrets, private keys, personal identities, or local environment files in commits, logs, screenshots, or public artifacts.
 
 See [docs/PROJECT-STRUCTURE.md](docs/PROJECT-STRUCTURE.md) for the directory map.
+
+## Public documentation
+
+- Use factual, direct language. No marketing claims, em dashes, filler or rhetorical contrasts.
+- Explain Module Mode through its interfaces and workflow. Do not maintain lists or counts of available modules in general documentation; read the active catalog instead.
+- Keep variable release data in versioned discovery and evidence. State actual capabilities and limits without promising support for an unknown future engine.
+- Index by launch source and canonical token identity. Module names, categories and optional market metadata must not determine whether a verified launch exists.
+- Keep GitBook, native guides and agent discovery linked. See [docs/PUBLIC-DOCS-STYLE.md](docs/PUBLIC-DOCS-STYLE.md).

@@ -4,12 +4,19 @@ description: Compare Programmable launch models and understand how their token, 
 
 # Launch models
 
-Programmable separates direct public models from deterministic Custom graph launches. Choose the model by the behavior the product needs, not by how unusual its name or branding is.
+Choose Module Mode for a coin with configurable modules, or Custom Launches for a complete project with its own contracts. The release determines the network and supported market. Classic documents the Ethereum launch model.
 
 | Model              | What it creates                                                            | Market                                        | Access                                |
 | ------------------ | -------------------------------------------------------------------------- | --------------------------------------------- | ------------------------------------- |
+| Module Mode | A coin with a bonding curve and configurable modules | Determined by the active engine | [Module Mode](https://programmable.market/launch/modules) |
 | Classic            | Fixed supply tokens with configurable buy and sell transaction fees        | ETH on Uniswap v4                             | Open through Create                   |
 | Custom             | Tokens or applications that need their own deterministic hook graph         | The pool and route in the authorized transaction | Wallet-bound Custom Launch API       |
+
+## Module Mode
+
+Module Mode provides the base coin, launch identity and runtime. Optional modules declare their configuration and required capabilities. The builder checks compatibility and presents the selected configuration before the wallet transaction.
+
+Read [Module Mode](models/module-mode.md) for the launch and management flow, or [Build a module](developers/module-mode.md) to contribute a program.
 
 ## What is a hook
 

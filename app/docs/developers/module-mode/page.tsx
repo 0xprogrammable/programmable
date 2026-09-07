@@ -20,12 +20,14 @@ const cliDirectory = "/developers/module-mode-cli/v1.0.0-development.3";
 export default function ModuleModeDeveloperPage() {
   return <DocsShell currentPath="/docs/developers/module-mode" title="Build a module"
     kicker="Module Mode" parentHref="/docs/developers" parentLabel="Developers" sections={sections}
-    description="Turn an idea into a reusable part of a coin. Submit the source through the API, with its configuration, wallet declarations and controls.">
+    description="Build and submit a reusable program with its source, configuration, wallet declarations and management controls.">
     <p className={styles.bodyCopy}>
       Module Mode starts with a simple coin and adds optional programs. A contribution can provide
       its own logic, state and management actions, or propose a new market engine.
       Its required host capabilities and compatible configurations are part of the review.
     </p>
+    <p className={styles.bodyCopy}>For product settings, read <Link href="/docs/models/module-mode">Module Mode</Link>.
+      For terminal integration, read <Link href="/developer-reference/module-mode-indexing">Index Module Mode launches</Link>.</p>
     <section id="start">
       <h2>Get started</h2>
       <ol className={styles.steps}>
@@ -84,7 +86,7 @@ export default function ModuleModeDeveloperPage() {
         The review capability must be enabled before these private progress reads are available.</p>
       <p className={styles.bodyCopy}><code>status-module</code> keeps the historical intake receipt.
         <code> review-status-module</code> reads current progress with your existing Module contributions key.
-        An <code>accepted</code> review still reports no onchain approval or public availability.</p>
+        An <code>accepted</code> review is followed by registry admission and catalog activation.</p>
       <p className={styles.bodyCopy}>The first native Solidity build profile accepts up to 4 MiB of packaged
         source, dependencies and documentation. Intake can store larger packages; a successful upload does
         not establish compatibility with this build profile.</p>
@@ -98,6 +100,7 @@ export default function ModuleModeDeveloperPage() {
       <p className={styles.bodyCopy}>The native ETH engine charges 0.20% in protocol fees in addition to the
         creator&apos;s selected fee. Half is for Programmable and half is shared equally among the distinct,
         eligible module families used by the coin. Eligibility and attribution are bound during review.</p>
+      <p className={styles.bodyCopy}>Without eligible module families, the protocol receives the full protocol fee.</p>
       <p className={styles.bodyCopy}>Rewards arise from actual qualifying fees. Submitting a wallet or receiving
         a draft ID does not create a payout. Module operating budgets and already earned claims remain separate
         from the creator&apos;s personal fee recipient.</p>
