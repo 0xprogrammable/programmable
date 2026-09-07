@@ -2,6 +2,7 @@
 
 - [Programmable](README.md)
 - [Launch models](tokens.md)
+  - [Module Mode](models/module-mode.md)
   - [Classic](models/classic.md)
   - [Custom hooks](models/custom.md)
 - [Create](creators/README.md)
@@ -16,6 +17,8 @@
   - [Verification and risk](trust.md)
   - [Service status](status.md)
 - [Developers](developers/README.md)
+  - [Build a module](developers/module-mode.md)
+  - [Index Module Mode launches](developers/module-mode-indexing.md)
   - [Custom Launch API](developers/custom-launch.md)
   - [Verify a launch](developers/verify.md)
   - [Index launches](developers/indexing.md)

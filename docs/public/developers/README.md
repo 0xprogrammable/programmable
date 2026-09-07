@@ -1,8 +1,14 @@
 ---
-description: Read only contracts and verification rules for detecting Programmable Classic and Custom launches
+description: Module contribution, launch APIs and indexing reference
 ---
 
 # Developer reference
+
+## Module Mode
+
+Module Mode has a contribution API and a native launch source on Robinhood Chain. Use the [contribution guide](module-mode.md) to build and submit a reusable module, and [Module Mode indexing](module-mode-indexing.md) to identify coins regardless of their selected modules. The [agent entry](https://programmable.market/api/agent) links to current capabilities and tools.
+
+## Custom Launches and Ethereum reads
 
 Programmable has two separate developer surfaces. The Developer API at `https://developers.programmable.family` is read only, requires no API key and never authorizes a transaction. At `https://api.programmable.market`, authenticated public V3.3 general-hook creation and lifecycle reads accept wallet keys, partner roots and bounded partner subkeys. V2 and V1 history and schemas remain readable, while fresh POSTs return non-retryable `409 CUSTOM_LAUNCH_V2_READ_ONLY` and `409 CUSTOM_LAUNCH_V1_READ_ONLY`; only V3.3 accepts new submissions. CLI and preflight checks prepare and classify exact bytes, while the API server independently enforces objective static hard blocks and exact Router simulation. Missing behavior execution leaves routability, liquidity and fee claims unverified; an authenticated executed failure blocks wallet handoff.
 

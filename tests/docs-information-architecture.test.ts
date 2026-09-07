@@ -68,6 +68,7 @@ describe("Docs information architecture", () => {
         routes: [
           { depth: 0, href: "/docs", label: "Overview" },
           { depth: 0, href: "/docs/tokens", label: "Launch models" },
+          { depth: 1, href: "/docs/models/module-mode", label: "Module Mode" },
           { depth: 1, href: "/docs/models/classic", label: "Classic" },
           { depth: 1, href: "/docs/models/custom", label: "Custom hooks" },
           {
@@ -126,6 +127,11 @@ describe("Docs information architecture", () => {
             depth: 1,
             href: "/docs/developers/module-mode",
             label: "Build a module",
+          },
+          {
+            depth: 1,
+            href: "/developer-reference/module-mode-indexing",
+            label: "Index Module Mode launches",
           },
           {
             depth: 1,

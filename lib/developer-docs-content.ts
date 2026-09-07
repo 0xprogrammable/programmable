@@ -435,6 +435,8 @@ export function buildProgrammableLlmsIndex(): string {
     `- [MultiRole V2 capabilities](${multiRoleProject.capabilities}): start here when a Robinhood token and hook share one physical contract; check current readiness and context. The existing 4.1 profile remains a separate lane.`,
     `- [MultiRole V2 guide](${multiRoleProject.guide}) and [Node 24 client](${multiRoleProject.client}): use the documented packer and preflight -> create -> status flow. Automatic economic recognition currently covers the Native20 recipe; unknown economics return evidence_required. Published links do not imply enabled admission or a generic hook audit.`,
     "- [Module contributions](https://programmable.market/developers/module-mode-api-v1.md): build, package, submit and track a reusable module.",
+    "- [Module Mode](https://programmable.market/docs/models/module-mode): coin configuration, optional modules and management.",
+    "- [Module Mode indexing](https://programmable.market/developers/module-mode-indexing-v1.md): discover and verify native launches independently of module names. Read the [JSON contract and ABI](https://programmable.market/api/module-mode/indexer/v1) for the supported source version.",
     "",
     ]),
     "## When to use Programmable",

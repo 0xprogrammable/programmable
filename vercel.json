@@ -15,6 +15,11 @@
   ],
   "redirects": [
     {
+      "source": "/docs/developers/module-mode-indexing",
+      "destination": "/developer-reference/module-mode-indexing",
+      "permanent": false
+    },
+    {
       "source": "/docs/developers/module-mode",
       "destination": "/developer-reference/module-mode",
       "permanent": false

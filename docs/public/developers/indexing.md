@@ -4,6 +4,18 @@ description: Index Programmable launches with finality, cursor completeness and 
 
 # Index Programmable launches
 
+## Choose the launch source
+
+| Source | Integration |
+| --- | --- |
+| Module Mode on Robinhood | [Native Module Mode indexing](module-mode-indexing.md) and [JSON contract](https://programmable.market/api/module-mode/indexer/v1) |
+| Custom Launches on Robinhood | [Custom terminal integration](robinhood-terminal-indexer.md) |
+| Ethereum launch records | The v2 feed and Router procedure below |
+
+Module Mode coins use the native launcher's events and getters. Custom Router stamps are not required for that source. Store the chain and token address as coin identity, then select the correct source verifier. New module IDs do not require a separate parser; preserve them as configuration.
+
+## Ethereum launch records
+
 An Ethereum indexer can use the normalized v2 feed or reproduce Router records directly. Robinhood Chain V4 uses the
 separate chain-bound feed described below. In every case, finality, cursor traversal and unknown data need explicit
 handling.

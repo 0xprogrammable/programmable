@@ -1,8 +1,14 @@
 ---
-description: Package, submit and track one deterministic Custom project
+description: Configure a Module Mode coin or submit a Custom Launch project
 ---
 
 # Launch a project
+
+## Module Mode
+
+Open [Module Mode](https://programmable.market/launch/modules) to configure a coin, its creator fees and initial buy. Modules are optional. The builder uses the selected modules' configuration fields and checks their compatibility before wallet review. After launch, open the coin's controls from its page or your profile. Read the [Module Mode guide](../models/module-mode.md) for the full flow.
+
+## Custom Launches
 
 Public V3.3 general-hook creation and lifecycle reads are live on Ethereum Mainnet. V2 and V1 history and schemas remain readable, while fresh authenticated POSTs return nonretryable `409 CUSTOM_LAUNCH_V2_READ_ONLY` and `409 CUSTOM_LAUNCH_V1_READ_ONLY`. On Ethereum, only V3.3 accepts new submissions. Legacy Registry and GitHub submission intake is closed.
 

@@ -97,6 +97,16 @@ const nextConfig: NextConfig = {
   },
   async redirects() {
     return [
+      ...["module-mode", "module-mode-indexing", "robinhood-terminal-indexer"].map((name) => ({
+        source: `/docs/developers/${name}`,
+        destination: `/developer-reference/${name}`,
+        permanent: false,
+      })),
+      {
+        source: "/docs/developers/module-mode-indexing.md",
+        destination: "/developers/module-mode-indexing-v1.md",
+        permanent: false,
+      },
       {
         source: "/docs/developers/custom-launch.md",
         destination: "/developers/custom-launch-api-v1.md",

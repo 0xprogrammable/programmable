@@ -1,8 +1,10 @@
 # Module Mode: native launch provenance and the shared Robinhood index
 
-Module Mode uses the actual `ModuleNativeLaunchV1` generation. Its source is not an Ethereum Classic contract or a Custom Launch Stamp Router. The native engine source was aligned with commit `2d914a8cfb763e8aac02ad848aaac401f7201503`. Any subsequent contract change requires the ABI, hash vectors, runtime pins and release evidence to be checked again.
+Module Mode uses the versioned `ModuleNativeLaunchV1` source. Read the public [integration guide](../public/developers/module-mode-indexing.md) and [JSON contract](https://programmable.market/api/module-mode/indexer/v1) for external terminal integration.
 
-The checked-in [Robinhood profile](../../config/module-mode/robinhood.preview.json) is disabled and has no deployment addresses. It cannot start a collector or make a coin public. Source implementation, local tests, deployed contracts, source verification, lifecycle verification, finality and public availability are separate facts.
+The [checked-in profile](../../config/module-mode/robinhood.preview.json) contains the deployment binding used by this source tree. Despite its historical filename, its `enabled` and `status` fields determine activation. Read [live availability](https://programmable.market/api/module-mode) for the deployed release, and bind its exact `sourceCommit`, contract runtime hashes, start block and evidence digests. Do not infer deployment state from this document or its filename. Source changes require the ABI, runtime pins and release evidence to be checked together.
+
+New modules within the source version are configuration. Indexing does not use module-name or category allowlists. A new engine or source version requires a documented adapter and an explicit release transition.
 
 ## One saved list, distinct sources
 

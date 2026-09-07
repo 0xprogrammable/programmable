@@ -18,12 +18,15 @@ export type DocsNavigationGroup = {
 };
 
 const tokenModelPaths = [
+  "/docs/models/module-mode",
   "/docs/models/classic",
   "/docs/models/custom",
   "/docs/models/stock-paired",
 ] as const;
 
 const developerReferencePaths = [
+  "/developer-reference/module-mode",
+  "/developer-reference/module-mode-indexing",
   "/docs/developers/module-mode",
   "/docs/developers/custom-launch",
   "/developer-reference/robinhood-terminal-indexer",
@@ -64,7 +67,7 @@ export const docsCategories = [
     relatedPaths: creatorPaths,
   },
   {
-    description: "Custom launches, verification and indexing",
+    description: "Module contributions, custom launches and indexing",
     href: "/docs/developers",
     label: "Developers",
     relatedPaths: developerReferencePaths,
@@ -81,6 +84,7 @@ export const docsNavigation: readonly DocsNavigationGroup[] = [
         label: "Launch models",
         relatedPaths: tokenModelPaths,
       },
+      { depth: 1, href: "/docs/models/module-mode", label: "Module Mode" },
       { depth: 1, href: "/docs/models/classic", label: "Classic" },
       { depth: 1, href: "/docs/models/custom", label: "Custom hooks" },
       {
@@ -138,6 +142,11 @@ export const docsNavigation: readonly DocsNavigationGroup[] = [
       },
       {
         depth: 1,
+        href: "/developer-reference/module-mode-indexing",
+        label: "Index Module Mode launches",
+      },
+      {
+        depth: 1,
         href: "/developer-reference/robinhood-terminal-indexer",
         label: "Robinhood terminal integration",
       },
@@ -161,6 +170,18 @@ export const docsNavigation: readonly DocsNavigationGroup[] = [
 ];
 
 export const docsSearchItems: DocsSearchItem[] = [
+  {
+    title: "Module Mode",
+    description: "Launch a coin with a bonding curve and optional, configurable modules.",
+    href: "/docs/models/module-mode",
+    keywords: ["modules", "bonding curve", "configuration", "launch"],
+  },
+  {
+    title: "Index Module Mode launches",
+    description: "Verify native launch identity, selected revisions, finality and checkpoints.",
+    href: "/developer-reference/module-mode-indexing",
+    keywords: ["Module Mode", "indexer", "terminal", "module-native-v1", "ABI", "launchWallet"],
+  },
   {
     title: "Documentation overview",
     description:

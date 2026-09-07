@@ -4,6 +4,8 @@ description: Verify and index Programmable Custom launch provenance on Robinhood
 
 # Index Programmable Custom on Robinhood
 
+For Module Mode coins, use the separate [Module Mode indexing reference](module-mode-indexing.md). It verifies the native launcher and preserves selected modules as configuration. Both sources use chain and token address for coin identity.
+
 Use the chain-bound finalized feed and Launch Stamp Router V1 to identify Programmable Custom launches on Robinhood
 Chain Mainnet. This page is a verification recipe, not a status snapshot. It does not claim that public writes are
 active or that the feed currently contains a launch. Resolve those facts from the live authorities before every

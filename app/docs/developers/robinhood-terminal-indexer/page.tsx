@@ -307,6 +307,9 @@ export default function RobinhoodTerminalIndexerPage() {
       sections={sections}
       title="Index Programmable Custom on Robinhood"
     >
+      <p className={styles.bodyCopy}>Module Mode uses a native launch source. Follow the
+        {" "}<a href="/developer-reference/module-mode-indexing">Module Mode indexing reference</a> for those
+        coins. Both sources can share an index keyed by chain and token address.</p>
       <section id="boundary">
         <div className={styles.sectionIntro}>
           <h2>Resolve activation from the live authority</h2>
