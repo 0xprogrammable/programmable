@@ -278,6 +278,33 @@ test("source snapshot is released before the first local mutation and stored pro
   const bad = structuredClone(evidence); delete bad.moduleRecovery.sourceSnapshot.releaseMethod;
   assert.throws(() => validateModuleRecoveryDatabaseEvidence(bad), /snapshot evidence/u);
 });
+test("an acknowledged source capture survives a later local restore failure as a separate private receipt", async t => {
+  const f = await captureFixture(t), runner = f.input.dependencies.runCommand;
+  f.input.dependencies.runCommand = async (...args) => { if (args[1].includes("--single-transaction")) throw new Error("fixture restore failure"); return runner(...args); };
+  await assert.rejects(createBackupAndRestoreEvidence(f.input), /database backup and isolated restore failed/u);
+  const file = f.input.evidencePath + ".source-capture.json", capture = JSON.parse(await readFile(file, "utf8"));
+  assert.equal((await stat(file)).mode & 0o777, 0o600); assert.equal(capture.status, "snapshot-capture-verified");
+  assert.equal(capture.sourceSnapshot.releaseMethod, "ROLLBACK"); assert.equal(capture.before.manifestSha256, capture.after.manifestSha256);
+  assert.equal(capture.backup.sha256, sha256(await readFile(f.input.backupPath))); assert.equal(capture.localRestorePerformed, false);
+  assert.equal(capture.sourceDatabaseMutated, false); await assert.rejects(readFile(f.input.evidencePath), { code: "ENOENT" });
+});
+test("the fixed restored ACL roles use the existing contracts and stay inert without membership edges", async t => {
+  const f = await captureFixture(t); await createBackupAndRestoreEvidence(f.input);
+  const command = f.commands.find(command => command.args.includes("--command"));
+  const bootstrap = command.args[command.args.indexOf("--command") + 1], db = new PGlite(); t.after(() => db.close());
+  await db.exec(bootstrap);
+  const names = ["programmable_custom_launch_api_runtime", "anon", "authenticated", "service_role", "programmable_custom_launch_api_operator",
+    ...["api", "signer", "observer", "verifier", "projector", "release_operator", "source_authority"].map(name => "programmable_custom_launch_v4_" + name),
+    "programmable_custom_launch_multi_role_admission_v2"];
+  const { rows } = await db.query("select rolname,rolcanlogin,rolsuper,rolcreatedb,rolcreaterole,rolinherit,rolreplication,rolbypassrls from pg_roles where rolname=any($1::text[])", [names]);
+  assert.deepEqual(rows.map(row => row.rolname).sort(), names.sort());
+  assert.ok(rows.every(row => Object.entries(row).every(([key, value]) => key === "rolname" || value === false)));
+  assert.equal((await db.query("select count(*)::integer as count from pg_auth_members where roleid in (select oid from pg_roles where rolname=any($1::text[])) or member in (select oid from pg_roles where rolname=any($1::text[]))", [names])).rows[0].count, 0);
+  await db.exec("ALTER ROLE programmable_custom_launch_v4_api LOGIN");
+  await assert.rejects(db.exec(bootstrap), /local recovery role is not isolated/u);
+  await db.exec("ALTER ROLE programmable_custom_launch_v4_api NOLOGIN; GRANT pg_read_all_data TO programmable_custom_launch_v4_api");
+  await assert.rejects(db.exec(bootstrap), /local recovery role is not isolated/u);
+});
 test("the explicit Module profile normalizes only literal IPv6 loopback for local libpq commands", async t => {
   const f = await captureFixture(t, { isolation: { server_address: "::1" } });
   f.input.restoreDatabaseUrl = f.input.restoreDatabaseUrl.replace("127.0.0.1", "[::1]");

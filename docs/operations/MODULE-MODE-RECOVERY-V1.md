@@ -71,6 +71,12 @@ execution and requires PostgreSQL 17 client tools. Restore uses
 creates only the required inert local role names. Existing roles must already be
 nonprivileged `NOLOGIN` roles with no membership edges. Production passwords are
 never restored or included in receipts.
+The fixed local names cover the original runtime/Supabase names plus the API
+operator, the seven V4 capabilities and Multi-role Admission V2, as declared by
+the existing backend migrations `0001`, `0017`, `0024` and `0035`. Each is created
+with `NOLOGIN`, `NOINHERIT`, `NOSUPERUSER`, `NOBYPASSRLS`, `NOCREATEDB`,
+`NOCREATEROLE` and `NOREPLICATION`. No production LOGIN, owner alias or arbitrary
+role discovered in the dump is imported; object ownership remains `postgres`.
 All three client versions and the connected server version are checked separately
 and recorded together with the local process and certificate binding.
 
@@ -155,6 +161,12 @@ transaction is capped at ten minutes. The Module dump process is capped at five
 minutes with a two-second lock-acquisition timeout; rollback acknowledgement is
 bounded to ten seconds. These settings affect only the recovery sessions. No
 replication slot, production freeze, write fence or source mutation is created.
+After the acknowledged rollback, the helper writes a private companion receipt
+next to the requested database evidence as `<evidence-file>.source-capture.json`.
+It binds both source manifests, exported snapshot, migration state and dump hash.
+That source-capture receipt survives a later local restore failure and explicitly
+does not attest a successful restore or activation. The final database evidence
+independently includes the same source snapshot when restore parity succeeds.
 
 The database helper compares the two source manifests within that shared snapshot.
 It restores into the inspected local target and compares the restored rows and

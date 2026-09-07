@@ -54,6 +54,11 @@ export const MODULE_MODE_BACKUP_SCHEMAS = Object.freeze(["programmable_custom_la
 const MODULE_RECOVERY_TABLES = Object.freeze(["principals", "wallet_bindings", "api_credentials", "api_credential_scopes",
   "api_scopes", "module_source_drafts_v1", "module_submission_keys_v1", "module_request_budgets_v1",
   "module_review_jobs_v1", "module_review_attempts_v1", "module_review_decisions_v1"]);
+// Existing API migration contracts 0001, 0017, 0024 and 0035. Never import arbitrary source roles or LOGIN identities.
+const MODULE_RECOVERY_ROLE_NAMES = Object.freeze(["programmable_custom_launch_api_runtime", "anon", "authenticated", "service_role",
+  "programmable_custom_launch_api_operator", "programmable_custom_launch_v4_api", "programmable_custom_launch_v4_signer",
+  "programmable_custom_launch_v4_observer", "programmable_custom_launch_v4_verifier", "programmable_custom_launch_v4_projector",
+  "programmable_custom_launch_v4_release_operator", "programmable_custom_launch_v4_source_authority", "programmable_custom_launch_multi_role_admission_v2"]);
 const MODULE_SNAPSHOT_ID = /^[0-9A-F]{8}-[0-9A-F]{8}-[1-9][0-9]*$/iu;
 const MODULE_TRANSACTION_SNAPSHOT = /^[0-9]+:[0-9]+:(?:[0-9]+(?:,[0-9]+)*)?$/u;
 const MODULE_SOURCE_IDENTITY_SQL = `pg_backend_pid()::integer as backend_pid,
@@ -1270,7 +1275,7 @@ function commandTargetArguments(target, username) {
 function roleBootstrapSql(profile) {
   if (profile === MODULE_MODE_RECOVERY_PROFILE) {
     // The dedicated local cluster has no production logins or credential material.
-    return ["programmable_custom_launch_api_runtime", "anon", "authenticated", "service_role"].map(role =>
+    return MODULE_RECOVERY_ROLE_NAMES.map(role =>
       `DO $module_roles$ BEGIN IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='${role}') THEN
         IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='${role}' AND NOT rolcanlogin AND NOT rolsuper
           AND NOT rolcreatedb AND NOT rolcreaterole AND NOT rolinherit AND NOT rolreplication AND NOT rolbypassrls)
@@ -2726,6 +2731,13 @@ export async function createBackupAndRestoreEvidence(input) {
       sourceTransactionOpen = false;
       sourceSnapshot.releaseMethod = "ROLLBACK";
       sourceSnapshot.releasedAt = now().toISOString();
+      const sourceCapture = { schemaVersion: "programmable.module-mode-database-source-capture.v1", status: "snapshot-capture-verified",
+        operationId: request.operationId, repositoryCommit: request.repositoryCommit, source: request.source.safeTarget, schemas: request.schemas,
+        sourceSnapshot, before, after, backup: { format: backupFormat, ...await fileSha256(request.backupPath) },
+        sourceCaptureWindow: { startedAt: sourceWindowStart, finishedAt: sourceWindowEnd },
+        sourceDatabaseMutated: false, localRestorePerformed: false, productionActivationAuthorized: false };
+      assertNoSecretOutput(sourceCapture, secrets);
+      await createPrivateFile(`${request.evidencePath}.source-capture.json`, JSON.stringify(sourceCapture, null, 2) + "\n");
     }
     if (backupFormat === "pg-custom-v1") {
       const backupBeforeList = await fileSha256(request.backupPath);
