@@ -32,18 +32,21 @@ describe("Module Mode token identity and navigation", () => {
   it("shows native source identity and its real manage route without a Custom stamp claim", () => {
     const token = moduleRow();
     const html = renderToStaticMarkup(<RobinhoodTokenView address={token.tokenAddress} token={token} status="ready" />);
-    expect(html).toContain("Programmable · Module Mode"); expect(html).toContain("2 modules");
+    expect(html).toContain("Programmable · Module Mode"); expect(html).toContain('aria-label="Attached modules"');
+    expect(html).toContain("Module 1"); expect(html).toContain("Module 2");
     expect(html).toContain(`/launch/modules/manage/${token.tokenAddress}`);
-    expect(html).toContain(`/launch/modules/manage/${token.tokenAddress}#trade`);
-    expect(html).toContain(`/profile?account=${token.creator}`);
-    expect(html).toContain(`/tx/${token.transactionHash}`);
+    expect(html).not.toContain(`#trade`);
+    expect(html).toContain(`/profile?account=${token.creator}&amp;chain=4663`);
+    expect(html).toContain("Dev wallet");
+    expect(html).not.toContain(`/tx/${token.transactionHash}`);
+    expect(html).not.toMatch(/Trade coin|Launch wallet|Launch transaction/);
     expect(html).not.toMatch(/Custom|launch stamp/);
     expect(robinhoodLaunchDescription(token)).toContain("Module Mode launch");
     expect(robinhoodLaunchDescription(token)).not.toContain("stamp");
   });
   it("supports a plain native coin and preserves the established Custom presentation", () => {
     const base = moduleRow(0);
-    expect(renderToStaticMarkup(<RobinhoodTokenView address={base.tokenAddress} token={base} status="ready" />)).toContain("Base coin");
+    expect(renderToStaticMarkup(<RobinhoodTokenView address={base.tokenAddress} token={base} status="ready" />)).toContain("No modules");
     const custom = customRow();
     expect(robinhoodLaunchDescription(custom)).toContain("Custom launch");
     expect(robinhoodModuleManageHref(custom)).toBeNull();

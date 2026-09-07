@@ -106,56 +106,29 @@ describe("token detail layout", () => {
     );
   });
 
-  it("uses a compact read-only Router notice without shrinking live trade forms", () => {
-    expect(detailSource).toMatch(
-      /isRouterStamped && !routerTradeAvailable\s*\? styles\.routerNoticeShell\s*:\s*""/s,
-    );
-    expect(detailSource).toContain('className={styles.routerNotice} role="status"');
-    expect(detailSource).toContain("market availability");
-    expect(detailSource).toContain(
-      "Trading is not available on this page for this launch.",
-    );
-    expect(detailSource).toContain("Launch details");
-    expect(detailSource).toContain("routerTradeAvailable && routerTradeProject");
-    expect(detailSource).toContain("project={routerTradeProject}");
-    expect(detailStyles).toMatch(
-      /\.tradeShell\s*\{[^}]*min-height:\s*390px;/s,
-    );
-    expect(detailStyles).toMatch(
-      /\.routerNoticeShell\s*\{[^}]*min-height:\s*0;[^}]*position:\s*static;/s,
-    );
-    expect(detailStyles).toMatch(
-      /\.routerNotice\s*\{[^}]*display:\s*grid;[^}]*gap:\s*6px;/s,
-    );
+  it("shows market information without mounting token-page trading controls", () => {
+    expect(detailSource).not.toMatch(/<TokenTrade|<PreparedTradeReview|<CustomMarketTrade|styles\.tradeShell/);
+    expect(detailSource).not.toContain('fetch("/api/trade/prepare"');
+    expect(detailSource).not.toMatch(/Launching wallet|Launch transaction/);
+    expect(detailSource).toContain("Dev wallet");
+    expect(detailSource).toContain("TokenIdentityActions");
+    expect(detailSource).toContain("styles.readOnlyLayout");
+    expect(detailStyles).toMatch(/\.layout\.readOnlyLayout\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/s);
+    const shell = readFileSync(join(root, "components/token-detail-shell.tsx"), "utf8");
+    expect(shell).not.toContain("<aside");
+    expect(shell).not.toContain("market-access");
   });
 
-  it("keeps the mobile visual order aligned with DOM and keyboard order", () => {
+  it("keeps the market chart ahead of liquidity details at every width", () => {
     const contentSource = detailSource.slice(
       detailSource.indexOf("function TokenDetailContent"),
-      detailSource.indexOf("export function TokenDetailView"),
+      detailSource.indexOf("function customMarketStatus"),
     );
-    const domMarkers = [
-      ["identity", "className={styles.identity}"],
-      ["chart", "className={styles.marketChart}"],
-      ["trade", "styles.tradeShell"],
-      ["deep", "<DeepLiquiditySummary token={token} />"],
-    ] as const;
-    const domOrder = domMarkers
-      .map(([area, marker]) => ({ area, index: contentSource.indexOf(marker) }))
-      .sort((left, right) => left.index - right.index)
-      .map(({ area }) => area);
-    const mobileAreas = detailStyles.match(
-      /@media \(max-width: 1020px\)[\s\S]*?\.classicLayout\s*\{[^}]*grid-template-areas:\s*([\s\S]*?);/,
-    )?.[1];
-    const visualOrder = [...(mobileAreas ?? "").matchAll(/"([^"]+)"/g)]
-      .flatMap((match) => match[1].trim().split(/\s+/))
-      .filter((area, index, areas) => areas.indexOf(area) === index);
-
-    expect(domMarkers.every(([, marker]) => contentSource.includes(marker))).toBe(
-      true,
-    );
-    expect(mobileAreas).toBeDefined();
-    expect(visualOrder).toEqual(domOrder);
+    const domMarkers = ["className={styles.identity}", "className={styles.marketChart}", "<DeepLiquiditySummary token={token} />"];
+    expect(domMarkers.every(marker => contentSource.includes(marker))).toBe(true);
+    expect(contentSource.indexOf(domMarkers[0])).toBeLessThan(contentSource.indexOf(domMarkers[1]));
+    expect(contentSource.indexOf(domMarkers[1])).toBeLessThan(contentSource.indexOf(domMarkers[2]));
+    expect(detailStyles).toMatch(/\.layout\.readOnlyLayout\.classicLayout\s*\{[^}]*grid-template-areas:\s*"identity" "chart" "deep"/s);
   });
 
   it("stacks detail metrics at the narrowest supported width", () => {

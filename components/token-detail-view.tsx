@@ -9,27 +9,20 @@ import {
   Copy,
   ExternalLink,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   formatUnits,
   getAddress,
   isAddress,
-  type Address,
-  type Hex,
 } from "viem";
 
-import {
-  PreparedTradeReview,
-  TokenTrade,
-  type PreparedTokenTrade,
-} from "@/components/token-trade";
+import type { PreparedTokenTrade } from "@/components/token-trade";
 import {
   TokenPriceChart,
   type TokenChartVolume,
 } from "@/components/token-price-chart";
 import { TokenDetailShell } from "@/components/token-detail-shell";
 import { TokenGmgnAnalytics } from "@/components/token-gmgn-analytics";
-import { CustomMarketTrade } from "@/components/custom-market-trade";
 import { PartnerLaunchAttribution } from
   "@/components/partner-launch-attribution";
 import { CreatorArticle } from "@/components/creator-article";
@@ -70,8 +63,6 @@ import {
   getTokenCardImageSource,
 } from "@/lib/token-image";
 import { safePublicImageUrl } from "@/lib/safe-public-image-url";
-import { validatePreparedTradeResponse } from "@/lib/trade/client";
-import { TRADE_QUOTE_VALIDITY_SECONDS } from "@/lib/trade/policy";
 import {
   isLaunchStampProvenanceV1,
   isPlatformFeePolicyReadbackV2,
@@ -208,23 +199,6 @@ const CHART_VOLUME_LABELS = {
   "1d": "Volume 1D",
   "1w": "Volume 1W",
 } as const;
-
-type TradeFlow =
-  | { phase: "form" }
-  | {
-      phase: "review";
-      prepared: PreparedTokenTrade;
-      submitting: boolean;
-      error?: string;
-    }
-  | {
-      phase: "submitted";
-      submitted: PreparedTokenTrade;
-      hash: Hex;
-      next: PreparedTokenTrade | null;
-      checking: boolean;
-      checkError?: string;
-    };
 
 const fallbackTokenImages = [
   "/brand/programmable-token-card-fallback-night-garden-01.webp",
@@ -1229,29 +1203,6 @@ function formatUsdWadAmount(valueWad: string | undefined) {
   return formatUsdAmount(value);
 }
 
-function derivedTokenPriceUsdWad(token: LauncherToken) {
-  if (token.tokenPriceUsdWad && /^\d+$/.test(token.tokenPriceUsdWad)) {
-    return token.tokenPriceUsdWad;
-  }
-  if (
-    !token.fdvUsdWad ||
-    !/^\d+$/.test(token.fdvUsdWad) ||
-    !token.totalSupplyRaw ||
-    !/^\d+$/.test(token.totalSupplyRaw) ||
-    typeof token.tokenDecimals !== "number" ||
-    !Number.isInteger(token.tokenDecimals) ||
-    token.tokenDecimals < 0 ||
-    token.tokenDecimals > 255
-  ) {
-    return undefined;
-  }
-  const supply = BigInt(token.totalSupplyRaw);
-  if (supply <= 0n) return undefined;
-  const price = (BigInt(token.fdvUsdWad) * 10n ** BigInt(token.tokenDecimals)) /
-    supply;
-  return price > 0n ? price.toString() : undefined;
-}
-
 export function formatStockPairedGrossVolume(token: LauncherToken) {
   if (token.launchModel !== "stock-paired") return null;
 
@@ -1594,87 +1545,22 @@ function MetricGrid({ metrics }: { metrics: TokenMetric[] }) {
   );
 }
 
-function PreviewTokenTrade({ token }: { token: LauncherToken }) {
-  const [slippagePercent, setSlippagePercent] = useState("1");
-
-  return (
-    <section
-      className={styles.tradeForm}
-      aria-label={`Trade ${token.symbol} preview`}
-    >
-      <div className={styles.sideControl} role="group" aria-label="Trade side">
-        <span aria-hidden="true" className={styles.sideIndicator} />
-        <button
-          className={`${styles.sideButton} ${styles.sideButtonSelected}`}
-          type="button"
-          aria-pressed="true"
-          disabled
-        >
-          Buy
-        </button>
-        <button
-          className={styles.sideButton}
-          type="button"
-          aria-pressed="false"
-          disabled
-        >
-          Sell
-        </button>
-      </div>
-
-      <div className={styles.amountCard}>
-        <div className={styles.amountHeader}>
-          <span>You pay</span>
-          <span className={styles.balance}>Wallet disconnected</span>
-        </div>
-        <div className={styles.amountInputRow}>
-          <input
-            className={styles.amountInput}
-            aria-label="You pay"
-            inputMode="decimal"
-            placeholder="0"
-            disabled
-          />
-          <span className={styles.asset}>ETH</span>
-        </div>
-        <div className={styles.amountMeta} aria-hidden="true">
-          <span>&nbsp;</span>
-        </div>
-      </div>
-
-      <dl className={`${styles.tradeFacts} ${styles.tradeSettings}`}>
-        <div>
-          <dt>Pool fee</dt>
-          <dd>{formatSwapFee(token.totalSwapFeeBps) ?? "—"}</dd>
-        </div>
-        <div>
-          <dt>
-            <label htmlFor={`preview-slippage-${token.id}`}>Max slippage</label>
-          </dt>
-          <dd>
-            <span className={styles.slippageControl}>
-              <input
-                id={`preview-slippage-${token.id}`}
-                aria-label="Slippage tolerance"
-                autoComplete="off"
-                inputMode="decimal"
-                maxLength={5}
-                value={slippagePercent}
-                onChange={(event) => setSlippagePercent(event.target.value)}
-              />
-              <span aria-hidden="true">%</span>
-            </span>
-          </dd>
-        </div>
-      </dl>
-
-      <div className={styles.tradeFooter}>
-        <button className={styles.primaryAction} type="button" disabled>
-          Trading unavailable in preview
-        </button>
-      </div>
-    </section>
-  );
+function TokenIdentityActions({ address, creator, chainId, copied, onCopy }: {
+  address?: string;
+  creator?: string;
+  chainId: number;
+  copied: boolean;
+  onCopy: () => void;
+}) {
+  const explorer = chainId === 1 ? "https://etherscan.io" : chainId === 11_155_111 ? "https://sepolia.etherscan.io" : null;
+  return <div className={styles.tokenHeaderActions}>
+    {address ? <button className={styles.tokenHeaderButton} type="button" onClick={onCopy} title={address}>
+      {copied ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />}{copied ? "Copied" : "Copy address"}
+    </button> : null}
+    {creator && isAddress(creator) ? <Link className={styles.tokenHeaderButton} href={`/profile?account=${creator}&chain=${chainId}`} title={`Dev wallet: ${creator}`}>Dev wallet</Link> : null}
+    {address && explorer ? <a className={styles.tokenHeaderButton} href={`${explorer}/token/${address}`} target="_blank" rel="noreferrer">Explorer <ExternalLink size={16} aria-hidden="true" /><span className="sr-only"> (opens in a new tab)</span></a> : null}
+    <span className="sr-only" role="status">{copied ? "Token address copied" : ""}</span>
+  </div>;
 }
 
 function DeepLiquiditySummary({ token }: { token: LauncherToken }) {
@@ -1729,7 +1615,6 @@ function TokenDetailContent({
   chainId,
   preview,
   creatorArticle = null,
-  routerTradeProject = null,
   platformFeeCertification = null,
   sourceVerification = null,
 }: {
@@ -1741,21 +1626,11 @@ function TokenDetailContent({
   platformFeeCertification?: PlatformFeeCertificationV1 | null;
   sourceVerification?: SourceVerificationDisplay | null;
 }) {
-  const {
-    wallet,
-    openWallet,
-    readNativeBalance,
-    readTradeBalances,
-    sendTransaction,
-  } = useWallet();
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState("");
   const [chartVolume, setChartVolume] = useState<TokenChartVolume | null>(null);
   const [publishedCreatorArticle, setPublishedCreatorArticle] =
     useState<CreatorArticleV1 | null>(null);
-  const [tradeFlow, setTradeFlow] = useState<TradeFlow>({
-    phase: "form",
-  });
   const copyResetTimer = useRef<number | null>(null);
   const imageUrl =
     token.imageUrl?.trim() || getFallbackTokenImage(token.tokenAddress);
@@ -1774,35 +1649,13 @@ function TokenDetailContent({
     }
     return links;
   }, [token.links, token.tokenAddress]);
-  const tokenDecimals =
-    typeof token.tokenDecimals === "number" &&
-    Number.isInteger(token.tokenDecimals) &&
-    token.tokenDecimals >= 0 &&
-    token.tokenDecimals <= 255
-      ? token.tokenDecimals
-      : 18;
   const isRouterStamped = token.launchStampProvenance !== undefined;
-  const routerTradeAvailable =
-    isRouterStamped &&
-    routerTradeProject !== null &&
-    routerTradeProject.markets.some(
-      ({ status, tradeCapability }) =>
-        status === "active" && tradeCapability !== undefined,
-    );
   const creatorAddress = isRouterStamped
     ? token.launchStampProvenance?.launchWallet
     : token.creatorAddress;
-  const canUseClassicTrade = canUseClassicTokenTrade(token);
   const classicTradeLaunchModel = token.launchModel === "custom-graph"
     ? undefined
     : token.launchModel;
-  const defaultSwapFeeBps = token.totalSwapFeeBps;
-  const classicSwapFeeBps = typeof defaultSwapFeeBps === "number"
-    ? defaultSwapFeeBps
-    : null;
-  const classicTradeFeePresentation = token.launchModelVersion === "classic-v4"
-    ? "classic-v4-hook" as const
-    : "legacy-pool" as const;
   const visibleCreatorArticle = publishedCreatorArticle
       && (!creatorArticle || publishedCreatorArticle.revision >= creatorArticle.revision)
     ? publishedCreatorArticle
@@ -1868,24 +1721,6 @@ function TokenDetailContent({
     platformFeeCertification,
   );
 
-  const explorerBase =
-    chainId === 1
-      ? "https://etherscan.io"
-      : chainId === 11_155_111
-        ? "https://sepolia.etherscan.io"
-        : null;
-  const readTokenBalances = useCallback(
-    (inputAsset: Address) => readTradeBalances(inputAsset),
-    [readTradeBalances],
-  );
-  const preparedForDisplay =
-    tradeFlow.phase === "submitted"
-      ? (tradeFlow.next ?? tradeFlow.submitted)
-      : null;
-  const preparedMinimum = preparedForDisplay
-    ? formatPreparedMinimum(preparedForDisplay, token.symbol, tokenDecimals)
-    : null;
-
   async function copyAddress() {
     if (copyResetTimer.current !== null) {
       window.clearTimeout(copyResetTimer.current);
@@ -1902,172 +1737,6 @@ function TokenDetailContent({
     }
   }
 
-  async function prepareNextTrade(source: PreparedTokenTrade) {
-    if (!canUseClassicTrade) {
-      throw new Error("Trading is not enabled for this pool");
-    }
-    if (!wallet) {
-      throw new Error("Connect your wallet before continuing");
-    }
-    if (
-      (chainId !== 1 && chainId !== 11_155_111) ||
-      source.chainId !== chainId
-    ) {
-      throw new Error("The trade network does not match this token");
-    }
-
-    const request = {
-      chainId,
-      owner: wallet.account,
-      token: token.tokenAddress,
-      side: source.side,
-      amountIn: source.quote.amountIn,
-      slippageBps: source.quote.slippageBps,
-      deadline: String(
-        Math.floor(Date.now() / 1_000) + TRADE_QUOTE_VALIDITY_SECONDS,
-      ),
-    };
-    const response = await fetch("/api/trade/prepare", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(request),
-    });
-    const body: unknown = await response.json().catch(() => null);
-    if (!response.ok) {
-      throw new Error(readApiError(body));
-    }
-    return validatePreparedTradeResponse(body, {
-      chainId,
-      owner: getAddress(wallet.account),
-      token: getAddress(token.tokenAddress),
-      hook: getAddress(token.hookAddress),
-      poolId: token.poolId,
-      launchModel: classicTradeLaunchModel,
-      launchModelVersion: token.launchModelVersion,
-      quoteAsset: token.quoteAssetAddress
-        ? getAddress(token.quoteAssetAddress)
-        : undefined,
-      side: request.side,
-      amountIn: request.amountIn,
-      slippageBps: request.slippageBps,
-      deadline: request.deadline,
-    });
-  }
-
-  async function refreshAfterApproval(
-    submitted: PreparedTokenTrade,
-    hash: Hex,
-  ) {
-    setTradeFlow({
-      phase: "submitted",
-      submitted,
-      hash,
-      next: null,
-      checking: true,
-    });
-
-    try {
-      const next = await prepareNextTrade(submitted);
-      setTradeFlow({
-        phase: "submitted",
-        submitted,
-        hash,
-        next,
-        checking: false,
-      });
-    } catch (error) {
-      setTradeFlow({
-        phase: "submitted",
-        submitted,
-        hash,
-        next: null,
-        checking: false,
-        checkError:
-          error instanceof Error
-            ? error.message
-            : "The next trade step is not available yet",
-      });
-    }
-  }
-
-  async function submitPreparedTrade(prepared: PreparedTokenTrade) {
-    if (!canUseClassicTrade) {
-      throw new Error("Trading is not enabled for this pool");
-    }
-    if (!wallet) {
-      throw new Error("Connect your wallet before continuing");
-    }
-    if (prepared.token.toLowerCase() !== token.tokenAddress.toLowerCase()) {
-      throw new Error("The prepared trade does not match this token");
-    }
-    if (
-      (chainId !== 1 && chainId !== 11_155_111) ||
-      prepared.chainId !== chainId
-    ) {
-      throw new Error("The trade network does not match this token");
-    }
-
-    const validated = validatePreparedTradeResponse(prepared, {
-      chainId,
-      owner: getAddress(wallet.account),
-      token: getAddress(token.tokenAddress),
-      hook: getAddress(token.hookAddress),
-      poolId: token.poolId,
-      launchModel: classicTradeLaunchModel,
-      launchModelVersion: token.launchModelVersion,
-      quoteAsset: token.quoteAssetAddress
-        ? getAddress(token.quoteAssetAddress)
-        : undefined,
-      side: prepared.side,
-      amountIn: prepared.quote.amountIn,
-      slippageBps: prepared.quote.slippageBps,
-      deadline: prepared.quote.deadline,
-    });
-    const transaction = validated.transaction;
-
-    const hash = await sendTransaction(transaction);
-    if (transaction.kind === "swap") {
-      setTradeFlow({
-        phase: "submitted",
-        submitted: prepared,
-        hash,
-        next: null,
-        checking: false,
-      });
-      return;
-    }
-
-    await refreshAfterApproval(prepared, hash);
-  }
-
-  async function continueTradeFlow() {
-    if (tradeFlow.phase !== "submitted" || tradeFlow.checking) return;
-
-    try {
-      const next = tradeFlow.next;
-      const submittedKind = tradeFlow.submitted.transaction.kind;
-      if (next && next.transaction.kind !== submittedKind) {
-        setTradeFlow({
-          phase: "review",
-          prepared: next,
-          submitting: false,
-        });
-        return;
-      }
-
-      await refreshAfterApproval(tradeFlow.submitted, tradeFlow.hash);
-    } catch (error) {
-      setTradeFlow({
-        ...tradeFlow,
-        checking: false,
-        checkError:
-          error instanceof Error
-            ? error.message
-            : "The next trade step could not be submitted",
-      });
-    }
-  }
-
   return (
     <div className={`${styles.page} page-width`}>
       <div className={styles.navigationRow}>
@@ -2077,7 +1746,7 @@ function TokenDetailContent({
         </Link>
       </div>
 
-      <div className={`${styles.layout} ${styles.classicLayout}`}>
+      <div className={`${styles.layout} ${styles.classicLayout} ${styles.readOnlyLayout}`}>
         <section className={styles.overview}>
           <div className={styles.identity}>
             <div className={styles.image}>
@@ -2119,22 +1788,7 @@ function TokenDetailContent({
                 />
               ) : null}
               <div className={styles.addressActions}>
-                <button
-                  className={styles.address}
-                  type="button"
-                  aria-label={copied
-                    ? `Contract address ${token.tokenAddress} copied`
-                    : `Copy ${token.name} contract address ${token.tokenAddress}`}
-                  title={copied ? "Copied" : "Copy contract address"}
-                  onClick={copyAddress}
-                >
-                  <code>{token.tokenAddress}</code>
-                  {copied ? (
-                    <Check aria-hidden="true" size={14} />
-                  ) : (
-                    <Copy aria-hidden="true" size={14} />
-                  )}
-                </button>
+                <code className={styles.tokenAddressText} title={token.tokenAddress}>{token.tokenAddress}</code>
                 {projectLinks.length > 0 ? (
                   <nav
                     className={`${styles.links} ${styles.addressLinks}`}
@@ -2192,6 +1846,7 @@ function TokenDetailContent({
                 <p className={styles.description}>{token.description.trim()}</p>
               ) : null}
             </div>
+            <TokenIdentityActions address={token.tokenAddress} creator={creatorAddress} chainId={chainId} copied={copied} onCopy={() => void copyAddress()} />
           </div>
 
           <div className={styles.marketChart}>
@@ -2210,179 +1865,7 @@ function TokenDetailContent({
           </div>
         </section>
 
-        <aside
-          className={`${styles.tradeShell} ${
-            isRouterStamped && !routerTradeAvailable
-              ? styles.routerNoticeShell
-              : ""
-          } liquid-glass-surface`}
-          aria-label={
-            isRouterStamped && !routerTradeAvailable
-              ? `${token.name} market availability`
-              : `${token.name} trade`
-          }
-        >
-          {routerTradeAvailable && routerTradeProject ? (
-            <CustomMarketTrade
-              project={routerTradeProject}
-              chainId={chainId}
-              owner={wallet ? getAddress(wallet.account) : null}
-              readNativeBalance={readNativeBalance}
-              readBalances={readTradeBalances}
-              onConnect={openWallet}
-              onSubmit={(transaction) => sendTransaction(transaction)}
-            />
-          ) : isRouterStamped ? (
-            <div className={styles.routerNotice} role="status">
-              <strong>Launch details</strong>
-              <p>
-                Trading is not available on this page for this launch. You can
-                still review its launch and market details.
-              </p>
-            </div>
-          ) : !canUseClassicTrade || classicSwapFeeBps === null ? (
-            <div className={styles.submitted} role="status">
-              <p>
-                Trading is temporarily unavailable because this launch&apos;s fee
-                settings could not be verified.
-              </p>
-            </div>
-          ) : preview ? (
-            <PreviewTokenTrade token={token} />
-          ) : chainId !== 1 && chainId !== 11_155_111 ? (
-            <div className={styles.submitted} role="status">
-              <p>Trading is not supported on this network</p>
-            </div>
-          ) : tradeFlow.phase === "form" ? (
-            <TokenTrade
-              chainId={chainId}
-              owner={wallet ? (wallet.account as Address) : null}
-              token={getAddress(token.tokenAddress)}
-              hook={getAddress(token.hookAddress)}
-              poolId={token.poolId}
-              symbol={token.symbol}
-              tokenDecimals={tokenDecimals}
-              tokenPriceEth={token.tokenPriceEth}
-              tokenPriceUsdWad={derivedTokenPriceUsdWad(token)}
-              launchModel={classicTradeLaunchModel}
-              launchModelVersion={token.launchModelVersion}
-              quoteAsset={
-                token.quoteAssetAddress
-                  ? getAddress(token.quoteAssetAddress)
-                  : undefined
-              }
-              quoteAssetSymbol={token.quoteAssetSymbol}
-              tokenPriceQuote={token.tokenPriceQuote}
-              buySwapFeeBps={token.buyHookFeeBps ?? classicSwapFeeBps}
-              sellSwapFeeBps={token.sellHookFeeBps ?? classicSwapFeeBps}
-              feePresentation={classicTradeFeePresentation}
-              readBalances={readTokenBalances}
-              onConnect={openWallet}
-              onPrepared={submitPreparedTrade}
-            />
-          ) : tradeFlow.phase === "review" ? (
-            <PreparedTradeReview
-              prepared={tradeFlow.prepared}
-              symbol={token.symbol}
-              tokenDecimals={tokenDecimals}
-              tokenPriceEth={token.tokenPriceEth}
-              launchModel={classicTradeLaunchModel}
-              totalSwapFeeBps={
-                tradeFlow.prepared.side === "buy"
-                  ? (token.buyHookFeeBps ?? classicSwapFeeBps)
-                  : (token.sellHookFeeBps ?? classicSwapFeeBps)
-              }
-              feePresentation={classicTradeFeePresentation}
-              pending={tradeFlow.submitting}
-              error={tradeFlow.error}
-              onBack={() => setTradeFlow({ phase: "form" })}
-              onConfirm={async () => {
-                const prepared = tradeFlow.prepared;
-                setTradeFlow({
-                  phase: "review",
-                  prepared,
-                  submitting: true,
-                });
-                try {
-                  await submitPreparedTrade(prepared);
-                } catch (error) {
-                  setTradeFlow({
-                    phase: "review",
-                    prepared,
-                    submitting: false,
-                    error:
-                      error instanceof Error
-                        ? error.message
-                        : "The transaction could not be submitted",
-                  });
-                }
-              }}
-            />
-          ) : (
-            <div className={styles.submitted} role="status">
-              <strong>
-                {tradeFlow.submitted.transaction.kind === "swap"
-                  ? "Swap submitted"
-                  : "Approval submitted"}
-              </strong>
-              <p>
-                Transaction{" "}
-                <code>
-                  {tradeFlow.hash.slice(0, 10)}…{tradeFlow.hash.slice(-8)}
-                </code>
-              </p>
-              {explorerBase ? (
-                <a
-                  className={styles.transactionLink}
-                  href={`${explorerBase}/tx/${tradeFlow.hash}`}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  View transaction
-                  <ExternalLink aria-hidden="true" size={15} />
-                </a>
-              ) : null}
 
-              {preparedForDisplay?.transaction.kind === "swap" &&
-              preparedMinimum ? (
-                <p>Minimum received {preparedMinimum}</p>
-              ) : null}
-
-              {tradeFlow.checkError ? (
-                <p className={styles.error} role="alert">
-                  {tradeFlow.checkError}
-                </p>
-              ) : null}
-
-              {tradeFlow.submitted.transaction.kind === "swap" ? (
-                <button
-                  className={styles.secondaryAction}
-                  type="button"
-                  onClick={() => setTradeFlow({ phase: "form" })}
-                >
-                  New trade
-                </button>
-              ) : (
-                <button
-                  className={styles.primaryAction}
-                  type="button"
-                  disabled={tradeFlow.checking}
-                  onClick={() => void continueTradeFlow()}
-                >
-                  {tradeFlow.checking
-                    ? "Checking approval"
-                    : tradeFlow.next &&
-                        tradeFlow.next.transaction.kind !==
-                          tradeFlow.submitted.transaction.kind
-                      ? tradeFlow.next.transaction.kind === "swap"
-                        ? "Review swap"
-                        : "Review next approval"
-                      : "Check approval"}
-                </button>
-              )}
-            </div>
-          )}
-        </aside>
 
         {token.launchModel === "deep" &&
         token.growthTargetNativeWei &&
@@ -2569,13 +2052,6 @@ function CustomProjectDetailContent({
   preview?: boolean;
   creatorArticle?: CreatorArticleV1 | null;
 }) {
-  const {
-    wallet,
-    openWallet,
-    readNativeBalance,
-    readTradeBalances,
-    sendTransaction,
-  } = useWallet();
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState("");
   const [publishedCreatorArticle, setPublishedCreatorArticle] =
@@ -2643,7 +2119,7 @@ function CustomProjectDetailContent({
         </Link>
       </div>
 
-      <div className={styles.layout}>
+      <div className={`${styles.layout} ${styles.readOnlyLayout}`}>
         <section className={styles.identity}>
           <div className={styles.image}>
             <Image
@@ -2688,23 +2164,14 @@ function CustomProjectDetailContent({
             ) : null}
             {project.tokenAddress ? (
               <div className={styles.addressActions}>
-                <button
-                  className={styles.address}
-                  type="button"
-                  aria-label={copied
-                    ? `Contract address ${project.tokenAddress} copied`
-                    : `Copy ${project.name} contract address ${project.tokenAddress}`}
-                  onClick={() => void copyAddress()}
-                >
-                  <code>{project.tokenAddress}</code>
-                  {copied ? <Check aria-hidden="true" size={14} /> : <Copy aria-hidden="true" size={14} />}
-                </button>
+                <code className={styles.tokenAddressText} title={project.tokenAddress}>{project.tokenAddress}</code>
               </div>
             ) : null}
             {project.description?.trim() ? (
               <p className={styles.description}>{project.description.trim()}</p>
             ) : null}
           </div>
+          <TokenIdentityActions address={project.tokenAddress} creator={project.launchingWallet.namespace === `eip155:${chainId}` ? project.launchingWallet.value : undefined} chainId={chainId} copied={copied} onCopy={() => void copyAddress()} />
         </section>
 
         {project.tokenAddress ? (
@@ -2761,35 +2228,7 @@ function CustomProjectDetailContent({
           </dl>
         </section>
 
-        <aside className={`${styles.tradeShell} liquid-glass-surface`} aria-label={`${project.name} market access`}>
-          {(chainId === 1 || chainId === 11_155_111)
-            && project.markets.some(({ tradeCapability }) =>
-              tradeCapability !== undefined) ? (
-              <CustomMarketTrade
-                project={project}
-                chainId={chainId}
-                owner={wallet ? getAddress(wallet.account) : null}
-                readNativeBalance={readNativeBalance}
-                readBalances={readTradeBalances}
-                onConnect={openWallet}
-                onSubmit={(transaction) => sendTransaction(transaction)}
-              />
-            ) : (
-              <div className={styles.customTradeState} role="status">
-                <span>Programmable trading</span>
-                <h2>Trading is not available here</h2>
-                <p>
-                  This launch does not include a verified Programmable trading
-                  route. Programmable does not create one from a token or pool
-                  address alone.
-                </p>
-                <dl className={styles.customTradeFacts}>
-                  <div><dt>Market</dt><dd>{customMarketStatus(project)}</dd></div>
-                  <div><dt>Programmable route</dt><dd>Not available</dd></div>
-                </dl>
-              </div>
-            )}
-        </aside>
+
 
         <section className={styles.customAuthorityPanel} aria-labelledby="custom-authorities-heading">
           <div className={styles.customPanelHeading}>
@@ -2821,19 +2260,7 @@ function CustomProjectDetailContent({
           )}
         </section>
 
-        <section className={styles.customProvenancePanel} aria-labelledby="custom-provenance-heading">
-          <div className={styles.customPanelHeading}>
-            <div>
-              <span>Launch record</span>
-              <h2 id="custom-provenance-heading">Launching wallet</h2>
-            </div>
-          </div>
-          <p>
-            Launched by <code>{project.launchingWallet.value}</code>. The launch
-            record binds this project to its submitting wallet and finalized
-            onchain execution. It does not grant post-launch authority.
-          </p>
-        </section>
+
       </div>
       {chainId === 1 && !preview && project.tokenAddress ? (
         <TokenGmgnAnalytics
