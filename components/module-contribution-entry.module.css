@@ -1,0 +1,14 @@
+.page { color: var(--webde-ink); margin: 0 auto; max-width: 800px; padding: 32px 24px 80px; }
+.back { align-items: center; color: var(--webde-muted); display: inline-flex; font-size: 14px; gap: 8px; margin-bottom: 24px; min-height: 44px; text-decoration: none; }
+.page h1 { font-size: 30px; font-weight: 500; letter-spacing: -.03em; line-height: 36px; margin: 0 0 24px; }
+.intro { color: var(--webde-muted); font-size: 16px; line-height: 24px; margin: 12px 0 32px; }
+.steps { border: 1px solid var(--webde-line); border-radius: 16px; display: grid; gap: 32px; list-style: none; margin: 0; padding: 32px; }
+.steps li { align-items: flex-start; display: flex; gap: 16px; }
+.steps li > span { align-items: center; background: #272727; border-radius: 8px; color: #d6ddce; display: flex; flex: 0 0 32px; font-size: 14px; height: 32px; justify-content: center; }
+.steps h2 { font-size: 18px; font-weight: 500; line-height: 28px; margin: 0; }
+.steps p { color: var(--webde-muted); font-size: 14px; line-height: 20px; margin: 8px 0; text-wrap: pretty; }
+.steps :is(a, button), .resources a { align-items: center; background: transparent; border: 0; border-radius: 8px; color: var(--webde-ink); cursor: pointer; display: inline-flex; font: inherit; font-size: 14px; gap: 8px; line-height: 20px; min-height: 44px; padding: 8px 0; text-decoration: none; }
+.resources { display: flex; flex-wrap: wrap; gap: 24px; margin-top: 16px; }
+.page :is(a, button):focus-visible { outline: 2px solid #dce5d2; outline-offset: 4px; }
+.page :is(a, button):hover { text-decoration: underline; text-underline-offset: 4px; }
+@media (max-width: 600px) { .page { padding: 16px 16px 64px; } .steps { padding: 24px 16px; } .steps li { gap: 12px; } }

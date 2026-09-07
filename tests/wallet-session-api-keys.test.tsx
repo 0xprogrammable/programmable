@@ -50,10 +50,10 @@ describe("API keys session restoration", () => {
 
     const html = renderToStaticMarkup(<DeveloperApiKeys />);
     expect(html).toContain("Custom launches");
-    expect(html).toContain("Module contributions");
-    expect(html).toContain("Checking module availability.");
-    expect(html).toMatch(/<input[^>]*disabled=""[^>]*value="module-contributions"/u);
-    expect(html).toMatch(/<input[^>]*checked=""[^>]*value="custom-launches"/u);
+    expect(html).toContain("Modules · unavailable");
+    expect(html).toContain("Launches + modules · checking");
+    expect(html).toMatch(/<option[^>]*value="module-contributions"[^>]*disabled=""/u);
+    expect(html).toMatch(/<option[^>]*value="all"[^>]*disabled=""[^>]*selected=""/u);
     expect(getAccessToken).not.toHaveBeenCalled();
     expect(getIdentityToken).not.toHaveBeenCalled();
   });

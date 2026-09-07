@@ -239,6 +239,7 @@
     "@metamask/delegation-abis": "1.1.0",
     "@metamask/delegation-core": "2.2.1",
     "@metamask/smart-accounts-kit": "1.7.0",
+    "@phosphor-icons/react": "2.1.10",
     "@privy-io/node": "^0.27.0",
     "@privy-io/react-auth": "3.35.2",
     "@tiptap/core": "^3.30.4",

@@ -1,3 +1,4 @@
+import { AGENT_KEY_SCHEMA, AGENT_SCOPES } from "../lib/agent-connection";
 import { createHash } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -80,6 +81,42 @@ describe("versioned API key bridge", () => {
     });
   });
 
+  it("issues a combined key through the new closed, signed contract", async () => {
+    fetchBackend.mockResolvedValueOnce(json({ ...mutation(AGENT_SCOPES), schemaVersion: AGENT_KEY_SCHEMA }, 201));
+    const response = await bridge().createAgent(post({ schemaVersion: AGENT_KEY_SCHEMA, walletAddress: WALLET, label: "My agent" }));
+    expect(response.status).toBe(201);
+    expect((await response.json()).apiKey.scopes).toEqual(AGENT_SCOPES);
+    const [url, init] = fetchBackend.mock.calls[0] as [URL, RequestInit];
+    expect(url.pathname).toBe("/v1/wallet-admin/agent-keys");
+    expect(JSON.parse(String(init.body))).toEqual({ schemaVersion: AGENT_KEY_SCHEMA, label: "My agent", expiresInDays: 90 });
+    expect(new Headers(init.headers).get("idempotency-key")).toBe(IDEMPOTENCY_OPERATION_ID);
+    expect(new Headers(init.headers).get("x-programmable-bff-assertion-version")).toBe("2");
+    expect(response.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it.each([{ scopes: AGENT_SCOPES }, { purpose: "all" }, { schemaVersion: CUSTOM_LAUNCH_API_SCHEMA_V1 }, { walletAddress: "0x2222222222222222222222222222222222222222" }])("rejects injected agent rights, schema or unlinked wallets: %j", async (extra) => {
+    const response = await bridge().createAgent(post({ schemaVersion: AGENT_KEY_SCHEMA, walletAddress: WALLET, label: "My agent", ...extra }));
+    expect([400, 403]).toContain(response.status);
+    expect(fetchBackend).not.toHaveBeenCalled();
+  });
+
+  it.each([READ, BOTH, [...AGENT_SCOPES, "admin:write"], [...AGENT_SCOPES, "modules:read"]])("does not reveal a combined secret with mismatched scopes: %j", async (...scopes) => {
+    fetchBackend.mockResolvedValueOnce(json({ ...mutation(scopes), schemaVersion: AGENT_KEY_SCHEMA }, 201));
+    const response = await bridge().createAgent(post({ schemaVersion: AGENT_KEY_SCHEMA, walletAddress: WALLET, label: "My agent" }));
+    expect(response.status).toBe(503);
+    expect(await response.text()).not.toContain(SECRET);
+  });
+
+  it("preserves combined rotation and completed retries without secret recovery", async () => {
+    fetchBackend.mockResolvedValueOnce(json({ schemaVersion: AGENT_KEY_SCHEMA, apiKey: summary(AGENT_SCOPES), secretState: "already-delivered", rotatedCredentialId: SOURCE_ID }));
+    const response = await bridge().rotateAgent(post({ schemaVersion: AGENT_KEY_SCHEMA, walletAddress: WALLET, label: "My agent" }), SOURCE_ID);
+    expect(response.status).toBe(200);
+    const result = await response.json();
+    expect(result).not.toHaveProperty("apiKeySecret");
+    expect(result.apiKey.scopes).toEqual(AGENT_SCOPES);
+    expect(String(fetchBackend.mock.calls[0][0])).toContain(`/agent-keys/${SOURCE_ID}/rotate`);
+  });
+
   const v2List = (extra: Record<string, unknown> = {}) => ({
     schemaVersion: CUSTOM_LAUNCH_API_SCHEMA_V2,
     apiKeys: [{ ...summary(), controllerWallet: WALLET,
@@ -136,7 +173,7 @@ describe("versioned API key bridge", () => {
   it.each([true, false])("authenticates and projects exact capability flags (%s)", async (ready) => {
     fetchBackend.mockResolvedValueOnce(json({
       schemaVersion: API_KEY_CAPABILITIES_SCHEMA_V2,
-      restrictedIssuance: ready, preservingRotation: ready, preservingModuleRotation: !ready, internalDetails: "omit",
+      restrictedIssuance: ready, preservingRotation: ready, preservingModuleRotation: !ready, unifiedKeys: false, internalDetails: "omit",
     }));
     const response = await bridge().capabilitiesV2(new Request(
       `https://programmable.market/api/developer/api-keys/v2/capabilities?walletAddress=${WALLET}`,
@@ -145,7 +182,7 @@ describe("versioned API key bridge", () => {
     expect(response.headers.get("cache-control")).toBe("no-store");
     expect(await response.json()).toEqual({
       schemaVersion: API_KEY_CAPABILITIES_SCHEMA_V2,
-      restrictedIssuance: ready, preservingRotation: ready, preservingModuleRotation: !ready,
+      restrictedIssuance: ready, preservingRotation: ready, preservingModuleRotation: !ready, unifiedKeys: false,
     });
     const [url, init] = fetchBackend.mock.calls[0] as [URL, RequestInit];
     expect(url.pathname).toBe("/v2/wallet-admin/api-keys/capabilities");
@@ -165,7 +202,7 @@ describe("versioned API key bridge", () => {
     ));
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ schemaVersion: API_KEY_CAPABILITIES_SCHEMA_V2,
-      restrictedIssuance: true, preservingRotation: true, preservingModuleRotation: false });
+      restrictedIssuance: true, preservingRotation: true, preservingModuleRotation: false, unifiedKeys: false });
   });
 
   it.each([

@@ -1,6 +1,7 @@
 import { encodeAbiParameters, formatUnits, sha256, stringToHex, type AbiParameter } from "viem";
 import { MAX_METADATA_URL_BYTES, MAX_TOKEN_DESCRIPTION_BYTES, MAX_TOKEN_NAME_BYTES } from "@/lib/metadata-policy";
 import { MAX_TOKEN_IMAGE_UPLOAD_BYTES } from "@/lib/token-image";
+import type { ModuleDiscovery } from "./library";
 
 import {
   compileOpenConfig,
@@ -49,6 +50,7 @@ export interface ModuleModeCatalogEntry {
   funding?: { label: string; help: string; defaultEth: string };
   futureTimestampFields?: string[];
   nonzeroAccountFields?: string[];
+  discovery?: ModuleDiscovery;
 }
 
 export interface ModuleModeState {

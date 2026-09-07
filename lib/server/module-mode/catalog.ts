@@ -1,4 +1,5 @@
 import { keccak256, toHex, type Hex } from "viem";
+import { isModuleDiscovery } from "@/lib/module-mode/library";
 import configuredCatalog from "@/config/module-mode/catalog.json";
 import configuredRelease from "@/config/module-mode/robinhood.preview.json";
 import { PREVIEW_MODULE_CATALOG, type ModuleModeCatalogEntry } from "@/lib/module-mode/builder";
@@ -97,6 +98,10 @@ export function createModuleModeHostManifest(input: {
   if (Object.hasOwn(entry, "status") || Object.hasOwn(entry, "nativeBinding")) throw new Error("Host definition includes cyclic publication fields.");
   const checked = validateOpenPackage(input.descriptor);
   if (!checked.ok) throw new Error("Module source descriptor is invalid.");
+  if (entry.discovery !== undefined && (!isModuleDiscovery(entry.discovery)
+    || (entry.discovery.author !== undefined && entry.discovery.author.toLowerCase() !== checked.descriptor.author.toLowerCase()))) {
+    throw new Error("Module discovery must identify its source author.");
+  }
   const binding = moduleRecord(input.nativeBinding, ["familyId", "packageId", "factory", "factoryCodeHash", "moduleCodeHash", "callbackGas"], "host.nativeBinding");
   if (checked.packageId !== moduleHash(binding.packageId, "catalog.packageId")
     || checked.familyId !== moduleHash(binding.familyId, "catalog.familyId")) throw new Error("Module source identity differs.");

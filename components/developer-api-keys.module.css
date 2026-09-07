@@ -23,8 +23,20 @@
 }
 
 .hero {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  justify-content: space-between;
   margin-bottom: 24px;
 }
+.headerActions { align-items: center; display: flex; flex-wrap: wrap; gap: 8px 16px; }
+.textLink { align-items: center; color: var(--webde-muted); display: inline-flex; gap: 6px; min-height: 44px; font-size: 13px; text-decoration: none; }
+.textLink:hover { color: var(--webde-ink); }
+.textLink:focus-visible, .accessField select:focus-visible { outline: 2px solid var(--webde-ink); outline-offset: 3px; }
+.accessField { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; color: var(--webde-muted); font-size: 13px; }
+.accessField select { background: var(--webde-control); border: 1px solid var(--api-line); border-radius: 8px; color: var(--webde-ink); font: inherit; min-height: 44px; max-width: 100%; padding: 8px 32px 8px 12px; }
+
 
 .heroCopy {
   min-width: 0;
@@ -139,7 +151,7 @@
 .workspace {
   align-items: start;
   display: grid;
-  gap: 32px;
+  gap: 24px;
   grid-template-columns: minmax(0, 1fr);
 }
 
@@ -1142,3 +1154,15 @@
 .scopeLedger code {
   overflow-wrap: anywhere;
 }
+
+@media (max-width: 600px) {
+  .headerActions { gap: 4px 12px; }
+  .headerActions .secondaryButton { min-height: 44px; }
+  .hero h1 { font-size: 28px; }
+  .secretActions { align-items: stretch; flex-direction: column; }
+  .accessField { align-items: flex-start; flex-direction: column; gap: 8px; }
+  .accessField select { width: 100%; }
+}
+
+.headerActions .secondaryButton { gap: 8px; }
+.createForm { display: grid; gap: 16px; }

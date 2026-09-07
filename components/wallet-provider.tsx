@@ -3661,18 +3661,6 @@ export function WalletButton({ compact = false }: { compact?: boolean }) {
         >
           API keys
         </Link>
-        <button
-          type="button"
-          disabled={disconnecting}
-          tabIndex={menuOpen ? undefined : -1}
-          onClick={() => {
-            setMenuOpen(false);
-            menuButtonRef.current?.focus();
-            openWallet();
-          }}
-        >
-          Manage wallets
-        </button>
         {partnerAdminAccount?.toLowerCase()
             === wallet.account.toLowerCase() ? (
           <Link

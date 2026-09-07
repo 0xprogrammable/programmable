@@ -289,10 +289,9 @@ export function LaunchModelPicker({
             className={`launch-model-card ${launchExperience.modelCard} liquid-glass-surface`}
             data-launch-model-option="modules"
             data-launch-model-available="true"
-            data-launch-model-launchable="false"
             href="/launch/modules"
             aria-labelledby="launch-model-modules-title"
-            aria-describedby="launch-model-modules-description launch-model-modules-status"
+            aria-describedby="launch-model-modules-description"
           >
             <span className={`${launchExperience.modelArt} ${launchExperience.moduleArt}`} aria-hidden="true">
               <span className={launchExperience.moduleStack}>
@@ -304,10 +303,9 @@ export function LaunchModelPicker({
             <span className={`launch-model-card-body ${launchExperience.modelBody}`}>
               <span className={`launch-model-card-heading ${launchExperience.modelHeading}`}>
                 <strong id="launch-model-modules-title">Module Mode</strong>
-                <small id="launch-model-modules-status">Preview</small>
               </span>
               <span className={`launch-model-description ${launchExperience.modelDescription}`} id="launch-model-modules-description">
-                Start with a simple coin. Set your swap fees and add optional modules to make it yours.
+                A coin with your fees and your choice of modules.
               </span>
               <span className={`launch-model-action ${launchExperience.modelAction}`}>
                 Open builder <ArrowRight aria-hidden="true" size={16} />
