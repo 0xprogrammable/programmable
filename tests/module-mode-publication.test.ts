@@ -81,6 +81,7 @@ async function starterFixture(changeSource?: (source: ModuleSubmissionRequest) =
     { path: ["endsAt"], type: "uint64" }, { path: ["includeInitialBuy"], type: "bool" }, { path: ["refundWallet"], type: "address" },
   ];
   const parameters = JSON.parse(Buffer.from(source.files.find(file => file.path === "configuration.fixture.json")!.bytes, "base64").toString("utf8"));
+  if (f.detail.job.plan?.schemaVersion !== "programmable.modules.native-build-plan.v1") throw new Error("Native fixture required");
   const plan = { ...f.detail.job.plan!, requestDigest: checked.requestDigest, programComponentId: "reward", programAbi,
     cases: [{ ...f.detail.job.plan!.cases[0], parameters }] };
   const planDigest = reviewDigest("programmable.modules.native-build-plan.v1", plan);

@@ -1,5 +1,8 @@
 import "server-only";
 
+import { createReviewedModuleEngineManifest } from "@/lib/module-mode/review-engine-manifest";
+import { verifyModuleEngineBuildArtifactV1 } from "@/lib/module-mode/review-engine-contract";
+import { computeModuleEngineHostManifestHash, type ModuleEngineCatalogDefinition, type ModuleEngineReleaseIdentity, type ModuleEngineRevisionDefinition } from "@/lib/module-engine/catalog";
 import { randomBytes } from "node:crypto";
 import { getAddress, isAddress } from "viem";
 import { isWebsiteAdminWallet } from "@/lib/admin-access";
@@ -42,7 +45,7 @@ function jsonHeader(input: Request | Response) { if (input.headers.get("content-
 
 export function createModuleReviewClient(input: {
   authenticator: WalletPrincipalAuthenticatorV1; backendBaseUrl: string; websiteToken: string; bffAssertionKeyV2: string;
-  fetchBackend: typeof fetch; releaseIdentity?: unknown; now?: () => Date; nonce?: () => string;
+  fetchBackend: typeof fetch; releaseIdentity?: unknown; engineReleaseIdentity?: unknown; now?: () => Date; nonce?: () => string;
 }) {
   const base = new URL(input.backendBaseUrl);
   if ((base.protocol !== "https:" && !(base.protocol === "http:" && ["localhost", "127.0.0.1"].includes(base.hostname))) || base.username || base.password || base.search || base.hash) throw new Error("Module review backend URL is invalid.");
@@ -91,6 +94,10 @@ export function createModuleReviewClient(input: {
         const checked = validateModuleSubmissionRequest(sourceResponse.value);
         if (!checked.ok || checked.requestDigest !== job.subject.requestDigest || checked.request.descriptor.author.toLowerCase() !== job.subject.author) fail(502, "MODULE_REVIEW_SOURCE_MISMATCH");
         if (job.artifact && (job.artifact.packageId !== checked.packageId || job.artifact.familyId !== checked.familyId || job.artifact.rewardWallet !== checked.request.descriptor.rewardWallet.toLowerCase() || job.artifact.sourceManifestHash !== reviewDigest("programmable.modules.source-manifest.v1", checked.request.descriptor) || job.artifact.configurationSchemaHash !== reviewDigest("programmable.modules.configuration-schema.v1", checked.request.descriptor.configuration))) fail(502, "MODULE_REVIEW_SOURCE_MISMATCH");
+        if (job.artifact?.schemaVersion === "programmable.modules.engine-build.v1") {
+          if (job.plan?.schemaVersion !== "programmable.modules.engine-build-plan.v1") fail(502, "MODULE_REVIEW_BUILD_PROFILE_MISMATCH");
+          verifyModuleEngineBuildArtifactV1(job.artifact, job.subject, job.plan, checked.request);
+        }
         if (!Array.isArray(detail.decisions) || detail.decisions.length > 1000 || detail.decisions.some((decision) => !validateModuleReviewDecisionRecordV1(decision) || !same(decision.subject, job.subject))) fail(502, "MODULE_REVIEW_DECISION_INVALID");
         const attempts = detail.attempts ?? [];
         if (!Array.isArray(attempts) || attempts.length > 24) fail(502, "MODULE_REVIEW_ATTEMPTS_INVALID");
@@ -99,6 +106,16 @@ export function createModuleReviewClient(input: {
       const validateManifest = (text: unknown, detail: ReviewDetail) => {
         if (typeof text !== "string" || Buffer.byteLength(text) > 2 * 1024 * 1024) fail(400, "MODULE_REVIEW_MANIFEST_REQUIRED");
         if (!detail.job.artifact) fail(409, "MODULE_REVIEW_BUILD_REQUIRED");
+        if (detail.job.artifact.schemaVersion === "programmable.modules.engine-build.v1") {
+          const raw = userInput(() => parsed(Buffer.from(text), 2 * 1024 * 1024));
+          if (!input.engineReleaseIdentity) fail(409, "MODULE_REVIEW_HOST_RELEASE_UNAVAILABLE");
+          const manifest = userInput(() => reviewRecord(reviewRecord(raw).manifest));
+          const expected = userInput(() => createReviewedModuleEngineManifest({ job: detail.job, descriptor: detail.source.descriptor,
+            release: input.engineReleaseIdentity as ModuleEngineReleaseIdentity, definition: manifest.catalogDefinition as ModuleEngineCatalogDefinition,
+            revision: manifest.revision as ModuleEngineRevisionDefinition }));
+          if (!same(raw, expected)) fail(400, "MODULE_REVIEW_MANIFEST_BUILD_MISMATCH");
+          return computeModuleEngineHostManifestHash(expected);
+        }
         const release = input.releaseIdentity ?? configuredRelease;
         if (!release || typeof release !== "object" || typeof (release as { releaseDigest?: unknown }).releaseDigest !== "string") fail(409, "MODULE_REVIEW_HOST_RELEASE_UNAVAILABLE");
         const raw = userInput(() => parsed(Buffer.from(text), 2 * 1024 * 1024));

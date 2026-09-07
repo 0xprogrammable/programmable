@@ -22,16 +22,16 @@ export function publicationRpc(url: string, fetchImpl: typeof fetch = fetch): Pu
     } catch { throw new Error(`Publication ${method} read failed`); }
   };
 }
-function record(value: unknown): Record<string, unknown> { need(value && typeof value === "object" && !Array.isArray(value), "Invalid RPC object"); return value as Record<string, unknown>; }
-function quantity(value: unknown): bigint { need(typeof value === "string" && /^0x(?:0|[1-9a-f][0-9a-f]*)$/iu.test(value), "Invalid RPC quantity"); return BigInt(value); }
+export function record(value: unknown): Record<string, unknown> { need(value && typeof value === "object" && !Array.isArray(value), "Invalid RPC object"); return value as Record<string, unknown>; }
+export function quantity(value: unknown): bigint { need(typeof value === "string" && /^0x(?:0|[1-9a-f][0-9a-f]*)$/iu.test(value), "Invalid RPC quantity"); return BigInt(value); }
 function hex(value: bigint): Hex { return `0x${value.toString(16)}`; }
 function quorum(providers: PublicationProvider[]) {
   need(providers.length === 2 && providers.every(p => typeof p.providerId === "string" && p.providerId && typeof p.trustDomain === "string" && p.trustDomain && typeof p.endpointCommitment === "string" && p.endpointCommitment), "Two reviewed RPC providers required");
   need(providers[0].providerId !== providers[1].providerId && providers[0].trustDomain !== providers[1].trustDomain && providers[0].endpointCommitment !== providers[1].endpointCommitment, "Independent RPC providers required");
 }
 async function pair(providers: PublicationProvider[], method: string, params: unknown[]) { return Promise.all(providers.map(p => p.rpc(method, params))); }
-async function equalRead(providers: PublicationProvider[], method: string, params: unknown[]) { const result = await pair(providers, method, params); same(result[0], result[1], `Provider ${method}`); return result[0]; }
-async function code(providers: PublicationProvider[], address: Address, block: Hex, hash: Hex) {
+export async function equalRead(providers: PublicationProvider[], method: string, params: unknown[]) { const result = await pair(providers, method, params); same(result[0], result[1], `Provider ${method}`); return result[0]; }
+export async function code(providers: PublicationProvider[], address: Address, block: Hex, hash: Hex) {
   const value = moduleBytes(await equalRead(providers, "eth_getCode", [address, block]), "publication.code");
   need(value !== "0x" && keccak256(value) === hash, "Runtime code differs from the pinned reviewed artifact");
 }
@@ -39,7 +39,7 @@ async function getter(providers: PublicationProvider[], target: Address, name: "
   const data = encodeFunctionData({ abi: REGISTRY_ABI, functionName: name, args: args as never });
   return decodeFunctionResult({ abi: REGISTRY_ABI, functionName: name, data: moduleBytes(await equalRead(providers, "eth_call", [{ to: target, data }, block]), "publication.getter", 4096) });
 }
-async function snapshot(providers: PublicationProvider[]) {
+export async function snapshot(providers: PublicationProvider[]) {
   quorum(providers);
   need((await pair(providers, "eth_chainId", [])).every(value => quantity(value) === 4663n), "Wrong publication chain");
   const heads = (await pair(providers, "eth_getBlockByNumber", ["latest", false])).map(record);
@@ -51,7 +51,7 @@ async function snapshot(providers: PublicationProvider[]) {
   const age = BigInt(Math.floor(Date.now() / 1000)) - quantity(block.timestamp); need(age >= -30n && age <= 300n, "Publication block is stale or future dated");
   return block;
 }
-async function closing(providers: PublicationProvider[], block: { number: Hex; hash: Hex }) {
+export async function closing(providers: PublicationProvider[], block: { number: Hex; hash: Hex }) {
   const blocks = (await pair(providers, "eth_getBlockByNumber", [block.number, false])).map(record);
   need(blocks.every(value => value.hash === block.hash && value.number === block.number), "Publication snapshot reorganized");
 }
@@ -72,7 +72,7 @@ function normalizedRevision(value: unknown) {
     factoryCodeHash: moduleHash(r.factoryCodeHash, "revision.factoryCode"), moduleCodeHash: moduleHash(r.moduleCodeHash, "revision.moduleCode"),
     manifestHash: moduleHash(r.manifestHash, "revision.manifest"), callbackGas: r.callbackGas, enabled: r.enabled };
 }
-async function checkReceipt(plan: PublicationPlan, call: PublicationCall, txHash: Hex, providers: PublicationProvider[], currentBlock: Hex) {
+export async function readPublicationReceipt(call: PublicationCall, txHash: Hex, providers: PublicationProvider[], currentBlock: Hex) {
   const txs = (await pair(providers, "eth_getTransactionByHash", [txHash])).map(record);
   const receipts = (await pair(providers, "eth_getTransactionReceipt", [txHash])).map(record);
   const normalizeTx = (t: Record<string, unknown>) => ({ hash: t.hash, from: moduleAddress(t.from, "transaction.from"), to: moduleAddress(t.to, "transaction.to"), input: moduleBytes(t.input, "transaction.input", 49_184), value: t.value, chainId: t.chainId, blockHash: t.blockHash, blockNumber: t.blockNumber });
@@ -84,6 +84,10 @@ async function checkReceipt(plan: PublicationPlan, call: PublicationCall, txHash
   need(receipt.transactionHash === txHash && receipt.blockHash === tx.blockHash && receipt.blockNumber === tx.blockNumber && quantity(receipt.status) === 1n && quantity(receipt.blockNumber) <= quantity(currentBlock), "Successful canonical receipt required");
   const blocks = (await pair(providers, "eth_getBlockByNumber", [receipt.blockNumber, false])).map(record);
   need(blocks.every(b => b.hash === receipt.blockHash && b.number === receipt.blockNumber && Array.isArray(b.transactions) && b.transactions.includes(txHash)), "Transaction is not in the canonical block");
+  return { action: call.action, transaction: tx, receipt };
+}
+async function checkReceipt(plan: PublicationPlan, call: PublicationCall, txHash: Hex, providers: PublicationProvider[], currentBlock: Hex) {
+  const { transaction: tx, receipt } = await readPublicationReceipt(call, txHash, providers, currentBlock);
   if (call.action === "deployFactory") await code(providers, plan.publication.entry.nativeBinding.factory, receipt.blockNumber as Hex, plan.publication.entry.nativeBinding.factoryCodeHash);
   if (call.action === "approveRevision") {
     need(Array.isArray(receipt.logs), "Admission event missing");
