@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
-import { encodeAbiParameters, encodeEventTopics, keccak256, parseAbi, parseAbiParameters, zeroAddress } from 'viem';
+import { encodeAbiParameters, encodeEventTopics, keccak256, parseAbi, parseAbiParameters, toHex as textHex, zeroAddress } from 'viem';
 import { parseOptions, patchImmutables, scanRange, validatePublished, boundLaunchBatch, resolveCreationTransactions } from './verify-launch-source.mjs';
+import { canonicalJson } from './core.mjs';
 
 const address = `0x${'12'.repeat(20)}`;
 const release = { chainId: 4663, startBlock: '100', releaseDigest: `0x${'34'.repeat(32)}`, contracts: { launcher: { address } } };
@@ -13,6 +14,8 @@ test('publication and checkpoint writes are explicit', () => {
   assert.throws(() => parseOptions(['--publish', '--state-file', '/tmp/state.json', '--from-block', '100']), /override/);
   assert.throws(() => parseOptions(['--max-blocks', '1000001']), /between/);
   assert.throws(() => parseOptions(['--max-launches', '0']), /between/);
+  assert.throws(() => parseOptions(['--from-block', '-1']), /scan block range/);
+  assert.throws(() => parseOptions(['--from-block', '101', '--to-block', '100']), /scan block range/);
   assert.throws(() => parseOptions(['--token', 'oops']), /Invalid token/);
   assert.throws(() => parseOptions(['--submit']), /Unknown/);
   assert.equal(parseOptions(['--publish', '--state-file', '/tmp/state.json']).publish, true);
@@ -64,17 +67,72 @@ test('scheduled publication uses production, read-only repository access and a c
   for (const match of workflow.matchAll(/uses: ([^\s]+)/g)) assert.match(match[1], /@[a-f0-9]{40}$/);
 });
 
-test('provider match cannot replace exact address, deployment, source and byte comparisons', () => {
-  const transactionHash = `0x${'56'.repeat(32)}`;
-  const target = { role: 'token', address, file: 'Token.sol', name: 'Token', input: { sources: { 'Token.sol': { content: 'contract Token {}' } } }, transactionHash, creationCode: '0x1122', runtime: '0x3344', artifact: { evm: { bytecode: { object: '1122' }, deployedBytecode: { object: '3344' } } } };
-  const value = { chainId: '4663', address, match: 'match', creationMatch: 'match', runtimeMatch: 'match', compilation: { compilerVersion: '0.8.26+commit.8a97fa7a', fullyQualifiedName: 'Token.sol:Token' }, sources: target.input.sources, deployment: { transactionHash }, creationBytecode: { onchainBytecode: '0x1122', recompiledBytecode: '0x1122' }, runtimeBytecode: { onchainBytecode: '0x3344', recompiledBytecode: '0x3344' }, verifiedAt: '2026-09-07T00:00:00Z' };
+export function publishedFixture() {
+  const transactionHash = `0x${'56'.repeat(32)}`, sourceCommit = 'a'.repeat(40);
+  const input = { language: 'Solidity', sources: { 'Token.sol': { content: '// synthetic source, never onchain\ncontract Token {}' } },
+    settings: { optimizer: { enabled: true, runs: 1000 }, evmVersion: 'cancun', metadata: { appendCBOR: false, bytecodeHash: 'none' }, libraries: {}, remappings: [] } };
+  const metadata = { compiler: { version: '0.8.26+commit.8a97fa7a' }, settings: { compilationTarget: { 'Token.sol': 'Token' } } };
+  const creation = { transactionHash, blockNumber: '123', transactionIndex: '2', transactionSender: address };
+  const target = { role: 'token', address, file: 'Token.sol', name: 'Token', input, transactionHash, creation, sourceCommit,
+    constructorArguments: '0x', creationCode: '0x1122', runtime: '0x3344', artifact: { abi: [], metadata: JSON.stringify(metadata),
+      evm: { bytecode: { object: '1122' }, deployedBytecode: { object: '3344', immutableReferences: {} } } } };
+  const value = { chainId: '4663', address, match: 'match', creationMatch: 'match', runtimeMatch: 'match', matchId: '12',
+    compilation: { language: 'Solidity', compiler: 'solc', compilerVersion: '0.8.26+commit.8a97fa7a', name: 'Token', fullyQualifiedName: 'Token.sol:Token', compilerSettings: input.settings },
+    stdJsonInput: structuredClone(input), metadata, abi: [], sources: input.sources, deployment: { ...creation, deployer: address },
+    creationBytecode: { onchainBytecode: '0x1122', recompiledBytecode: '0x1122', cborAuxdata: {}, linkReferences: {}, transformations: [], transformationValues: {} },
+    runtimeBytecode: { onchainBytecode: '0x3344', recompiledBytecode: '0x3344', cborAuxdata: {}, linkReferences: {}, immutableReferences: {}, transformations: [], transformationValues: {} },
+    verifiedAt: '2026-09-07T00:00:00Z' };
+  return { target, value };
+}
+test('an omitted empty library default needs the exact pinned provider recompilation and never permits links', () => {
+  const { target, value } = publishedFixture();
+  value.compilation.compilerSettings = structuredClone(value.compilation.compilerSettings);
+  delete value.compilation.compilerSettings.libraries;
+  delete value.stdJsonInput.settings.libraries;
+  const proof = { compilerVersion: '0.8.26+commit.8a97fa7a', inputDigest: keccak256(textHex(canonicalJson(value.stdJsonInput))),
+    creationBytecode: '0x1122', runtimeBytecode: '0x3344', abi: [] };
+  assert.throws(() => validatePublished(target, value), /exact pinned recompilation/);
+  assert.equal(validatePublished(target, value, proof).providerCompilerDefaultBinding, 'omitted-empty-library-map-after-exact-recompilation');
+  assert.deepEqual(target.input.settings.libraries, {});
+  for (const altered of [{ ...proof, compilerVersion: '0.8.25' }, { ...proof, inputDigest: `0x${'00'.repeat(32)}` },
+    { ...proof, creationBytecode: '0x1123' }, { ...proof, runtimeBytecode: '0x3345' }, { ...proof, abi: [{}] }]) {
+    assert.throws(() => validatePublished(target, value, altered), /exact pinned recompilation/);
+  }
+  const mismatched = structuredClone(value); mismatched.stdJsonInput.settings.libraries = {};
+  assert.throws(() => validatePublished(target, mismatched, proof), /input\/settings disagree/);
+  const linked = structuredClone(target); linked.artifact.evm.bytecode.linkReferences = { 'Lib.sol': {} };
+  assert.throws(() => validatePublished(linked, value, proof), /exact pinned recompilation/);
+  const configured = structuredClone(target); configured.input.settings.libraries = { 'Lib.sol': { Library: address } };
+  assert.throws(() => validatePublished(configured, value, proof), /compiler settings differ/);
+  const providerLink = structuredClone(value); providerLink.runtimeBytecode.linkReferences = { 'Lib.sol': {} };
+  assert.throws(() => validatePublished(target, providerLink, proof), /library link/);
+});
+test('provider flags cannot replace the shared complete creation/runtime, settings, metadata and actual transaction proof', () => {
+  const { target, value } = publishedFixture();
   assert.equal(validatePublished(target, value).comparison, 'exact-complete-creation-and-runtime');
-  assert.throws(() => validatePublished(target, { ...value, chainId: '1' }), /chain\/address/);
-  assert.throws(() => validatePublished(target, { ...value, runtimeMatch: null }), /creation\/runtime match/);
-  assert.throws(() => validatePublished(target, { ...value, sources: {} }), /source closure/);
-  assert.throws(() => validatePublished(target, { ...value, deployment: { transactionHash: `0x${'00'.repeat(32)}` } }), /transaction/);
-  assert.throws(() => validatePublished(target, { ...value, runtimeBytecode: { ...value.runtimeBytecode, onchainBytecode: '0x3345' } }), /runtime bytecode/);
-  assert.throws(() => validatePublished(target, { ...value, creationBytecode: { ...value.creationBytecode, onchainBytecode: '0x112200' } }), /creation bytecode/);
+  const changes = [v => { v.chainId = '1'; }, v => { v.runtimeMatch = null; }, v => { v.sources = {}; },
+    v => { v.deployment.transactionHash = `0x${'00'.repeat(32)}`; }, v => { v.deployment.blockNumber = '124'; },
+    v => { v.deployment.transactionIndex = '3'; }, v => { v.runtimeBytecode.onchainBytecode = '0x3345'; },
+    v => { v.creationBytecode.onchainBytecode += '00'; }, v => { v.compilation.compilerSettings.optimizer.runs++; },
+    v => { v.metadata.settings.compilationTarget = {}; }, v => { v.runtimeBytecode.transformations = [{ reason: 'cborAuxdata' }]; }];
+  for (const change of changes) { const altered = structuredClone(value); change(altered); assert.throws(() => validatePublished(target, altered)); }
+  assert.throws(() => validatePublished({ ...target, creation: undefined }, value), /Actual creation/);
+});
+test('provider id-space alignment still rejects a different immutable value or missing transformation', () => {
+  const { target, value } = publishedFixture(), word = `0x${address.slice(2).padStart(64, '0')}`;
+  const template = `11${'00'.repeat(32)}22`, runtime = `0x11${word.slice(2)}22`;
+  target.runtime = runtime; target.artifact.evm.deployedBytecode = { object: template, immutableReferences: { 7: [{ start: 1, length: 32 }] } };
+  value.runtimeBytecode = { ...value.runtimeBytecode, recompiledBytecode: `0x${template}`, onchainBytecode: runtime,
+    immutableReferences: { 900: [{ start: 1, length: 32 }] }, transformations: [{ id: '700', type: 'replace', offset: 1, reason: 'immutable' }],
+    transformationValues: { immutables: { 700: word } } };
+  assert.deepEqual(validatePublished(target, value).providerImmutableIdRelabelling, { 900: '700' });
+  const changed = structuredClone(value); changed.runtimeBytecode.transformationValues.immutables['700'] = `0x${'ff'.repeat(32)}`;
+  assert.throws(() => validatePublished(target, changed), /immutable values/);
+  changed.runtimeBytecode.transformationValues.immutables['700'] = word;
+  changed.runtimeBytecode.transformationValues.immutables['701'] = word;
+  assert.throws(() => validatePublished(target, changed), /immutable values/);
+  const missing = structuredClone(value); missing.runtimeBytecode.transformations = [];
+  assert.throws(() => validatePublished(target, missing), /Incomplete immutable/);
 });
 
 function forwarderFixture(sameTransaction = false) {

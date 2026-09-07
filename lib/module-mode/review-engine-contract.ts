@@ -156,6 +156,10 @@ function sourceInput(source: unknown, subject: ModuleReviewSubjectV1, plan: Modu
   need(new TextEncoder().encode(json(standard)).length <= MODULE_REVIEW_LIMITS_V1.standardJsonBytes, "MODULE_BUILD_PROFILE_CAPACITY_EXCEEDED");
   return { checked, target, standard };
 }
+/** Reuses the reviewed source closure/settings for source publication; grants no build or review authority. */
+export function moduleEngineStandardInputV1(source: unknown, subject: ModuleReviewSubjectV1, rawPlan: unknown) {
+  return sourceInput(source, subject, validateModuleEngineBuildPlanV1(rawPlan, subject)).standard;
+}
 function abiTypes(parameters: unknown): unknown {
   need(Array.isArray(parameters), "MODULE_ENGINE_ABI_INVALID");
   return parameters.map(p => { const item = object(p); return { type: item.type, ...(item.components === undefined ? {} : { components: abiTypes(item.components) }) }; });
