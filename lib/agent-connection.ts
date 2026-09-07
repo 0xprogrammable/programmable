@@ -39,7 +39,7 @@ export const PROGRAMMABLE_AGENT_ENTRY = Object.freeze({
     moduleContribution: {
       scopes: ["modules:submit", "modules:read"],
       guide: "https://programmable.market/developers/module-mode-api-v1.md",
-      developerGuide: "https://programmable.market/docs/developers/module-mode",
+      developerGuide: "https://programmable.market/developer-reference/module-mode",
       capabilities: "https://api.programmable.market/v1/modules/capabilities",
       reviewCapabilities: "https://api.programmable.market/v1/modules/review-capabilities",
       submissions: "https://api.programmable.market/v1/modules/submissions",

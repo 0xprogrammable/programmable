@@ -6,7 +6,7 @@ import styles from "@/components/developer-docs.module.css";
 export const metadata: Metadata = {
   title: "Build a module · Programmable",
   description: "Create, submit and track a Module Mode source package with your EVM wallet and an API key.",
-  alternates: { canonical: "/docs/developers/module-mode" },
+  alternates: { canonical: "/developer-reference/module-mode" },
 };
 const sections = [
   { id: "start", label: "Get started" },
@@ -29,9 +29,10 @@ export default function ModuleModeDeveloperPage() {
     <section id="start">
       <h2>Get started</h2>
       <ol className={styles.steps}>
-        <li>Connect your EVM wallet on <Link href="/developers/api-keys">API keys</Link> and choose
-          <strong> Module contributions</strong>. The option becomes available when the API accepts submissions.</li>
-        <li>Give your agent the <a href="/developers/module-mode-api-v1.md">API guide</a> and the
+        <li>Connect your EVM wallet on <Link href="/developers/api-keys">API keys</Link> and create a key with
+          <strong> Launches + modules</strong> access.</li>
+        <li>Choose <strong>Copy connection</strong> and give it to your agent. It includes the key and
+          instructions for finding the <a href="/developers/module-mode-api-v1.md">API guide</a> and
           <a href={`${cliDirectory}/manifest.json`}> pinned CLI manifest</a>. Verify the file hash from
           that manifest before running the standalone CLI with Node.js 24.14 or later in the Node 24 line.</li>
         <li>Provide your idea, author wallet and reward wallet. Keep the API key in the agent&apos;s
