@@ -1,14 +1,26 @@
-import { decodeFunctionData, sha256, type Hex } from "viem";
+import { decodeFunctionData, encodeAbiParameters, encodeFunctionData, erc20Abi, keccak256, sha256, type AbiParameterToPrimitiveType, type Hex } from "viem";
 import { moduleNativeLaunchAbiFor } from "./module-mode/native-abi";
+import { managementCoreAbi } from "./module-mode/management";
 import { ModuleNativeTransactionRevertedError, readModuleNativeLaunch, type ModuleNativeClient, type ModuleNativeReceiptResult } from "./module-mode/native-client";
 import { parseModuleModeAvailability } from "./module-mode/native-catalog";
 import { bindActiveModuleModeRelease, moduleHash, type ModuleModeRelease } from "./module-mode/release";
 import { parseModuleModeOperation, type ModuleModeOperation } from "./module-mode-operation-store";
+import { bindActiveModuleEngineRelease, ENGINE_ZERO_HASH, parseModuleEngineAvailability, type ModuleEngineRelease } from "./module-engine/catalog";
+import { moduleEngineHostAbi, moduleEnginePlanParameters } from "./module-engine/abi";
+import { ModuleEngineTransactionRevertedError, readModuleEngineLaunch, verifyModuleEngineApprovalReceipt, verifyModuleEngineClaimReceipt, verifyModuleEngineLaunchReceipt, verifyModuleEngineOperationReceipt, type ModuleEngineClient, type ModuleEngineOperation, type ModuleEngineReceiptResult } from "./module-engine/client";
 
 function requireMatch(condition: unknown, label: string): asserts condition {
   if (!condition) throw new Error(`The transaction does not match the saved ${label}. Check the hash in your wallet activity.`);
 }
 function same(a: unknown, b: unknown) { return typeof a === "string" && typeof b === "string" && a.toLowerCase() === b.toLowerCase(); }
+type EngineLaunchParameters = AbiParameterToPrimitiveType<(typeof moduleEnginePlanParameters)[3]>;
+function decodeEngineCall(data: Hex): { functionName: "launch"; args: readonly [EngineLaunchParameters] } | { functionName: "execute"; args: readonly [Hex, ModuleEngineOperation] } {
+  const decoded = decodeFunctionData({ abi: moduleEngineHostAbi, data });
+  // The released ABI performs the tuple decoding; narrow its broad host ABI to the two wallet operations.
+  if (decoded.functionName === "launch" && decoded.args?.length === 1) return { functionName: "launch", args: decoded.args as unknown as readonly [EngineLaunchParameters] };
+  if (decoded.functionName === "execute" && decoded.args?.length === 2) return { functionName: "execute", args: decoded.args as unknown as readonly [Hex, ModuleEngineOperation] };
+  throw new Error("The transaction does not match a supported engine wallet function.");
+}
 
 /** The normal availability authority resolves the exact historical release. Storage cannot authorize one. */
 export async function fetchModuleModeOperationRelease(releaseDigest: Hex): Promise<ModuleModeRelease> {
@@ -20,11 +32,22 @@ export async function fetchModuleModeOperationRelease(releaseDigest: Hex): Promi
   return availability.release;
 }
 
+/** An engine source is resolved through its own exact release authority; native availability never substitutes for it. */
+export async function fetchModuleEngineOperationRelease(releaseDigest: Hex): Promise<ModuleEngineRelease> {
+  const digest = moduleHash(releaseDigest, "operation.releaseDigest");
+  const response = await fetch(`/api/module-mode?sourceKind=module-engine-v1&releaseDigest=${digest}`, { cache: "no-store", credentials: "same-origin", redirect: "error" });
+  if (!response.ok || response.redirected || response.headers.get("content-type")?.split(";", 1)[0].trim() !== "application/json") throw new Error("The original engine version could not be verified. Your saved transaction remains protected. Check again later.");
+  const availability = parseModuleEngineAvailability(await response.json());
+  if (!availability.release || !same(availability.release.releaseDigest, digest)) throw new Error("The original engine version is not available for verification. Your saved transaction remains protected.");
+  return availability.release;
+}
+
 /** Read-only reconciliation. It never rehydrates the private native preparation brand or calls a wallet. */
 export async function recoverModuleModeOperation(input: {
   client: ModuleNativeClient; operation: ModuleModeOperation; release: ModuleModeRelease; transactionHash: Hex;
 }): Promise<ModuleNativeReceiptResult> {
   const operation = parseModuleModeOperation(JSON.stringify(input.operation), input.operation.account);
+  requireMatch(operation.sourceKind !== "module-engine-v1", "native source");
   const release = bindActiveModuleModeRelease(input.release);
   requireMatch(same(release.releaseDigest, operation.releaseDigest), "release version");
   const transactionHash = moduleHash(input.transactionHash, "operation.transactionHash");
@@ -56,4 +79,86 @@ export async function recoverModuleModeOperation(input: {
   requireMatch(canonical.number === receipt.blockNumber && same(canonical.hash, receipt.blockHash), "canonical block after verification");
   return { status: "mined", finalized: false, indexed: false, transactionHash, blockNumber: receipt.blockNumber, blockHash: receipt.blockHash,
     kind: operation.kind, token: operation.token, ...(operation.kind === "launch" ? { launch } : {}) };
+}
+
+/** Exact engine reconciliation uses its real host identity and nonce. Storage never becomes a private preparation. */
+export async function recoverModuleEngineOperation(input: {
+  client: ModuleEngineClient; operation: ModuleModeOperation; release: ModuleEngineRelease; transactionHash: Hex;
+}): Promise<ModuleEngineReceiptResult> {
+  const operation = parseModuleModeOperation(JSON.stringify(input.operation), input.operation.account);
+  requireMatch(operation.sourceKind === "module-engine-v1", "engine source");
+  const release = bindActiveModuleEngineRelease(input.release);
+  requireMatch(same(release.releaseDigest, operation.releaseDigest), "engine release version");
+  const transactionHash = moduleHash(input.transactionHash, "operation.transactionHash");
+  requireMatch(await input.client.getChainId() === 4663, "network");
+  const receipt = await input.client.waitForTransactionReceipt({ hash: transactionHash, confirmations: 1, timeout: 60_000, retryCount: 1 });
+  const [tx, block] = await Promise.all([input.client.getTransaction({ hash: transactionHash }), input.client.getBlock({ blockNumber: receipt.blockNumber })]);
+  requireMatch(same(receipt.transactionHash, transactionHash) && same(tx.hash, transactionHash), "transaction hash");
+  requireMatch(tx.chainId === 4663 && same(tx.from, operation.account) && same(receipt.from, operation.account), "wallet and network");
+  requireMatch(same(tx.to, operation.target) && same(receipt.to, operation.target), "contract");
+  requireMatch(sha256(tx.input) === operation.calldataHash && tx.value === BigInt(operation.value), "transaction data and value");
+  requireMatch(same(tx.blockHash, receipt.blockHash) && same(block.hash, receipt.blockHash) && tx.blockNumber === receipt.blockNumber && block.number === receipt.blockNumber, "canonical block");
+  requireMatch(receipt.blockNumber > BigInt(operation.preparedBlock) && receipt.blockNumber >= BigInt(release.startBlock), "preparation block");
+  const target = operation.kind === "approve" ? operation.token : operation.kind === "claim" ? release.contracts.ledger.address : release.contracts.host.address;
+  requireMatch(same(operation.target, target), "engine release contract");
+  const readBoundLaunch = async () => {
+    requireMatch(operation.launch, "engine launch binding");
+    const launch = await readModuleEngineLaunch({ client: input.client, release, token: operation.token, blockNumber: receipt.blockNumber });
+    requireMatch(same(launch.token, operation.token) && same(launch.launchId, operation.launch.launchId)
+      && same(launch.revisionId, operation.launch.revisionId) && same(launch.planHash, operation.launch.planHash), "engine launch identity and revision");
+    return launch;
+  };
+
+  let result: ModuleEngineReceiptResult;
+  if (operation.kind === "approve") {
+    requireMatch(operation.approval && same(operation.approval.spender, release.contracts.host.address) && tx.value === 0n, "bounded engine spender");
+    const decoded = decodeFunctionData({ abi: erc20Abi, data: tx.input });
+    requireMatch(decoded.functionName === "approve" && same(decoded.args[0], operation.approval.spender) && decoded.args[1] === BigInt(operation.approval.amount), "engine approval");
+    requireMatch(same(encodeFunctionData({ abi: erc20Abi, functionName: "approve", args: decoded.args }), tx.input), "canonical approval data");
+    if (receipt.status === "reverted") throw new ModuleEngineTransactionRevertedError(transactionHash, receipt.blockNumber, receipt.blockHash);
+    requireMatch(receipt.status === "success", "receipt status");
+    result = await verifyModuleEngineApprovalReceipt({ client: input.client, release, account: operation.account, token: operation.token, amount: BigInt(operation.approval.amount), receipt });
+  } else if (operation.kind === "claim") {
+    requireMatch(operation.claim && tx.value === 0n, "engine fee claim");
+    const decoded = decodeFunctionData({ abi: managementCoreAbi, data: tx.input });
+    requireMatch(decoded.functionName === "claimTo" && decoded.args.length === 1 && same(decoded.args[0], operation.claim.recipient), "engine claim recipient");
+    requireMatch(same(encodeFunctionData({ abi: managementCoreAbi, functionName: "claimTo", args: decoded.args }), tx.input), "canonical engine claim data");
+    if (receipt.status === "reverted") throw new ModuleEngineTransactionRevertedError(transactionHash, receipt.blockNumber, receipt.blockHash);
+    requireMatch(receipt.status === "success", "receipt status");
+    const launch = await readBoundLaunch();
+    result = await verifyModuleEngineClaimReceipt({ client: input.client, release, launch, account: operation.account, recipient: operation.claim.recipient,
+      minimumAmount: BigInt(operation.claim.minimumAmount), claimedBefore: BigInt(operation.claim.claimedBefore), receipt });
+  } else {
+    requireMatch(operation.launch, "engine launch binding");
+    const decoded = decodeEngineCall(tx.input);
+    if (operation.kind === "launch") {
+      requireMatch(decoded.functionName === "launch", "engine launch function");
+      const parameters = decoded.args[0];
+      requireMatch(same(encodeFunctionData({ abi: moduleEngineHostAbi, functionName: "launch", args: [parameters] }), tx.input), "canonical engine launch data");
+      requireMatch(same(parameters.revisionId, operation.launch.revisionId)
+        && same(keccak256(encodeAbiParameters(moduleEnginePlanParameters, [4663n, release.contracts.host.address, operation.account, parameters])), operation.launch.planHash), "engine revision and plan");
+    } else {
+      requireMatch(decoded.functionName === "execute" && operation.execution, "engine operation function");
+      requireMatch(same(encodeFunctionData({ abi: moduleEngineHostAbi, functionName: "execute", args: decoded.args }), tx.input), "canonical engine operation data");
+      requireMatch(same(decoded.args[0], operation.launch.launchId) && same(decoded.args[1].operationId, operation.execution.operationId)
+        && decoded.args[1].nonce === BigInt(operation.execution.nonce) && same(decoded.args[1].actor, operation.account), "engine operation identity and nonce");
+    }
+    if (receipt.status === "reverted") throw new ModuleEngineTransactionRevertedError(transactionHash, receipt.blockNumber, receipt.blockHash);
+    requireMatch(receipt.status === "success", "receipt status");
+    const launch = await readBoundLaunch();
+    if (decoded.functionName === "launch") {
+      requireMatch(same(launch.creator, operation.account), "engine launch wallet");
+      result = await verifyModuleEngineLaunchReceipt({ client: input.client, release, expected: launch, receipt });
+      if (!same(decoded.args[0].initialOperation.operationId, ENGINE_ZERO_HASH)) {
+        const initial = await verifyModuleEngineOperationReceipt({ client: input.client, release, launch, operation: decoded.args[0].initialOperation, receipt });
+        result = { ...result, outputAmount: initial.outputAmount };
+      }
+    } else {
+      requireMatch(decoded.functionName === "execute", "engine operation function");
+      result = await verifyModuleEngineOperationReceipt({ client: input.client, release, launch, operation: decoded.args[1], receipt });
+    }
+  }
+  const canonical = await input.client.getBlock({ blockNumber: receipt.blockNumber });
+  requireMatch(canonical.number === receipt.blockNumber && same(canonical.hash, receipt.blockHash), "canonical block after verification");
+  return result;
 }

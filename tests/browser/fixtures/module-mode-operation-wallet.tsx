@@ -7,9 +7,10 @@ import { MODULE_MODE_AVAILABILITY_SCHEMA } from "../../../lib/module-mode/native
 import { moduleEvidenceFixture, a, h } from "../../fixtures/module-mode-evidence";
 import { runWithBrowserWalletRequestLock } from "../../../lib/wallet-request-lock";
 import type { PreparedModuleNativeLaunch, PreparedModuleNativeManagement } from "../../../lib/module-mode/native-client";
+import type { PreparedModuleEngineOperation } from "../../../lib/module-engine/client";
 import type { ModuleManagementSnapshot } from "../../../lib/module-mode/management";
 export { ModuleNativeTransactionRevertedError } from "../../../lib/module-mode/native-client";
-export { managementActionProblem, moduleManagementChainMatches } from "../../../lib/module-mode/management";
+export { managementActionProblem, managementCoreAbi, moduleManagementChainMatches } from "../../../lib/module-mode/management";
 
 // Test-only adapters. The server substitutes these imports; no product route imports this file.
 export const release = bindActiveModuleModeRelease(moduleEvidenceFixture().release);
@@ -26,10 +27,15 @@ function preparation(kind: "launch" | "manage") {
 }
 const prepared = { manage: preparation("manage"), launch: preparation("launch") };
 const control = { ready: false, reject: false, sendCount: () => Number(localStorage.getItem("fixture:sends") || 0), reads: 0, versionReads: [] as string[],
+  seedEngine: async () => {
+    const engine = { ...prepared.manage, sourceKind: "module-engine-v1", kind: "execute", launchId: h(40), revisionId: h(41), planHash: h(42),
+      operation: { operationId: h(43), nonce: 2n } } as unknown as PreparedModuleEngineOperation;
+    await beginModuleModeOperation(engine);
+  },
   seed: async (kind: "manage" | "launch", withHash = false) => {
     const operation = await beginModuleModeOperation(prepared[kind]);
     localStorage.setItem("fixture:calldata", prepared[kind].transaction.data);
-    if (withHash) rememberModuleModeTransactionHash(operation, transactionHash);
+    if (withHash) await rememberModuleModeTransactionHash(operation, transactionHash);
   } };
 declare global { interface Window { __moduleOperationFixture: typeof control } }
 window.__moduleOperationFixture = control;

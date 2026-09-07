@@ -46,7 +46,7 @@ describe("durable Module Mode wallet operations", () => {
   it("survives reload using only the exact public identity and digests, without restoring wallet authority", async () => {
     const f = harness("launch"); const saved = await beginModuleModeOperation(f.prepared, f.runtime);
     const restored = parseModuleModeOperation([...f.data.values()][0], a(90));
-    expect(restored).toEqual(saved); expect(restored.launch?.recipeHash).toBe(f.launch.recipeHash);
+    expect(restored).toEqual(saved); expect(restored).toMatchObject({ launch: { recipeHash: f.launch.recipeHash } });
     const raw = [...f.data.values()][0];
     for (const privateData of ["Private draft description", "image.webp", f.prepared.transaction.data, "expiresAt", "gasEstimate"]) expect(raw).not.toContain(privateData);
     await expect(revalidateModuleNativeTransaction(restored as unknown as PreparedModuleNativeLaunch, a(90))).rejects.toThrow("Unknown or replaced transaction preparation");
@@ -66,7 +66,7 @@ describe("durable Module Mode wallet operations", () => {
   it("retains the original unknown record when saving a returned hash fails", async () => {
     const f = harness(); const saved = await beginModuleModeOperation(f.prepared, f.runtime);
     const broken = { ...f.runtime, storage: { ...f.runtime.storage, setItem: () => { throw new Error("storage full"); } } };
-    expect(() => rememberModuleModeTransactionHash(saved, h(200), broken)).toThrow("storage full");
+    await expect(rememberModuleModeTransactionHash(saved, h(200), broken)).rejects.toThrow("storage full");
     expect(parseModuleModeOperation([...f.data.values()][0], a(90)).transactionHash).toBeNull();
     await expect(beginModuleModeOperation(f.prepared, f.runtime)).rejects.toThrow("previous Module Mode transaction");
   });
@@ -79,18 +79,39 @@ describe("durable Module Mode wallet operations", () => {
     expect(() => parseModuleModeOperation(JSON.stringify(saved), a(91))).toThrow("different wallet");
     f.data.set([...f.data.keys()][0], "corrupt");
     await expect(beginModuleModeOperation(f.prepared, f.runtime)).rejects.toThrow("previous Module Mode transaction");
-    expect(() => clearModuleModeOperation(saved, f.runtime)).toThrow();
+    await expect(clearModuleModeOperation(saved, f.runtime)).rejects.toThrow();
     expect([...f.data.values()]).toEqual(["corrupt"]);
   });
 
   it("clears only the exact resolved record and preserves a later operation", async () => {
     const f = harness(); const first = await beginModuleModeOperation(f.prepared, f.runtime);
-    expect(rememberModuleModeTransactionHash(first, h(200), f.runtime).transactionHash).toBe(h(200));
-    clearModuleModeOperation(first, f.runtime);
+    expect((await rememberModuleModeTransactionHash(first, h(200), f.runtime)).transactionHash).toBe(h(200));
+    await clearModuleModeOperation(first, f.runtime);
     const next = await beginModuleModeOperation(f.prepared, { ...f.runtime, now: () => 1_000_000_001 });
-    clearModuleModeOperation(first, f.runtime);
+    await clearModuleModeOperation(first, f.runtime);
     expect(parseModuleModeOperation([...f.data.values()][0], a(90)).id).toBe(next.id);
     expect(moduleModeOperationPath(next)).toBe(`/launch/modules/manage/${f.launch.token}`);
+  });
+
+  it("serializes hash updates and cleanup with begin so another tab cannot delete or overwrite a newer record", async () => {
+    const f = harness(); const saved = await beginModuleModeOperation(f.prepared, f.runtime);
+    let release!: () => void; let entered!: () => void; let held = false; let pause = true;
+    const waiting = new Promise<void>(resolve => { release = resolve; }); const started = new Promise<void>(resolve => { entered = resolve; });
+    const names: string[] = [];
+    const lockedRuntime = { ...f.runtime, locks: { request: async <T>(name: string, _options: unknown, callback: (lock: object | null) => Promise<T>): Promise<T> => {
+      names.push(name); if (held) return callback(null); held = true;
+      try { if (pause) { pause = false; entered(); await waiting; } return await callback({}); } finally { held = false; }
+    } } };
+    const clearing = clearModuleModeOperation(saved, lockedRuntime); await started;
+    expect(f.data.size).toBe(1);
+    await expect(rememberModuleModeTransactionHash(saved, h(200), lockedRuntime)).rejects.toThrow("busy in another tab");
+    await expect(clearModuleModeOperation(saved, lockedRuntime)).rejects.toThrow("busy in another tab");
+    await expect(beginModuleModeOperation(f.prepared, lockedRuntime)).rejects.toThrow("previous Module Mode transaction");
+    expect(new Set(names).size).toBe(1); release(); await clearing;
+    const next = await beginModuleModeOperation(f.prepared, { ...lockedRuntime, now: () => 1_000_000_001 });
+    await clearModuleModeOperation(saved, lockedRuntime);
+    await expect(rememberModuleModeTransactionHash(saved, h(200), lockedRuntime)).rejects.toThrow("record changed");
+    expect(parseModuleModeOperation([...f.data.values()][0], a(90)).id).toBe(next.id);
   });
 });
 

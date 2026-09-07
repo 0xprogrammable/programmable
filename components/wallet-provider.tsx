@@ -87,7 +87,7 @@ import {
 import {
   getPredictionV2PreparedTransactionReviewV2,
 } from "@/lib/prediction-v2/prepared-transaction-v2";
-import type { PreparedModuleNativeTransaction } from "@/lib/module-mode/native-client";
+import type { PreparedModuleModeTransaction } from "@/components/module-mode-wallet-state";
 import {
   buildEip1193TransactionRequest,
   buildPrivyTransactionRequest,
@@ -239,7 +239,7 @@ type WalletContextValue = {
   sendPredictionV2Transaction: (
     transaction: ParsedPredictionV2PreparedTransactionV2,
   ) => Promise<Hex>;
-  sendModuleModeTransaction: (transaction: PreparedModuleNativeTransaction) => Promise<Hex>;
+  sendModuleModeTransaction: (transaction: PreparedModuleModeTransaction) => Promise<Hex>;
   readNativeBalance: () => Promise<WalletNativeBalance>;
   readConnectedAccountCode: () => Promise<Hex>;
   readTradeBalances: (token: `0x${string}`) => Promise<WalletTradeBalances>;
@@ -2211,7 +2211,7 @@ function PrivyWalletBridge({
   );
 
   const sendModuleModeTransaction = useCallback(
-    async (prepared: PreparedModuleNativeTransaction): Promise<Hex> => {
+    async (prepared: PreparedModuleModeTransaction): Promise<Hex> => {
       if (!connectedWallet || !wallet) throw Object.assign(new Error("Connect your wallet before continuing"), {
         walletRequestAttempted: false, walletRequestRejected: false,
       });
@@ -2222,6 +2222,7 @@ function PrivyWalletBridge({
       const boundWallet = connectedWallet;
       const account = wallet.account;
       let walletRequestAttempted = false;
+      let enginePreparationPending = false;
       const isEmbeddedWallet = boundWallet.walletClientType === "privy" || boundWallet.walletClientType === "privy-v2";
       const assertCurrentSession = () => {
         const current = walletRequestSessionRef.current;
@@ -2234,7 +2235,7 @@ function PrivyWalletBridge({
       try {
         return await runWithBrowserWalletRequestLock({
           sessionSubject, account, chainId: String(robinhoodChain.id),
-          requestSubject: "module-mode-native-wallet-submit-v1", assertCurrentSession,
+          requestSubject: "module-mode-wallet-submit-v1", assertCurrentSession,
           execute: async () => {
             try {
               assertCurrentSession();
@@ -2254,13 +2255,23 @@ function PrivyWalletBridge({
                 assertCurrentSession();
               };
               await assertAuthority();
-              const { revalidateModuleNativeTransaction } = await import("@/lib/module-mode/native-client");
-              const transaction = await revalidateModuleNativeTransaction(prepared, account);
+              const { revalidateModuleModeTransaction } = await import("@/components/module-mode-wallet-state");
+              const transaction = await revalidateModuleModeTransaction(prepared, account);
+              enginePreparationPending = "sourceKind" in prepared && prepared.sourceKind === "module-engine-v1";
               if (transaction.chainId !== robinhoodChain.id || transaction.from.toLowerCase() !== account.toLowerCase()) {
                 throw new Error("The Module Mode transaction is bound to a different wallet or network");
               }
               await assertAuthority();
               // Revalidation holds the reviewed target, calldata, value and expiry. No raw request is accepted here.
+              const submittedHash = async (hash: Hex) => {
+                if ("sourceKind" in prepared && prepared.sourceKind === "module-engine-v1") {
+                  try {
+                    const { noteModuleEngineSubmission } = await import("@/lib/module-engine/client");
+                    noteModuleEngineSubmission(prepared, hash);
+                  } catch { /* Keep the known hash available for durable read-only recovery. */ }
+                }
+                return hash;
+              };
               if (isEmbeddedWallet) {
                 walletRequestAttempted = true;
                 const result = await sendPrivyTransaction({
@@ -2271,7 +2282,7 @@ function PrivyWalletBridge({
                   address: account,
                   uiOptions: { description: transaction.description, buttonText: "Confirm transaction", successHeader: "Transaction submitted" },
                 });
-                return parseSubmittedTransactionHash(result.hash);
+                return submittedHash(parseSubmittedTransactionHash(result.hash));
               }
               walletRequestAttempted = true;
               const hash = await provider.request({
@@ -2279,7 +2290,7 @@ function PrivyWalletBridge({
                 params: [{ from: account, to: transaction.to, data: transaction.data, value: transaction.value,
                   ...(transaction.gas === undefined ? {} : { gas: transaction.gas }) }],
               });
-              return parseSubmittedTransactionHash(hash);
+              return submittedHash(parseSubmittedTransactionHash(hash));
             } catch (caught) {
               if (!walletRequestAttempted) throw new WalletRequestNotSubmittedError(getWalletTransactionErrorMessage(caught));
               throw caught;
@@ -2288,6 +2299,12 @@ function PrivyWalletBridge({
         });
       } catch (caught) {
         const rejected = walletRequestAttempted && errorIsExplicitWalletRejection(caught);
+        if (enginePreparationPending && (!walletRequestAttempted || rejected) && "sourceKind" in prepared && prepared.sourceKind === "module-engine-v1") {
+          try {
+            const { releaseModuleEnginePreparation } = await import("@/lib/module-engine/client");
+            releaseModuleEnginePreparation(prepared);
+          } catch { /* A failed private cleanup cannot change a definite no-send outcome. */ }
+        }
         throw Object.assign(new Error(getWalletTransactionErrorMessage(caught)), {
           walletRequestAttempted, walletRequestRejected: rejected,
           ...(rejected ? { code: 4001 } : {}),

@@ -1,5 +1,6 @@
 import { sha256, toHex, type Address, type Hex } from "viem";
 import type { PreparedModuleNativeLaunch, PreparedModuleNativeManagement } from "./module-mode/native-client";
+import type { PreparedModuleEngineTransaction } from "./module-engine/client";
 import { moduleAddress, moduleHash, moduleRecord, moduleUint } from "./module-mode/release";
 
 const PREFIX = "programmable:module-operation:v1:4663:";
@@ -7,11 +8,12 @@ const CHANGE = "programmable:module-operation-change";
 const UNAVAILABLE = "storage-unavailable";
 const MAX_RECORD_LENGTH = 4_096;
 
-type RecoveryPreparation = PreparedModuleNativeLaunch | PreparedModuleNativeManagement;
-export type ModuleModeOperation = Readonly<{
-  version: 1;
+type NativeRecoveryPreparation = PreparedModuleNativeLaunch | PreparedModuleNativeManagement;
+type EngineRecoveryPreparation = PreparedModuleEngineTransaction;
+export type ModuleModeRecoveryPreparation = NativeRecoveryPreparation | EngineRecoveryPreparation;
+type RecoveryPreparation = ModuleModeRecoveryPreparation;
+type OperationBinding = Readonly<{
   id: Hex;
-  kind: "launch" | "manage";
   chainId: 4663;
   account: Address;
   target: Address;
@@ -21,9 +23,25 @@ export type ModuleModeOperation = Readonly<{
   preparedBlock: string;
   createdAtMs: number;
   token: Address;
-  launch: Readonly<{ draftId: Hex; poolId: Hex; recipeHash: Hex; launchKey: Hex; minimumTokenOut: string }> | null;
   transactionHash: Hex | null;
 }>;
+export type ModuleNativeWalletOperation = OperationBinding & Readonly<{
+  version: 1;
+  /** Existing v1 records predate the source discriminator and remain byte compatible. */
+  sourceKind?: never;
+  kind: "launch" | "manage";
+  launch: Readonly<{ draftId: Hex; poolId: Hex; recipeHash: Hex; launchKey: Hex; minimumTokenOut: string }> | null;
+}>;
+export type ModuleEngineWalletOperation = OperationBinding & Readonly<{
+  version: 2;
+  sourceKind: "module-engine-v1";
+  kind: "launch" | "execute" | "approve" | "claim";
+  launch: Readonly<{ launchId: Hex; revisionId: Hex; planHash: Hex }> | null;
+  execution: Readonly<{ operationId: Hex; nonce: string }> | null;
+  approval: Readonly<{ spender: Address; amount: string }> | null;
+  claim: Readonly<{ recipient: Address; minimumAmount: string; claimedBefore: string }> | null;
+}>;
+export type ModuleModeOperation = ModuleNativeWalletOperation | ModuleEngineWalletOperation;
 
 type StorageLike = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 type StoreRuntime = {
@@ -37,23 +55,25 @@ function runtime(): StoreRuntime {
   return { storage: window.localStorage, locks: navigator.locks, notify: () => window.dispatchEvent(new Event(CHANGE)), now: Date.now };
 }
 function key(account: string) { return `${PREFIX}${moduleAddress(account, "operation.account")}`; }
-function identity(record: Omit<ModuleModeOperation, "id" | "transactionHash">): Hex {
+function identity(record: object): Hex {
   return sha256(toHex(JSON.stringify(record)));
 }
 
 /** Storage is a recovery hint, never a signable preparation or release authorization. */
 export function parseModuleModeOperation(raw: string, account: string): ModuleModeOperation {
   if (raw.length > MAX_RECORD_LENGTH) throw new Error("The saved transaction record cannot be read. Check your wallet activity before continuing.");
-  const value = moduleRecord(JSON.parse(raw), ["version", "id", "kind", "chainId", "account", "target", "value", "calldataHash", "releaseDigest", "preparedBlock", "createdAtMs", "token", "launch", "transactionHash"], "operation");
+  const decoded = JSON.parse(raw);
+  if (decoded?.version === 2) return parseEngineOperation(decoded, account);
+  const value = moduleRecord(decoded, ["version", "id", "kind", "chainId", "account", "target", "value", "calldataHash", "releaseDigest", "preparedBlock", "createdAtMs", "token", "launch", "transactionHash"], "operation");
   if (value.version !== 1 || value.chainId !== 4663 || !["launch", "manage"].includes(String(value.kind)) || !Number.isSafeInteger(value.createdAtMs) || (value.createdAtMs as number) <= 0) throw new Error("The saved transaction record is invalid. Check your wallet activity before continuing.");
   const boundAccount = moduleAddress(value.account, "operation.account");
   if (boundAccount !== moduleAddress(account, "operation.expectedAccount")) throw new Error("The saved transaction belongs to a different wallet.");
-  let launch: ModuleModeOperation["launch"] = null;
+  let launch: ModuleNativeWalletOperation["launch"] = null;
   if (value.kind === "launch") {
     const candidate = moduleRecord(value.launch, ["draftId", "poolId", "recipeHash", "launchKey", "minimumTokenOut"], "operation.launch");
     launch = { draftId: moduleHash(candidate.draftId, "operation.draftId"), poolId: moduleHash(candidate.poolId, "operation.poolId"), recipeHash: moduleHash(candidate.recipeHash, "operation.recipeHash"), launchKey: moduleHash(candidate.launchKey, "operation.launchKey"), minimumTokenOut: moduleUint(candidate.minimumTokenOut, "operation.minimumTokenOut", true) };
   } else if (value.launch !== null) throw new Error("The saved transaction type is invalid.");
-  const bound = { version: 1 as const, kind: value.kind as ModuleModeOperation["kind"], chainId: 4663 as const, account: boundAccount,
+  const bound = { version: 1 as const, kind: value.kind as ModuleNativeWalletOperation["kind"], chainId: 4663 as const, account: boundAccount,
     target: moduleAddress(value.target, "operation.target"), value: moduleUint(value.value, "operation.value"), calldataHash: moduleHash(value.calldataHash, "operation.calldataHash"),
     releaseDigest: moduleHash(value.releaseDigest, "operation.releaseDigest"), preparedBlock: moduleUint(value.preparedBlock, "operation.preparedBlock", true), createdAtMs: value.createdAtMs as number,
     token: moduleAddress(value.token, "operation.token"), launch };
@@ -62,14 +82,69 @@ export function parseModuleModeOperation(raw: string, account: string): ModuleMo
   return Object.freeze({ ...bound, ...(launch ? { launch: Object.freeze(launch) } : {}), id, transactionHash: value.transactionHash === null ? null : moduleHash(value.transactionHash, "operation.transactionHash") });
 }
 
+function parseEngineOperation(decoded: unknown, account: string): ModuleEngineWalletOperation {
+  const value = moduleRecord(decoded, ["version", "sourceKind", "id", "kind", "chainId", "account", "target", "value", "calldataHash", "releaseDigest", "preparedBlock", "createdAtMs", "token", "launch", "execution", "approval", "claim", "transactionHash"], "engineOperation");
+  if (value.version !== 2 || value.sourceKind !== "module-engine-v1" || value.chainId !== 4663 || !["launch", "execute", "approve", "claim"].includes(String(value.kind))
+    || !Number.isSafeInteger(value.createdAtMs) || (value.createdAtMs as number) <= 0) throw new Error("The saved engine transaction record is invalid.");
+  const boundAccount = moduleAddress(value.account, "operation.account");
+  if (boundAccount !== moduleAddress(account, "operation.expectedAccount")) throw new Error("The saved transaction belongs to a different wallet.");
+  let launch: ModuleEngineWalletOperation["launch"] = null;
+  let approval: ModuleEngineWalletOperation["approval"] = null;
+  if (value.kind === "approve") {
+    const candidate = moduleRecord(value.approval, ["spender", "amount"], "engineOperation.approval");
+    approval = Object.freeze({ spender: moduleAddress(candidate.spender, "operation.spender"), amount: moduleUint(candidate.amount, "operation.amount") });
+    if (value.launch !== null) throw new Error("The saved approval cannot contain a launch binding.");
+  } else {
+    const candidate = moduleRecord(value.launch, ["launchId", "revisionId", "planHash"], "engineOperation.launch");
+    launch = Object.freeze({ launchId: moduleHash(candidate.launchId, "operation.launchId"), revisionId: moduleHash(candidate.revisionId, "operation.revisionId"), planHash: moduleHash(candidate.planHash, "operation.planHash") });
+    if (value.approval !== null) throw new Error("The saved engine transaction type is invalid.");
+  }
+  let execution: ModuleEngineWalletOperation["execution"] = null;
+  if (value.kind === "execute") {
+    const operation = moduleRecord(value.execution, ["operationId", "nonce"], "engineOperation.execution");
+    execution = Object.freeze({ operationId: moduleHash(operation.operationId, "operation.operationId"), nonce: moduleUint(operation.nonce, "operation.nonce") });
+  } else if (value.execution !== null) throw new Error("The saved engine transaction type is invalid.");
+  let claim: ModuleEngineWalletOperation["claim"] = null;
+  if (value.kind === "claim") {
+    const candidate = moduleRecord(value.claim, ["recipient", "minimumAmount", "claimedBefore"], "engineOperation.claim");
+    claim = Object.freeze({ recipient: moduleAddress(candidate.recipient, "operation.recipient"), minimumAmount: moduleUint(candidate.minimumAmount, "operation.minimumAmount", true), claimedBefore: moduleUint(candidate.claimedBefore, "operation.claimedBefore") });
+  } else if (value.claim !== null) throw new Error("The saved engine transaction type is invalid.");
+  const bound = { version: 2 as const, sourceKind: "module-engine-v1" as const, kind: value.kind as ModuleEngineWalletOperation["kind"], chainId: 4663 as const, account: boundAccount,
+    target: moduleAddress(value.target, "operation.target"), value: moduleUint(value.value, "operation.value"), calldataHash: moduleHash(value.calldataHash, "operation.calldataHash"),
+    releaseDigest: moduleHash(value.releaseDigest, "operation.releaseDigest"), preparedBlock: moduleUint(value.preparedBlock, "operation.preparedBlock", true), createdAtMs: value.createdAtMs as number,
+    token: moduleAddress(value.token, "operation.token"), launch, execution, approval, claim };
+  const id = moduleHash(value.id, "operation.id");
+  if (identity(bound) !== id) throw new Error("The saved transaction record changed. Check your wallet activity before continuing.");
+  return Object.freeze({ ...bound, id, transactionHash: value.transactionHash === null ? null : moduleHash(value.transactionHash, "operation.transactionHash") });
+}
+
 /** Persist before the provider is invoked. No TTL can turn an unknown broadcast into permission to resend. */
+export function beginModuleModeOperation(prepared: NativeRecoveryPreparation, suppliedRuntime?: StoreRuntime): Promise<ModuleNativeWalletOperation>;
+export function beginModuleModeOperation(prepared: EngineRecoveryPreparation, suppliedRuntime?: StoreRuntime): Promise<ModuleEngineWalletOperation>;
+export function beginModuleModeOperation(prepared: RecoveryPreparation, suppliedRuntime?: StoreRuntime): Promise<ModuleModeOperation>;
 export async function beginModuleModeOperation(prepared: RecoveryPreparation, suppliedRuntime?: StoreRuntime): Promise<ModuleModeOperation> {
   const store = suppliedRuntime ?? runtime();
+  if ("sourceKind" in prepared) {
+    if (prepared.sourceKind !== "module-engine-v1") throw new Error("The transaction source is unsupported.");
+    const bound = { version: 2 as const, sourceKind: "module-engine-v1" as const, kind: prepared.kind, chainId: 4663 as const, account: moduleAddress(prepared.account, "operation.account"),
+      target: moduleAddress(prepared.transaction.to, "operation.target"), value: BigInt(prepared.transaction.value).toString(), calldataHash: sha256(prepared.transaction.data),
+      releaseDigest: prepared.releaseDigest, preparedBlock: prepared.blockNumber.toString(), createdAtMs: store.now(),
+      token: moduleAddress(prepared.kind === "launch" ? prepared.predictedToken : prepared.token, "operation.token"),
+      launch: prepared.kind === "approve" ? null : { launchId: prepared.launchId, revisionId: prepared.revisionId, planHash: prepared.planHash },
+      execution: prepared.kind === "execute" ? { operationId: prepared.operation.operationId, nonce: prepared.operation.nonce.toString() } : null,
+      approval: prepared.kind === "approve" ? { spender: prepared.spender, amount: prepared.amount.toString() } : null,
+      claim: prepared.kind === "claim" ? { recipient: prepared.recipient, minimumAmount: prepared.minimumAmount.toString(), claimedBefore: prepared.claimedBefore.toString() } : null };
+    return persistOperation(prepared, bound, store);
+  }
   const bound = { version: 1 as const, kind: prepared.kind, chainId: 4663 as const, account: moduleAddress(prepared.account, "operation.account"),
     target: moduleAddress(prepared.transaction.to, "operation.target"), value: BigInt(prepared.transaction.value).toString(), calldataHash: sha256(prepared.transaction.data),
     releaseDigest: prepared.releaseDigest, preparedBlock: prepared.blockNumber.toString(), createdAtMs: store.now(),
     token: moduleAddress(prepared.kind === "launch" ? prepared.predictedToken : prepared.token, "operation.token"),
     launch: prepared.kind === "launch" ? { draftId: prepared.draftId, poolId: prepared.poolId, recipeHash: prepared.recipeHash, launchKey: prepared.launchKey, minimumTokenOut: prepared.minimumTokenOut.toString() } : null };
+  return persistOperation(prepared, bound, store);
+}
+
+async function persistOperation(prepared: RecoveryPreparation, bound: { account: Address }, store: StoreRuntime): Promise<ModuleModeOperation> {
   if (prepared.transaction.chainId !== 4663 || moduleAddress(prepared.transaction.from, "operation.from") !== bound.account) throw new Error("The transaction is bound to a different wallet or chain.");
   const operation = parseModuleModeOperation(JSON.stringify({ ...bound, id: identity(bound), transactionHash: null }), bound.account);
   return store.locks.request(`${key(bound.account)}:exclusive`, { mode: "exclusive", ifAvailable: true }, async lock => {
@@ -82,27 +157,33 @@ export async function beginModuleModeOperation(prepared: RecoveryPreparation, su
   });
 }
 
-export function rememberModuleModeTransactionHash(operation: ModuleModeOperation, transactionHash: Hex, suppliedRuntime?: StoreRuntime): ModuleModeOperation {
+export async function rememberModuleModeTransactionHash(operation: ModuleModeOperation, transactionHash: Hex, suppliedRuntime?: StoreRuntime): Promise<ModuleModeOperation> {
   const store = suppliedRuntime ?? runtime();
-  const raw = store.storage.getItem(key(operation.account));
-  if (!raw || parseModuleModeOperation(raw, operation.account).id !== operation.id) throw new Error("The saved transaction record changed. Keep the transaction hash from your wallet.");
-  const next = { ...operation, transactionHash: moduleHash(transactionHash, "operation.transactionHash") };
-  const encoded = JSON.stringify(next);
-  store.storage.setItem(key(operation.account), encoded);
-  if (store.storage.getItem(key(operation.account)) !== encoded) throw new Error("The transaction hash could not be saved. Keep it from your wallet activity.");
-  store.notify();
-  return Object.freeze(next);
+  return store.locks.request(`${key(operation.account)}:exclusive`, { mode: "exclusive", ifAvailable: true }, async lock => {
+    if (!lock) throw new Error("Transaction recovery is busy in another tab. Keep the transaction hash from your wallet.");
+    const raw = store.storage.getItem(key(operation.account));
+    if (!raw || parseModuleModeOperation(raw, operation.account).id !== operation.id) throw new Error("The saved transaction record changed. Keep the transaction hash from your wallet.");
+    const next = { ...operation, transactionHash: moduleHash(transactionHash, "operation.transactionHash") };
+    const encoded = JSON.stringify(next);
+    store.storage.setItem(key(operation.account), encoded);
+    if (store.storage.getItem(key(operation.account)) !== encoded) throw new Error("The transaction hash could not be saved. Keep it from your wallet activity.");
+    store.notify();
+    return Object.freeze(next);
+  });
 }
 
 /** Call only after authoritative receipt verification or a definite preflight failure / user rejection. */
-export function clearModuleModeOperation(operation: ModuleModeOperation, suppliedRuntime?: StoreRuntime): void {
+export async function clearModuleModeOperation(operation: ModuleModeOperation, suppliedRuntime?: StoreRuntime): Promise<void> {
   const store = suppliedRuntime ?? runtime();
-  const raw = store.storage.getItem(key(operation.account));
-  if (raw && parseModuleModeOperation(raw, operation.account).id === operation.id) {
-    store.storage.removeItem(key(operation.account));
-    if (store.storage.getItem(key(operation.account)) !== null) throw new Error("The confirmed transaction record could not be cleared. Reload to check its confirmation again.");
-    store.notify();
-  }
+  return store.locks.request(`${key(operation.account)}:exclusive`, { mode: "exclusive", ifAvailable: true }, async lock => {
+    if (!lock) throw new Error("Transaction recovery is busy in another tab. Check its confirmation again.");
+    const raw = store.storage.getItem(key(operation.account));
+    if (raw && parseModuleModeOperation(raw, operation.account).id === operation.id) {
+      store.storage.removeItem(key(operation.account));
+      if (store.storage.getItem(key(operation.account)) !== null) throw new Error("The confirmed transaction record could not be cleared. Reload to check its confirmation again.");
+      store.notify();
+    }
+  });
 }
 
 export function moduleModeOperationSnapshot(account: string | undefined): string | null {
@@ -116,5 +197,6 @@ export function subscribeToModuleModeOperation(account: string | undefined, onCh
   return () => { window.removeEventListener("storage", onStorage); window.removeEventListener(CHANGE, onChange); };
 }
 export function moduleModeOperationPath(operation: ModuleModeOperation): string {
+  if (operation.sourceKind === "module-engine-v1") return `${operation.kind === "execute" || operation.kind === "claim" ? `/launch/modules/manage/${operation.token}` : "/launch/modules"}?sourceKind=module-engine-v1&releaseDigest=${operation.releaseDigest}`;
   return operation.kind === "launch" ? "/launch/modules" : `/launch/modules/manage/${operation.token}`;
 }

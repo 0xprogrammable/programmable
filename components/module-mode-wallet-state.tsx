@@ -1,10 +1,44 @@
-import { sha256, type Hex } from "viem";
+import { sha256, type Address, type Hex } from "viem";
 import { useCallback, useMemo, useSyncExternalStore } from "react";
 
 import { ROBINHOOD_CHAIN_ID } from "@/lib/chains";
 import type { ModuleModeDraft } from "@/lib/module-mode/builder";
+import type { ModuleNativeWalletTransaction, PreparedModuleNativeTransaction } from "@/lib/module-mode/native-client";
+import type { PreparedModuleEngineTransaction } from "@/lib/module-engine/client";
 import { isProgrammableTokenImageUrl, readTokenImageUploadResponse } from "@/lib/token-image";
-import { moduleModeOperationSnapshot, parseModuleModeOperation, subscribeToModuleModeOperation, type ModuleModeOperation } from "@/lib/module-mode-operation-store";
+import { beginModuleModeOperation, clearModuleModeOperation, moduleModeOperationSnapshot, parseModuleModeOperation, rememberModuleModeTransactionHash, subscribeToModuleModeOperation, type ModuleModeOperation, type ModuleModeRecoveryPreparation } from "@/lib/module-mode-operation-store";
+
+export type PreparedModuleModeTransaction = PreparedModuleNativeTransaction | PreparedModuleEngineTransaction;
+
+/** Select only the concrete source's private preparation validator. No source can fall back to another protocol. */
+export async function revalidateModuleModeTransaction(prepared: PreparedModuleModeTransaction, account: Address): Promise<ModuleNativeWalletTransaction> {
+  if (!prepared || typeof prepared !== "object") throw new Error("The transaction preparation is invalid.");
+  if ("sourceKind" in prepared) {
+    if (prepared.sourceKind !== "module-engine-v1") throw new Error("The transaction source is unsupported.");
+    const { revalidateModuleEngineTransaction } = await import("@/lib/module-engine/client");
+    return revalidateModuleEngineTransaction(prepared, account);
+  }
+  const { revalidateModuleNativeTransaction } = await import("@/lib/module-mode/native-client");
+  return revalidateModuleNativeTransaction(prepared, account);
+}
+
+/** Shared durable boundary for reviewed engine launches and operations. The wallet provider still owns signing authority. */
+export async function submitModuleModeOperation(prepared: ModuleModeRecoveryPreparation,
+  send: (prepared: PreparedModuleModeTransaction) => Promise<Hex>): Promise<{ operation: ModuleModeOperation; transactionHash: Hex }> {
+  let operation = await beginModuleModeOperation(prepared);
+  let transactionHash: Hex;
+  try { transactionHash = await send(prepared); }
+  catch (error) {
+    if (!moduleModeSubmissionIsUncertain(error, true)) {
+      try { await clearModuleModeOperation(operation); } catch { /* Failed cleanup keeps the account blocked. */ }
+    }
+    throw error;
+  }
+  try { operation = await rememberModuleModeTransactionHash(operation, transactionHash); }
+  catch { /* Preserve the returned hash; the original unknown record still blocks another send. */ }
+  // The caller clears only after the exact receipt or recovery readback proves success or a revert.
+  return { operation, transactionHash };
+}
 
 export function useModuleModeOperation(account: string | undefined): { operation: ModuleModeOperation | null; blocked: boolean; error: string | null } {
   const subscribe = useCallback((listener: () => void) => subscribeToModuleModeOperation(account, listener), [account]);
