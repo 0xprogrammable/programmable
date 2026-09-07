@@ -170,7 +170,12 @@ and family, fixed quote/configuration restrictions, initial operation, execution
 money/coin rights, operation permissions and sorted fee families. Code, compiler,
 source closure and immutable runtime-to-constructor mappings come from the protected
 build. They are never accepted as a separate operator override. Fixed configuration
-and quote restrictions must select a successful reviewed instance. Quote presentation
+and quote restrictions must select a successful reviewed instance with the same
+`fixedConfigurationHash(launchId)` behavior: fixed revisions require a case with
+`fixedConfiguration: true` and the exact configuration hash; general revisions require
+a case with that flag absent or false. Initial operations must succeed in a matching
+case. Named tuple configuration uses the shared Engine encoder; Native ABI bytes are
+unchanged. Quote presentation
 requires a fixed reviewed configuration for its external dependencies.
 
 `manifest` prepares the exact Engine Host manifest for independent review. The existing
@@ -198,3 +203,10 @@ re-reads the authenticated review to reject concurrent changes.
 source/manifest/review files become inputs to protected publication review. Canonical
 inclusion does not prove Robinhood's Ethereum finality, install the source, publish a
 website or make an Engine template available. Those remain separate release proofs.
+
+Each Engine command also writes private `review-build.json` containing exactly
+`{subject,plan,artifact}` from the same authenticated snapshot. Protected catalogue
+ingestion uses this file to reconstruct the complete compiler/test receipt against
+the source request. It is never copied into `public/developers/modules`, and the
+public availability response must not return it. The manifest's compact source
+subset alone cannot reconstruct the full build artifact digest.

@@ -19,6 +19,8 @@ import type { PublicationProvider } from "../ops/module-mode-publication/rpc";
 import { computeModuleReviewDecisionDigestV1, type ModuleReviewDecisionRecordV1 } from "../lib/server/module-mode/review-decision-wire-v1";
 import { validateModuleSubmissionRequest } from "../packages/classic-modules/src/open-transport.mjs";
 import { createModuleReviewClient } from "../lib/server/module-mode/review-client";
+import { verifyModuleEngineBuildArtifactV1 } from "../lib/module-mode/review-engine-contract";
+import { createReviewedModuleEngineManifest } from "../lib/module-mode/review-engine-manifest";
 
 vi.mock("server-only", () => ({}));
 const reviewer = WEBSITE_ADMIN_WALLET.toLowerCase() as Address;
@@ -40,7 +42,7 @@ async function fixture() {
   const detail = { schemaVersion: "programmable.modules.website-review-detail.v1", job, attempts, decisions: [] as ModuleReviewDecisionRecordV1[] };
   const codes = new Map<string, Hex>();
   const contracts = Object.fromEntries(MODULE_ENGINE_CONTRACTS.map((name, i) => { const address = a(200 + i), code = `0x60${(i + 1).toString(16).padStart(2, "0")}` as Hex; codes.set(address, code); return [name, { address, runtimeCodeHash: keccak256(code) }]; })) as ModuleEngineReleaseIdentity["contracts"];
-  const raw = { schemaVersion: "programmable.module-engine.release.v1" as const, sourceVersion: "module-engine-v1" as const, engineProfile: "programmable.module-engine-solidity@1" as const, chainId: 4663 as const, sourceCommit: "e".repeat(40), startBlock: "1", tokenCreationCodeHash: h(30), tokenRuntimeCodeHash: h(31), economicsPolicyId: MODULE_MODE_ECONOMICS_POLICY_V2, finalityPolicy: MODULE_MODE_FINALITY_POLICY, contracts };
+  const raw = { schemaVersion: "programmable.module-engine.release.v1" as const, sourceVersion: "module-engine-v1" as const, engineProfile: "programmable.module-engine-solidity@1" as const, chainId: 4663 as const, sourceCommit: "e".repeat(40), startBlock: "1", tokenCreationCodeHash: h(30), economicsPolicyId: MODULE_MODE_ECONOMICS_POLICY_V2, finalityPolicy: MODULE_MODE_FINALITY_POLICY, contracts };
   const release = { ...raw, releaseDigest: computeModuleEngineReleaseDigest(raw) };
   const definition: EnginePublicationDefinition = { profile: "programmable.module-engine-solidity@1", catalogDefinition: {
     id: "fixture-engine", title: "Fixture engine", summary: "Synthetic test only.", detail: "Exact compiler wire fixture. Never approved.", version: source.descriptor.version, interface: "custom-v1", source: source.descriptor.source.files[0], schema: checked.request.descriptor.configuration, defaults: { cap: "5" }, configurationAbi: artifact.configurationAbi, constraints: [] },
@@ -126,10 +128,12 @@ describe("Engine publication through the existing authenticated operator", () =>
       { repositoryRoot: process.cwd(), providers: async () => p.providers.map((provider, i) => ({ ...provider, url: `https://rpc${i}.example.invalid` })) });
       const manifest = JSON.parse(await readFile(path.join(output, command === "manifest" ? "manifest.json" : "unsigned-plan.json"), "utf8"));
       expect(command === "manifest" ? manifest : manifest.manifest).toEqual(f.host.manifest);
+      expect(JSON.parse(await readFile(path.join(output, "review-build.json"), "utf8"))).toEqual({ subject: f.subject, plan: f.plan, artifact: f.artifact });
       if (command !== "manifest") expect(JSON.parse(await readFile(path.join(output, "catalog-preparation.json"), "utf8")).entries[0]).toMatchObject({ available: false, status: "prepared" });
       if (command === "export") {
         expect(JSON.parse(await readFile(path.join(output, "export.complete.json"), "utf8"))).toMatchObject({ available: false, websitePublished: false, ethereumFinalityProven: false });
         expect(JSON.parse(await readFile(path.join(output, "public", "developers", "modules", f.artifact.packageId, "source.json"), "utf8"))).toEqual(f.source);
+        await expect(readFile(path.join(output, "public", "developers", "modules", f.artifact.packageId, "review-build.json"))).rejects.toThrow();
       }
     } finally { vi.unstubAllGlobals(); log.mockRestore(); await rm(parent, { recursive: true, force: true }); }
   });
@@ -142,6 +146,33 @@ describe("Engine publication through the existing authenticated operator", () =>
       bad.cases[0].operations[2].timestamp = timestamp;
       expect(() => parseReviewPlan(bad, f.subject)).toThrow();
     }
+  });
+  it("reconstructs named tuple configuration through the shared engine encoder", async () => {
+    const f = await fixture();
+    const configurationAbi = [{ path: [], type: "tuple", components: [{ name: "cap", type: "uint64" }] }];
+    const plan = { ...f.plan, configurationAbi }, planDigest = reviewDigest("programmable.modules.engine-build-plan.v1", plan);
+    const { artifactDigest: _old, ...contents } = { ...f.artifact, configurationAbi, planDigest, tests: { ...f.artifact.tests, planDigest } };
+    void _old;
+    const artifact = { ...contents, artifactDigest: reviewDigest("programmable.modules.engine-build.v1", contents) };
+    expect(parseReviewPlan(plan, f.subject)).toEqual(plan);
+    expect(() => verifyModuleEngineBuildArtifactV1(artifact, f.subject, plan, f.source)).not.toThrow();
+    for (const bad of [
+      [{ path: [], type: "tuple", components: [] }],
+      [{ path: [], type: "tuple", components: [{ name: "cap", type: "uint64" }, { name: "cap", type: "uint64" }] }],
+      [{ path: [], type: "uint64", components: [{ name: "cap", type: "uint64" }] }],
+    ]) expect(() => parseReviewPlan({ ...plan, configurationAbi: bad }, f.subject)).toThrow();
+  });
+  it("matches fixed/general Host admission and initial operation to the same successful configuration", async () => {
+    const f = await fixture(), checked = validateModuleSubmissionRequest(f.source); if (!checked.ok) throw new Error("fixture");
+    const cases = f.artifact.cases.map(c => ({ ...c, fixedConfiguration: true }));
+    const job = { plan: f.plan, artifact: { ...f.artifact, cases } };
+    const make = (revision: EnginePublicationDefinition["revision"]) => createReviewedModuleEngineManifest({ job, release: f.release, descriptor: checked.request.descriptor, definition: f.definition.catalogDefinition, revision });
+    expect(() => make(f.definition.revision)).toThrow("admission");
+    const revision = { ...f.definition.revision, fixedConfigurationHash: cases[1].configHash, fixedQuoteAsset: cases[1].quoteAsset };
+    expect(() => make(revision)).not.toThrow();
+    expect(() => make({ ...revision, initialOperationId: cases[0].operations[1].operationId })).toThrow("Initial operation");
+    const noFlag = { ...f.plan, cases: f.plan.cases.map(c => ({ ...c, fixedConfiguration: "true" })) };
+    expect(() => parseReviewPlan(noFlag, f.subject)).toThrow("ADMISSION");
   });
   it.each(["source", "compiler", "instance", "tests", "patches"])("rejects substituted %s even when its artifact digest is recomputed", async area => {
     const f = await fixture(), mutable = f.artifact as unknown as typeof frozen.artifact;

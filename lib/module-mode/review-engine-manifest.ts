@@ -5,7 +5,7 @@ import type { ReviewJob } from "./review-contract";
 import type { OpenSourcePackage } from "../../packages/classic-modules/src/open-packages.mjs";
 
 /** The same build-to-manifest binding is enforced at independent review and publication. */
-export function createReviewedModuleEngineManifest(input: { job: ReviewJob; descriptor: OpenSourcePackage;
+export function createReviewedModuleEngineManifest(input: { job: Pick<ReviewJob, "plan" | "artifact">; descriptor: OpenSourcePackage;
   release: ModuleEngineReleaseIdentity; definition: ModuleEngineCatalogDefinition; revision: ModuleEngineRevisionDefinition }) {
   const { artifact, plan } = input.job;
   if (artifact?.schemaVersion !== "programmable.modules.engine-build.v1" || plan?.schemaVersion !== "programmable.modules.engine-build-plan.v1") throw new Error("Reviewed engine build and plan required.");
@@ -17,8 +17,10 @@ export function createReviewedModuleEngineManifest(input: { job: ReviewJob; desc
   if (artifact.testEconomics.platformBps !== (revision.eligibleFamilies.length ? 30 : 10)) throw new Error("Engine fee-family mode differs from the protected economics vectors.");
   const positive = artifact.cases.filter(c => c.expectedDeployment === "success");
   if (revision.fixedQuoteAsset !== ENGINE_ZERO_ADDRESS && !positive.some(c => c.quoteAsset === revision.fixedQuoteAsset)) throw new Error("Fixed quote asset has no successful reviewed instance.");
-  if (revision.fixedConfigurationHash !== ENGINE_ZERO_HASH && !positive.some(c => c.configHash === revision.fixedConfigurationHash && (revision.fixedQuoteAsset === ENGINE_ZERO_ADDRESS || c.quoteAsset === revision.fixedQuoteAsset))) throw new Error("Fixed configuration has no successful reviewed instance.");
-  if (revision.initialOperationId !== ENGINE_ZERO_HASH && !positive.some(c => c.operations.some(o => o.operationId === revision.initialOperationId && o.actor === "creator" && o.expectedOutcome === "success"))) throw new Error("Initial operation has no successful creator vector.");
+  const admitted = positive.filter(c => (revision.fixedQuoteAsset === ENGINE_ZERO_ADDRESS || c.quoteAsset === revision.fixedQuoteAsset)
+    && (revision.fixedConfigurationHash === ENGINE_ZERO_HASH ? c.fixedConfiguration !== true : c.fixedConfiguration === true && c.configHash === revision.fixedConfigurationHash));
+  if (!admitted.length) throw new Error("Host configuration admission has no successful reviewed instance.");
+  if (revision.initialOperationId !== ENGINE_ZERO_HASH && !admitted.some(c => c.operations.some(o => o.operationId === revision.initialOperationId && o.actor === "creator" && o.expectedOutcome === "success"))) throw new Error("Initial operation has no successful creator vector for the admitted configuration.");
   if (input.definition.interface === "quote-v1" && revision.fixedConfigurationHash === ENGINE_ZERO_HASH) throw new Error("Quote engine dependencies require a fixed reviewed configuration.");
   return createModuleEngineHostManifest({ release: input.release, definition: input.definition, revision, descriptor: input.descriptor,
     source: { requestDigest: artifact.subject.requestDigest, artifactDigest: artifact.artifactDigest, sourceManifestHash: artifact.sourceManifestHash,

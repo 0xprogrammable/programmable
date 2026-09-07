@@ -3,8 +3,8 @@ import { bytesToHex, encodeAbiParameters, getContractAddress, hexToBytes, keccak
 import { validateModuleSubmissionRequest } from "../../packages/classic-modules/src/open-transport.mjs";
 import { compileOpenConfig } from "../../packages/classic-modules/src/open-config.mjs";
 import { nativeCanonicalJson, nativeJson } from "./native-catalog";
-import { encodeProgramConfiguration } from "./builder";
-import { parseReviewProgramAbi, reviewDigest as moduleReviewDigestV1, parseReviewSubject, type ReviewSubject as ModuleReviewSubjectV1 } from "./review-contract";
+import { encodeModuleEngineConfiguration, parseModuleEngineConfigurationAbi } from "../module-engine/configuration";
+import { reviewDigest as moduleReviewDigestV1, parseReviewSubject, type ReviewSubject as ModuleReviewSubjectV1 } from "./review-contract";
 import { MODULE_ENGINE_BUILD_SCHEMA_V1, MODULE_ENGINE_PLAN_SCHEMA_V1, MODULE_ENGINE_PROFILE_V1, MODULE_ENGINE_CONFIGURATION_CODEC_V1, MODULE_ENGINE_CONTEXT_ABI_V1, MODULE_ENGINE_CONSTRUCTOR_ABI_V1, type ModuleEngineBuildArtifactV1, type ModuleEngineBuildPlanV1, type ModuleEngineContractArtifactV1, type ModuleEngineCompiledCaseV1, type ModuleEngineTestResultV1 } from "./review-engine-types";
 type ModuleDigestV1 = Hex;
 export const ENGINE_REVIEW_COMPILER = Object.freeze({version:"0.8.26+commit.8a97fa7a",binarySha256:"sha256:35ba6661f3bdaed995fc7af14c405502290cf681b3fd062fe8738cfdf6db14ed",imageDigest:"sha256:d8e448a56fc63242f70026718378bd4b00f8c82e78d20eefb199224a4d8e33d8"});
@@ -65,7 +65,7 @@ export function validateModuleEngineBuildPlanV1(value: unknown, subject: ModuleR
   const p = exact(value, ["schemaVersion", "submissionId", "requestDigest", "engineComponentId", "configurationCodec", "configurationAbi", "immutableBindings", "operationPermissions", "moneyRights", "coinRights", "testEconomics", "executionGas", "cases"]);
   need(p.schemaVersion === MODULE_ENGINE_PLAN_SCHEMA_V1 && p.submissionId === subject.submissionId && p.requestDigest === subject.requestDigest, "MODULE_ENGINE_SUBJECT_MISMATCH");
   need(p.configurationCodec === MODULE_ENGINE_CONFIGURATION_CODEC_V1, "MODULE_ENGINE_CODEC_UNSUPPORTED");
-  parseReviewProgramAbi(p.configurationAbi);
+  parseModuleEngineConfigurationAbi(p.configurationAbi);
   need(typeof p.engineComponentId === "string" && IDENTIFIER.test(p.engineComponentId), "MODULE_ENGINE_TARGET_INVALID");
   need(Number.isSafeInteger(p.executionGas) && Number(p.executionGas) >= 50_000 && Number(p.executionGas) <= 3_000_000, "MODULE_ENGINE_GAS_INVALID");
   need(Number.isInteger(p.moneyRights) && Number(p.moneyRights) >= 0 && Number(p.moneyRights) <= 7 && p.coinRights === 0, "MODULE_ENGINE_RIGHTS_INVALID");
@@ -93,7 +93,7 @@ export function validateModuleEngineBuildPlanV1(value: unknown, subject: ModuleR
   const caseIds = new Set<string>();
   let positive = false;
   for (const raw of p.cases) {
-    const c = exact(raw, ["id", "parameters", "token", "quoteAsset", "launchData", "expectedResourcesHash", "expectedDeployment", "operations", ...(Object.hasOwn(object(raw), "rawConfigBytes") ? ["rawConfigBytes"] : [])]);
+    const c = exact(raw, ["id", "parameters", "token", "quoteAsset", "launchData", "expectedResourcesHash", "expectedDeployment", "operations", ...["rawConfigBytes", "fixedConfiguration"].filter(key => Object.hasOwn(object(raw), key))]);
     need(typeof c.id === "string" && IDENTIFIER.test(c.id) && !caseIds.has(c.id), "MODULE_ENGINE_CASE_INVALID"); caseIds.add(c.id);
     for (const key of ["token", "quoteAsset"]) {
       need(typeof c[key] === "string" && ADDRESS.test(c[key]) && !([MODULE_ENGINE_REVIEW_HOST_V1, MODULE_ENGINE_REVIEW_ACTOR_V1] as readonly string[]).includes(c[key]), "MODULE_ENGINE_CONTEXT_INVALID");
@@ -102,6 +102,7 @@ export function validateModuleEngineBuildPlanV1(value: unknown, subject: ModuleR
     hex(c.launchData);
     need(typeof c.expectedResourcesHash === "string" && DIGEST.test(c.expectedResourcesHash), "MODULE_ENGINE_RESOURCES_INVALID");
     need(c.expectedDeployment === "success" || c.expectedDeployment === "revert", "MODULE_ENGINE_CASE_INVALID");
+    if (c.fixedConfiguration !== undefined) need(typeof c.fixedConfiguration === "boolean", "MODULE_ENGINE_ADMISSION_INVALID");
     if (c.rawConfigBytes !== undefined) { need(c.expectedDeployment === "revert", "MODULE_ENGINE_NEGATIVE_CONFIG_INVALID"); hex(c.rawConfigBytes); }
     need(Array.isArray(c.operations) && c.operations.length <= 16, "MODULE_ENGINE_OPERATIONS_INVALID");
     need(c.expectedDeployment === "success" ? c.operations.length > 0 : c.operations.length === 0, "MODULE_ENGINE_OPERATION_COVERAGE_MISSING");
@@ -217,7 +218,7 @@ export function materializeModuleEngineRuntimeV1(engine: ModuleEngineContractArt
 function compiledCases(plan: ModuleEngineBuildPlanV1, source: ReturnType<typeof sourceInput>, engine: ModuleEngineContractArtifactV1): ModuleEngineCompiledCaseV1[] {
   const descriptor = source.checked.request.descriptor;
   return plan.cases.map(c => {
-    const configBytes = c.rawConfigBytes ?? encodeProgramConfiguration(plan.configurationAbi.map(a => ({ type: a.type, path: [...a.path] })), compileOpenConfig(descriptor.configuration, c.parameters, { roles: { author: descriptor.author, reward: descriptor.rewardWallet } }));
+    const configBytes = c.rawConfigBytes ?? encodeModuleEngineConfiguration(plan.configurationAbi, compileOpenConfig(descriptor.configuration, c.parameters, { roles: { author: descriptor.author, reward: descriptor.rewardWallet } }), descriptor.configuration);
     const context = {
       host: MODULE_ENGINE_REVIEW_HOST_V1,
       launchId: moduleReviewDigestV1("programmable.modules.engine-review-launch.v1", { requestDigest: plan.requestDigest, caseId: c.id }),
@@ -282,7 +283,7 @@ export function parseEngineReviewArtifact(value: unknown, subject: ModuleReviewS
   for(const field of ["packageId","familyId","sourceManifestHash","planDigest","configurationSchemaHash"]) need(typeof raw[field]==="string" && DIGEST.test(raw[field]),"MODULE_ENGINE_BUILD_IDENTITY_INVALID");
   need(typeof raw.rewardWallet==="string" && ADDRESS.test(raw.rewardWallet),"MODULE_ENGINE_REWARD_INVALID");
   need(json(raw.reviewRequired)===json(MODULE_ENGINE_REVIEW_AREAS_V1),"MODULE_ENGINE_REVIEW_COVERAGE_INVALID");
-  need(raw.configurationCodec===MODULE_ENGINE_CONFIGURATION_CODEC_V1,"MODULE_ENGINE_CODEC_UNSUPPORTED"); parseReviewProgramAbi(raw.configurationAbi);
+  need(raw.configurationCodec===MODULE_ENGINE_CONFIGURATION_CODEC_V1,"MODULE_ENGINE_CODEC_UNSUPPORTED"); parseModuleEngineConfigurationAbi(raw.configurationAbi);
   const artifact=raw as unknown as ModuleEngineBuildArtifactV1;
   need(Array.isArray(artifact.cases) && artifact.cases.length>0 && artifact.cases.length<=16,"MODULE_ENGINE_CASES_INVALID");
   const engine=artifact.engine;

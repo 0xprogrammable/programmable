@@ -1,6 +1,7 @@
 // Engine review wire, kept byte-compatible with the protected backend engine-build.v1 profile.
 import type { Hex as ModuleDigestV1 } from "viem";
-import type { ReviewProgramArgument as ModuleNativeProgramArgumentV1, ReviewSubject as ModuleReviewSubjectV1 } from "./review-contract";
+import type { ReviewSubject as ModuleReviewSubjectV1 } from "./review-contract";
+import type { ModuleEngineConfigurationArgument as ModuleEngineConfigurationArgumentV1 } from "../module-engine/catalog";
 type JsonValue = unknown;
 
 export const MODULE_ENGINE_PLAN_SCHEMA_V1 = "programmable.modules.engine-build-plan.v1" as const;
@@ -62,6 +63,8 @@ export interface ModuleEngineCaseV1 {
   readonly expectedDeployment: "success" | "revert";
   readonly operations: readonly ModuleEngineOperationV1[];
   readonly rawConfigBytes?: `0x${string}`;
+  /** Expose this case's exact configuration hash through the Host admission getter. */
+  readonly fixedConfiguration?: boolean;
 }
 export interface ModuleEngineBuildPlanV1 {
   readonly schemaVersion: typeof MODULE_ENGINE_PLAN_SCHEMA_V1;
@@ -69,7 +72,7 @@ export interface ModuleEngineBuildPlanV1 {
   readonly requestDigest: ModuleDigestV1;
   readonly engineComponentId: string;
   readonly configurationCodec: typeof MODULE_ENGINE_CONFIGURATION_CODEC_V1;
-  readonly configurationAbi: readonly ModuleNativeProgramArgumentV1[];
+  readonly configurationAbi: readonly ModuleEngineConfigurationArgumentV1[];
   /** Compiler immutable ID to an aligned, full word of the canonical constructor arguments. */
   readonly immutableBindings: readonly { id: string; constructorOffset: number }[];
   readonly operationPermissions: readonly ModuleEnginePermissionV1[];
@@ -158,7 +161,7 @@ export interface ModuleEngineBuildArtifactV1 {
   readonly planDigest: ModuleDigestV1;
   readonly configurationSchemaHash: ModuleDigestV1;
   readonly configurationCodec: typeof MODULE_ENGINE_CONFIGURATION_CODEC_V1;
-  readonly configurationAbi: readonly ModuleNativeProgramArgumentV1[];
+  readonly configurationAbi: readonly ModuleEngineConfigurationArgumentV1[];
   readonly compiler: {
     readonly version: string;
     readonly binarySha256: string;

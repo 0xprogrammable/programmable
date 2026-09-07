@@ -31,6 +31,8 @@ export async function runEnginePublication(input: {command:string;identity:unkno
   }
   await mkdir(output,{mode:0o700});
   const write=(name:string,value:unknown)=>writeFile(path.join(output,name),`${canonicalizeJson(value)}\n`,{flag:"wx",mode:0o600});
+  // Private compiler/test proof for protected catalogue ingestion; never copied into public output.
+  await write("review-build.json",{subject:review.job.subject,plan:review.job.plan,artifact:review.artifact});
   if(command==="manifest") {await write("manifest.json",host.manifest);await write("host-preparation.json",host);}
   else {
     await write("unsigned-plan.json",plan);
