@@ -1,57 +1,65 @@
 ---
-description: Trading fees, creator and module rewards, revenue allocation and accounting
+description: What we charge, who receives the fees and how we use our revenue
 ---
 
 # Fees and revenue
 
-Trading fees are percentages of the amount exchanged. One basis point, written as bps, is 0.01%; 20 bps is 0.20%. Network gas, initial purchases, liquidity deposits and module operating budgets are separate costs. The launch review shows the selected fees and required funding before wallet confirmation.
+Programmable earns a share of trading fees. Coin creators and module authors receive their own shares. We use half of our platform fee revenue to buy and burn V4, and keep the other half in the Programmable treasury.
+
+Fees are shown as percentages or basis points (bps): **10 bps is 0.10%, and 20 bps is 0.20%**. Gas, liquidity deposits and the funds needed to run a module are separate costs. You can see the fee breakdown before confirming a launch.
 
 ## Robinhood Custom Launches
 
-Native20 charges **20 bps (0.20%)** of gross native ETH once per successful buy or sell, rounded up to the next wei. The full 20 bps belongs to Programmable. A project's creator fee and its Uniswap pool fee are additional, so 0.20% is not an all-in maximum. A trade with 1 ETH of gross native value accrues 0.002 ETH for Programmable before any separate creator fee.
+Programmable charges **0.20% (20 bps)** on each buy and sell. The coin creator can set a separate fee, which belongs to them. The pool also has its own trading fee.
 
-The fee kernel credits PoolManager native claims to the fixed platform recipient `0xD88539d3c4C460136a733A3Fd60cf6BF269079da`. Anyone can trigger a claim, but payment goes only to that recipient. Creator rewards accrue separately to the configured creator recipient. A creator fee of zero produces no creator rewards, even when platform revenue accrues.
+On a trade worth **1 ETH**, the Programmable fee is **0.002 ETH**. Half of that, **0.001 ETH**, goes to V4 buybacks and burns. The other **0.001 ETH** goes to the treasury. Creator and pool fees are added separately.
 
-This model covers the supported Native20 paths for separate contracts and a shared token/hook contract. An API profile's fee requirement does not retroactively change another deployment's fee contract.
+If the creator sets their fee to 0%, they earn no creator fees from those trades.
 
 ## Module Mode
 
-Coin creators choose the supported creator fee, up to **10%**. That fee belongs to the coin creator. Platform and module author charges are additional, and any declared module operating budget is separate from trading fees.
+Coin creators choose their own trading fee, up to **10%**, and keep that fee. Our Module Mode fee policy adds **0.30% (30 bps)**, divided as follows:
 
-The Module Mode allocation policy is **10 bps (0.10%) for Programmable and 20 bps (0.20%) in total for the authors of eligible modules used by the coin**. For a launch using modules, this is 30 bps (0.30%) in addition to the coin creator's fee. The author allocation is shared among the eligible module families; it is not 20 bps per module. A module earns through qualifying use, not merely by being submitted or listed.
+| Recipient | Share of each trade |
+| --- | --- |
+| Programmable | 0.10% (10 bps) |
+| Authors of the modules used by the coin | 0.20% (20 bps) in total |
 
-### Contract versions
+The author share is divided between the eligible module families used by the coin. Adding more modules does not increase the total 0.20% author fee. Authors earn when their modules are used in coins that trade.
 
-Fee rates are bound to the deployed engine. The `module-native-v1` engine charges 20 bps in total: with eligible module families, 10 bps goes to Programmable and 10 bps is shared equally among those families. Without eligible families, the full 20 bps goes to the protocol recipient. Its creator fee supports 0% through 10% in one-percentage-point steps.
+For example, under this model, a **1% creator fee** plus the **0.30% platform and author fee** gives a **1.30% combined fee**. Any separate pool fee is additional.
 
-The 10/20 allocation policy requires a different engine release; it does not alter `module-native-v1` or the fees of its existing coins. Check the [active engine](https://programmable.market/api/module-mode), the launch review and the deployed fee contract for the rate that a particular coin charges. Module author rewards, coin creator rewards and Programmable revenue must remain separate balances.
+Existing coins keep the fees they launched with. The original Module Mode contract charges 0.20% in total: 0.10% for Programmable and 0.10% for module authors when eligible modules are used. Without eligible modules, that contract sends the full 0.20% to Programmable. Check the launch fee breakdown for the model that applies to your coin.
 
-## Protocol revenue allocation
+## How we use our revenue
 
-Programmable's revenue policy allocates **50% of net protocol revenue to V4 buybacks and burns** and **50% to the treasury**, with daily processing. Net protocol revenue is the share belonging to Programmable after creator, module author and other third-party liabilities have been separated.
+We split the fees that belong to Programmable equally:
 
-For Native20 Custom Launches, half of the 20 bps platform share is equivalent to 10 bps of the qualifying trading amount. Under the Module Mode 10 bps platform allocation, half is equivalent to 5 bps. Module author and coin creator rewards are not part of this allocation.
+| Use | Share of Programmable revenue |
+| --- | --- |
+| Buy V4 and burn it | 50% |
+| Programmable treasury | 50% |
 
-The allocation policy describes how revenue is assigned. Finalized claim, purchase and burn transactions establish what has actually been processed. A daily accounting schedule does not imply that every accrued amount has already been claimed or that a transaction occurs at an exact clock time. Earlier deployments and revenue processors retain their own contract rules.
+Buybacks and burns are processed daily. For every **1 ETH** Programmable earns in platform fees, **0.5 ETH** goes to buying and burning V4, and **0.5 ETH** stays in the treasury. Coin creator fees and module author rewards belong to those creators and authors, so they are not included in this split.
 
 ## V4 liquidity fees and burns
 
-Programmable's main V4/ETH pool has a separate LP fee. The project's liquidity position earns its proportional share in the input asset: ETH on buys and V4 on sells. The policy assigns collected V4 fees to daily burns. These token fees are separate from the ETH protocol revenue used to buy V4.
+Programmable also earns fees from its liquidity in the main V4/ETH pool. When someone buys V4, we receive ETH fees. When someone sells V4, we receive V4 tokens as fees. We burn the V4 tokens we collect each day.
 
-Read [V4 token](v4-token.md) for the contract identity, liquidity custody and the meaning of a burn for this token.
+These V4 fees are burned directly. We also buy V4 with the platform revenue described above and burn those tokens. The [V4 token page](v4-token.md) explains the token and its liquidity.
 
-## Analytics
+## Track the numbers
 
-The [Dune dashboard](https://dune.com/programmablehq/analytics) reports burns, Module Mode activity and Custom Launch activity. Custom Launch statistics distinguish the following:
+Our [Dune dashboard](https://dune.com/programmablehq/analytics) shows launches, earned fees and V4 burns. It refreshes every 24 hours.
 
-| Metric | Accounting |
+| Custom Launch metric | What it shows |
 | --- | --- |
-| Custom Launches | Finalized stamps from the canonical Custom V1 and V2 Routers, including reference launches. |
-| Custom Creator Rewards | ETH accrued to creators by `NativeFeesAccrued` for a stamped hook and its exact pool. |
-| Custom Protocol Revenue | ETH accrued to Programmable by those events, including unclaimed balances. |
+| Custom Launches | Confirmed launches through Programmable. |
+| Custom Creator Rewards | ETH earned by coin creators. |
+| Custom Protocol Revenue | ETH earned by Programmable. |
 
-Revenue is counted when earned. Claiming it later does not create new revenue. Gas, liquidity deposits, donations and LP fees are excluded from Custom protocol revenue. Historical fee models without the supported event are outside those ETH totals. The dashboard refreshes every 24 hours; the [Custom query](https://dune.com/queries/8631499) includes its finalized checkpoint and accounting rules.
+Earned fees include balances that have not yet been withdrawn. Withdrawing them does not count as new revenue. Gas payments and liquidity deposits are not revenue. The [Custom Launch query](https://dune.com/queries/8631499) lists the contracts and transactions included in those totals.
 
-## Ethereum fee models
+## Ethereum launches
 
-Ethereum Classic includes a 10 bps (0.10%) Programmable share in the creator-selected buy or sell fee. Ethereum Custom uses the fee policy attached to its exact profile and market path; fee-certified paths assign 10 bps separately from project hook fees. These historical and chain-specific contracts do not inherit Robinhood Native20 or Module Mode rates. Ordinary token transfers do not become pool swaps merely because a token has a trading fee.
+Classic on Ethereum includes Programmable's **0.10%** share within the creator's selected fee. For example, a 1% fee leaves 0.90% for the creator and 0.10% for Programmable. Ethereum Custom fees depend on the contract used; supported fee contracts charge 0.10% for Programmable in addition to project fees. Check the fee details for the coin you are launching or trading.

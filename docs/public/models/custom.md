@@ -26,7 +26,7 @@ The API key and client do not sign or broadcast. Material source, metadata, fund
 
 ## Fees and liquidity
 
-On Robinhood, Native20 charges **20 bps (0.20%)** of the gross native ETH amount per successful buy or sell for Programmable. Creator fees and the Uniswap pool fee are additional. Setting the creator buy and sell fees to 0 produces no creator fee accruals. [Fees and revenue](../economics.md) defines each fee path and the Dune metrics.
+On Robinhood, Programmable receives **0.20% (20 bps)** on each buy and sell. The creator's fee and the pool's trading fee are added separately. If the creator sets their fee to 0%, they earn no creator fees from those trades. [Fees and revenue](../economics.md) explains the split and includes a 1 ETH example.
 
 An ordinary pool needs a funded liquidity position. Initializing the pool does not supply that liquidity. A project using custom accounting, launch inventory or another reserve model must implement and verify its own settlement behavior. The selected API's funding rules still apply.
 
