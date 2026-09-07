@@ -32,6 +32,16 @@ real Registry, contract-code, transaction and receipt checks pass on both review
 - `--output`: a new directory under an existing private `0700` parent outside the repository.
   The operator never overwrites an earlier result.
 
+Use the normal wallet login at `https://programmable.market/admin/modules`. With the authenticated
+admin wallet connected, select **Download publication session**. The explicit action downloads
+`module-publication-session.json` in the format above using the current wallet session. A session
+change during token retrieval cancels the download. This file contains login tokens; keep it outside
+the repository, do not share it, and delete it when finished. Browsers cannot set the operator's
+required owner-only filesystem permissions. Move the download into your existing private operator
+directory and run `chmod 600 /private/operator/module-publication-session.json` before passing that
+path to `--session-file`. Use your actual local path. If the session expires, reconnect normally and
+download a fresh file. The download grants no additional role, accepts no review, and signs no transaction.
+
 The fixed-origin website BFF `/api/admin/modules/<id>` and `/source` authenticate the current session,
 bind its linked wallet and use the existing signed BFF-v2 request to the private review API. The backend
 enforces its reviewer allowlist. Source and accepted decisions come from this live read on every run.

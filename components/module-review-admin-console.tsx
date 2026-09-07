@@ -6,6 +6,7 @@ import { ArrowDownToLine, ArrowLeft, ArrowRight, Check, RefreshCw } from "lucide
 import { useWallet } from "@/components/wallet-provider";
 import { isWebsiteAdminWallet } from "@/lib/admin-access";
 import { isReviewDigest, parseReviewPlan, reviewStateLabel, type ModuleReviewDecisionCommandV1, type ModuleReviewDecisionRecordV1, type ReviewDetail, type ReviewManifestCheck, type ReviewQueue } from "@/lib/module-mode/review-contract";
+import { createPublicationSessionExporter, type PublicationSession, type PublicationSessionExportResult } from "@/lib/module-mode/publication-session";
 import styles from "./module-review-admin-console.module.css";
 
 type RequestReview = (path: string, body?: unknown, signal?: AbortSignal, asText?: boolean) => Promise<unknown>;
@@ -29,8 +30,9 @@ function short(value: string) { return `${value.slice(0, 8)}…${value.slice(-6)
 function json(value: unknown) { return JSON.stringify(value, null, 2); }
 function download(text: string, filename: string) {
   const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
-  const link = document.createElement("a"); link.href = url; link.download = filename; link.click();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  try {
+    const link = document.createElement("a"); link.href = url; link.download = filename; link.click();
+  } finally { window.setTimeout(() => URL.revokeObjectURL(url), 1000); }
 }
 function Status({ state }: { state: ReviewState }) { return <span className={styles.badge} data-state={state}>{reviewStateLabel(state)}</span>; }
 function Hash({ label, value }: { label: string; value: string }) { return <div className={styles.hash}><dt>{label}</dt><dd>{value}</dd></div>; }
@@ -44,11 +46,19 @@ const AREA_LABELS: Record<string, string> = {
 };
 
 export function ModuleReviewAdminConsole() {
-  const { authenticated, connecting, wallet, getAccessToken, getIdentityToken, openWallet } = useWallet();
+  const { authenticated, authReady, sessionReady, connecting, disconnecting, wallet, getAccessToken, getIdentityToken, openWallet } = useWallet();
   const account = authenticated && isWebsiteAdminWallet(wallet?.account)
     ? wallet?.account.toLowerCase() ?? null : null;
   const session = useRef(account);
   useLayoutEffect(() => { session.current = account; }, [account]);
+  const publicationSession = useRef<PublicationSession | null>(null);
+  const publicationReady = Boolean(account && authReady && sessionReady && !disconnecting);
+  useLayoutEffect(() => {
+    publicationSession.current = publicationReady && account ? Object.freeze({ walletAddress: account }) : null;
+    return () => { publicationSession.current = null; };
+    // WalletProvider replaces the identity-token capability when its session/token changes.
+    // Cleanup also cancels a pending export when the same wallet disconnects and reconnects.
+  }, [account, publicationReady, getAccessToken, getIdentityToken]);
   const request = useCallback<RequestReview>(async (path, body, signal, asText) => {
     const identity = await getIdentityToken().catch(() => null);
     const token = await getAccessToken();
@@ -73,12 +83,45 @@ export function ModuleReviewAdminConsole() {
       <div><p className={styles.eyebrow}>Modules</p><h1>Admin Dashboard</h1></div>
       <Link className={styles.textLink} href="/admin/partners">Partner access <ArrowRight size={15} aria-hidden="true" /></Link>
     </header>
-    {account ? <ModuleReviewWorkspace key={account} account={account} request={request} /> : <section className={styles.gate}>
+    {account ? <>
+      <PublicationSessionDownload ready={publicationReady} readSession={() => publicationSession.current}
+        getAccessToken={getAccessToken} getIdentityToken={getIdentityToken} />
+      <ModuleReviewWorkspace key={account} account={account} request={request} />
+    </> : <section className={styles.gate}>
       <div className={styles.gateMark} aria-hidden="true">M</div><h2>Admin wallet required</h2>
       <p>Connect the admin wallet to review submissions.</p>
       <button className={styles.primary} type="button" disabled={connecting} onClick={openWallet}>{connecting ? "Connecting…" : "Connect wallet"}</button>
     </section>}
   </div>;
+}
+
+export function PublicationSessionDownload({ ready, ...input }: {
+  ready: boolean;
+  readSession: () => PublicationSession | null;
+  getAccessToken: () => Promise<string | null>;
+  getIdentityToken: () => Promise<string | null>;
+}) {
+  const [exportSession] = useState(() => createPublicationSessionExporter());
+  const [status, setStatus] = useState<"idle" | "pending" | PublicationSessionExportResult>("idle");
+  const startDownload = async () => {
+    const initial = input.readSession();
+    if (!ready || initial === null) { setStatus("session-changed"); return; }
+    setStatus("pending");
+    const result = await exportSession({ ...input, download: text => download(text, "module-publication-session.json") });
+    if (result !== "busy") setStatus(input.readSession() === initial ? result : "session-changed");
+  };
+  const notice = status === "downloaded" ? "Download requested. Set owner-only file permissions before using the publication operator."
+    : status === "session-changed" ? "Your wallet session changed. Reconnect the admin wallet and try again."
+      : status === "unavailable" ? "The session file could not be downloaded. Reconnect the admin wallet and try again."
+        : status === "pending" ? "Preparing the private session file…" : "";
+  return <section className={styles.sessionExport} aria-label="Publication session">
+    <button className={styles.secondary} type="button" disabled={!ready || status === "pending"}
+      aria-describedby="publication-session-handling" onClick={event => { if (event.detail <= 1) void startDownload(); }}>
+      <ArrowDownToLine size={15} aria-hidden="true" />Download publication session
+    </button>
+    <p id="publication-session-handling" className={styles.caption}>Contains your login tokens. Keep this file private and outside the repository. Delete it when finished.</p>
+    <p className={styles.caption} role="status" aria-live="polite" aria-atomic="true">{notice}</p>
+  </section>;
 }
 
 // The authenticated host owns the request function. This workspace has no credential or authority of its own.

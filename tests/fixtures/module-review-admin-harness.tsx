@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useRef, useState, type ComponentProps } from "react";
-import { ModuleReviewWorkspace } from "../../components/module-review-admin-console";
+import { ModuleReviewWorkspace, PublicationSessionDownload } from "../../components/module-review-admin-console";
+import { WEBSITE_ADMIN_WALLET } from "../../lib/admin-access";
+import type { PublicationSession } from "../../lib/module-mode/publication-session";
 import { reviewDigest, summarizeReviewJob, type ModuleReviewDecisionCommandV1, type ModuleReviewDecisionRecordV1 } from "../../lib/module-mode/review-contract";
 import type { moduleReviewAdminFixture } from "./module-review-admin";
 import styles from "../../components/module-review-admin-console.module.css";
@@ -12,6 +14,10 @@ export function ModuleReviewAdminHarness({ fixture }: { fixture: ReturnType<type
   const loseResponse = useRef(false);
   const [generation, setGeneration] = useState(0);
   const [requestCount, setRequestCount] = useState(0);
+  const exportSession = useRef<PublicationSession | null>(Object.freeze({ walletAddress: WEBSITE_ADMIN_WALLET }));
+  const changeExportSession = useRef(false);
+  const [exportReady, setExportReady] = useState(true);
+  const [tokenReads, setTokenReads] = useState(0);
   const request = useCallback<ComponentProps<typeof ModuleReviewWorkspace>["request"]>(async (path, body) => {
     if (path.startsWith("?")) return { schemaVersion: "programmable.modules.website-review-queue.v1", jobs: [summarizeReviewJob(detail.current.job)], nextCursor: null };
     if (path.includes("/source?")) return JSON.stringify(fixture.source);
@@ -43,6 +49,22 @@ export function ModuleReviewAdminHarness({ fixture }: { fixture: ReturnType<type
       <p role="status">Synthetic decisions sent: {requestCount}</p>
     </div>
     <ModuleReviewWorkspace key={generation} account={fixture.reviewer} request={request} />
+    <section className={styles.section}>
+      <h2>Local session-download fixture</h2>
+      <p className={styles.note}>Downloaded files contain synthetic tokens with no authentication or publication authority. Delete these fixture files after the interface check.</p>
+      <label className={styles.checkbox}><input type="checkbox" checked={exportReady} onChange={event => {
+        exportSession.current = event.target.checked ? Object.freeze({ walletAddress: WEBSITE_ADMIN_WALLET }) : null;
+        setExportReady(event.target.checked);
+      }} />Authenticated fixture session</label>
+      <label className={styles.checkbox}><input type="checkbox" onChange={event => { changeExportSession.current = event.target.checked; }} />Change session during token retrieval</label>
+      <PublicationSessionDownload ready={exportReady} readSession={() => exportSession.current}
+        getIdentityToken={async () => {
+          if (changeExportSession.current) exportSession.current = Object.freeze({ walletAddress: WEBSITE_ADMIN_WALLET });
+          return "synthetic_identity_token_no_authority";
+        }}
+        getAccessToken={async () => { setTokenReads(n => n + 1); return "synthetic_access_token_no_authority"; }} />
+      <p className={styles.caption}>Synthetic access-token reads: {tokenReads}</p>
+    </section>
     <details className={styles.disclosure}><summary>Fixture host manifest</summary><pre>{JSON.stringify(fixture.manifest, null, 2)}</pre></details>
   </div>;
 }

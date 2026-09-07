@@ -49,3 +49,17 @@ Verified in the rendered local application on 6 September 2026:
 
 The full authenticated production path, installed review worker, real database writes, publication,
 and onchain admission require their independent integration evidence. This fixture proves none of them.
+
+The local session-download section exercises the actual **Download publication session** control with
+clearly synthetic tokens. Its files cannot authenticate to the private review service. Use the
+authenticated-session checkbox to check the disabled state and the session-change checkbox to cancel
+token retrieval before any download. With both a ready session and no simulated change, keyboard
+Enter/Space should request one local JSON download and announce the status. Do not print the file
+contents in screenshots or console output; delete the synthetic download when finished.
+
+For the release check, the integration owner uses the normal `/admin/modules` route: the action is
+absent without the authenticated admin wallet, remains disabled while the wallet session is settling,
+and downloads only through an explicit click. Check desktop and 390/320-pixel widths, visible keyboard
+focus, the live status, rapid repeated activation, wallet/session changes, and the browser console.
+The application cannot apply filesystem permissions to downloads; the operator README explains the
+required owner-only permissions. No authenticated production check is claimed by the local fixture.
