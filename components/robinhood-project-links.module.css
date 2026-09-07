@@ -12,12 +12,16 @@
   flex: none;
   height: 44px;
   justify-content: center;
-  width: 44px;
+  width: 36px;
 }
 
 .links svg { height: 18px; width: 18px; }
 .links a:focus-visible { outline: 2px solid var(--webde-ink); outline-offset: 2px; }
 .links a:active { background: var(--webde-surface-raised); color: var(--webde-ink); }
+
+@media (max-width: 760px), (pointer: coarse) {
+  .links a { width: 44px; }
+}
 
 @media (hover: hover) and (pointer: fine) {
   .links a:hover { background: var(--webde-surface-raised); color: var(--webde-ink); }

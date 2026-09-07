@@ -14,6 +14,7 @@ const sections = [
   { id: "verify", label: "Verify a launch" },
   { id: "identity", label: "Record identity" },
   { id: "modules", label: "Module configuration" },
+  { id: "metadata", label: "Images and links" },
   { id: "reads", label: "Public reads" },
 ] as const;
 
@@ -80,10 +81,24 @@ export default function ModuleModeIndexingPage() {
         or unavailable trading adapter does not remove a verified coin. Read revision evidence at the launch
         block; disabling a module for new launches does not erase existing coins.</p>
     </section>
+    <section id="metadata">
+      <h2>Images and social links</h2>
+      <p className={styles.bodyCopy}>Call <code>metadata()</code> on the verified token address to read
+        <code> description, website, image, extraData</code>. An omitted image becomes the Programmable logo
+        at launch. A selected image keeps its own URL.</p>
+      <p className={styles.bodyCopy}>Decode <code>extraData</code> as UTF-8 JSON with <code>v: 1</code> and optional
+        <code> x, telegram, discord, github, gitbook</code> fields. Empty bytes and absent fields are valid.
+        Each social URL has a 512-byte limit; the complete JSON has a 1,200-byte limit. Validate HTTPS URLs
+        and platform hosts before rendering links. GitBook may use a custom public HTTPS domain.</p>
+      <p className={styles.bodyCopy}>For launch-time proof, compare <code>keccak256(abi.encode(name, symbol, metadata))</code> with
+        <code> ModuleNativeConfigurationBound.metadataHash</code>. The <a href={contract.markdown}>complete reference</a>
+        {" "}includes the format and presentation endpoint. Missing artwork or links never remove a verified coin.</p>
+    </section>
     <section id="reads">
       <h2>Public reads</h2>
       <p className={styles.bodyCopy}>The <a href={contract.reads.websiteList.url}>Explore API</a> returns website
-        records with status, timestamp and pagination. It applies presentation filters. Use contract event
+        records with status, timestamp and pagination. Filter with <code>mode=all|module|custom</code>;
+        <code> pageSize=10|50</code> selects the page size. The default is 50. It applies presentation filters. Use contract event
         scanning for a complete independent archive.</p>
       <p className={styles.bodyCopy}>For creator records, read <code>/api/profile/robinhood?account=&#123;launchWallet&#125;</code>
         {" "}and traverse all pages. Preserve previously verified rows during a temporary outage and report

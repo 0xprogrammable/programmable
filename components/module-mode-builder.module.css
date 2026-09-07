@@ -48,7 +48,7 @@
 .socialFields { margin-block: 24px; min-width: 0; }
 .socialFields h3 { align-items: baseline; display: flex; font-size: 16px; font-weight: 500; gap: 8px; line-height: 24px; margin: 0 0 16px; }
 .socialFields h3 span { color: var(--mm-muted); font-size: 12px; font-weight: 400; }
-.socialGrid { display: grid; gap: 0 16px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.socialGrid { display: grid; gap: 0 16px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .socialGrid[hidden] { display: none; }
 .socialFields > .textButton { font-size: 14px; }
 .imageField { margin-bottom: 24px; min-width: 0; }
@@ -258,11 +258,13 @@
 @keyframes module-mode-progress { to { transform: rotate(360deg); } }
 
 @media (max-width: 1000px) {
+  .socialGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .layout { gap: 24px; grid-template-columns: minmax(0, 1fr) 256px; }
   .formPanel { padding: 24px; }
 }
 
 @media (max-width: 760px) {
+  .socialGrid { grid-template-columns: minmax(0, 1fr); }
   .page { padding: 16px 16px 64px; }
   .pageTop { margin-bottom: 16px; }
   .heading { margin-bottom: 24px; }

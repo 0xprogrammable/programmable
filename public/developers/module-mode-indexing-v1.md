@@ -80,9 +80,25 @@ Resolve display names, icons, configuration labels and management descriptions a
 
 Read revision evidence at the launch block. Disabling a revision for future launches must not remove existing coins. New module revisions retain their own IDs; they do not overwrite historical launch configuration. A change to the host or source interface requires a versioned adapter and an explicit release transition.
 
+## Images and social links
+
+Once the launch identity is verified, call `metadata()` on its canonical token address. The return values are `(string description, string website, string image, bytes extraData)`. `website` and `image` are public HTTPS URLs. A Module Mode launch without a selected image records `https://programmable.market/brand/loop/programmable-module-token-default-v1.png`; an uploaded or supplied image keeps its own URL.
+
+`extraData` contains optional UTF-8 JSON with version `v: 1`. Its supported social fields are `x`, `telegram`, `discord`, `github` and `gitbook`. The builder's Twitter field maps to `x`. The website remains in the separate `website` value.
+
+```json
+{"v":1,"x":"https://x.com/project","telegram":"https://t.me/project","discord":"https://discord.gg/project","github":"https://github.com/project/repo","gitbook":"https://project.gitbook.io/docs"}
+```
+
+Empty `extraData` (`0x`) and absent fields are valid. Each social URL is limited to 512 UTF-8 bytes; the complete encoded JSON is limited to 1,200 bytes. Images and website URLs have a 2,048-byte limit. Decode supported versions, validate HTTPS URLs and platform hosts, and render links as data. Do not execute content from metadata. GitBook may use a custom public HTTPS domain.
+
+For launch-time metadata proof, compute `keccak256(abi.encode(name, symbol, metadata))`, where `metadata` is the single tuple `(description, website, image, extraData)`, and compare it with `ModuleNativeConfigurationBound.metadataHash` from the verified receipt. Keep metadata validation separate from launch discovery: an unavailable image, malformed optional link or unfamiliar metadata version must not remove the coin. The source reference publishes the getter ABI and field mapping in its `tokenMetadata` object.
+
+The website reads saved launch identities first, then attaches optional token metadata. `GET /api/explore/robinhood/presentation?token={tokenAddress}` returns `imageUrl`, `description`, labeled `links` and optional market data. The same presentation is attached to Explore list responses. This display response does not replace independent source and receipt verification.
+
 ## Website reads and archive indexing
 
-The website exposes [Explore records](https://programmable.market/api/explore/robinhood) and a creator lookup at `https://programmable.market/api/profile/robinhood?account={launchWallet}`. Both report `status`, `updatedAt`, `items` and pagination. Read all pages for a profile lookup.
+The website exposes [Explore records](https://programmable.market/api/explore/robinhood) and a creator lookup at `https://programmable.market/api/profile/robinhood?account={launchWallet}`. Both report `status`, `updatedAt`, `items` and pagination. Explore accepts `mode=all|module|custom`, `page`, `pageSize=10|50`, `q` and `sort`. The default API page size is 50; the website requests 10 cards and keeps the main Programmable token pinned. Read `page.totalPages` and `page.hasMore` and traverse all pages. Profile pages retain a size of 50.
 
 Explore applies website visibility, search and market filters. It is a presentation feed, not a complete archival export. For complete independent discovery, scan the bound launch contract using the procedure above. Do not use a displayed coin count as a source checkpoint.
 
