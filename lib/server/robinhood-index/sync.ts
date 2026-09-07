@@ -1,4 +1,5 @@
 import type { RobinhoodLaunch, RobinhoodModuleLaunch } from "@/lib/robinhood-launches";
+import { isRobinhoodModuleSourceKind } from "@/lib/robinhood-launches";
 import { parseSnapshot, parseModuleModeSnapshot, moduleModeSnapshots, type Checkpoint, type RobinhoodSnapshot, type ModuleModeSnapshot } from "./model";
 import type { IndexStore } from "./store";
 
@@ -12,7 +13,7 @@ export type IndexSource = {
 };
 
 export type ModuleModeIndexSource = Omit<IndexSource, "routerAddress" | "binding" | "launches"> & {
-  sourceKind: "module-native-v1";
+  sourceKind: RobinhoodModuleLaunch["sourceKind"];
   sourceAddress: string;
   releaseDigest: string;
   launches(from: bigint, to: bigint, known: readonly RobinhoodLaunch[]): Promise<RobinhoodModuleLaunch[]>;
@@ -69,11 +70,11 @@ export async function syncModuleModeIndex(source: ModuleModeIndexSource, store: 
     throw new Error("Module Mode source changed; index migration required");
   }
   const initial: ModuleModeSnapshot = existing ?? {
-    version: 1, sourceKind: "module-native-v1", chainId: 4663, sourceAddress: source.sourceAddress,
+    version: 1, sourceKind: source.sourceKind, chainId: 4663, sourceAddress: source.sourceAddress,
     releaseDigest: source.releaseDigest, startBlock: source.startBlock.toString(), cursor: null, checkpoints: [],
     finalizedBlock: source.finalized.number, updatedAt: new Date((options.now ?? Date.now)()).toISOString(), items: [],
   };
-  if (source.sourceKind !== "module-native-v1" || initial.sourceAddress.toLowerCase() !== source.sourceAddress.toLowerCase()
+  if (!isRobinhoodModuleSourceKind(source.sourceKind) || source.sourceKind !== initial.sourceKind || initial.sourceAddress.toLowerCase() !== source.sourceAddress.toLowerCase()
     || initial.releaseDigest.toLowerCase() !== source.releaseDigest.toLowerCase()
     || initial.startBlock !== source.startBlock.toString()) throw new Error("Module Mode source changed; index migration required");
   return syncRange(source, {

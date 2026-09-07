@@ -1,12 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import configuredRelease from "../config/module-mode/robinhood.preview.json";
 import { bindActiveModuleModeRelease } from "../lib/module-mode/release";
-import type { RobinhoodLaunch } from "../lib/robinhood-launches";
+import { isRobinhoodModuleLaunch, type RobinhoodLaunch } from "../lib/robinhood-launches";
 import { launchList, parseSnapshot, profileLaunchList, type RobinhoodSnapshot } from "../lib/server/robinhood-index/model";
 import type { IndexStore } from "../lib/server/robinhood-index/store";
 import { configuredModuleModeSource, moduleModeSource, type ModuleModeFinalizedCollector } from "../lib/server/robinhood-index/module-source";
 import { syncModuleModeIndex, syncRobinhoodIndex, type IndexSource } from "../lib/server/robinhood-index/sync";
 import { a, h, moduleEvidenceFixture } from "./fixtures/module-mode-evidence";
+import { moduleEvidenceFixtureV2 } from "./fixtures/module-mode-evidence-v2";
 const now = Date.parse("2026-09-05T12:00:00Z");
 const point = (n:bigint|number) => ({number:String(n),hash:h(Number(n)+300)});
 const options = {now:()=>now,rangeSize:10000n};
@@ -33,6 +34,30 @@ function collector(entries=[moduleEvidenceFixture().evidence]):ModuleModeFinaliz
 }
 
 describe("Module Mode joins the canonical Robinhood index",()=>{
+  it("persists V2 economics and repeated families beside an unchanged historical V1 source", async () => {
+    const saved = memoryStore();
+    await syncModuleModeIndex(await moduleModeSource(moduleEvidenceFixture().release, collector()), saved.store, options);
+    const historical = structuredClone(saved.read().moduleMode);
+    const f = moduleEvidenceFixtureV2(0, 3, 2, { families: [100, 100, 101], eligible: [true, true, false] });
+    const c: ModuleModeFinalizedCollector = { ...collector([]),
+      collectRange: async (release, from, to) => ({ sourceReleaseDigest: release.releaseDigest, fromBlock: String(from), toBlock: String(to), complete: true,
+        launches: [{ evidence: f.evidence, launchedAt: new Date(now).toISOString() }] }),
+    };
+    const source = await moduleModeSource(f.release, c);
+    expect(source.sourceKind).toBe("module-native-v2");
+    expect(await syncModuleModeIndex(source, saved.store, options)).toMatchObject({ status: "ready", launches: 1 });
+    expect(saved.read().moduleMode).toEqual(historical);
+    const current = saved.read().moduleModeSources?.[0];
+    expect(current?.sourceKind).toBe("module-native-v2");
+    const row = current!.items[0];
+    expect(row).toMatchObject({ protocolFeeBps: 10, authorPoolFeeBps: 20, platformFeeBps: 30, moduleFamilyIds: [h(100), h(100), h(101)], feeEligibleFamilyIds: [h(100)] });
+    expect(isRobinhoodModuleLaunch(row)).toBe(true);
+    expect(profileLaunchList(saved.read(), row.creator, 1, now).items).toContainEqual(row);
+    for (const changed of [{ ...row, platformFeeBps: 20 }, { ...row, economicsPolicyId: h(999) }, { ...row, feeEligibleFamilyIds: [h(999)] }, { ...row, sourceKind: "module-native-v1" }]) {
+      expect(isRobinhoodModuleLaunch(changed)).toBe(false);
+      expect(() => parseSnapshot({ ...saved.read(), moduleModeSources: [{ ...current, items: [changed] }] })).toThrow("Module Mode launch");
+    }
+  });
   it("adds native coins and preserves Custom provenance in one saved profile/Explore list",async()=>{
     const {release}=moduleEvidenceFixture(); const source=await moduleModeSource(release,collector()); const saved=memoryStore();
     const before=structuredClone(saved.read().items);

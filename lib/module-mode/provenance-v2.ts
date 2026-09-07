@@ -1,11 +1,15 @@
+// Native V2 reuses the frozen V1 validation rules with versioned identity and explicit economics snapshot semantics.
 import { decodeEventLog, encodeAbiParameters, encodeEventTopics, getCreate2Address, keccak256,
   parseAbi, parseAbiParameters, toHex, type Address, type Hex } from "viem";
-import { bindActiveModuleModeReleaseV1 as bindActiveModuleModeRelease, moduleAddress as address, moduleBytes as bytes, moduleEqual as equal,
+import { moduleAddress as address, moduleBytes as bytes, moduleEqual as equal,
   moduleHash as hash, moduleInteger as integer, moduleRecord as record, moduleUint as uint,
-  rejectModuleEvidence as fail, type ModuleModeRelease } from "./release";
+  rejectModuleEvidence as fail } from "./release";
 
-export const MODULE_MODE_EVIDENCE_SCHEMA = "programmable.module-mode-evidence.v1" as const;
-export const MODULE_MODE_PROVENANCE_SCHEMA = "programmable.module-mode-provenance.v1" as const;
+import { bindActiveModuleModeReleaseV2, type ModuleModeReleaseV2 } from "./release-v2";
+import { normalizeModuleModeEconomicsV2 } from "./economics-v2";
+
+export const MODULE_MODE_EVIDENCE_SCHEMA_V2 = "programmable.module-mode-evidence.v2" as const;
+export const MODULE_MODE_PROVENANCE_SCHEMA_V2 = "programmable.module-mode-provenance.v2" as const;
 export const moduleModeLaunchAbi = parseAbi([
   "event ModuleNativeLaunched(bytes32 indexed launchId,address indexed launchWallet,address indexed token,bytes32 poolId,bytes32 recipeHash,address hook,address positionRecipient,uint256 positionTokenId,uint256 initialBuyNative,uint256 initialBuyTokens)",
   "event ModuleNativeProgramBound(bytes32 indexed launchId,bytes32 indexed launchKey,address indexed runtime,bytes32 fundingHash,uint256 totalFunding)",
@@ -77,7 +81,7 @@ function event(value: unknown, block: Block, tx: Hex, source: Address, name: "Mo
   } catch { fail(`${name}.decode`); }
 }
 
-function finality(value: unknown, source: ModuleModeRelease, block: Block, transactionHash: Hex) {
+function finality(value: unknown, source: ModuleModeReleaseV2, block: Block, transactionHash: Hex) {
   const proof = record(value, ["status", "policy", "verificationDigest", "sourceReleaseDigest", "l2", "l1Posting", "l1Finalized", "providers"], "verification");
   equal(proof.status, "verified", "verification.status");
   equal(proof.policy, source.finalityPolicy, "verification.policy");
@@ -118,12 +122,12 @@ function finality(value: unknown, source: ModuleModeRelease, block: Block, trans
  * Internal consistency only. All RPC bytes, receipt inclusion, release authority and rollup batch/finality
  * observations must already be authenticated by the collector. Never accept a public JSON "verified" claim.
  */
-export function normalizeModuleModeLaunch(evidence: unknown, profile: unknown) {
-  const release = bindActiveModuleModeRelease(profile);
+export function normalizeModuleModeLaunchV2(evidence: unknown, profile: unknown) {
+  const release = bindActiveModuleModeReleaseV2(profile);
   const pins = release.contracts;
   const input = record(evidence, ["schemaVersion", "header", "receipt", "event", "programEvent", "configurationEvent",
-    "tokenIdentityEvent", "getLaunch", "identity", "token", "pool", "program", "registry", "runtimeReads", "verification"], "evidence");
-  equal(input.schemaVersion, MODULE_MODE_EVIDENCE_SCHEMA, "evidence.schemaVersion");
+    "tokenIdentityEvent", "economicsEvent", "economics", "getLaunch", "identity", "token", "pool", "program", "registry", "runtimeReads", "verification"], "evidence");
+  equal(input.schemaVersion, MODULE_MODE_EVIDENCE_SCHEMA_V2, "evidence.schemaVersion");
   const header = record(input.header, BLOCK_KEYS, "header");
   equal(header.chainId, 4663, "header.chainId");
   const block: Block = { chainId: 4663, blockNumber: uint(header.blockNumber, "header.blockNumber", true), blockHash: hash(header.blockHash, "header.blockHash") };
@@ -158,7 +162,7 @@ export function normalizeModuleModeLaunch(evidence: unknown, profile: unknown) {
   const creatorConfigurationHash = hash(configuration.args.creatorConfigurationHash, "configuration.creatorConfigurationHash");
   const economicsHash = hash(configuration.args.economicsHash, "configuration.economicsHash");
   equal(keccak256(encodeAbiParameters(parseAbiParameters("string,uint256,address,address,address,address,bytes32,bytes32,bytes32,bytes32"),
-    ["programmable.module-mode.native-launch.v1", 4663n, pins.launcher.address, launch.launchWallet, launch.token, pins.poolManager.address,
+    ["programmable.module-mode.native-launch.v2", 4663n, pins.launcher.address, launch.launchWallet, launch.token, pins.poolManager.address,
       launch.poolId, launch.recipeHash, metadataHash, economicsHash])), launch.launchId, "launch.computedId");
   const identity = bound(input.identity, ["address", "version", "record"], block, "identity");
   equal(address(identity.address, "identity.address"), pins.launcher.address, "identity.address");
@@ -177,7 +181,7 @@ export function normalizeModuleModeLaunch(evidence: unknown, profile: unknown) {
   if (creatorSalt.length !== 66) fail("token.creatorSalt");
   equal(bytes(tokenIdentityEvent.args.creatorSalt, "tokenIdentityEvent.creatorSalt", 32), creatorSalt, "tokenIdentityEvent.creatorSalt");
   const graffiti = keccak256(encodeAbiParameters(parseAbiParameters("string,uint256,address,address,bytes32"),
-    ["programmable.module-mode.native-token.v1", 4663n, pins.launcher.address, launch.launchWallet, creatorSalt]));
+    ["programmable.module-mode.native-token.v2", 4663n, pins.launcher.address, launch.launchWallet, creatorSalt]));
   equal(hash(token.graffiti, "token.graffiti"), graffiti, "token.graffiti");
   equal(hash(tokenIdentityEvent.args.graffiti, "tokenIdentityEvent.graffiti"), graffiti, "tokenIdentityEvent.graffiti");
   const salt = keccak256(encodeAbiParameters(parseAbiParameters("string,string,uint8,address,bytes32"), [name, symbol, 18, pins.launcher.address, graffiti]));
@@ -207,7 +211,7 @@ export function normalizeModuleModeLaunch(evidence: unknown, profile: unknown) {
   const sellCreatorFeeBps = integer(program.sellCreatorFeeBps, "program.sellCreatorFeeBps", 1000);
   if (buyCreatorFeeBps % 100 || sellCreatorFeeBps % 100) fail("program.fee-step");
   let configBytes = 0; let callbackGas = 0;
-  const selections = list(program.selections, "program.selections", 8).map((raw) => {
+  const selections = list(program.selections, "program.selections", 16).map((raw) => {
     const s = record(raw, ["packageId", "factory", "factoryCodeHash", "moduleCodeHash", "callbackGas", "config"], "selection");
     const config = bytes(s.config, "selection.config", 16_384);
     const gas = integer(s.callbackGas, "selection.callbackGas", 500_000);
@@ -217,12 +221,13 @@ export function normalizeModuleModeLaunch(evidence: unknown, profile: unknown) {
       factoryCodeHash: hash(s.factoryCodeHash, "selection.factoryCodeHash"), moduleCodeHash: hash(s.moduleCodeHash, "selection.moduleCodeHash"), callbackGas: gas, config });
   });
   const families = list(program.families, "program.families", 16).map((family) => hash(family, "program.familyId"));
-  if (families.length !== selections.length || families.some((family, index) => index > 0 && family <= families[index - 1]!)
-    || new Set(selections.map((s) => s.packageId)).size !== selections.length) fail("program.family-order");
+  if (families.length !== selections.length) fail("program.family-length");
   const programHash = keccak256(encodeAbiParameters(parseAbiParameters(`bytes32,${SELECTIONS}`), [keccak256(toHex("programmable.module-mode.native-program.v1")), selections]));
   equal(hash(program.programHash, "program.programHash"), programHash, "program.programHash");
-  equal(keccak256(encodeAbiParameters(parseAbiParameters(`string,uint256,address,address,uint16,uint16,bytes32[],${SELECTIONS}`),
-    ["programmable.module-mode.native-recipe.v1", 4663n, pins.hook.address, pins.registry.address, buyCreatorFeeBps, sellCreatorFeeBps, families, selections])), launch.recipeHash, "program.computedRecipeHash");
+  const economics = normalizeModuleModeEconomicsV2(input.economicsEvent, input.economics, release, block, tx, launch.poolId, families, emitted.logIndex);
+  equal(keccak256(encodeAbiParameters(parseAbiParameters(`string,uint256,address,address,bytes32,bytes32[],uint16,uint16,bytes32[],${SELECTIONS}`),
+    ["programmable.module-mode.native-recipe.v2", 4663n, pins.hook.address, pins.registry.address, release.economicsPolicyId, economics.eligibilityReviews,
+      buyCreatorFeeBps, sellCreatorFeeBps, economics.eligibleFamilies, selections])), launch.recipeHash, "program.computedRecipeHash");
   const binding = { source: pins.launcher.address, launchWallet: launch.launchWallet, token: launch.token, poolManager: pins.poolManager.address, poolId: launch.poolId, recipeHash: launch.recipeHash, programHash };
   equal(keccak256(encodeAbiParameters(parseAbiParameters("bytes32,uint256,address,address,(address source,address launchWallet,address token,address poolManager,bytes32 poolId,bytes32 recipeHash,bytes32 programHash)"),
     [keccak256(toHex("programmable.module-mode.native-binding.v1")), 4663n, pins.runtime.address, pins.hook.address, binding])), launch.launchKey, "program.computedLaunchKey");
@@ -285,25 +290,25 @@ export function normalizeModuleModeLaunch(evidence: unknown, profile: unknown) {
     else equal(codeHash, expectedCode.get(account), "runtimeRead.codeHash");
   }
   if (tokenRuntimeCodeHash === null) fail("runtimeRead.token-missing");
-  return Object.freeze({ schemaVersion: MODULE_MODE_PROVENANCE_SCHEMA, kind: "module-mode" as const,
+  return Object.freeze({ schemaVersion: MODULE_MODE_PROVENANCE_SCHEMA_V2, kind: "module-mode" as const,
     chainId: 4663 as const, sourceVersion: release.sourceVersion, sourceAddress: pins.launcher.address,
     sourceRuntimeCodeHash: pins.launcher.runtimeCodeHash, sourceReleaseDigest: release.releaseDigest,
     id: `4663:${launch.token}`, launchIdentity: `4663:${pins.launcher.address}:${launch.launchId}`,
     poolIdentity: `4663:${pins.poolManager.address}:${launch.poolId}`, poolManager: pins.poolManager.address,
     tokenFactory: pins.tokenFactory.address, tokenCreationCodeHash: release.tokenCreationCodeHash, tokenRuntimeCodeHash,
     ...launch, tokenIdentity: Object.freeze({ name, symbol, decimals: 18 as const, totalSupply: token.totalSupply as string, creatorSalt, graffiti }),
-    metadataHash, creatorConfigurationHash, economicsHash, programHash, buyCreatorFeeBps, sellCreatorFeeBps,
+    metadataHash, creatorConfigurationHash, economicsHash, programHash, buyCreatorFeeBps, sellCreatorFeeBps, ...economics,
     selections: Object.freeze(selections), families: Object.freeze(families), revisions: Object.freeze(revisions), instances: Object.freeze(instances),
     funding: Object.freeze(funding), blockNumber: block.blockNumber, blockHash: block.blockHash,
     transactionHash: tx, logIndex: emitted.logIndex, verification });
 }
-export type ModuleModeProvenance = ReturnType<typeof normalizeModuleModeLaunch>;
+export type ModuleModeProvenanceV2 = ReturnType<typeof normalizeModuleModeLaunchV2>;
 
-export function normalizeModuleModeLaunches(evidence: readonly unknown[], profile: unknown): readonly ModuleModeProvenance[] {
-  bindActiveModuleModeRelease(profile);
+export function normalizeModuleModeLaunchesV2(evidence: readonly unknown[], profile: unknown): readonly ModuleModeProvenanceV2[] {
+  bindActiveModuleModeReleaseV2(profile);
   const seen = [new Set<string>(), new Set<string>(), new Set<string>(), new Set<string>()];
   return Object.freeze(list(evidence, "batch", 1000).map((input) => {
-    const row = normalizeModuleModeLaunch(input, profile);
+    const row = normalizeModuleModeLaunchV2(input, profile);
     const keys = [row.id, row.launchIdentity, row.poolIdentity, `${row.transactionHash}:${row.logIndex}`];
     keys.forEach((key, index) => { if (seen[index]!.has(key)) fail("batch.duplicate-identity"); seen[index]!.add(key); });
     return row;

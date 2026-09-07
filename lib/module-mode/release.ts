@@ -40,6 +40,13 @@ export type ModuleModeReleaseV2 = ModuleModeReleaseFields & Readonly<{
 }>;
 export type ModuleModeRelease = ModuleModeReleaseV1 | ModuleModeReleaseV2;
 
+/** Historical native validators must retain their V1-only interpretation boundary. */
+export function bindActiveModuleModeReleaseV1(value: unknown): ModuleModeReleaseV1 {
+  const release = bindActiveModuleModeRelease(value);
+  if (release.sourceVersion !== MODULE_MODE_SOURCE_VERSION) rejectModuleEvidence("releaseV1.sourceVersion");
+  return release;
+}
+
 export class ModuleModeProvenanceError extends Error {
   constructor(readonly code: string) {
     super(`Module Mode provenance: ${code}`);

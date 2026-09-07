@@ -7,7 +7,7 @@ export type RobinhoodLaunch = Readonly<{
   poolManager: string;
   poolId: string;
   stampHash: string | null;
-  sourceKind?: "module-native-v1";
+  sourceKind?: "module-native-v1" | "module-native-v2";
   sourceAddress?: string;
   sourceReleaseDigest?: string;
   recipeHash?: string;
@@ -16,6 +16,11 @@ export type RobinhoodLaunch = Readonly<{
   verificationDigest?: string;
   modulePackageIds?: readonly string[];
   moduleFamilyIds?: readonly string[];
+  economicsPolicyId?: string;
+  protocolFeeBps?: 10;
+  authorPoolFeeBps?: 0 | 20;
+  platformFeeBps?: 10 | 30;
+  feeEligibleFamilyIds?: readonly string[];
   transactionHash: string;
   blockNumber: string;
   blockHash: string;
@@ -46,7 +51,7 @@ export type RobinhoodProfileLaunchList = RobinhoodLaunchList & Readonly<{
 
 /** Module Mode is a separate canonical source; it never receives a fabricated Router stamp. */
 export type RobinhoodModuleLaunch = RobinhoodLaunch & Readonly<{
-  sourceKind: "module-native-v1";
+  sourceKind: "module-native-v1" | "module-native-v2";
   routerAddress: null;
   stampHash: null;
   sourceAddress: string;
@@ -59,6 +64,10 @@ export type RobinhoodModuleLaunch = RobinhoodLaunch & Readonly<{
   moduleFamilyIds: readonly string[];
 }>;
 
+export function isRobinhoodModuleSourceKind(value: unknown): value is NonNullable<RobinhoodLaunch["sourceKind"]> {
+  return value === "module-native-v1" || value === "module-native-v2";
+}
+
 /**
  * Structural guard for data already delivered by the canonical saved index. This is not a provider,
  * finality or source-authentication check, and it must never promote a wallet receipt into that index.
@@ -68,7 +77,16 @@ export function isRobinhoodModuleLaunch(value: unknown): value is RobinhoodModul
   const row = value as Record<string, unknown>;
   const address = (item: unknown): item is string => typeof item === "string" && /^0x(?!0{40}$)[\da-f]{40}$/i.test(item);
   const hash = (item: unknown): item is string => typeof item === "string" && /^0x(?!0{64}$)[\da-f]{64}$/i.test(item);
-  return row.sourceKind === "module-native-v1" && row.routerAddress === null && row.stampHash === null
+  if (!isRobinhoodModuleSourceKind(row.sourceKind)) return false;
+  const economics = row.sourceKind === "module-native-v1"
+    ? ["economicsPolicyId", "protocolFeeBps", "authorPoolFeeBps", "platformFeeBps", "feeEligibleFamilyIds"].every(key => !Object.hasOwn(row, key))
+    : row.economicsPolicyId === MODULE_MODE_ECONOMICS_POLICY_V2 && row.protocolFeeBps === 10 && (row.authorPoolFeeBps === 0 || row.authorPoolFeeBps === 20)
+      && row.platformFeeBps === 10 + Number(row.authorPoolFeeBps) && Array.isArray(row.feeEligibleFamilyIds)
+      && row.feeEligibleFamilyIds.length <= 8 && row.feeEligibleFamilyIds.every(hash)
+      && row.authorPoolFeeBps === (row.feeEligibleFamilyIds.length ? 20 : 0)
+      && row.feeEligibleFamilyIds.every((id, index, ids) => (index === 0 || id.toLowerCase() > ids[index - 1].toLowerCase())
+        && Array.isArray(row.moduleFamilyIds) && row.moduleFamilyIds.some(family => typeof family === "string" && family.toLowerCase() === id.toLowerCase()));
+  return economics && row.routerAddress === null && row.stampHash === null
     && [row.sourceAddress, row.tokenAddress, row.hookAddress, row.creator, row.poolManager, row.runtime].every(address)
     && [row.launchId, row.sourceReleaseDigest, row.recipeHash, row.poolId, row.launchKey, row.verificationDigest, row.transactionHash, row.blockHash].every(hash)
     && typeof row.blockNumber === "string" && /^(0|[1-9][0-9]*)$/.test(row.blockNumber)
@@ -78,8 +96,8 @@ export function isRobinhoodModuleLaunch(value: unknown): value is RobinhoodModul
     && Array.isArray(row.modulePackageIds) && Array.isArray(row.moduleFamilyIds)
     && row.modulePackageIds.length <= 16 && row.modulePackageIds.length === row.moduleFamilyIds.length
     && row.modulePackageIds.every(hash) && row.moduleFamilyIds.every(hash)
-    && new Set(row.modulePackageIds.map(id => id.toLowerCase())).size === row.modulePackageIds.length
-    && row.moduleFamilyIds.every((id, index, ids) => index === 0 || id.toLowerCase() > ids[index - 1].toLowerCase());
+    && (row.sourceKind === "module-native-v2" || (new Set(row.modulePackageIds.map(id => id.toLowerCase())).size === row.modulePackageIds.length
+      && row.moduleFamilyIds.every((id, index, ids) => index === 0 || id.toLowerCase() > ids[index - 1].toLowerCase())));
 }
 
 export function robinhoodLaunchDescription(launch: RobinhoodLaunch): string {
@@ -91,3 +109,4 @@ export function robinhoodLaunchDescription(launch: RobinhoodLaunch): string {
 export function robinhoodModuleManageHref(launch: RobinhoodLaunch): string | null {
   return isRobinhoodModuleLaunch(launch) ? `/launch/modules/manage/${launch.tokenAddress.toLowerCase()}` : null;
 }
+import { MODULE_MODE_ECONOMICS_POLICY_V2 } from "./module-mode/release";

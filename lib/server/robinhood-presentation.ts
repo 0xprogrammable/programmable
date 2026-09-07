@@ -1,7 +1,7 @@
 import "server-only";
 
 import { unstable_cache } from "next/cache";
-import type { RobinhoodLaunch } from "@/lib/robinhood-launches";
+import { isRobinhoodModuleSourceKind, type RobinhoodLaunch } from "@/lib/robinhood-launches";
 import { ROBINHOOD_MARKET_MAX_AGE_MS, type RobinhoodCoinMarket, type RobinhoodCoinPresentation } from "@/lib/robinhood-presentation";
 import { PROGRAMMABLE_MAIN_TOKEN_PRESENTATION } from "@/lib/programmable-main-token-presentation";
 import { safePublicImageUrl } from "@/lib/safe-public-image-url";
@@ -112,7 +112,7 @@ function parseMetadata(launch: unknown): MetadataBinding | null {
 }
 
 function metadataMatches(binding: MetadataBinding, token: RobinhoodLaunch): boolean {
-  if (token.sourceKind === "module-native-v1") return false;
+  if (isRobinhoodModuleSourceKind(token.sourceKind)) return false;
   const launch = binding.launch;
   const onchain = launch.onchain as JsonObject;
   const l2 = onchain.l2Inclusion as JsonObject;
@@ -273,8 +273,8 @@ export async function readRobinhoodPresentations(tokens: readonly RobinhoodLaunc
     throw new Error("Invalid presentation request");
   }
   const ordered = tokens.toSorted((a, b) => a.tokenAddress.toLowerCase().localeCompare(b.tokenAddress.toLowerCase()));
-  const custom = ordered.filter(token => token.sourceKind !== "module-native-v1");
-  const native = ordered.filter(token => token.sourceKind === "module-native-v1");
+  const custom = ordered.filter(token => !isRobinhoodModuleSourceKind(token.sourceKind));
+  const native = ordered.filter(token => isRobinhoodModuleSourceKind(token.sourceKind));
   const [metadata, moduleMetadata, markets] = await Promise.allSettled([
     custom.length ? cachedMetadata(custom).then((entries) => new Map(entries)) : Promise.resolve(new Map<string, Metadata>()),
     native.length ? cachedModuleMetadata(native).then((entries) => new Map(entries)) : Promise.resolve(new Map<string, Metadata>()),
@@ -282,7 +282,7 @@ export async function readRobinhoodPresentations(tokens: readonly RobinhoodLaunc
   ]);
   return tokens.map((token): RobinhoodCoinPresentation => {
     const key = token.tokenAddress.toLowerCase();
-    const source = token.sourceKind === "module-native-v1" ? moduleMetadata : metadata;
+    const source = isRobinhoodModuleSourceKind(token.sourceKind) ? moduleMetadata : metadata;
     const presentation = source.status === "fulfilled" ? source.value.get(key) : undefined;
     const main = key === MAIN_TOKEN;
     const links = [...(presentation?.links ?? [])];
@@ -294,7 +294,7 @@ export async function readRobinhoodPresentations(tokens: readonly RobinhoodLaunc
     }
     return {
       tokenAddress: token.tokenAddress,
-      imageUrl: presentation?.imageUrl ?? (main ? PROGRAMMABLE_MAIN_TOKEN_PRESENTATION.imageUrl : token.sourceKind === "module-native-v1" ? MODULE_DEFAULT_TOKEN_IMAGE : null),
+      imageUrl: presentation?.imageUrl ?? (main ? PROGRAMMABLE_MAIN_TOKEN_PRESENTATION.imageUrl : isRobinhoodModuleSourceKind(token.sourceKind) ? MODULE_DEFAULT_TOKEN_IMAGE : null),
       description: presentation?.description ?? (main ? PROGRAMMABLE_MAIN_TOKEN_PRESENTATION.description : null),
       links,
       market: markets.status === "fulfilled" ? markets.value.get(key) ?? null : null,

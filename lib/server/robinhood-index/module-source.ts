@@ -1,6 +1,8 @@
 import preview from "@/config/module-mode/robinhood.preview.json";
 import { bindActiveModuleModeRelease, moduleHash, moduleRecord, moduleUint, type ModuleModeRelease } from "@/lib/module-mode/release";
-import { normalizeModuleModeLaunches, type ModuleModeProvenance } from "@/lib/module-mode/provenance";
+import type { ModuleModeProvenance } from "@/lib/module-mode/provenance";
+import type { ModuleModeProvenanceV2 } from "@/lib/module-mode/provenance-v2";
+import { normalizeSupportedModuleModeLaunches } from "@/lib/module-mode/source-adapters";
 import type { RobinhoodModuleLaunch } from "@/lib/robinhood-launches";
 import { IndexRangeTooWide, type ModuleModeIndexSource } from "./sync";
 import type { Checkpoint } from "./model";
@@ -44,15 +46,17 @@ export type ModuleModeSourceLane = {
   source: (signal?: AbortSignal) => Promise<ModuleModeIndexSource>;
 };
 
-export function moduleModePublicLaunch(row: ModuleModeProvenance, launchedAt: string | null): RobinhoodModuleLaunch {
+export function moduleModePublicLaunch(row: ModuleModeProvenance | ModuleModeProvenanceV2, launchedAt: string | null): RobinhoodModuleLaunch {
   if (launchedAt !== null && (typeof launchedAt !== "string" || !Number.isFinite(Date.parse(launchedAt)))) throw new Error("Module Mode launch timestamp is invalid");
-  return Object.freeze({ sourceKind: "module-native-v1", sourceAddress: row.sourceAddress,
+  return Object.freeze({ sourceKind: row.sourceVersion, sourceAddress: row.sourceAddress,
     sourceReleaseDigest: row.sourceReleaseDigest, routerAddress: null, stampHash: null,
     launchId: row.launchId, tokenAddress: row.token, hookAddress: row.hook, creator: row.launchWallet,
     poolManager: row.poolManager, poolId: row.poolId, recipeHash: row.recipeHash, runtime: row.runtime, launchKey: row.launchKey,
     verificationDigest: row.verification.verificationDigest,
     modulePackageIds: Object.freeze(row.revisions.map(revision => revision.packageId)),
     moduleFamilyIds: Object.freeze(row.revisions.map(revision => revision.familyId)),
+    ...(row.sourceVersion === "module-native-v2" ? { economicsPolicyId: row.economicsPolicyId, protocolFeeBps: row.protocolFeeBps,
+      authorPoolFeeBps: row.authorPoolFeeBps, platformFeeBps: row.platformFeeBps as 10 | 30, feeEligibleFamilyIds: row.eligibleFamilies } : {}),
     transactionHash: row.transactionHash, blockNumber: row.blockNumber, blockHash: row.blockHash, logIndex: row.logIndex,
     launchedAt, name: row.tokenIdentity.name, symbol: row.tokenIdentity.symbol, decimals: row.tokenIdentity.decimals });
 }
@@ -81,7 +85,7 @@ export async function moduleModeSource(profile: unknown, collector: ModuleModeFi
   };
   if ((await block(BigInt(finalized.number))).hash !== finalized.hash) throw new Error("Module Mode finalized boundary changed");
   return {
-    sourceKind: "module-native-v1", sourceAddress: release.contracts.launcher.address,
+    sourceKind: release.sourceVersion, sourceAddress: release.contracts.launcher.address,
     releaseDigest: release.releaseDigest, startBlock: BigInt(release.startBlock), finalized, block,
     async launches(from, to) {
       if (from < BigInt(release.startBlock) || to < from || to > BigInt(finalized.number)) throw new Error("Module Mode scan is outside verified bounds");
@@ -93,7 +97,7 @@ export async function moduleModeSource(profile: unknown, collector: ModuleModeFi
         || !Array.isArray(raw.launches)) throw new Error("Module Mode collector range is incomplete or unbound");
       if (raw.launches.length > 1000) throw new IndexRangeTooWide("Module Mode launch range exceeds verification budget");
       const entries = raw.launches.map(value => moduleRecord(value, ["evidence", "launchedAt"], "collector.launch"));
-      const rows = normalizeModuleModeLaunches(entries.map(entry => entry.evidence), release);
+      const rows = normalizeSupportedModuleModeLaunches(entries.map(entry => entry.evidence), release);
       const canonical = new Map<string, string>();
       for (const row of rows) {
         if (!canonical.has(row.blockNumber)) canonical.set(row.blockNumber, (await block(BigInt(row.blockNumber))).hash);
