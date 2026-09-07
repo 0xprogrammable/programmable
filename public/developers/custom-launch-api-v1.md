@@ -14,9 +14,14 @@ packer and `preflight -> create -> status` flow. Preserve exact request bytes an
 Preflight/create requires `custom-launch:create`; status/list requires `custom-launch:read`, with the key's chain
 4663 grant and controller binding. The controller separately reviews, signs and broadcasts the wallet transaction.
 
-Automatic economic recognition currently covers the Native20 recipe. Unknown economics return `evidence_required`;
-report the missing evidence without claiming a generic hook audit. Published URLs do not imply enabled admission.
+The automatic economic verifier accepts the exact Native20 recipe and supported constructor configuration.
+Different source code or unknown economics return `evidence_required`; follow the missing verification requirements.
+This is not a generic audit of arbitrary hook code. An unavailable capability response stops authenticated submission.
 The 4.1 funding and CLI instructions below apply to that existing profile; MultiRole uses its own guide above.
+
+## Fees and analytics
+
+Robinhood Native20 Custom Launches charge **20 bps (0.20%)** for Programmable per successful buy or sell, separately from creator and pool fees. The [fees guide](https://programmable.market/docs/economics) defines the calculation and claim path. The [Dune dashboard](https://dune.com/programmablehq/analytics) reports finalized Custom Launch stamps, creator rewards in ETH and protocol revenue in ETH. Fee totals include unclaimed accruals from supported native fee events; gas, liquidity, withdrawals and historical fee models without those events are excluded. The dashboard refreshes every 24 hours.
 
 ## Start with the launch details
 
@@ -44,7 +49,7 @@ Before building, show the preliminary capital requirement separately from estima
 
 For Robinhood profile 4.1, when selected by live discovery and capabilities, every funded launch requires an atomic initial buy worth at least USD 1 at the server reference rate. Before building, read GET /v4/chains/4663/initial-buy-quote without an API key and show its minimum native ETH amount plus separate gas. Have the user confirm the exact buy amount and positive minimum token output; do not raise the amount or budget automatically. The buy must pay real tokens to the launch controller in the same transaction; failure rolls back the launch. Budget the initial buy once within total transaction value. The server obtains its own fresh quote at admission and may require a newly confirmed package if the amount falls below the current minimum. A first buy does not guarantee third-party indexing. Historical 4.0 requests keep their original contract; never invent 4.1 fields for them.
 
-Read the current Robinhood platformFeePolicy and enforcement status from discovery. Show its rate, recipient and supported fee currency separately from creator, LP and other fees. 20 bps equals 0.2 percent: two million dollars of once-counted trade volume implies four thousand dollars of fee value if that fee is actually enforced. A configured recipient or rate is not collection proof. Do not claim universal ETH revenue, a working claim path or automatic bridging while those capabilities remain unproven. The creator cannot replace the platform treasury.
+Read the selected Robinhood platformFeePolicy and enforcement status from discovery and capabilities. Native20 charges 20 bps (0.20%) of the gross native ETH amount once per successful buy or sell, rounded up to the next wei. The full 20 bps belongs to Programmable; creator and pool LP fees are additional. For example, a 1 ETH gross trade credits 0.002 ETH to Programmable. The fixed platform recipient is 0xD88539d3c4C460136a733A3Fd60cf6BF269079da. Fees accrue as PoolManager native claims; anyone can trigger a claim, but payment goes only to the configured recipient. Historical contracts retain their fee models. Show gas, liquidity and initial buy separately; do not count claims as new revenue. API keys cannot claim fees, and accrual does not prove a revenue-processing or bridging transaction.
 
 Before submission, summarize the funding source, pricing and reserve model, exact initial assets and amounts, initial buy and minimum token output, intended launch state, platform recipient and all fees alongside the project metadata. Map the plan to the selected V4 schema's actual funding and liquidityModel fields. Do not add invented fields to a frozen request. Verify that the packed graph and total wallet transaction value match the agreed plan; an initial buy already included in that value is not an extra cost. Resolve mismatches by changing and revalidating the request with the user.
 

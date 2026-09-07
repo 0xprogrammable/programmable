@@ -12,27 +12,15 @@ Open [Module Mode](https://programmable.market/launch/modules) to configure a co
 
 Public V3.3 general-hook creation and lifecycle reads are live on Ethereum Mainnet. V2 and V1 history and schemas remain readable, while fresh authenticated POSTs return nonretryable `409 CUSTOM_LAUNCH_V2_READ_ONLY` and `409 CUSTOM_LAUNCH_V1_READ_ONLY`. On Ethereum, only V3.3 accepts new submissions. Legacy Registry and GitHub submission intake is closed.
 
-Robinhood Chain V4 targets a public self-serve launch path. Read the live
-[discovery manifest](https://programmable.market/.well-known/programmable.json) and require `publicWrites: true`,
-`publicAuthorization: true` and `releaseReady: true` in both the V4 and chain 4663 entries. Stop while any gate is
-false or missing. Verify the immutable CLI 4.0.0 release coordinates published in discovery before creating a request.
-Use one platform API key for its granted chains; users separately review and sign their onchain transaction and pay gas.
-The required policy and default configuration applies only to new Robinhood V4 API Custom launches: `20 bps` (`0.20%`, `2,000 ppm`)
-to `0xD88539d3c4C460136a733A3Fd60cf6BF269079da`. Existing launches and Ethereum are unchanged. This is not live fee
-behavior, canonical onchain enforcement, charged-fee or revenue evidence. Basis, fee currency,
-additive-versus-inclusive accounting, rounding, accrual and claim mechanics remain unpublished. Missing canonical
-onchain fee enforcement is not itself a write blocker. UI and documentation must disclose these required default
-terms. Require or set them only where the active schema actually carries them: the current V4 request, pack,
-finalized-resource and Router bytes do not prove fee-policy binding, application or enforcement. A direct deployment
-outside the Launch Stamp Router path receives no Programmable launch stamp.
-Any mutable-admin risk must remain explicit.
-An external contract reference does not become trusted by being named in a V4 config. The server must verify its exact
-`eip155:4663` address, live runtime hash, source evidence, graph role and checkpoint; an arbitrary or unbound reference
-blocks admission. This rule is not release, fee-behavior or live-capability evidence.
-The reviewed foundation source commitment is
-`0xe87f5edc2dc839bd87a26a80cb53f14b021e603a1753d27aae3a02862058d730`; it is not a deployed-address claim.
-Sourcify v2 provider-native `match` is required for source publication evidence; exact source authority is the separate protected-build/finalized-bytecode binding. Robinhood Blockscout is optional, currently unproven and
-degraded, and cannot support an exact-source claim or block or revise finality.
+### Robinhood Chain
+
+Use the [Custom Launch API guide](../developers/custom-launch.md) to select a contract layout. Separate token and hook addresses use the V4 profile in [live discovery](https://programmable.market/.well-known/programmable.json). A token and hook in one contract use [MultiRole V2](https://api.programmable.market/v4/chains/4663/multi-role-custom-launches/guide.md). Fetch the selected profile's capabilities and supported client before building. The MultiRole economic verifier accepts the exact Native20 recipe and supported constructor configuration; different contract logic returns `evidence_required` until the required verification is available.
+
+Create a platform API key with `custom-launch:create`, `custom-launch:read` and a chain `4663` grant. Package the source, run preflight, submit and track the returned resource. The API authorizes an exact wallet transaction after its checks pass; the controller reviews, signs and broadcasts it separately, then follows finality and source verification. A direct deployment outside the Launch Stamp Router path receives no Programmable launch stamp.
+
+Native20 charges **20 bps (0.20%)** of gross native ETH once per successful buy or sell, rounded up to the next wei, for Programmable. Creator and pool fees are additional. The fixed platform recipient is `0xD88539d3c4C460136a733A3Fd60cf6BF269079da`; permissionless claims pay only that recipient. Gas, starting liquidity and an initial buy belong in the funding plan as separate costs. Follow the selected profile's funding rules: 4.1 requires its atomic initial buy, while MultiRole defines its own supported funding configuration. Read [fees and revenue](../economics.md) for the accounting and [Dune](https://dune.com/programmablehq/analytics) for launch and fee statistics.
+
+External references must bind the correct chain, address, runtime hash, source evidence, role and checkpoint. Disclose mutable admin controls and liquidity custody. Track finality, exact source verification, indexing and trading readiness separately from API admission.
 
 ## Prepare the source
 

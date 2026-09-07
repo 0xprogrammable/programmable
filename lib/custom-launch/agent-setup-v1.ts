@@ -1,5 +1,10 @@
 import { robinhoodV4PublicContractDiscovery, robinhoodV4PublicLaunchRequirements } from "./v4-public-contract-discovery";
 
+const ROBINHOOD_NATIVE20_FEE_INSTRUCTIONS = "Read the selected Robinhood platformFeePolicy and enforcement status from discovery and capabilities. Native20 charges 20 bps (0.20%) of the gross native ETH amount once per successful buy or sell, rounded up to the next wei. The full 20 bps belongs to Programmable; creator and pool LP fees are additional. For example, a 1 ETH gross trade credits 0.002 ETH to Programmable. The fixed platform recipient is 0xD88539d3c4C460136a733A3Fd60cf6BF269079da. Fees accrue as PoolManager native claims; anyone can trigger a claim, but payment goes only to the configured recipient. Historical contracts retain their fee models. Show gas, liquidity and initial buy separately; do not count claims as new revenue. API keys cannot claim fees, and accrual does not prove a revenue-processing or bridging transaction.";
+
+// Keep historical 4.0 discovery and setup bytes stable; 4.1 selects Native20 guidance.
+const ROBINHOOD_HISTORICAL_FEE_INSTRUCTIONS = "Read the current Robinhood platformFeePolicy and enforcement status from discovery. Show its rate, recipient and supported fee currency separately from creator, LP and other fees. 20 bps equals 0.2 percent: two million dollars of once-counted trade volume implies four thousand dollars of fee value if that fee is actually enforced. A configured recipient or rate is not collection proof. Do not claim universal ETH revenue, a working claim path or automatic bridging while those capabilities remain unproven. The creator cannot replace the platform treasury.";
+
 export const PROGRAMMABLE_ROBINHOOD_FUNDING_INTAKE_V1 = Object.freeze({
   schemaVersion: "programmable.robinhood-funding-intake.v1" as const,
   chainId: 4663 as const,
@@ -36,7 +41,7 @@ export const PROGRAMMABLE_ROBINHOOD_FUNDING_INTAKE_V1 = Object.freeze({
     "Collect the initial token inventory, real and virtual reserves, any liquidity assets and amounts, funding wallet, initial buy and minimum token output, available capital and gas budgets, gas payer, and intended launch state. Clarify who funds each step and when trading can actually begin. Zero initial ETH principal is not a free deployment. An initialized empty pool is not a funded or tradable curve; virtual reserves are not spendable ETH. Do not invent a sponsor or promise buyer demand.",
     "Before building, show the preliminary capital requirement separately from estimated deployment and transaction gas, with assumptions and unknowns. Check available balances on Robinhood Chain when the funding wallet is known. Do not count assets on another chain as available Robinhood funding. If the budget is insufficient or uncertain, resolve the funding plan with the user; continue building before funding only when the user explicitly accepts that launch is still unfunded. Never silently change the chain, launch model or budget.",
     "For Robinhood profile 4.1, when selected by live discovery and capabilities, every funded launch requires an atomic initial buy worth at least USD 1 at the server reference rate. Before building, read GET /v4/chains/4663/initial-buy-quote without an API key and show its minimum native ETH amount plus separate gas. Have the user confirm the exact buy amount and positive minimum token output; do not raise the amount or budget automatically. The buy must pay real tokens to the launch controller in the same transaction; failure rolls back the launch. Budget the initial buy once within total transaction value. The server obtains its own fresh quote at admission and may require a newly confirmed package if the amount falls below the current minimum. A first buy does not guarantee third-party indexing. Historical 4.0 requests keep their original contract; never invent 4.1 fields for them.",
-    "Read the current Robinhood platformFeePolicy and enforcement status from discovery. Show its rate, recipient and supported fee currency separately from creator, LP and other fees. 20 bps equals 0.2 percent: two million dollars of once-counted trade volume implies four thousand dollars of fee value if that fee is actually enforced. A configured recipient or rate is not collection proof. Do not claim universal ETH revenue, a working claim path or automatic bridging while those capabilities remain unproven. The creator cannot replace the platform treasury.",
+    ROBINHOOD_HISTORICAL_FEE_INSTRUCTIONS,
     "Before submission, summarize the funding source, pricing and reserve model, exact initial assets and amounts, initial buy and minimum token output, intended launch state, platform recipient and all fees alongside the project metadata. Map the plan to the selected V4 schema's actual funding and liquidityModel fields. Do not add invented fields to a frozen request. Verify that the packed graph and total wallet transaction value match the agreed plan; an initial buy already included in that value is not an extra cost. Resolve mismatches by changing and revalidating the request with the user.",
     "Before the Robinhood wallet action, review the bound transaction value separately from a fresh gas estimate and the current native balance. Mark unavailable estimates as unknown, never zero; resolve an unaffordable or unknown funding requirement before sending. The website's bound summary and transaction review do not prove economic safety or future liquidity. Signing and sending remain the controller's separate wallet actions.",
   ] as const),
@@ -101,6 +106,30 @@ export const PROGRAMMABLE_AGENT_INTAKE_TEXT_V1 = [
   ...PROGRAMMABLE_AGENT_INTAKE_V1.instructions,
 ].join("\n");
 
+/** Select current guidance without mutating the frozen historical intake. */
+export function programmableAgentIntakeV1(profileVersion = "4.0.0") {
+  if (profileVersion !== "4.1.0") return PROGRAMMABLE_AGENT_INTAKE_V1;
+  return Object.freeze({
+    ...PROGRAMMABLE_AGENT_INTAKE_V1,
+    chainSpecific: Object.freeze({
+      robinhood: Object.freeze({
+        ...PROGRAMMABLE_ROBINHOOD_FUNDING_INTAKE_V1,
+        instructions: Object.freeze(PROGRAMMABLE_ROBINHOOD_FUNDING_INTAKE_V1.instructions.map(
+          instruction => instruction === ROBINHOOD_HISTORICAL_FEE_INSTRUCTIONS
+            ? ROBINHOOD_NATIVE20_FEE_INSTRUCTIONS : instruction,
+        )),
+      }),
+    }),
+  });
+}
+
+export function programmableRobinhoodFundingIntakeTextV1(profileVersion = "4.0.0") {
+  return [
+    "Robinhood: choose the funding plan before building",
+    ...programmableAgentIntakeV1(profileVersion).chainSpecific.robinhood.instructions,
+  ].join("\n");
+}
+
 export function programmableAgentSetupLinksV1(profileVersion = "4.0.0") {
   const contract = robinhoodV4PublicContractDiscovery(profileVersion);
   return Object.freeze({
@@ -161,10 +190,10 @@ export function buildProgrammableAgentSetupTextV1(profileVersion = "4.0.0") {
     ...(successor ? [
       `Before implementation, compilation or pack, read public GET ${links.robinhoodCoverage} and GET ${links.robinhoodLaunchGuide}. These reads need no API key, query parameters or body; do not create or rotate a key for them.`,
       `Follow the current launch workflow and recovery guide: ${links.robinhoodLaunchGuideMarkdown}. Require schemaVersion programmable.robinhood-launch-coverage.v1 for coverage and programmable.robinhood-launch-guide.v1 for the guide. A 404 or unknown response contract means discovery is unavailable on that deployment; report it and do not infer support or fall back to another chain, profile or create route.`,
-      "Check the intended architecture against structuralFormat and verifierCoverage before building. A same-address token/hook such as BLOB, a no-pool project or multiple pool keys requires a versioned graph/Router or transport extension. Arbitrary tokens or initializers, stateful modules and custom settlement deltas need their own activated server verification. The exact native20 seed recipe is a bounded proof path with no optional module; declaring a pricing or funding model does not establish launch eligibility. Unknown mechanisms are not automatically unsafe. Preserve the intended design and report missing platform support without requesting a bypass.",
+      "Check the intended architecture against structuralFormat and verifierCoverage before building. A same-address token/hook such as BLOB uses the separate MultiRole V2 guide and capabilities from https://api.programmable.market/v4/chains/4663/multi-role-custom-launches/capabilities. MultiRole supports the exact Native20 recipe and supported constructor configuration; different source or economic mechanisms return evidence_required. No-pool projects and multiple pool keys require additional transport support. Arbitrary tokens or initializers, stateful modules and custom settlement deltas need their own activated server verification. The exact native20 seed recipe is a bounded proof path with no optional module; declaring a pricing or funding model does not establish launch eligibility. Unknown mechanisms are not automatically unsafe. Preserve the intended design and report missing platform support without requesting a bypass.",
       "Guide workflow stages, scenario assessments/blockerLayer and errorRecovery are instructions, not request approval. Its scenarioProfileVersion is 4.1.0; another or unavailable profile is not-evaluated. Readiness, structural representation, activated verifier coverage and exact-request admission are separate. Neither public report clears a finding, issues a permit or creates a wallet action.",
     ] : []),
-    PROGRAMMABLE_ROBINHOOD_FUNDING_INTAKE_TEXT_V1,
+    programmableRobinhoodFundingIntakeTextV1(profileVersion),
     "",
     `Read customLaunchApi.versions.v4 and the matching chains entry in live discovery. Require publicAuthorization, publicWrites and releaseReady to be true in both. Require an advertised released, installable CLI for profile ${successor ? "4.1.0" : "4.0.0"}, an immutable published release and matching tarball checksum before installing it. If any field, release asset or verification is missing or false, stop before authenticated preflight or submission and report the missing public release gate. A deployed runtime, a source candidate or a local checkout cannot replace these gates.`,
     ...(successor ? [
