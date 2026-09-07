@@ -20,9 +20,22 @@ export function ModuleDetailDialog({ module, onClose, packageId, familyId, title
     const element = dialog.current;
     const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     if (!element) return;
+    const root = document.documentElement;
+    const rootOverflow = root.style.overflow;
+    const bodyOverflow = document.body.style.overflow;
+    const scrollbarGutter = root.style.scrollbarGutter;
+    root.style.scrollbarGutter = "stable";
+    root.style.overflow = "hidden";
+    document.body.style.overflow = "hidden";
     if (!element.open) element.showModal();
     close.current?.focus();
-    return () => { element.close(); trigger?.focus(); };
+    return () => {
+      element.close();
+      root.style.overflow = rootOverflow;
+      document.body.style.overflow = bodyOverflow;
+      root.style.scrollbarGutter = scrollbarGutter;
+      trigger?.focus();
+    };
   }, []);
 
   return <dialog ref={dialog} className={styles.dialog} aria-labelledby={`${id}-title`}

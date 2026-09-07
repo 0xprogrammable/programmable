@@ -1,4 +1,4 @@
-.dialog { background: transparent; border: 0; color: var(--webde-ink); margin: auto; max-height: calc(100dvh - 32px); max-width: min(560px, calc(100vw - 32px)); overflow: auto; padding: 0; width: 560px; }
+.dialog { background: transparent; border: 0; color: var(--webde-ink); margin: auto; max-height: calc(100dvh - 32px); max-width: min(560px, calc(100vw - 32px)); overflow: auto; overscroll-behavior: contain; padding: 0; width: 560px; }
 .dialog::backdrop { background: rgb(0 0 0 / 72%); }
 .surface { background: var(--webde-surface, #181818); border: 1px solid var(--webde-line, #323232); border-radius: 16px; padding: 24px; }
 .header { align-items: flex-start; display: flex; gap: 16px; justify-content: space-between; }

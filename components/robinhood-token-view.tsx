@@ -76,7 +76,7 @@ export function RobinhoodTokenView({ address, token, status }: {
 
         <section className={styles.launchContext} aria-label="Programmable launch">
           <div>
-            <p className={styles.origin}>Programmable · {moduleLaunch ? "Module Mode" : "Custom"}</p>
+            <p className={styles.origin}>Programmable · {moduleLaunch ? "Module" : "Custom"}</p>
           </div>
           {manageHref ? <div className={styles.launchActions}>
             <Link className={styles.secondaryButton} href={manageHref} prefetch={false} aria-label="Manage coin">Manage <ArrowRight aria-hidden="true" size={16} /></Link>
