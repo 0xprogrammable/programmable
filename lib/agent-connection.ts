@@ -26,7 +26,7 @@ export const PROGRAMMABLE_AGENT_ENTRY = Object.freeze({
   workflows: {
     customLaunch: {
       scopes: ["custom-launch:create", "custom-launch:read"],
-      guide: "https://programmable.market/docs/developers/custom-launch",
+      guide: "https://programmable.market/developer-reference/custom-launch",
       ethereum: { chainId: 1, capabilities: "https://api.programmable.market/v3/capabilities", openApi: "https://programmable.market/openapi/custom-launch-v3.json" },
       robinhood: { chainId: 4663, capabilities: "https://api.programmable.market/v4/chains/4663/capabilities", readiness: "https://api.programmable.market/v4/chains/4663/readiness", openApi: "https://programmable.market/openapi/custom-launch-v4.json" },
     },

@@ -52,7 +52,7 @@ describe("Developer documentation experience", () => {
       [
         customLaunchPage,
         "/docs/developers/custom-launch",
-        'alternates: { canonical: "/docs/developers/custom-launch" }',
+        'alternates: { canonical: "/developer-reference/custom-launch" }',
       ],
       [
         verifyPage,
