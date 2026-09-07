@@ -1,0 +1,5 @@
+[
+  { "path": ["quoteAsset"], "type": "address" },
+  { "path": ["minimumWindow"], "type": "uint256" },
+  { "path": ["maximumWindow"], "type": "uint256" }
+]

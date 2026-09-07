@@ -1,0 +1,31 @@
+{
+  "format": "programmable.classic.source-package.v0.1",
+  "name": "Quote-bound settlement — contributor starter",
+  "version": "0.1.0-development.1",
+  "author": "REPLACE_WITH_AUTHOR_WALLET",
+  "rewardWallet": "REPLACE_WITH_AUTHOR_REWARD_WALLET",
+  "familySalt": "REPLACE_WITH_FRESH_BYTES32",
+  "source": { "files": [] },
+  "components": [
+    {
+      "id": "engine",
+      "runtime": "programmable.module-engine-solidity@1",
+      "sourcePath": "src/QuoteBoundSettlementV1.sol",
+      "entrypoint": "QuoteBoundSettlementV1"
+    }
+  ],
+  "configuration": { "type": "record", "fields": {}, "required": [] },
+  "ports": { "inputs": {}, "outputs": {} },
+  "constraints": [],
+  "management": {
+    "summary": "Request an exact funded payment, let the launch creator attest fulfillment to the fixed beneficiary, or refund the original payer after expiry. Creator attestation is not an oracle proof.",
+    "reads": [
+      { "id": "context", "label": "Bound launch", "component": "engine", "entrypoint": "context()", "description": "Verify all six fields against the admitted host launch." },
+      { "id": "request", "label": "Settlement request", "component": "engine", "entrypoint": "requests(bytes32)", "description": "Read payer, beneficiary, amount, refundAfter, obligationHash and terminal status for the exact request ID." },
+      { "id": "liability", "label": "Pending settlement amount", "component": "engine", "entrypoint": "totalLiability()", "description": "Raw units of this launch's quote asset; pending requests remain backed by the isolated engine balance." }
+    ],
+    "actions": []
+  },
+  "requiresHost": ["programmable.module-engine-solidity@1"],
+  "documentation": "README.md"
+}

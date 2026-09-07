@@ -1,0 +1,21 @@
+{
+  "format": "programmable.module-mode.local-build-reference.v1",
+  "compiler": "0.8.26+commit.8a97fa7a",
+  "settings": {
+    "evmVersion": "cancun",
+    "optimizer": true,
+    "optimizerRuns": 1000,
+    "viaIR": true,
+    "bytecodeHash": "none",
+    "appendCBOR": true
+  },
+  "contracts": {
+    "QuoteBoundSettlementV1": {
+      "creationCodeHash": "0x8622352ff41d1f16dda668424b3f6a62edb8b23fcdb64a0e035f1b8d821db102",
+      "runtimeCodeHash": "0x7cf7b03eabb031e650571b12bc87695f49e11a0fc77e103d16eb6bfb7a7fd22f",
+      "runtimeBytes": 4155
+    }
+  },
+  "deploymentEvidence": false,
+  "sourceVerificationEvidence": false
+}
