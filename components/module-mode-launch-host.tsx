@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ArrowUpRight, Check, Copy, LoaderCircle, RefreshCw } from "lucide-react";
-import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, type FormEvent } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, useTransition, type FormEvent } from "react";
 import { formatUnits, toHex, type Address, type Hex } from "viem";
 
 import { ModuleModeBuilder, type ModuleModeLaunchAction } from "@/components/module-mode-builder";
@@ -15,6 +16,7 @@ import { moduleNativeCatalogDigest, parseModuleModeAvailability, type ModuleMode
 import { createModuleNativeClient, ModuleNativeTransactionRevertedError, prepareModuleNativeLaunch, waitForModuleNativeReceipt, type ModuleNativeImageBinding, type ModuleNativeReceiptResult, type PreparedModuleNativeLaunch } from "@/lib/module-mode/native-client";
 import { browserWalletRequestIsPending, subscribeToBrowserWalletRequest } from "@/lib/wallet-request-lock";
 import { beginModuleModeOperation, clearModuleModeOperation, moduleModeOperationPath, rememberModuleModeTransactionHash, type ModuleModeOperation } from "@/lib/module-mode-operation-store";
+import { moduleModeReleaseQuery, type ModuleModeLaunchVersion } from "@/lib/module-mode/release-selection";
 import { fetchModuleModeOperationRelease, recoverModuleModeOperation } from "@/lib/module-mode-operation-recovery";
 
 type LaunchFlow = {
@@ -33,12 +35,14 @@ function useModuleWalletRequestPending(account: string | undefined) {
   return useSyncExternalStore(subscribe, snapshot, () => false);
 }
 
-async function fetchAvailability(signal?: AbortSignal): Promise<ModuleModeAvailability> {
-  const response = await fetch("/api/module-mode", { cache: "no-store", credentials: "same-origin", redirect: "error", signal });
+async function fetchAvailability(releaseDigest?: string, signal?: AbortSignal): Promise<ModuleModeAvailability> {
+  const response = await fetch(`/api/module-mode${moduleModeReleaseQuery({ releaseDigest: releaseDigest as Hex | undefined })}`, { cache: "no-store", credentials: "same-origin", redirect: "error", signal });
   if (!response.ok || response.redirected || response.headers.get("content-type")?.split(";", 1)[0].trim() !== "application/json") {
     throw new Error("Wallet launch availability could not be checked. Your draft is kept.");
   }
-  return parseModuleModeAvailability(await response.json());
+  const availability = parseModuleModeAvailability(await response.json());
+  if (releaseDigest && availability.release && availability.release.releaseDigest !== releaseDigest) throw new Error("The requested launch version could not be verified.");
+  return availability;
 }
 
 function conciseError(error: unknown) {
@@ -60,7 +64,12 @@ function assertDraftAvailability(draft: ModuleModeDraft, current: ModuleModeAvai
   }
 }
 
-export function ModuleModeLaunchHost() {
+export function ModuleModeLaunchHost({ releaseDigest, versions = [] }: { releaseDigest?: string; versions?: readonly ModuleModeLaunchVersion[] }) {
+  const router = useRouter();
+  const [changingVersion, startVersionChange] = useTransition();
+  const requestedRelease = useRef(releaseDigest);
+  requestedRelease.current = releaseDigest;
+  const [loadedSelection, setLoadedSelection] = useState<string | null>(null);
   const { wallet, authenticated, sessionReady, authReady, connecting, openingWallet, switchingNetwork, disconnecting, openWallet, switchNetwork, getAccessToken, sendModuleModeTransaction } = useWallet();
   const client = useMemo(() => createModuleNativeClient(), []);
   const [availability, setAvailability] = useState<ModuleModeAvailability | null>(null);
@@ -82,15 +91,16 @@ export function ModuleModeLaunchHost() {
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; operation.current += 1; }; }, []);
   useEffect(() => {
     const controller = new AbortController();
-    void fetchAvailability(controller.signal).then((next) => {
-      if (!controller.signal.aborted) { setAvailability(next); setAvailabilityError(false); setAvailabilityLoading(false); }
+    void fetchAvailability(releaseDigest, controller.signal).then((next) => {
+      if (!controller.signal.aborted) { setAvailability(next); setAvailabilityError(false); setAvailabilityLoading(false); setLoadedSelection(releaseDigest ?? "current"); }
     }).catch(() => {
-      if (!controller.signal.aborted) { setAvailability(null); setAvailabilityError(true); setAvailabilityLoading(false); }
+      if (!controller.signal.aborted) { setAvailability(null); setAvailabilityError(true); setAvailabilityLoading(false); setLoadedSelection(releaseDigest ?? "current"); }
     });
     return () => controller.abort();
-  }, [refreshKey]);
+  }, [refreshKey, releaseDigest]);
 
-  const release = availability?.release ?? null;
+  const selectionPending = loadedSelection !== (releaseDigest ?? "current") || changingVersion;
+  const release = selectionPending ? null : availability?.release ?? null;
   const catalog = useMemo(() => availability ? release ? availability.catalog.filter((entry) => entry.status === "available") : availability.catalog : PREVIEW_MODULE_CATALOG, [availability, release]);
   const walletStep = moduleModeWalletStep({ account: wallet?.account, chainId: wallet?.chainId, authenticated, sessionReady });
   const walletAccount = wallet?.account;
@@ -114,7 +124,7 @@ export function ModuleModeLaunchHost() {
 
   async function checkRecoveredReceipt(transactionHash: Hex) {
     const record = recoveryOperation;
-    if (!record || record.kind !== "launch" || busy.current || receiptChecking) return;
+    if (!record || record.sourceKind === "module-engine-v1" || record.kind !== "launch" || busy.current || receiptChecking) return;
     busy.current = true; setReceiptChecking(true);
     try {
       const originalRelease = await fetchModuleModeOperationRelease(record.releaseDigest);
@@ -139,7 +149,7 @@ export function ModuleModeLaunchHost() {
     const account = wallet.account as Address;
     const requestId = ++operation.current;
     const assertCurrentSession = () => {
-      if (!mounted.current || operation.current !== requestId) throw new Error("The preparation was cancelled. Your draft is kept.");
+      if (!mounted.current || operation.current !== requestId || requestedRelease.current !== releaseDigest) throw new Error("The preparation was cancelled. Your draft is kept.");
       assertModuleModeWalletUnchanged(walletRef.current, account);
     };
     busy.current = true;
@@ -149,7 +159,7 @@ export function ModuleModeLaunchHost() {
     try {
       assertCurrentSession();
       setFlow({ phase: "preparing", draft });
-      const current = await fetchAvailability();
+      const current = await fetchAvailability(releaseDigest);
       assertCurrentSession();
       setAvailability(current);
       assertDraftAvailability(draft, current);
@@ -170,7 +180,7 @@ export function ModuleModeLaunchHost() {
       assertCurrentSession();
       activePreparation = prepared;
       // Refresh availability after preparation, then retain the wallet provider's exact transaction revalidation.
-      const latest = await fetchAvailability();
+      const latest = await fetchAvailability(releaseDigest);
       assertCurrentSession();
       setAvailability(latest);
       assertDraftAvailability(draft, latest);
@@ -209,7 +219,7 @@ export function ModuleModeLaunchHost() {
   if (flow.phase === "reverted") { actionLabel = "Try again"; actionTitle = "Launch failed"; actionDescription = "Try again or edit your coin."; }
   const launchAction: ModuleModeLaunchAction | undefined = release || hasSubmission ? {
     label: actionLabel, title: actionTitle, description: actionDescription,
-    disabled: availabilityLoading || (walletStep !== "connect" && !authReady) || connecting || openingWallet || switchingNetwork || disconnecting || requestPending || hasSubmission,
+    disabled: availabilityLoading || selectionPending || (walletStep !== "connect" && !authReady) || connecting || openingWallet || switchingNetwork || disconnecting || requestPending || hasSubmission,
     busy: working,
     lockDraft: working || requestPending || hasSubmission,
     onContinue: continueLaunch,
@@ -221,14 +231,20 @@ export function ModuleModeLaunchHost() {
 
   return <ModuleModeBuilder
     release={release}
+    versionContent={versions.length > 1 ? <div className={styles.field}><label htmlFor="module-launch-version">Module version</label><select id="module-launch-version" value={releaseDigest ?? availability?.release?.releaseDigest ?? versions[0]?.releaseDigest} disabled={working || requestPending || hasSubmission || changingVersion} onChange={event => {
+      const version = versions.find(candidate => candidate.releaseDigest === event.target.value);
+      if (!version || working || requestPending || hasSubmission) return;
+      operation.current += 1; setFlow({ phase: "idle" });
+      startVersionChange(() => router.push(`/launch/modules${moduleModeReleaseQuery({ releaseDigest: version.releaseDigest, ...(version.sourceKind ? { sourceKind: version.sourceKind } : {}) })}`, { scroll: false }));
+    }}>{releaseDigest && !versions.some(version => version.releaseDigest === releaseDigest) ? <option value={releaseDigest}>Selected version unavailable</option> : null}{versions.map(version => <option key={version.releaseDigest} value={version.releaseDigest}>{version.label}</option>)}</select><p className={styles.help}>Choose an earlier version to use its supported modules. Review its fees before launching.</p></div> : undefined}
     catalog={catalog}
     configurationContext={configurationContext}
     launchAction={launchAction}
     minimumInitialBuyWei={release?.minimumInitialBuyNative}
     previewDescription={availabilityError ? "Wallet launch availability could not be checked. You can keep configuring and export this draft; no token has been created." : "Wallet launching is not available yet. You can configure and export this draft; no token has been created."}
     onEdit={() => { if (hasSubmission) return; operation.current += 1; if (flow.phase === "reverted") submitted.current = null; setFlow({ phase: "idle" }); }}
-    statusContent={availabilityLoading || availabilityError || (requestPending && !working && !hasSubmission) ? <div className={styles.launchAvailability}>
-      <p role="status">{availabilityLoading ? "Loading…" : availabilityError ? "Launching is unavailable. Check again to continue." : "Finish the open wallet request to continue."}</p>
+    statusContent={availabilityLoading || selectionPending || availabilityError || (requestPending && !working && !hasSubmission) ? <div className={styles.launchAvailability}>
+      <p role="status">{availabilityLoading || selectionPending ? "Loading…" : availabilityError ? "Launching is unavailable. Check again to continue." : "Finish the open wallet request to continue."}</p>
       {availabilityError && !hasSubmission ? <button className={styles.textButton} type="button" onClick={refreshAvailability}><RefreshCw size={14} aria-hidden="true" /> Check again</button> : null}
     </div> : undefined}
     reviewContent={<>
@@ -236,7 +252,7 @@ export function ModuleModeLaunchHost() {
       {flow.prepared && flow.draft && flow.phase === "signing" ? <LaunchTransactionDetails prepared={flow.prepared} draft={flow.draft} /> : null}
       {flow.phase === "reverted" && flow.transactionHash ? <a className={styles.transactionLink} href={`${ROBINHOOD_BLOCK_EXPLORER_URL}/tx/${flow.transactionHash}`} target="_blank" rel="noreferrer">View transaction <ArrowUpRight size={14} aria-hidden="true" /></a> : null}
     </>}
-    resultContent={hasSubmission && !working ? saved.error || (recoveryOperation && recoveryOperation.kind !== "launch") ? <div className={styles.launchResult}>
+    resultContent={hasSubmission && !working ? saved.error || (recoveryOperation && (recoveryOperation.sourceKind === "module-engine-v1" || recoveryOperation.kind !== "launch")) ? <div className={styles.launchResult}>
       <h2>Previous transaction needs confirmation</h2><p role="status">{saved.error ?? "Open your coin controls to check the previous transaction before launching another coin."}</p>
       {recoveryOperation ? <Link className={styles.secondaryButton} href={moduleModeOperationPath(recoveryOperation)}>Open transaction recovery</Link> : null}
     </div> : <ModuleModeLaunchResult
@@ -247,7 +263,7 @@ export function ModuleModeLaunchHost() {
       message={flow.message}
       checking={receiptChecking}
       onCheck={flow.prepared && flow.transactionHash && flow.operation?.id === recoveryOperation?.id ? () => void observeReceipt(flow.prepared!, flow.transactionHash!, flow.operation) : recoveryOperation?.transactionHash ? () => void checkRecoveredReceipt(recoveryOperation.transactionHash!) : undefined}
-      onRecover={recoveryOperation?.kind === "launch" ? transactionHash => void checkRecoveredReceipt(transactionHash) : undefined}
+      onRecover={recoveryOperation?.kind === "launch" && recoveryOperation.sourceKind !== "module-engine-v1" ? transactionHash => void checkRecoveredReceipt(transactionHash) : undefined}
     /> : undefined}
   />;
 }
