@@ -1,5 +1,5 @@
-import type { RobinhoodLaunch, RobinhoodModuleLaunch } from "@/lib/robinhood-launches";
-import { isRobinhoodModuleSourceKind } from "@/lib/robinhood-launches";
+import type { RobinhoodEngineLaunch, RobinhoodLaunch, RobinhoodModuleLaunch } from "@/lib/robinhood-launches";
+import { isRobinhoodEngineLaunch, isRobinhoodModuleSourceKind } from "@/lib/robinhood-launches";
 import { parseSnapshot, parseModuleModeSnapshot, moduleModeSnapshots, type Checkpoint, type RobinhoodSnapshot, type ModuleModeSnapshot } from "./model";
 import type { IndexStore } from "./store";
 
@@ -30,6 +30,18 @@ export class IndexBlockIncomplete extends Error {
   constructor(readonly items: RobinhoodLaunch[]) { super("Block verification continues on next pass"); }
 }
 
+function sameEngineLaunchIdentity(left: RobinhoodEngineLaunch, right: RobinhoodEngineLaunch) {
+  return (["sourceKind", "sourceAddress", "sourceReleaseDigest", "launchId", "tokenAddress", "creator",
+    "transactionHash", "blockNumber", "blockHash", "engineAddress", "engineRevisionId", "engineFamilyId",
+    "engineManifestHash", "engineRuntimeCodeHash", "tokenRuntimeCodeHash", "quoteAsset", "configurationHash",
+    "constructorHash", "initCodeHash", "planHash", "resourcesHash", "economicsPolicyId"] as const)
+    .every(key => left[key].toLowerCase() === right[key].toLowerCase())
+    && (["logIndex", "quoteDecimals", "decimals", "name", "symbol", "protocolFeeBps", "authorPoolFeeBps", "platformFeeBps"] as const)
+      .every(key => left[key] === right[key])
+    && (["modulePackageIds", "moduleFamilyIds", "feeEligibleFamilyIds"] as const)
+      .every(key => left[key].map(id => id.toLowerCase()).join(",") === right[key].map(id => id.toLowerCase()).join(","));
+}
+
 function mergeVerifiedLaunches(known: RobinhoodLaunch[], discovered: RobinhoodLaunch[]) {
   const byLaunchId = new Map<string, RobinhoodLaunch>();
   for (const row of [...known, ...discovered]) {
@@ -37,6 +49,17 @@ function mergeVerifiedLaunches(known: RobinhoodLaunch[], discovered: RobinhoodLa
     if (existing && (existing.blockHash.toLowerCase() !== row.blockHash.toLowerCase()
       || existing.blockNumber !== row.blockNumber || existing.logIndex !== row.logIndex)) {
       throw new Error("Launch location changed without a reorg");
+    }
+    if (isRobinhoodEngineLaunch(existing) && isRobinhoodEngineLaunch(row)
+      && existing.primaryMarket && sameEngineLaunchIdentity(existing, row)) {
+      // A later optional read failure cannot revoke a canonical market proof.
+      // Retain its complete row: the newer digest attests a different, marketless subject.
+      if (row.primaryMarket === null) continue;
+      if ((["poolManager", "poolId", "hook", "quoteAsset", "primaryToken", "launchId"] as const)
+        .some(key => existing.primaryMarket![key].toLowerCase() !== row.primaryMarket![key].toLowerCase())
+        || existing.primaryMarket.initialTick !== row.primaryMarket.initialTick) {
+        throw new Error("Verified Engine market changed without a reorg");
+      }
     }
     byLaunchId.set(row.launchId.toLowerCase(), row);
   }
