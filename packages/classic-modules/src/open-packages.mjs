@@ -1,5 +1,6 @@
 import { sha256, stringToHex } from 'viem';
-import { canonicalJson, familyIdFor, safeRelativePath } from './index.mjs';
+import { canonicalJson } from './canonical-json.mjs';
+import { familyIdFor, safeRelativePath } from './primitives.mjs';
 import { assertOpenConfigSchema, compileOpenConfig } from './open-config.mjs';
 import { assertOpenConstraints, evaluateOpenConstraints } from './open-constraints.mjs';
 

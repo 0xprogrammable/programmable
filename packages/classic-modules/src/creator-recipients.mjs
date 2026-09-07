@@ -1,5 +1,5 @@
 import { concatHex, encodeAbiParameters, encodeFunctionData, isAddress, keccak256, stringToHex } from 'viem';
-import { ClassicModuleError } from './index.mjs';
+import { ClassicModuleError } from './primitives.mjs';
 
 export const MAX_CREATOR_SPLIT_RECIPIENTS = 1000;
 export const CREATOR_SPLIT_DOMAIN = keccak256(stringToHex('programmable.classic.creator-split.v1'));
