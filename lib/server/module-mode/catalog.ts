@@ -189,7 +189,7 @@ export function verifyModuleModePublication(input: {
   return publication.entry;
 }
 
-async function readPublication(input: { packageId: Hex; kind: PublicationKind; fetchPublic: typeof fetch; signal: AbortSignal; budget: { bytes: number } }): Promise<unknown> {
+export async function readPublication(input: { packageId: Hex; kind: PublicationKind; fetchPublic: typeof fetch; signal: AbortSignal; budget: { bytes: number } }): Promise<unknown> {
   const response = await input.fetchPublic(moduleModePublicationUrl(input.packageId, input.kind), {
     method: "GET", headers: { accept: "application/json" }, redirect: "error", cache: "no-store", signal: input.signal,
   });
