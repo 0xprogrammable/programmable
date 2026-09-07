@@ -29,7 +29,7 @@ type LaunchFlow = {
   operation?: ModuleModeOperation;
 };
 
-function useModuleWalletRequestPending(account: string | undefined) {
+export function useModuleWalletRequestPending(account: string | undefined) {
   const subscribe = useCallback((listener: () => void) => subscribeToBrowserWalletRequest(account, "4663", listener), [account]);
   const snapshot = useCallback(() => browserWalletRequestIsPending(account, "4663"), [account]);
   return useSyncExternalStore(subscribe, snapshot, () => false);
@@ -305,7 +305,7 @@ export function ModuleModeLaunchResult({ phase, token, symbol, transactionHash, 
   </div>;
 }
 
-function LaunchReceiptRecovery({ hash, checking, onRecover }: { hash?: Hex; checking: boolean; onRecover: (transactionHash: Hex) => void }) {
+export function LaunchReceiptRecovery({ hash, checking, onRecover }: { hash?: Hex; checking: boolean; onRecover: (transactionHash: Hex) => void }) {
   const [candidate, setCandidate] = useState(""); const [error, setError] = useState("");
   const input = useRef<HTMLInputElement>(null); const id = useId();
   function check(event: FormEvent) {

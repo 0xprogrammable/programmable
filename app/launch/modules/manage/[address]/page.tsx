@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { isAddress, type Address } from "viem";
 import { ModuleCoinConsole } from "@/components/module-coin-console";
+import { ModuleEngineHost } from "@/components/module-engine-host";
 import { moduleModeCoinReleaseSelection, parseModuleModePageSelection } from "@/lib/module-mode/release-selection";
 import { readRobinhoodToken } from "@/lib/server/robinhood-index/read";
 
@@ -17,6 +18,6 @@ export default async function ModuleCoinManagementPage({ params, searchParams }:
   const token = address.toLowerCase() as Address;
   let selection;
   try { selection = moduleModeCoinReleaseSelection(parseModuleModePageSelection(await searchParams), (await readRobinhoodToken(token)).token); } catch { notFound(); }
-  if (selection.sourceKind) notFound();
+  if (selection.sourceKind === "module-engine-v1") return <ModuleEngineHost key={`${token}:${selection.releaseDigest ?? "current"}`} token={token} releaseDigest={selection.releaseDigest} />;
   return <ModuleCoinConsole key={`${token}:${selection.releaseDigest ?? "current"}`} token={token} releaseDigest={selection.releaseDigest} />;
 }
