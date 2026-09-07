@@ -2396,7 +2396,7 @@ async function assertRestoreTargetIsEmpty(sql, safeTarget, profile, allowedResto
     const [isolation] = await sql.unsafe(`select host(inet_server_addr()) as server_address,
       (select rolsuper from pg_roles where rolname=current_user) as superuser,
       (select count(*)::integer from pg_database where datname not in ('template0','template1','postgres',$1)) as other_databases,
-      (select count(*)::integer from pg_namespace where nspname not in ('pg_catalog','information_schema','public') and nspname not like 'pg_%') as extra_schemas,
+      (select count(*)::integer from pg_namespace where nspname not in ('pg_catalog','information_schema','public') and not starts_with(nspname,'pg_')) as extra_schemas,
       ((select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public')
        + (select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public')
        + (select count(*) from pg_type t join pg_namespace n on n.oid=t.typnamespace where n.nspname='public'))::integer as public_objects`, [allowedRestoreDatabase]);

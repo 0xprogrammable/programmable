@@ -190,6 +190,29 @@ for (const postgresIsolation of [{ extra_schemas: 1 }, { public_objects: 1 }]) {
     assert.equal(f.commands.length, 0); assert.equal(f.sourceSql.length, 0);
   });
 }
+for (const databaseName of ["programmable_restore_module_fixture", "postgres"]) {
+  test(`literal system-schema prefix check rejects actual pgdata.keep_me in ${databaseName}`, async t => {
+    const f = await captureFixture(t), db = new PGlite(); t.after(() => db.close());
+    await db.exec("CREATE SCHEMA pgdata; CREATE TABLE pgdata.keep_me(id integer)");
+    const openRestore = f.input.dependencies.openRestoreDatabase;
+    let inspected = false;
+    f.input.dependencies.openRestoreDatabase = async options => {
+      const connection = await openRestore(options), unsafe = connection.sql.unsafe;
+      connection.sql.unsafe = (query, parameters) => {
+        if (options.safeTarget.database !== databaseName || !query.includes("server_address")) return unsafe(query, parameters);
+        const result = db.query(query, parameters).then(({ rows }) => {
+          inspected = true; assert.equal(rows[0].extra_schemas, 1);
+          return [{ ...rows[0], server_address: "127.0.0.1", superuser: true }];
+        });
+        result.simple = () => result; return result;
+      };
+      return connection;
+    };
+    await assert.rejects(createBackupAndRestoreEvidence(f.input), /database backup and isolated restore failed/u);
+    assert.equal(inspected, true); assert.equal(f.commands.length, 0); assert.equal(f.sourceSql.length, 0);
+    assert.equal((await db.query("SELECT to_regclass('pgdata.keep_me')::text AS existing")).rows[0].existing, "pgdata.keep_me");
+  });
+}
 for (const program of ["pg_dump", "pg_restore", "psql"]) {
   test(`requires Postgres 17 for ${program} before dump or target DDL`, async t => {
     const f = await captureFixture(t, { versions: { [program]: "16.11" } });
