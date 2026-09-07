@@ -2,11 +2,12 @@ import "server-only";
 
 import { createReviewedModuleEngineManifest } from "@/lib/module-mode/review-engine-manifest";
 import { verifyModuleEngineBuildArtifactV1 } from "@/lib/module-mode/review-engine-contract";
-import { computeModuleEngineHostManifestHash, type ModuleEngineCatalogDefinition, type ModuleEngineReleaseIdentity, type ModuleEngineRevisionDefinition } from "@/lib/module-engine/catalog";
+import { bindModuleEngineReleaseIdentity, computeModuleEngineHostManifestHash, type ModuleEngineCatalogDefinition, type ModuleEngineRevisionDefinition } from "@/lib/module-engine/catalog";
 import { randomBytes } from "node:crypto";
 import { getAddress, isAddress } from "viem";
 import { isWebsiteAdminWallet } from "@/lib/admin-access";
 import configuredRelease from "@/config/module-mode/robinhood.preview.json";
+import configuredEngineReviewRelease from "@/config/module-engine/review-release.json";
 import { isReviewId, parseReviewAttempt, parseReviewJob, parseReviewPlan, reviewDigest, reviewRecord, parseReviewQueueItem, type ReviewDetail } from "@/lib/module-mode/review-contract";
 import { nativeCanonicalJson } from "@/lib/module-mode/native-catalog";
 import { unsupportedManagementCapabilities } from "@/lib/module-mode/management-manifest";
@@ -108,10 +109,13 @@ export function createModuleReviewClient(input: {
         if (!detail.job.artifact) fail(409, "MODULE_REVIEW_BUILD_REQUIRED");
         if (detail.job.artifact.schemaVersion === "programmable.modules.engine-build.v1") {
           const raw = userInput(() => parsed(Buffer.from(text), 2 * 1024 * 1024));
-          if (!input.engineReleaseIdentity) fail(409, "MODULE_REVIEW_HOST_RELEASE_UNAVAILABLE");
+          if (input.engineReleaseIdentity === null || input.engineReleaseIdentity === undefined) fail(409, "MODULE_REVIEW_HOST_RELEASE_UNAVAILABLE");
+          // Bind the closed server identity before Engine publication or activation.
+          // Validate it here so configuration failures stay local to Engine review.
+          const release = bindModuleEngineReleaseIdentity(input.engineReleaseIdentity);
           const manifest = userInput(() => reviewRecord(reviewRecord(raw).manifest));
           const expected = userInput(() => createReviewedModuleEngineManifest({ job: detail.job, descriptor: detail.source.descriptor,
-            release: input.engineReleaseIdentity as ModuleEngineReleaseIdentity, definition: manifest.catalogDefinition as ModuleEngineCatalogDefinition,
+            release, definition: manifest.catalogDefinition as ModuleEngineCatalogDefinition,
             revision: manifest.revision as ModuleEngineRevisionDefinition }));
           if (!same(raw, expected)) fail(400, "MODULE_REVIEW_MANIFEST_BUILD_MISMATCH");
           return computeModuleEngineHostManifestHash(expected);
@@ -182,7 +186,7 @@ export function createModuleReviewClient(input: {
 let client: ReturnType<typeof createModuleReviewClient> | undefined;
 export async function moduleReviewRoute(request: Request, operation: Operation, id?: string) {
   try {
-    client ??= createModuleReviewClient({ authenticator: createPrivyWalletPrincipalAuthenticatorV1(), backendBaseUrl: process.env.PROGRAMMABLE_CUSTOM_LAUNCH_API_BASE_URL ?? "", websiteToken: process.env.PROGRAMMABLE_CUSTOM_LAUNCH_WEBSITE_TOKEN ?? "", bffAssertionKeyV2: process.env.PROGRAMMABLE_CUSTOM_LAUNCH_BFF_ASSERTION_KEY_V2 ?? "", fetchBackend: fetch });
+    client ??= createModuleReviewClient({ authenticator: createPrivyWalletPrincipalAuthenticatorV1(), backendBaseUrl: process.env.PROGRAMMABLE_CUSTOM_LAUNCH_API_BASE_URL ?? "", websiteToken: process.env.PROGRAMMABLE_CUSTOM_LAUNCH_WEBSITE_TOKEN ?? "", bffAssertionKeyV2: process.env.PROGRAMMABLE_CUSTOM_LAUNCH_BFF_ASSERTION_KEY_V2 ?? "", fetchBackend: fetch, engineReleaseIdentity: configuredEngineReviewRelease });
     return await client.handle(request, operation, id);
   } catch { return response(503, { error: { code: "MODULE_REVIEW_SERVICE_UNAVAILABLE" } }); }
 }

@@ -3,6 +3,21 @@
 `robinhood.json` is deliberately `null`: no Engine source is activated by this change. `catalog.json`
 has no templates or source digest. There are no placeholder contracts, deployment proofs or reviews.
 
+`review-release.json` is also deliberately `null`. The existing private Module review BFF reads this
+server configuration for Engine manifest checks and acceptance. It accepts only the closed
+`ModuleEngineReleaseIdentity` wire with its exact digest, source commit, chain, profile and contract
+pins. Browser requests and submitted manifests cannot supply or replace this installed identity.
+Null blocks Engine manifest checks and acceptance; Native review and source/build review remain
+independent. Invalid Engine configuration fails closed for the same Engine operations.
+
+The integration owner may install that identity after the actual Engine host deployment and source
+binding have been independently verified. This precedes template review and avoids requiring a
+published template or completed lifecycle canary to create its review manifest. Installing this
+identity does not activate `robinhood.json`, add a catalogue entry, attest lifecycle evidence or grant
+reviewer/publisher authority. The existing publication operator must use the same release identity;
+the later active release and catalogue still require every proof below. Active-release evidence fields
+are not accepted in the identity-only review configuration.
+
 An activated source uses the existing `ModuleEngineRelease` wire and must match the exact source
 installed in the authenticated Module Mode authority service. The server never selects an arbitrary
 backend, source URL or newer release from a request.
