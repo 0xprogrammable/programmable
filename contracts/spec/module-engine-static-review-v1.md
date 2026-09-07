@@ -1,0 +1,37 @@
+# Engine host: local static-analysis disposition
+
+This is an implementation handoff, not an independent audit or a passed strict Slither gate.
+
+Slither 0.11.5 completed analysis of the new Host, QuoteEngine/Converter, Escrow and Settlement source entrypoints
+with solc 0.8.26, optimizer 1000 and Cancun. Dependency/test findings were filtered so the analysis concerns this
+change. The local Foundry build-info adapter first failed (`KeyError: output`); direct solc analysis from outside
+the Foundry directory then completed. No source detector suppressions were added.
+
+The scanner's result-size warning produced a concrete fix: `ModuleEngineCallsV1` now checks returndata size
+before copying, with separate success and revert bounds. `ClassicModuleCalls.read` is reused for fixed context
+readback. A test exercises both oversized success and oversized revert payloads and proves nonce rollback.
+The CREATE2 input uses explicit byte concatenation, and family checks consume and validate both author and wallet.
+
+Remaining raw findings require the existing independent release review to confirm these source-bound dispositions:
+
+| Entry point / detector | Raw severity | Engineering assessment and relevant evidence |
+| --- | --- | --- |
+| Host `launch`, `reentrancy-balance` | High | The entry point is transiently `nonReentrant`. Its ledger is constructed internally from the V2 source and `registerPool` cannot re-enter launch/execute. The later balance check verifies actual fixed supply at the new engine. This is not a cached third-party reserve value used to issue claims. Token/ledger constructor binding and asset-callback rollback are tested. |
+| Quote Engine / Converter pre-post asset checks, `reentrancy-balance` | High (7 instances) | These comparisons intentionally prove exact asset debits and newly received ETH/WETH. The converter is `nonReentrant`; engine entry is host-only and the host is `nonReentrant`; PoolManager and converter callbacks have explicit sender/active-operation checks. Removing the comparisons would remove funding proofs. Tests cover callback attempts, bad conversion reporting, missing funding, failed routes, slippage, direct router bypass and a 1000-case reconciled round trip. |
+| Quote tick alignment, `divide-before-multiply` | Medium | `(tick / 200) * 200` intentionally aligns the positive absolute tick to the existing planner's spacing. The requested price remains rational through decimal conversion; tests compare actual normalized starting prices across both asset orders and 6/18 decimals, including a price below one raw quote unit per primary token. |
+| Quote fee zero branch, `incorrect-equality` | Medium | The compared value is a fee amount computed from the current trade, not a contract's external balance. Zero skips conversion; positive quote fees require actual nonzero ETH proceeds. No donation can block the branch. |
+| Quote `Trade memory trade`, `uninitialized-local` | Medium | Solidity zero-initializes the memory struct. Buy/sell branches assign all amounts they consume; zero platform/creator amounts are intentional for rounding/zero-fee cases. The 1000-case test covers 0..10% creator rates and raw amount boundaries. |
+| Escrow and Settlement `locked-ether` | Medium (one each) | The common engine ABI is payable, but both profiles explicitly reject nonzero `msg.value`, and their reviewed host input roles only admit quote ERC20. An unsolicited forced ETH balance creates no user claim. A new administrative sweep right was not introduced to silence this detector. |
+| Reentrancy-benign/events, timestamp, calls-loop, assembly, complexity and immutable-state suggestions | Low/informational/optimization | State and events lie behind the same host/operation checks. Deadlines intentionally use timestamps. Arrays, gas and returndata are bounded. Assembly is limited to exact runtime patch/call/route-word handling. Per-instance storage is intentional for the uniform runtime contributor profile. These are not claims of an unrestricted engine safety theorem. |
+
+The final Host scan has one raw High balance-check finding and no raw Medium findings. The Quote scan retains
+the listed seven raw High and three Medium findings; Escrow and Settlement each retain their one Medium finding.
+Slither therefore exits nonzero for findings. These must not be reported as `0 High/Medium`, `strict pass`,
+independent approval or production readiness. The source and behavioral evidence are ready for the existing review
+process; deployment/activation gates remain separate.
+
+The local behavioral suite has 31 tests, including 1000 round-trip fuzz cases. New deployable runtime/initcode
+sizes under the pinned Foundry profile are: Host 19,252 / 47,685 bytes; QuoteEngine 17,391 / 31,679 bytes;
+Converter 5,188 / 5,957 bytes; Escrow 2,842 / 3,897 bytes; Settlement 5,261 / 6,266 bytes. The Host's six static
+constructor arguments add 192 bytes to its initcode envelope, still below EIP-3860. These are local build sizes,
+not deployed addresses or finality evidence.
