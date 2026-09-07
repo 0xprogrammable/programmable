@@ -1,0 +1,22 @@
+{
+  "type": "record",
+  "fields": {
+    "quoteAsset": {
+      "type": "address",
+      "label": "Settlement asset address",
+      "help": "Nonzero ERC20 address on the selected host chain. This must also be the host launch quoteAsset.",
+      "binding": { "mode": "input" }
+    },
+    "minimumWindow": {
+      "type": "uint", "bits": 256, "min": "60", "max": "60",
+      "unit": "seconds", "label": "Minimum request window",
+      "binding": { "mode": "fixed", "value": "60" }
+    },
+    "maximumWindow": {
+      "type": "uint", "bits": 256, "min": "2592000", "max": "2592000",
+      "unit": "seconds", "label": "Maximum request window",
+      "binding": { "mode": "fixed", "value": "2592000" }
+    }
+  },
+  "required": ["quoteAsset", "minimumWindow", "maximumWindow"]
+}

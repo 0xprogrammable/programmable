@@ -1,0 +1,117 @@
+{
+  "format": "programmable.module-mode.source-pins.v1",
+  "files": [
+    {
+      "path": "src/module-engine/IModuleEngineV1.sol",
+      "repository": "https://github.com/programmablehq/PROGRAMMABLE",
+      "revision": "118b15ef028a40f73fa61531b0a024898eaf4f73",
+      "sourcePath": "contracts/src/module-engine/IModuleEngineV1.sol",
+      "sha256": "e8baef6677f7d70860b8b4ed9197d6487ba0db28698036c706b2dd17ea10dd99",
+      "purpose": "unchanged host ABI or settlement implementation"
+    },
+    {
+      "path": "src/module-engine/ModuleEngineTypesV1.sol",
+      "repository": "https://github.com/programmablehq/PROGRAMMABLE",
+      "revision": "118b15ef028a40f73fa61531b0a024898eaf4f73",
+      "sourcePath": "contracts/src/module-engine/ModuleEngineTypesV1.sol",
+      "sha256": "6e7cc1ad0e7cbe87b5235b440ae1871fd0130424757aaf85d83d7ade866d0b2e",
+      "purpose": "unchanged host ABI or settlement implementation"
+    },
+    {
+      "path": "src/module-engine/ModuleEngineBaseV1.sol",
+      "repository": "https://github.com/programmablehq/PROGRAMMABLE",
+      "revision": "118b15ef028a40f73fa61531b0a024898eaf4f73",
+      "sourcePath": "contracts/src/module-engine/ModuleEngineBaseV1.sol",
+      "sha256": "8f4a992f7d928b286286ee1a2393d684056b350cd8aab9a81d22226f639dfb33",
+      "purpose": "unchanged host ABI or settlement implementation"
+    },
+    {
+      "path": "src/module-engine/ModuleQuoteSettlementEngineV1.sol",
+      "repository": "https://github.com/programmablehq/PROGRAMMABLE",
+      "revision": "118b15ef028a40f73fa61531b0a024898eaf4f73",
+      "sourcePath": "contracts/src/module-engine/ModuleQuoteSettlementEngineV1.sol",
+      "sha256": "aa1edaa4f56c69732fe709d8862d16fc043ab9a72b3490ee73d76d39199d495b",
+      "purpose": "unchanged host ABI or settlement implementation"
+    },
+    {
+      "path": "reference/module-engine-host-v1.md",
+      "repository": "https://github.com/programmablehq/PROGRAMMABLE",
+      "revision": "118b15ef028a40f73fa61531b0a024898eaf4f73",
+      "sourcePath": "contracts/spec/module-engine-host-v1.md",
+      "sha256": "1e54c0f60b769fbe7f98008764121a9f6a1ae5dd3725889b7fbfede7fc643ddd",
+      "purpose": "canonical host and quote/settlement specification"
+    },
+    {
+      "path": "tools/prepare.mjs",
+      "repository": "https://github.com/programmablehq/PROGRAMMABLE",
+      "revision": "763a9718e65cc873b2d2da6da7afd93463936fad",
+      "sourcePath": "packages/classic-modules/examples/native-program/tools/prepare.mjs",
+      "sha256": "c240a699da0dbe4720f98a45126bab57c19c84a6aded164c5f250bc99ab1fdb9",
+      "purpose": "unchanged portable source descriptor and explicit identity preparation"
+    },
+    {
+      "path": "LICENSE",
+      "repository": "https://github.com/programmablehq/PROGRAMMABLE",
+      "revision": "763a9718e65cc873b2d2da6da7afd93463936fad",
+      "sourcePath": "packages/launch/LICENSE",
+      "sha256": "fddb9827b3cdc44790c3779387a006586351a0d4410c048b677ed3750465bdba",
+      "purpose": "Programmable MIT license"
+    },
+    {
+      "path": "dependencies/openzeppelin-contracts/contracts/token/ERC20/IERC20.sol",
+      "repository": "https://github.com/OpenZeppelin/openzeppelin-contracts",
+      "revision": "21c8312b022f495ebe3621d5daeed20552b43ff9",
+      "sourcePath": "contracts/token/ERC20/IERC20.sol",
+      "sha256": "30edf7394bab78d48b7db3a059248e1ea7c2c77d2ec0e37a13bb91415aafbe5a",
+      "purpose": "unchanged complete SafeERC20 dependency or license"
+    },
+    {
+      "path": "dependencies/openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol",
+      "repository": "https://github.com/OpenZeppelin/openzeppelin-contracts",
+      "revision": "21c8312b022f495ebe3621d5daeed20552b43ff9",
+      "sourcePath": "contracts/token/ERC20/utils/SafeERC20.sol",
+      "sha256": "ac1fd9fa99b194a8db8dfa9ae8e3ff44feaa8f16668241fd2b66ae8b47d7c082",
+      "purpose": "unchanged complete SafeERC20 dependency or license"
+    },
+    {
+      "path": "dependencies/openzeppelin-contracts/contracts/interfaces/IERC1363.sol",
+      "repository": "https://github.com/OpenZeppelin/openzeppelin-contracts",
+      "revision": "21c8312b022f495ebe3621d5daeed20552b43ff9",
+      "sourcePath": "contracts/interfaces/IERC1363.sol",
+      "sha256": "54f427f63724d9760211dfa9e0cc5d79d86c0724becd81f8e638e2e27b0e2669",
+      "purpose": "unchanged complete SafeERC20 dependency or license"
+    },
+    {
+      "path": "dependencies/openzeppelin-contracts/contracts/interfaces/IERC20.sol",
+      "repository": "https://github.com/OpenZeppelin/openzeppelin-contracts",
+      "revision": "21c8312b022f495ebe3621d5daeed20552b43ff9",
+      "sourcePath": "contracts/interfaces/IERC20.sol",
+      "sha256": "cb42f0b4d269ba8ef2629c176a7f99bf4fb50837c92f45596b54822b26e3df4b",
+      "purpose": "unchanged complete SafeERC20 dependency or license"
+    },
+    {
+      "path": "dependencies/openzeppelin-contracts/contracts/interfaces/IERC165.sol",
+      "repository": "https://github.com/OpenZeppelin/openzeppelin-contracts",
+      "revision": "21c8312b022f495ebe3621d5daeed20552b43ff9",
+      "sourcePath": "contracts/interfaces/IERC165.sol",
+      "sha256": "49abfb8fa26e3f1715fe05948a96e3762b805bd4a77d103eb40ba96b1acfa144",
+      "purpose": "unchanged complete SafeERC20 dependency or license"
+    },
+    {
+      "path": "dependencies/openzeppelin-contracts/contracts/utils/introspection/IERC165.sol",
+      "repository": "https://github.com/OpenZeppelin/openzeppelin-contracts",
+      "revision": "21c8312b022f495ebe3621d5daeed20552b43ff9",
+      "sourcePath": "contracts/utils/introspection/IERC165.sol",
+      "sha256": "7c5c3f98ab876991e7dd34b84d41137e836306eb9f36f6386a631f5be3f5d6d4",
+      "purpose": "unchanged complete SafeERC20 dependency or license"
+    },
+    {
+      "path": "dependencies/openzeppelin-contracts/LICENSE",
+      "repository": "https://github.com/OpenZeppelin/openzeppelin-contracts",
+      "revision": "21c8312b022f495ebe3621d5daeed20552b43ff9",
+      "sourcePath": "LICENSE",
+      "sha256": "13cd784a6c31361f0e0c6aa3b410a1cb9a079868b7314c13e3eb8a75351746b9",
+      "purpose": "unchanged complete SafeERC20 dependency or license"
+    }
+  ]
+}
