@@ -9,10 +9,11 @@ import { ExploreFilters } from "@/components/explore-filters";
 import { AnimatedMarketCap } from "@/components/animated-market-cap";
 import { ExploreIndexResetView } from "@/components/explore-index-reset-view";
 import { useViewChain, type ViewChainId } from "@/components/view-chain";
-import { RobinhoodCoinArtwork } from "@/components/robinhood-coin-artwork";
+import { MODULE_TOKEN_FALLBACK_IMAGE, RobinhoodCoinArtwork } from "@/components/robinhood-coin-artwork";
+import { RobinhoodProjectLinks } from "@/components/robinhood-project-links";
 import { rememberRobinhoodTokenPresentations } from "@/components/robinhood-presentation-cache";
 import { coinAge, coinTicker, mergeRobinhoodPresentations, type RobinhoodCoinPresentation } from "@/lib/robinhood-presentation";
-import { activeExploreFilterCount, DEFAULT_EXPLORE_FILTERS, type RobinhoodExploreFilters } from "@/lib/robinhood-explore-filters";
+import { activeExploreFilterCount, DEFAULT_EXPLORE_FILTERS, LAUNCH_MODE_OPTIONS, ROBINHOOD_EXPLORE_PAGE_SIZE, type RobinhoodExploreFilters } from "@/lib/robinhood-explore-filters";
 import { isRobinhoodModuleLaunch } from "@/lib/robinhood-launches";
 import styles from "@/components/robinhood-launches-view.module.css";
 
@@ -103,7 +104,7 @@ function readResponse(value: unknown): LaunchResponse {
   }
   const page = value.page;
   if (!Number.isSafeInteger(page.number) || Number(page.number) < 1
-    || page.size !== 50 || !Number.isSafeInteger(page.totalItems) || Number(page.totalItems) < 0
+    || (page.size !== ROBINHOOD_EXPLORE_PAGE_SIZE && page.size !== 50) || !Number.isSafeInteger(page.totalItems) || Number(page.totalItems) < 0
     || !Number.isSafeInteger(page.totalPages) || Number(page.totalPages) < 0
     || typeof page.hasMore !== "boolean") {
     throw new Error("Invalid launch pagination");
@@ -166,7 +167,8 @@ function RobinhoodLaunchList({ embedded, enabled }: { embedded: boolean; enabled
       setLoading(true);
 
       try {
-        const query = new URLSearchParams({ page: String(request.page), q: request.q, sort: request.sort });
+        const query = new URLSearchParams({ page: String(request.page), pageSize: String(ROBINHOOD_EXPLORE_PAGE_SIZE),
+          q: request.q, sort: request.sort, mode: request.mode ?? "all" });
         const response = await fetch(`/api/explore/robinhood?${query}`, {
           signal: activeController.signal,
           cache: "no-store",
@@ -177,7 +179,7 @@ function RobinhoodLaunchList({ embedded, enabled }: { embedded: boolean; enabled
         if (disposed || activeController.signal.aborted) return;
         setSnapshot((current) => {
           const sameRequest = current?.request.page === request.page && current.request.q === request.q
-            && current.request.sort === request.sort;
+            && current.request.sort === request.sort && current.request.mode === request.mode;
           if (sameRequest && current.data.items.length > 0
             && data.items.length === 0 && data.status !== "ready") {
             return rememberSnapshot({ request, data: { ...current.data, status: data.status,
@@ -238,13 +240,21 @@ function RobinhoodLaunchList({ embedded, enabled }: { embedded: boolean; enabled
 
   function applyFilters(filters: RobinhoodExploreFilters) {
     setRequest((current) => current.sort === filters.sort
-      ? current : { ...current, ...filters, page: 1 });
+      ? current : { ...current, sort: filters.sort, page: 1 });
   }
 
-  const data = snapshot?.data;
+  function changePage(page: number) {
+    setRequest((current) => ({ ...current, page }));
+    const heading = document.getElementById(headingId);
+    heading?.scrollIntoView({ block: "start", behavior: "instant" });
+    heading?.focus({ preventScroll: true });
+  }
+
+  const sameMode = (snapshot?.request.mode ?? "all") === (request.mode ?? "all");
+  const data = sameMode ? snapshot?.data : undefined;
   const items = data?.items ?? [];
   const hasRows = items.length > 0;
-  const updatingSearch = search.trim() !== snapshot?.request.q || request.sort !== snapshot?.request.sort;
+  const updatingSearch = search.trim() !== snapshot?.request.q || request.sort !== snapshot?.request.sort || !sameMode;
   const hasFilters = activeExploreFilterCount(snapshot?.request ?? request) > 0;
   const Heading = embedded ? "h2" : "h1";
   const StateHeading = embedded ? "h3" : "h2";
@@ -267,7 +277,7 @@ function RobinhoodLaunchList({ embedded, enabled }: { embedded: boolean; enabled
   return (
     <div className={`${styles.page} explore-page page-width`}>
       <header className={styles.heading}>
-        <Heading data-explore-heading id={headingId}>Explore</Heading>
+        <Heading data-explore-heading id={headingId} tabIndex={-1}>Explore</Heading>
       </header>
 
       <section className={styles.body} aria-labelledby={headingId}>
@@ -298,8 +308,15 @@ function RobinhoodLaunchList({ embedded, enabled }: { embedded: boolean; enabled
           <ExploreFilters value={request} onApply={applyFilters} />
         </div>
 
+        <div className={styles.modeFilters} role="group" aria-label="Launch type">
+          {LAUNCH_MODE_OPTIONS.map((mode) => <button type="button" key={mode.value}
+            aria-pressed={(request.mode ?? "all") === mode.value}
+            onClick={() => setRequest((current) => ({ ...current, mode: mode.value, page: 1 }))}
+          >{mode.label}</button>)}
+        </div>
+
         <p className="sr-only" id={statusId} role="status">
-          {statusText || (data ? `${count} ${count === 1 ? "token" : "tokens"} displayed` : null)}
+          {statusText || (data ? `${count} ${count === 1 ? "token" : "tokens"}. Page ${data.page.number} of ${Math.max(1, data.page.totalPages)}.` : null)}
         </p>
 
         {hasRows ? (
@@ -308,9 +325,11 @@ function RobinhoodLaunchList({ embedded, enabled }: { embedded: boolean; enabled
               const details = presentations.get(launch.tokenAddress.toLowerCase());
               return (
               <li key={launch.launchId} className={styles.item}>
-                <Link className={styles.row} href={`/token/${launch.tokenAddress}`} prefetch={false}>
+                <article className={styles.row}>
+                <Link className={styles.cardLink} href={`/token/${launch.tokenAddress}`} prefetch={false}>
                   <RobinhoodCoinArtwork
                     imageUrl={details?.imageUrl} loading={loading && !details}
+                    fallbackImageUrl={isRobinhoodModuleLaunch(launch) ? MODULE_TOKEN_FALLBACK_IMAGE : undefined}
                     className={styles.artwork}
                   />
                   <div className={styles.identity}>
@@ -329,6 +348,9 @@ function RobinhoodLaunchList({ embedded, enabled }: { embedded: boolean; enabled
                     {launch.launchedAt ? <time className={styles.launched} dateTime={launch.launchedAt} title={`Launched ${new Date(launch.launchedAt).toUTCString()}`}>{coinAge(launch.launchedAt, now)}</time> : null}
                   </div>
                 </Link>
+                {details?.links.length ? <RobinhoodProjectLinks links={details.links}
+                  name={launch.name?.trim() || "Token"} className={styles.socials} /> : null}
+                </article>
               </li>
             );})}
           </ul>
@@ -348,13 +370,13 @@ function RobinhoodLaunchList({ embedded, enabled }: { embedded: boolean; enabled
             <button
               type="button"
               disabled={loading || data.page.number <= 1 || updatingSearch}
-              onClick={() => setRequest({ ...snapshot.request, page: data.page.number - 1 })}
+              onClick={() => changePage(data.page.number - 1)}
             ><ChevronLeft aria-hidden="true" size={16} /> Previous</button>
             <span>Page {data.page.number} of {data.page.totalPages}</span>
             <button
               type="button"
               disabled={loading || !data.page.hasMore || updatingSearch}
-              onClick={() => setRequest({ ...snapshot.request, page: data.page.number + 1 })}
+              onClick={() => changePage(data.page.number + 1)}
             >Next <ChevronRight aria-hidden="true" size={16} /></button>
           </nav>
         ) : null}

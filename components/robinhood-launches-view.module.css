@@ -35,7 +35,33 @@
   display: flex;
   gap: 8px;
   justify-content: center;
-  margin-bottom: 32px;
+  margin-bottom: 16px;
+}
+
+.modeFilters {
+  display: flex;
+  gap: 4px;
+  justify-content: center;
+  margin-bottom: 24px;
+}
+
+.modeFilters button {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--webde-radius-control);
+  color: var(--webde-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+  min-height: 44px;
+  min-width: 64px;
+  padding: 8px 16px;
+}
+
+.modeFilters button[aria-pressed="true"] {
+  background: var(--webde-surface-raised);
+  border-color: var(--webde-line);
+  color: var(--webde-ink);
 }
 
 .search,
@@ -144,6 +170,8 @@
 }
 
 .artwork { border-radius: 8px; width: 100%; }
+.cardLink { color: inherit; display: flex; flex: 1; flex-direction: column; min-width: 0; text-decoration: none; }
+.socials { margin-top: 4px; }
 .identity { min-width: 0; padding: 12px 4px 0; }
 .nameRow { align-items: center; display: flex; gap: 8px; min-width: 0; }
 .name, .symbol { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -213,8 +241,9 @@
   opacity: 0.5;
 }
 
-.row:active,
+.cardLink:active,
 .clearSearch:active,
+.modeFilters button:active,
 .pagination button:active:not(:disabled) {
   background: var(--webde-surface-raised);
 }
@@ -222,13 +251,16 @@
 .clearSearch:focus-visible,
 .pagination button:focus-visible,
 .textButton:focus-visible,
-.row:focus-visible {
+.cardLink:focus-visible,
+.heading :is(h1, h2):focus-visible,
+.modeFilters button:focus-visible {
   outline: 2px solid var(--webde-ink);
   outline-offset: 2px;
 }
 
 @media (hover: hover) and (pointer: fine) {
   .row:hover,
+  .modeFilters button:hover,
   .clearSearch:hover,
   .pagination button:hover:not(:disabled) {
     background: var(--webde-surface-raised);
@@ -286,7 +318,9 @@
     border-color: CanvasText;
   }
 
-  .row:focus-visible,
+  .cardLink:focus-visible,
+  .heading :is(h1, h2):focus-visible,
+  .modeFilters button:focus-visible,
   .search:focus-within,
   .clearSearch:focus-visible,
   .pagination button:focus-visible,
