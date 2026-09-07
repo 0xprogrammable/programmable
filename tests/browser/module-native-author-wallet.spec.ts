@@ -55,3 +55,44 @@ for (const mode of ["uncertain", "reject"]) test(`${mode} request preserves the 
     expect(await page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith("programmable:module-operation:")).length)).toBe(0);
   }
 });
+
+test("late wallet A author receipt cannot replace wallet B's saved claim hash or snapshot (N-01)", async ({ page }) => {
+  const errors: string[] = []; page.on("pageerror", error => errors.push(error.message)); page.on("console", message => { if (message.type() === "error") errors.push(message.text()); });
+  await page.goto(origin + "?race"); await page.getByLabel("Test wallet response").selectOption("deferred");
+  await page.getByRole("button", { name: "Load author wallets" }).click();
+  await page.getByRole("textbox", { name: "New author reward wallet" }).first().fill(newWallet);
+  await page.getByRole("button", { name: "Review author wallet change" }).first().click(); await page.getByRole("button", { name: "Confirm in wallet" }).click();
+  await expect(page.getByRole("button", { name: "Check confirmation" })).toBeVisible();
+  await page.getByRole("button", { name: "Connect wallet B with saved claim" }).click();
+  const otherHash = "0x" + "b".repeat(64), field = page.getByRole("textbox", { name: "Transaction hash", exact: true });
+  await expect(field).toHaveValue(otherHash);
+  await page.getByRole("button", { name: "Release wallet A receipt" }).click();
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("programmable:module-operation:v1:4663:" + window.__nativeAuthorRace.actor))).toBeNull();
+  await expect(field).toHaveValue(otherHash);
+  await expect(page.getByRole("link", { name: "View transaction", exact: true })).toHaveAttribute("href", new RegExp(otherHash + "$"));
+  await expect(page.getByRole("heading", { name: "Manage Author controls fixture", exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Author wallet change result" })).toHaveCount(0);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("programmable:module-operation:v1:4663:" + window.__nativeAuthorRace.otherAccount)!).transactionHash)).toBe(otherHash);
+  await page.getByRole("button", { name: "Check confirmation" }).click();
+  await expect.poll(() => page.evaluate(() => window.__nativeAuthorRace.receiptRequests.at(-1))).toBe(otherHash);
+  await expect(page.getByRole("alert")).toContainText("transaction hash");
+  await expect(page.getByLabel("Test wallet calls")).toHaveText("Wallet calls: 1"); expect(errors).toEqual([]);
+});
+
+test("a newer saved operation of the same wallet takes priority over the old active reference (N-01)", async ({ page }) => {
+  await page.goto(origin + "?race"); await page.getByLabel("Test wallet response").selectOption("deferred");
+  await page.getByRole("button", { name: "Load author wallets" }).click();
+  await page.getByRole("textbox", { name: "New author reward wallet" }).first().fill(newWallet);
+  await page.getByRole("button", { name: "Review author wallet change" }).first().click(); await page.getByRole("button", { name: "Confirm in wallet" }).click();
+  await expect(page.getByRole("button", { name: "Check confirmation" })).toBeVisible();
+  await page.getByRole("button", { name: "Confirm elsewhere and save next claim" }).click();
+  const otherHash = "0x" + "b".repeat(64), field = page.getByRole("textbox", { name: "Transaction hash", exact: true });
+  await expect(field).toHaveValue(otherHash); await page.getByRole("button", { name: "Release wallet A receipt" }).click();
+  await page.getByRole("button", { name: "Check confirmation" }).click();
+  await expect.poll(() => page.evaluate(() => window.__nativeAuthorRace.receiptRequests.at(-1))).toBe(otherHash);
+  await expect(page.getByRole("alert")).toContainText("transaction hash"); await expect(field).toHaveValue(otherHash);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("programmable:module-operation:v1:4663:" + window.__nativeAuthorRace.actor)!).transactionHash)).toBe(otherHash);
+  await expect(page.getByRole("region", { name: "Author wallet change result" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Manage Author controls fixture", exact: true })).toBeVisible();
+  await expect(page.getByLabel("Test wallet calls")).toHaveText("Wallet calls: 1");
+});
