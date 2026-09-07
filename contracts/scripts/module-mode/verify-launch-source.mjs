@@ -21,6 +21,8 @@ const STATE_SCHEMA = 'programmable.module-mode-launch-source-checkpoint.v1';
 const EVENT = 'event ModuleNativeLaunched(bytes32 indexed launchId,address indexed launchWallet,address indexed token,bytes32 poolId,bytes32 recipeHash,address hook,address positionRecipient,uint256 positionTokenId,uint256 initialBuyNative,uint256 initialBuyTokens)';
 const EVENT_ABI = parseAbi([EVENT]);
 const EVENT_TOPIC = keccak256(toHex('ModuleNativeLaunched(bytes32,address,address,bytes32,bytes32,address,address,uint256,uint256,uint256)'));
+const FORWARDER_EVENT_ABI = parseAbi(['event LockedPositionFeeForwarderDeployed(address indexed forwarder,address indexed feeRecipient,bytes32 indexed salt,bytes32 configurationHash,address positionManager)']);
+const FORWARDER_EVENT_TOPIC = keccak256(toHex('LockedPositionFeeForwarderDeployed(address,address,bytes32,bytes32,address)'));
 const TARGETS = [
   { role: 'token', factory: 'tokenFactory', factoryFile: 'lib/uerc20-factory/src/factories/UERC20Factory.sol', factoryName: 'UERC20Factory', file: 'lib/uerc20-factory/src/tokens/UERC20.sol', name: 'UERC20' },
   { role: 'forwarder', factory: 'positionForwarderFactory', factoryFile: 'src/LockedPositionFeeForwarderFactoryV1.sol', factoryName: 'LockedPositionFeeForwarderFactoryV1', file: 'lib/liquidity-launcher/src/periphery/PositionFeesForwarder.sol', name: 'PositionFeesForwarder' },
@@ -107,6 +109,47 @@ export function validatePublished(target, value) {
   return { role: target.role, address: target.address, runtimeCodeHash: keccak256(target.runtime), sourceUrl: `${SOURCIFY_BASE}/v2/contract/4663/${target.address}`, providerMatch: value.match, creationMatch: value.creationMatch, runtimeMatch: value.runtimeMatch, verifiedAt: value.verifiedAt, comparison: 'exact-complete-creation-and-runtime' };
 }
 
+export async function resolveCreationTransactions({ release, launch, launchLog, launchReceipt, salt, factoryDeploymentBlock, configurationHash }, request = rpcBatch) {
+  const factory = release.contracts.positionForwarderFactory.address;
+  const positionManager = release.contracts.positionManager.address;
+  const expectedConfiguration = keccak256(encodeAbiParameters(parseAbiParameters('uint256,address,address,address,address,uint256,address'),
+    [4663n, factory, launch.positionRecipient, positionManager, zeroAddress, MAX, launch.launchWallet]));
+  need(same(configurationHash, expectedConfiguration), 'Forwarder factory configuration differs');
+  const firstBlock = BigInt(factoryDeploymentBlock), lastBlock = BigInt(launchLog.blockNumber);
+  need(firstBlock >= 0n && firstBlock <= lastBlock, 'Invalid forwarder creation lookup range');
+  const topics = [FORWARDER_EVENT_TOPIC, `0x${word(launch.positionRecipient)}`, `0x${word(launch.launchWallet)}`, salt];
+  const matches = log => same(log.address, factory) && same(log.topics?.[0], FORWARDER_EVENT_TOPIC)
+    && same(log.topics?.[1], topics[1]);
+  let logs = launchReceipt.logs.filter(matches);
+  if (!logs.length) {
+    // The permissionless factory may create the predicted forwarder before the launch.
+    // One indexed lookup spans only the factory's lifetime up to this finalized launch.
+    [logs] = await request([{ method: 'eth_getLogs', params: [{ address: factory, fromBlock: toHex(firstBlock), toBlock: toHex(lastBlock), topics }] }]);
+  }
+  need(Array.isArray(logs) && logs.length === 1, 'Forwarder must have exactly one factory creation event');
+  const log = logs[0];
+  need(matches(log) && log.removed === false && BigInt(log.blockNumber) >= firstBlock && BigInt(log.blockNumber) <= lastBlock,
+    'Forwarder creation event is outside its canonical factory range');
+  need(BigInt(log.blockNumber) < lastBlock || BigInt(log.logIndex) < BigInt(launchLog.logIndex), 'Forwarder creation must precede the launch');
+  const event = decodeEventLog({ abi: FORWARDER_EVENT_ABI, topics: log.topics, data: log.data }).args;
+  need(same(event.forwarder, launch.positionRecipient) && same(event.feeRecipient, launch.launchWallet) && same(event.salt, salt)
+    && same(event.configurationHash, expectedConfiguration) && same(event.positionManager, positionManager), 'Forwarder creation event configuration differs');
+  let receipt = launchReceipt;
+  if (!same(log.transactionHash, launchLog.transactionHash)) {
+    const [creationReceipt, block] = await request([
+      { method: 'eth_getTransactionReceipt', params: [log.transactionHash] },
+      { method: 'eth_getBlockByNumber', params: [log.blockNumber, false] },
+    ]);
+    need(block?.hash === log.blockHash && BigInt(block.number) === BigInt(log.blockNumber), 'Forwarder creation block is no longer canonical');
+    receipt = creationReceipt;
+  }
+  need(receipt?.status === '0x1' && same(receipt.transactionHash, log.transactionHash) && receipt.blockHash === log.blockHash
+    && BigInt(receipt.blockNumber) === BigInt(log.blockNumber) && Array.isArray(receipt.logs)
+    && receipt.logs.some(item => same(item.address, factory) && item.logIndex === log.logIndex && item.data === log.data
+      && canonicalJson(item.topics) === canonicalJson(log.topics)), 'Forwarder creation receipt differs from its factory event');
+  return { token: launchLog.transactionHash, forwarder: log.transactionHash };
+}
+
 async function rpcBatch(calls) {
   const body = JSON.stringify(calls.map((call, id) => ({ jsonrpc: '2.0', id, ...call })));
   let response;
@@ -125,7 +168,7 @@ function call(to, signature, args = []) {
   return { abi, method: 'eth_call', params: [{ to, data: encodeFunctionData({ abi, args }) }, 'latest'] };
 }
 async function readCalls(calls) {
-  const values = await rpcBatch(calls.map(({ abi, ...request }) => request));
+  const values = await rpcBatch(calls.map(({ method, params }) => ({ method, params })));
   return values.map((value, i) => calls[i].abi ? decodeFunctionResult({ abi: calls[i].abi, data: value }) : value);
 }
 async function compile(input, binary) {
@@ -159,7 +202,8 @@ async function templates(release, codes, binary) {
     const sourcePaths = Object.keys(JSON.parse(artifact.metadata).sources);
     need(sourcePaths.includes(target.file) && sourcePaths.every(file => input.sources[file]), 'Compiler source closure is incomplete');
     const targetInput = { ...input, sources: Object.fromEntries(sourcePaths.map(file => [file, input.sources[file]])) };
-    return { ...target, input: targetInput, compilation: result, artifact };
+    need(/^[1-9][0-9]*$/.test(source.deployment?.blockNumber), 'Verified factory deployment block is unavailable');
+    return { ...target, input: targetInput, compilation: result, artifact, factoryDeploymentBlock: BigInt(source.deployment.blockNumber) };
   }));
 }
 
@@ -172,21 +216,23 @@ async function bindLaunch(release, log, builds) {
   need(pool === launch.poolId, 'Launch pool identity differs');
   const [receipt] = await rpcBatch([{ method: 'eth_getTransactionReceipt', params: [log.transactionHash] }]);
   need(receipt?.status === '0x1' && receipt.blockHash === log.blockHash && receipt.logs.some(item => item.logIndex === log.logIndex && item.data === log.data && canonicalJson(item.topics) === canonicalJson(log.topics)), 'Launch receipt differs from the finalized log');
-  const [name, symbol, decimals, creator, graffiti, tokenRuntime, owner, operator, timelock, recipient, pm, recognized, forwarderRuntime] = await readCalls([
+  const [name, symbol, decimals, creator, graffiti, tokenRuntime, owner, operator, timelock, recipient, pm, configurationHash, forwarderRuntime] = await readCalls([
     call(launch.token, 'function name() view returns (string)'), call(launch.token, 'function symbol() view returns (string)'),
     call(launch.token, 'function decimals() view returns (uint8)'), call(launch.token, 'function creator() view returns (address)'), call(launch.token, 'function graffiti() view returns (bytes32)'),
     { method: 'eth_getCode', params: [launch.token, 'latest'] }, call(c.positionManager.address, 'function ownerOf(uint256) view returns (address)', [launch.positionTokenId]),
     call(launch.positionRecipient, 'function operator() view returns (address)'), call(launch.positionRecipient, 'function timelockBlockNumber() view returns (uint256)'),
     call(launch.positionRecipient, 'function feeRecipient() view returns (address)'), call(launch.positionRecipient, 'function positionManager() view returns (address)'),
-    call(c.positionForwarderFactory.address, 'function isFactoryForwarder(address) view returns (bool)', [launch.positionRecipient]),
+    call(c.positionForwarderFactory.address, 'function configurationHashOf(address) view returns (bytes32)', [launch.positionRecipient]),
     { method: 'eth_getCode', params: [launch.positionRecipient, 'latest'] },
   ]);
   need(same(creator, c.launcher.address) && decimals === 18, 'Token identity differs from the native source');
-  need(same(owner, launch.positionRecipient) && same(operator, zeroAddress) && timelock === MAX && same(recipient, launch.launchWallet) && same(pm, c.positionManager.address) && recognized === true, 'LP custody differs from the native launch policy');
+  need(same(owner, launch.positionRecipient) && same(operator, zeroAddress) && timelock === MAX && same(recipient, launch.launchWallet) && same(pm, c.positionManager.address), 'LP custody differs from the native launch policy');
   const tokenSalt = keccak256(encodeAbiParameters(parseAbiParameters('string,string,uint8,address,bytes32'), [name, symbol, decimals, creator, graffiti]));
   need(same(getCreate2Address({ from: c.tokenFactory.address, salt: tokenSalt, bytecodeHash: release.tokenCreationCodeHash }), launch.token), 'Token factory CREATE2 identity differs');
   const forwarderSalt = keccak256(encodeAbiParameters(parseAbiParameters('string,uint256,address,address'), ['programmable.module-mode.native-position.v1', 4663n, c.launcher.address, launch.token]));
   const args = encodeAbiParameters(parseAbiParameters('address,address,uint256,address'), [pm, zeroAddress, MAX, launch.launchWallet]);
+  const creationTransactions = await resolveCreationTransactions({ release, launch, launchLog: log, launchReceipt: receipt, salt: forwarderSalt,
+    factoryDeploymentBlock: builds.find(build => build.role === 'forwarder').factoryDeploymentBlock, configurationHash });
   return builds.map(build => {
     const token = build.role === 'token';
     const values = token ? { _nameHash: keccak256(toHex(name)), graffiti, creator, _decimals: 18n }
@@ -196,7 +242,7 @@ async function bindLaunch(release, log, builds) {
     const creationCode = `0x${build.artifact.evm.bytecode.object}${token ? '' : args.slice(2)}`;
     const address = token ? launch.token : launch.positionRecipient;
     if (!token) need(same(getCreate2Address({ from: c.positionForwarderFactory.address, salt: forwarderSalt, bytecodeHash: keccak256(creationCode) }), address), 'Forwarder factory CREATE2 identity differs');
-    return { ...build, address, runtime, creationCode, transactionHash: log.transactionHash };
+    return { ...build, address, runtime, creationCode, transactionHash: creationTransactions[build.role] };
   });
 }
 

@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
-import { parseOptions, patchImmutables, scanRange, validatePublished, boundLaunchBatch } from './verify-launch-source.mjs';
+import { encodeAbiParameters, encodeEventTopics, keccak256, parseAbi, parseAbiParameters, zeroAddress } from 'viem';
+import { parseOptions, patchImmutables, scanRange, validatePublished, boundLaunchBatch, resolveCreationTransactions } from './verify-launch-source.mjs';
 
 const address = `0x${'12'.repeat(20)}`;
 const release = { chainId: 4663, startBlock: '100', releaseDigest: `0x${'34'.repeat(32)}`, contracts: { launcher: { address } } };
@@ -74,4 +75,66 @@ test('provider match cannot replace exact address, deployment, source and byte c
   assert.throws(() => validatePublished(target, { ...value, deployment: { transactionHash: `0x${'00'.repeat(32)}` } }), /transaction/);
   assert.throws(() => validatePublished(target, { ...value, runtimeBytecode: { ...value.runtimeBytecode, onchainBytecode: '0x3345' } }), /runtime bytecode/);
   assert.throws(() => validatePublished(target, { ...value, creationBytecode: { ...value.creationBytecode, onchainBytecode: '0x112200' } }), /creation bytecode/);
+});
+
+function forwarderFixture(sameTransaction = false) {
+  const factory = `0x${'21'.repeat(20)}`, positionManager = `0x${'43'.repeat(20)}`;
+  const launchWallet = `0x${'65'.repeat(20)}`, forwarder = `0x${'87'.repeat(20)}`;
+  const salt = `0x${'a9'.repeat(32)}`, launchTransaction = `0x${'cb'.repeat(32)}`;
+  const creationTransaction = sameTransaction ? launchTransaction : `0x${'ed'.repeat(32)}`;
+  const launchBlockHash = `0x${'19'.repeat(32)}`, creationBlockHash = sameTransaction ? launchBlockHash : `0x${'39'.repeat(32)}`;
+  const configurationHash = keccak256(encodeAbiParameters(parseAbiParameters('uint256,address,address,address,address,uint256,address'),
+    [4663n, factory, forwarder, positionManager, zeroAddress, (1n << 256n) - 1n, launchWallet]));
+  const abi = parseAbi(['event LockedPositionFeeForwarderDeployed(address indexed forwarder,address indexed feeRecipient,bytes32 indexed salt,bytes32 configurationHash,address positionManager)']);
+  const creationLog = { address: factory, blockNumber: toHex(sameTransaction ? 100 : 75), blockHash: creationBlockHash,
+    transactionHash: creationTransaction, logIndex: '0x2', removed: false,
+    topics: encodeEventTopics({ abi, args: { forwarder, feeRecipient: launchWallet, salt } }),
+    data: encodeAbiParameters(parseAbiParameters('bytes32,address'), [configurationHash, positionManager]) };
+  const input = { release: { ...release, contracts: { ...release.contracts, positionForwarderFactory: { address: factory }, positionManager: { address: positionManager } } },
+    launch: { positionRecipient: forwarder, launchWallet }, launchLog: { transactionHash: launchTransaction, blockNumber: '0x64', blockHash: launchBlockHash, logIndex: '0x9' },
+    launchReceipt: { status: '0x1', transactionHash: launchTransaction, blockNumber: '0x64', blockHash: launchBlockHash, logs: sameTransaction ? [creationLog] : [] },
+    salt, configurationHash, factoryDeploymentBlock: 50n };
+  const receipt = { status: '0x1', transactionHash: creationTransaction, blockNumber: creationLog.blockNumber, blockHash: creationBlockHash, logs: [creationLog] };
+  return { input, creationLog, receipt, block: { number: creationLog.blockNumber, hash: creationBlockHash } };
+}
+
+test('a forwarder created before launch keeps its own verified creation transaction', async () => {
+  const fixture = forwarderFixture();
+  const requests = [];
+  const result = await resolveCreationTransactions(fixture.input, async calls => {
+    requests.push(calls);
+    return requests.length === 1 ? [[fixture.creationLog]] : [fixture.receipt, fixture.block];
+  });
+  assert.deepEqual(result, { token: fixture.input.launchLog.transactionHash, forwarder: fixture.creationLog.transactionHash });
+  assert.notEqual(result.token, result.forwarder);
+  assert.equal(requests.length, 2);
+  assert.deepEqual(requests[0], [{ method: 'eth_getLogs', params: [{ address: fixture.input.release.contracts.positionForwarderFactory.address,
+    fromBlock: '0x32', toBlock: '0x64', topics: fixture.creationLog.topics }] }]);
+  assert.deepEqual(requests[1], [
+    { method: 'eth_getTransactionReceipt', params: [result.forwarder] },
+    { method: 'eth_getBlockByNumber', params: ['0x4b', false] },
+  ]);
+});
+
+test('a forwarder created during launch reuses the verified launch receipt without history reads', async () => {
+  const fixture = forwarderFixture(true);
+  const result = await resolveCreationTransactions(fixture.input, async () => assert.fail('Unexpected historical read'));
+  assert.deepEqual(result, { token: fixture.input.launchLog.transactionHash, forwarder: fixture.input.launchLog.transactionHash });
+});
+
+test('forwarder creation requires the correct factory, configuration, ordering and successful canonical receipt', async () => {
+  const fixture = forwarderFixture();
+  const fakeRpc = (logs, receipt = fixture.receipt, block = fixture.block) => async calls => calls[0].method === 'eth_getLogs' ? [logs] : [receipt, block];
+  await assert.rejects(resolveCreationTransactions({ ...fixture.input, configurationHash: `0x${'00'.repeat(32)}` }, async () => assert.fail('Unexpected RPC')), /factory configuration/);
+  await assert.rejects(resolveCreationTransactions(fixture.input, fakeRpc([])), /exactly one/);
+  await assert.rejects(resolveCreationTransactions(fixture.input, fakeRpc([fixture.creationLog, fixture.creationLog])), /exactly one/);
+  await assert.rejects(resolveCreationTransactions(fixture.input, fakeRpc([{ ...fixture.creationLog, address: zeroAddress }])), /factory range/);
+  await assert.rejects(resolveCreationTransactions(fixture.input, fakeRpc([{ ...fixture.creationLog, blockNumber: '0x31' }])), /factory range/);
+  await assert.rejects(resolveCreationTransactions(fixture.input, fakeRpc([{ ...fixture.creationLog, blockNumber: '0x64', logIndex: '0xa' }])), /precede/);
+  const wrongConfiguration = { ...fixture.creationLog, data: encodeAbiParameters(parseAbiParameters('bytes32,address'), [fixture.input.configurationHash, zeroAddress]) };
+  await assert.rejects(resolveCreationTransactions(fixture.input, fakeRpc([wrongConfiguration])), /event configuration/);
+  await assert.rejects(resolveCreationTransactions(fixture.input, fakeRpc([fixture.creationLog], { ...fixture.receipt, status: '0x0' })), /receipt differs/);
+  await assert.rejects(resolveCreationTransactions(fixture.input, fakeRpc([fixture.creationLog], { ...fixture.receipt, transactionHash: fixture.input.launchLog.transactionHash })), /receipt differs/);
+  await assert.rejects(resolveCreationTransactions(fixture.input, fakeRpc([fixture.creationLog], { ...fixture.receipt, logs: [] })), /receipt differs/);
+  await assert.rejects(resolveCreationTransactions(fixture.input, fakeRpc([fixture.creationLog], fixture.receipt, { ...fixture.block, hash: fixture.input.launchLog.blockHash })), /no longer canonical/);
 });
