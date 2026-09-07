@@ -1,6 +1,8 @@
-import { toEventSelector } from "viem";
+import { parseAbi, toEventSelector } from "viem";
 import { moduleModeLaunchAbi } from "./provenance";
 import { MODULE_MODE_FINALITY_POLICY, MODULE_MODE_RELEASE_SCHEMA, MODULE_MODE_SOURCE_VERSION } from "./release";
+import { MODULE_DEFAULT_TOKEN_IMAGE } from "./token-metadata";
+import { MAX_METADATA_URL_BYTES, MAX_SOCIAL_EXTRA_DATA_BYTES, MAX_SOCIAL_URL_BYTES } from "@/lib/metadata-policy";
 
 /** Public integration metadata. The release and its deployed addresses are resolved separately. */
 export const moduleModeIndexerContract = {
@@ -45,7 +47,24 @@ export const moduleModeIndexerContract = {
       "blockHash", "logIndex", "launchedAt", "name", "symbol", "decimals", "routerAddress", "stampHash"],
     integerEncoding: { blockNumber: "decimal-string", logIndex: "nonnegative-safe-integer", decimals: "integer" },
     moduleIds: "Opaque bytes32 identifiers. Preserve their order and values; no module-name allowlist.",
-    optionalEnrichment: ["module titles", "configuration labels", "icons", "market data", "trading support"],
+    optionalEnrichment: ["description", "image", "social links", "module titles", "configuration labels", "icons", "market data", "trading support"],
+  },
+  tokenMetadata: {
+    address: "tokenAddress",
+    abi: parseAbi(["function metadata() view returns (string description,string website,string image,bytes extraData)"]),
+    functionName: "metadata",
+    fields: ["description", "website", "image", "extraData"],
+    identity: "Read only after verifying the native launch identity. Missing or invalid metadata must not remove a verified launch.",
+    commitment: "ModuleNativeConfigurationBound.metadataHash = keccak256(abi.encode(name, symbol, (description, website, image, extraData))).",
+    image: { defaultUrl: MODULE_DEFAULT_TOKEN_IMAGE, fallbackWhenMissing: true, existingImages: "Preserve a valid token metadata image. The default applies only when no image was selected." },
+    socialLinks: {
+      website: "metadata.website",
+      extraData: { encoding: "UTF-8 JSON encoded as bytes", version: 1, versionField: "v", optionalKeys: ["x", "telegram", "discord", "github", "gitbook"], empty: "0x" },
+      mapping: { website: "website", x: "twitter", telegram: "telegram", discord: "discord", github: "github", gitbook: "gitbook" },
+      formats: { website: "public HTTPS URL", x: "x.com or twitter.com", telegram: "t.me or telegram.me", discord: "discord.gg or discord.com/invite", github: "github.com", gitbook: "public HTTPS URL, including GitBook custom domains" },
+      limitsBytes: { website: MAX_METADATA_URL_BYTES, socialUrl: MAX_SOCIAL_URL_BYTES, extraData: MAX_SOCIAL_EXTRA_DATA_BYTES },
+      reader: "Ignore unsupported versions and invalid links. tokenURI does not include extraData; read metadata() for social links.",
+    },
   },
   reads: {
     websiteList: { url: "https://programmable.market/api/explore/robinhood", purpose: "Website discovery with presentation filters; not a complete archival feed." },

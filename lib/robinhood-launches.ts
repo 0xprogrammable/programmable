@@ -33,7 +33,7 @@ export type RobinhoodLaunchList = Readonly<{
   items: readonly RobinhoodLaunch[];
   page: Readonly<{
     number: number;
-    size: 50;
+    size: 10 | 50;
     totalItems: number;
     totalPages: number;
     hasMore: boolean;

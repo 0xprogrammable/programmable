@@ -23,12 +23,15 @@ export default function ModuleModeOverviewPage() {
       <h2>Launch a coin</h2>
       <ol className={styles.steps}>
         <li>Open <Link href="/launch/modules">Module Mode</Link> and connect your wallet.</li>
-        <li>Enter the coin details, creator fees and initial buy.</li>
+        <li>Enter the coin details, optional image and social links, creator fees and initial buy.</li>
         <li>Open <strong>Modules</strong> to find optional modules and complete their configuration.</li>
-        <li>Review the coin, total fees, funding and wallet transaction, then confirm the launch.</li>
+        <li>Check the total fees and funding, select <strong>Launch coin</strong>, then confirm in your wallet.</li>
       </ol>
       <p className={styles.bodyCopy}>The active release determines the network, engine and supported configuration.
         Gas, the initial buy and any module funding are separate amounts in the launch review.</p>
+      <p className={styles.bodyCopy}>An image is optional. Launching without one records the Programmable logo as the token image.
+        Add a website, X or Telegram link directly; <strong>Add more links</strong> opens Discord, GitHub and GitBook.
+        These links appear on the Explore card and coin page.</p>
     </section>
     <section id="configuration">
       <h2>Configuration and compatibility</h2>

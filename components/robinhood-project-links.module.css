@@ -1,0 +1,32 @@
+.links {
+  display: flex;
+  flex-wrap: wrap;
+  max-width: 100%;
+}
+
+.links a {
+  align-items: center;
+  border-radius: 8px;
+  color: var(--webde-muted);
+  display: inline-flex;
+  flex: none;
+  height: 44px;
+  justify-content: center;
+  width: 36px;
+}
+
+.links svg { height: 18px; width: 18px; }
+.links a:focus-visible { outline: 2px solid var(--webde-ink); outline-offset: 2px; }
+.links a:active { background: var(--webde-surface-raised); color: var(--webde-ink); }
+
+@media (max-width: 760px), (pointer: coarse) {
+  .links a { width: 44px; }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .links a:hover { background: var(--webde-surface-raised); color: var(--webde-ink); }
+}
+
+@media (forced-colors: active) {
+  .links a:focus-visible { outline-color: Highlight; }
+}

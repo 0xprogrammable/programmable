@@ -71,18 +71,6 @@
   white-space: pre-line;
 }
 
-.socials { display: flex; flex-wrap: wrap; max-width: 100%; }
-.socials a {
-  align-items: center;
-  border-radius: 8px;
-  color: var(--webde-muted);
-  display: inline-flex;
-  height: 44px;
-  justify-content: center;
-  width: 44px;
-}
-.socials svg { height: 18px; width: 18px; }
-
 .headerActions { align-items: center; display: flex; flex-shrink: 0; flex-wrap: wrap; gap: 8px; }
 .secondaryButton {
   align-items: center;
@@ -164,11 +152,11 @@
 
 @media (hover: hover) and (pointer: fine) {
   .back:hover { color: var(--webde-ink); text-decoration: underline; text-underline-offset: 4px; }
-  .secondaryButton:hover, .socials a:hover { background: var(--webde-surface-raised); color: var(--webde-ink); }
+  .secondaryButton:hover { background: var(--webde-surface-raised); color: var(--webde-ink); }
   .launchDetails a:hover { color: var(--webde-ink); }
   .tradeButton:hover { background: var(--webde-ink); color: var(--webde-surface); opacity: .9; }
 }
-.secondaryButton:active, .socials a:active { transform: translateY(1px); }
+.secondaryButton:active { transform: translateY(1px); }
 
 @media (max-width: 900px) {
   .header { flex-wrap: wrap; gap: 16px; }

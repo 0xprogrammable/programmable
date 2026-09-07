@@ -56,4 +56,25 @@ describe("Robinhood Explore read model", () => {
     expect(result.items).toEqual(rows.toReversed());
     expect(result.presentations.map((item) => item.market)).toEqual([null, null]);
   });
+
+  it("presents the selected ten-card page while the legacy default remains fifty", async () => {
+    const rows = Array.from({ length: 12 }, (_, index) => token(index + 1));
+    mocks.read.mockResolvedValue({ snapshot: saved(rows) });
+    mocks.markets.mockResolvedValue(new Map());
+    const result = await readRobinhoodLaunches(2, "", { sort: "newest" }, 10);
+    expect(result.items).toEqual(rows.slice(0, 2).toReversed());
+    expect(result.page).toEqual({ number: 2, size: 10, totalItems: 12, totalPages: 2, hasMore: false });
+    expect(mocks.presentations).toHaveBeenCalledWith(result.items, new Map());
+  });
+
+  it("keeps verified launches if optional image or social enrichment fails", async () => {
+    const rows = [token(1), token(2)];
+    mocks.read.mockResolvedValue({ snapshot: saved(rows) });
+    mocks.markets.mockResolvedValue(new Map());
+    mocks.presentations.mockRejectedValue(new Error("metadata unavailable"));
+    const result = await readRobinhoodLaunches(1, "", { sort: "newest" }, 10);
+    expect(result.status).toBe("ready");
+    expect(result.items).toEqual(rows.toReversed());
+    expect(result.presentations).toEqual([]);
+  });
 });

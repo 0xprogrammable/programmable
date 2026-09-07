@@ -9,7 +9,7 @@ export async function GET(request: Request) {
   if (!query) {
     return Response.json({ error: "invalid_query" }, { status: 400, headers: { "cache-control": "no-store" } });
   }
-  return Response.json(await readRobinhoodLaunches(query.page, query.q, query.filters), { headers: {
+  return Response.json(await readRobinhoodLaunches(query.page, query.q, query.filters, query.pageSize), { headers: {
     "cache-control": "public, max-age=0, s-maxage=15, stale-while-revalidate=30",
     "x-content-type-options": "nosniff",
   } });

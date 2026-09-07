@@ -1,11 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, ArrowRight, ArrowUpRight, BookOpen, Check, Copy, Globe, Link2, Send } from "lucide-react";
+import { ArrowLeft, ArrowRight, ArrowUpRight, Check, Copy } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { AnimatedMarketCap } from "@/components/animated-market-cap";
-import { DiscordBrandIcon, GitHubBrandIcon, XBrandIcon } from "@/components/brand-icons";
-import { RobinhoodCoinArtwork } from "@/components/robinhood-coin-artwork";
+import { MODULE_TOKEN_FALLBACK_IMAGE, RobinhoodCoinArtwork } from "@/components/robinhood-coin-artwork";
+import { RobinhoodProjectLinks } from "@/components/robinhood-project-links";
 import { useRobinhoodPresentation } from "@/components/use-robinhood-presentation";
 import { isRobinhoodModuleLaunch, robinhoodModuleManageHref, type RobinhoodLaunch } from "@/lib/robinhood-launches";
 import { coinDollars, coinTicker } from "@/lib/robinhood-presentation";
@@ -50,15 +50,12 @@ export function RobinhoodTokenView({ address, token, status }: {
         <section className={styles.market} aria-label={`${name} market`}>
         <header className={styles.header}>
           <div className={styles.identity}>
-            <RobinhoodCoinArtwork className={styles.avatar} imageUrl={details?.imageUrl} loading={presentation.loading} />
+            <RobinhoodCoinArtwork className={styles.avatar} imageUrl={details?.imageUrl} loading={presentation.loading}
+              fallbackImageUrl={moduleLaunch ? MODULE_TOKEN_FALLBACK_IMAGE : undefined} />
             <div className={styles.identityText}>
               <div className={styles.nameRow}>
                 <h1>{name}</h1>
-                {details?.links.length ? <nav className={styles.socials} aria-label={`${name} links`}>
-                  {details.links.map((link) => <a key={`${link.label}:${link.url}`} href={link.url} target="_blank" rel="noreferrer" title={link.label} aria-label={`${link.label} (opens in a new tab)`}>
-                    <ProjectLinkIcon label={link.label} />
-                  </a>)}
-                </nav> : null}
+                {details?.links.length ? <RobinhoodProjectLinks links={details.links} name={name} /> : null}
               </div>
               <p className={styles.subtitle}><span>{coinTicker(token.symbol)}</span><span>Robinhood</span></p>
               {details?.description ? <p className={styles.bio}>{details.description}</p> : null}
@@ -139,14 +136,4 @@ function RobinhoodChart({ poolId, name }: { poolId: string; name: string }) {
 
 function Metric({ label, value }: { label: string; value: ReactNode }) {
   return <div><dt>{label}</dt><dd title={typeof value === "string" ? value : undefined}>{value}</dd></div>;
-}
-
-function ProjectLinkIcon({ label }: { label: string }) {
-  if (label === "X") return <XBrandIcon />;
-  if (label === "Website") return <Globe aria-hidden="true" size={18} />;
-  if (label === "GitHub") return <GitHubBrandIcon />;
-  if (label === "Discord") return <DiscordBrandIcon />;
-  if (label === "Telegram") return <Send aria-hidden="true" size={18} />;
-  if (label === "Docs") return <BookOpen aria-hidden="true" size={18} />;
-  return <Link2 aria-hidden="true" size={18} />;
 }

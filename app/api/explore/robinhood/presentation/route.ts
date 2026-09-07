@@ -29,7 +29,7 @@ export async function GET(request: Request) {
     return Response.json({ error: "invalid_query" }, { status: 400, headers: { "cache-control": "no-store" } });
   }
   const items = listQuery
-    ? (await readRobinhoodLaunches(listQuery.page, listQuery.q, listQuery.filters)).presentations
+    ? (await readRobinhoodLaunches(listQuery.page, listQuery.q, listQuery.filters, listQuery.pageSize)).presentations
     : await readRobinhoodPresentations([(await readRobinhoodToken(token!)).token].filter((row) => row !== null));
   return Response.json({ items }, { headers: {
     "cache-control": "public, max-age=0, s-maxage=60, stale-while-revalidate=60",

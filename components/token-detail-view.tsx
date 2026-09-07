@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import {
   ArrowLeft,
+  BookOpen,
   Check,
   Copy,
   ExternalLink,
@@ -339,7 +340,10 @@ function parseTokenLink(value: unknown): TokenLink | null {
   if (
     value.kind !== "website" &&
     value.kind !== "x" &&
-    value.kind !== "telegram"
+    value.kind !== "telegram" &&
+    value.kind !== "discord" &&
+    value.kind !== "github" &&
+    value.kind !== "gitbook"
   ) {
     return null;
   }
@@ -1528,6 +1532,7 @@ function getLinkLabel(kind: VisibleTokenLinkKind) {
   if (kind === "telegram") return "Telegram";
   if (kind === "github") return "GitHub";
   if (kind === "discord") return "Discord";
+  if (kind === "gitbook") return "GitBook";
   return "X";
 }
 
@@ -1566,6 +1571,7 @@ function TokenLinkIcon({ kind }: { kind: VisibleTokenLinkKind }) {
   if (kind === "telegram") return <TelegramBrandIcon />;
   if (kind === "github") return <GitHubBrandIcon />;
   if (kind === "discord") return <DiscordBrandIcon />;
+  if (kind === "gitbook") return <BookOpen aria-hidden="true" size={18} />;
   return <XBrandIcon />;
 }
 

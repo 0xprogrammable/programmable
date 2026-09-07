@@ -1,7 +1,7 @@
 import type { LaunchPartnerAttributionV1 } from
   "./launch-partner-attribution";
 
-export type TokenLinkKind = "website" | "x" | "telegram";
+export type TokenLinkKind = "website" | "x" | "telegram" | "discord" | "github" | "gitbook";
 
 export type TokenLink = {
   kind: TokenLinkKind;

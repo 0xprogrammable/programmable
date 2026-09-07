@@ -5,6 +5,8 @@ import type { RobinhoodLaunch } from "@/lib/robinhood-launches";
 import { ROBINHOOD_MARKET_MAX_AGE_MS, type RobinhoodCoinMarket, type RobinhoodCoinPresentation } from "@/lib/robinhood-presentation";
 import { PROGRAMMABLE_MAIN_TOKEN_PRESENTATION } from "@/lib/programmable-main-token-presentation";
 import { safePublicImageUrl } from "@/lib/safe-public-image-url";
+import { MODULE_DEFAULT_TOKEN_IMAGE } from "@/lib/module-mode/token-metadata";
+import { readModuleTokenMetadata } from "@/lib/server/module-mode/token-presentation";
 // @ts-expect-error -- the canonical launch package is ESM JavaScript.
 import { hashProjectMetadata, validateProjectMetadata } from "@/packages/launch/src/project-metadata.mjs";
 
@@ -243,6 +245,9 @@ async function readMarkets(tokens: readonly MarketToken[]): Promise<Map<string, 
 const cachedMetadata = unstable_cache(async (tokens: readonly RobinhoodLaunch[]) =>
   Array.from(await readMetadata(tokens)), ["robinhood-coin-metadata-v2"], { revalidate: 60 });
 
+const cachedModuleMetadata = unstable_cache(async (tokens: readonly RobinhoodLaunch[]) =>
+  Array.from(await readModuleTokenMetadata(tokens)), ["robinhood-module-metadata-v1"], { revalidate: 60 });
+
 // A shared full-catalog observation makes sorting independent of the current page.
 const cachedMarkets = unstable_cache(async (tokens: readonly MarketToken[]) =>
   Array.from(await readMarkets(tokens)), ["robinhood-coin-markets-v2"], { revalidate: 60 });
@@ -267,18 +272,31 @@ export async function readRobinhoodPresentations(tokens: readonly RobinhoodLaunc
   if (tokens.length > MAX_TOKENS || tokens.some((token) => !ADDRESS.test(token.tokenAddress) || !HASH.test(token.poolId))) {
     throw new Error("Invalid presentation request");
   }
-  const [metadata, markets] = await Promise.allSettled([
-    cachedMetadata(tokens.toSorted((a, b) => a.tokenAddress.toLowerCase().localeCompare(b.tokenAddress.toLowerCase()))).then((entries) => new Map(entries)),
+  const ordered = tokens.toSorted((a, b) => a.tokenAddress.toLowerCase().localeCompare(b.tokenAddress.toLowerCase()));
+  const custom = ordered.filter(token => token.sourceKind !== "module-native-v1");
+  const native = ordered.filter(token => token.sourceKind === "module-native-v1");
+  const [metadata, moduleMetadata, markets] = await Promise.allSettled([
+    custom.length ? cachedMetadata(custom).then((entries) => new Map(entries)) : Promise.resolve(new Map<string, Metadata>()),
+    native.length ? cachedModuleMetadata(native).then((entries) => new Map(entries)) : Promise.resolve(new Map<string, Metadata>()),
     knownMarkets ? Promise.resolve(knownMarkets) : readRobinhoodMarkets(tokens),
   ]);
   return tokens.map((token): RobinhoodCoinPresentation => {
     const key = token.tokenAddress.toLowerCase();
-    const presentation = metadata.status === "fulfilled" ? metadata.value.get(key) : undefined;
+    const source = token.sourceKind === "module-native-v1" ? moduleMetadata : metadata;
+    const presentation = source.status === "fulfilled" ? source.value.get(key) : undefined;
+    const main = key === MAIN_TOKEN;
+    const links = [...(presentation?.links ?? [])];
+    if (main) {
+      const labels = { website: "Website", x: "X", github: "GitHub", discord: "Discord", gitbook: "GitBook" };
+      for (const link of [...PROGRAMMABLE_MAIN_TOKEN_PRESENTATION.links, ...PROGRAMMABLE_MAIN_TOKEN_PRESENTATION.supplementalLinks]) {
+        if (!links.some(existing => existing.label === labels[link.kind])) links.push({ label: labels[link.kind], url: link.url });
+      }
+    }
     return {
       tokenAddress: token.tokenAddress,
-      imageUrl: presentation?.imageUrl ?? (key === MAIN_TOKEN ? PROGRAMMABLE_MAIN_TOKEN_PRESENTATION.imageUrl : null),
-      description: presentation?.description ?? null,
-      links: presentation?.links ?? [],
+      imageUrl: presentation?.imageUrl ?? (main ? PROGRAMMABLE_MAIN_TOKEN_PRESENTATION.imageUrl : token.sourceKind === "module-native-v1" ? MODULE_DEFAULT_TOKEN_IMAGE : null),
+      description: presentation?.description ?? (main ? PROGRAMMABLE_MAIN_TOKEN_PRESENTATION.description : null),
+      links,
       market: markets.status === "fulfilled" ? markets.value.get(key) ?? null : null,
     };
   });

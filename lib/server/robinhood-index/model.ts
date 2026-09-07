@@ -160,7 +160,7 @@ function asPending(value: unknown) {
   return value as { block: Checkpoint; items: RobinhoodLaunch[] };
 }
 
-export function launchList(snapshot: RobinhoodSnapshot | null, page = 1, query = "", now = Date.now(), filters: RobinhoodExploreFilters = DEFAULT_EXPLORE_FILTERS, marketCaps: ReadonlyMap<string, number> = new Map()): RobinhoodLaunchList {
+export function launchList(snapshot: RobinhoodSnapshot | null, page = 1, query = "", now = Date.now(), filters: RobinhoodExploreFilters = DEFAULT_EXPLORE_FILTERS, marketCaps: ReadonlyMap<string, number> = new Map(), size: 10 | 50 = 50): RobinhoodLaunchList {
   const q = query.trim().toLowerCase();
   const visible = snapshotLaunches(snapshot).filter((row) => isVisibleRobinhoodToken(row.tokenAddress));
   const pinned = visible.find((row) => isPinnedRobinhoodToken(row.tokenAddress));
@@ -168,7 +168,9 @@ export function launchList(snapshot: RobinhoodSnapshot | null, page = 1, query =
     const value = marketCaps.get(address.toLowerCase());
     return value != null && Number.isFinite(value) && value >= 0 ? value : null;
   };
-  const items = visible.filter((row) => row !== pinned && (!q
+  const items = visible.filter((row) => row !== pinned
+    && (filters.mode === "module" ? row.sourceKind === "module-native-v1"
+      : filters.mode === "custom" ? row.sourceKind === undefined : true) && (!q
     || [row.name, row.symbol, row.tokenAddress, row.hookAddress].some((value) => value?.toLowerCase().includes(q))))
     .toSorted((a, b) => {
     if (filters.sort === "highest" || filters.sort === "lowest") {
@@ -183,15 +185,16 @@ export function launchList(snapshot: RobinhoodSnapshot | null, page = 1, query =
     return (filters.sort === "oldest" ? -newest : newest) || a.tokenAddress.toLowerCase().localeCompare(b.tokenAddress.toLowerCase());
   });
   // Reserve the first slot for the verified main token on every page and sort.
-  const pageSize = pinned ? 49 : 50;
+  const pageSize = size - Number(Boolean(pinned));
   const totalItems = items.length + Number(Boolean(pinned));
   const totalPages = Math.max(pinned ? 1 : 0, Math.ceil(items.length / pageSize));
-  const number = Math.min(Math.max(1, page), Math.max(1, totalPages));
+  const requestedPage = Number.isSafeInteger(page) && page > 0 ? page : 1;
+  const number = Math.min(requestedPage, Math.max(1, totalPages));
   const status = snapshotStatus(snapshot, now);
   return {
     chainId: 4663, status, updatedAt: snapshotUpdatedAt(snapshot),
     items: [...(pinned ? [pinned] : []), ...items.slice((number - 1) * pageSize, number * pageSize)],
-    page: { number, size: 50, totalItems, totalPages, hasMore: number < totalPages },
+    page: { number, size, totalItems, totalPages, hasMore: number < totalPages },
   };
 }
 
