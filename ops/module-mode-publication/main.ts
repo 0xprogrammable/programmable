@@ -12,15 +12,17 @@ interface Context { repositoryRoot: string; providers: () => Promise<(Omit<Publi
 export async function run(args: string[], context: Context) {
   const command = args.shift(); need(["manifest", "prepare", "export"].includes(command ?? ""), "Use manifest, prepare or export");
   const options: Record<string, string> = {};
-  const allowed = new Set(["identity", "definition", "submission", "session-file", "output", ...(command === "export" ? ["transactions"] : [])]);
+  const required = ["identity", "definition", "submission", "session-file", "output", ...(command === "export" ? ["transactions"] : [])];
+  const allowed = new Set([...required, "fee-eligibility"]);
   for (let i = 0; i < args.length; i += 2) {
     const key = args[i].slice(2);
     need(args[i].startsWith("--") && allowed.has(key) && args[i + 1] && !Object.hasOwn(options, key), "Unexpected or duplicate publication option"); options[key] = args[i + 1];
   }
-  need(Object.keys(options).length === allowed.size, "Missing publication options");
+  need(required.every(key => Object.hasOwn(options, key)), "Missing publication options");
   const read = async (key: string, maximum = 2 * 1024 * 1024) => exactJson(await readFile(options[key]), maximum);
   const identity = await read("identity") as ModuleModeHostReleaseIdentity;
   const definition = await read("definition") as ModuleModeCatalogDefinition;
+  const feeEligibility = options["fee-eligibility"] === undefined ? undefined : await read("fee-eligibility", 4096);
   const reader = createAuthenticatedReviewReader(await readOperatorSession(options["session-file"]));
   const review = await reader.read(options.submission);
   const output = path.resolve(options.output);
@@ -29,24 +31,27 @@ export async function run(args: string[], context: Context) {
   need(physicalParent === path.dirname(output) && parentStat.isDirectory() && parentStat.uid === process.getuid?.() && (parentStat.mode & 0o077) === 0, "Output parent must be a private owner-only real directory");
   need(!output.startsWith(path.resolve(context.repositoryRoot) + path.sep), "Write operator evidence outside the source checkout");
   if (review.artifact.schemaVersion === "programmable.modules.engine-build.v1") {
+    need(feeEligibility === undefined, "Fee eligibility input is only supported by NativeV2 publication");
     return runEnginePublication({command:command!,identity,definition,review,reader,output,providers:context.providers,
       readTransactions:()=>read("transactions",16_384)});
   }
-  const host = createHostPreparation(review, identity, definition);
+  const host = createHostPreparation(review, identity, definition, feeEligibility);
   let plan: ReturnType<typeof prepareModulePublication> | undefined;
   let evidence: Awaited<ReturnType<typeof observePublicationReadback>> | undefined;
   if (command !== "manifest") {
     acceptedDecision(review);
     const providers = (await context.providers()).map(({ url, ...binding }) => ({ ...binding, rpc: publicationRpc(url) }));
     const owner = await readPublicationOwner(host.release, providers);
-    plan = prepareModulePublication(review, host.release, definition, owner);
+    plan = prepareModulePublication(review, host.release, definition, owner, feeEligibility);
     if (command === "export") {
       const raw = await read("transactions", 16_384) as Record<string, unknown>;
-      need(raw && Object.keys(raw).sort().join(",") === "factory,family,revision", "Expected factory, family and revision transaction hashes");
-      const transactions = { factory: moduleHash(raw.factory, "factory.transaction"), family: raw.family === null ? null : moduleHash(raw.family, "family.transaction"), revision: moduleHash(raw.revision, "revision.transaction") };
+      const v2 = identity.sourceVersion === "module-native-v2";
+      need(raw && Object.keys(raw).sort().join(",") === (v2 ? "factory,family,feeEligibility,revision" : "factory,family,revision"), v2 ? "Expected factory, family, feeEligibility and revision transaction hashes" : "Expected factory, family and revision transaction hashes");
+      const transactions = { factory: moduleHash(raw.factory, "factory.transaction"), family: raw.family === null ? null : moduleHash(raw.family, "family.transaction"), revision: moduleHash(raw.revision, "revision.transaction"),
+        ...(v2 ? { feeEligibility: raw.feeEligibility === null ? null : moduleHash(raw.feeEligibility, "feeEligibility.transaction") } : {}) };
       evidence = await observePublicationReadback(plan, review, providers, transactions);
       const fresh = await reader.read(options.submission);
-      same(prepareModulePublication(fresh, host.release, definition, owner), plan, "Review changed during onchain readback");
+      same(prepareModulePublication(fresh, host.release, definition, owner, feeEligibility), plan, "Review changed during onchain readback");
     }
   }
   // No output exists until every requested read/validation has passed. Never overwrite a package or run.

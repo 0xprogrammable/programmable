@@ -1,16 +1,20 @@
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
+import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { decodeFunctionData, encodeAbiParameters, encodeEventTopics, encodeFunctionResult, keccak256, parseAbiParameters, type Hex } from "viem";
 import { moduleReviewAdminFixture } from "./fixtures/module-review-admin";
 import { a, h } from "./fixtures/module-mode-evidence";
-import { computeModuleModeReleaseDigest } from "../lib/module-mode/release";
+import { computeModuleModeReleaseDigest, MODULE_MODE_ECONOMICS_POLICY_V2 } from "../lib/module-mode/release";
 import { reviewDigest, type ReviewAttempt } from "../lib/module-mode/review-contract";
 import { computeModuleReviewDecisionDigestV1, type ModuleReviewDecisionRecordV1 } from "../lib/server/module-mode/review-decision-wire-v1";
 import { moduleSubmissionFromPack, validateModuleSubmissionRequest, type ModuleSubmissionRequest } from "../packages/classic-modules/src/open-transport.mjs";
 import { loadOpenSourcePackage } from "../packages/classic-modules/src/open-package-io.mjs";
 import { createAuthenticatedReviewReader, NATIVE_COMPILER, NATIVE_SETTINGS, requireAuthenticatedReview, acceptedDecision } from "../ops/module-mode-publication/review";
-import { CREATE2_DEPLOYER, REGISTRY_ABI, createHostPreparation, prepareModulePublication } from "../ops/module-mode-publication/core";
+import { CREATE2_DEPLOYER, REGISTRY_ABI, REGISTRY_V2_ABI, createHostPreparation, prepareModulePublication } from "../ops/module-mode-publication/core";
+import { run } from "../ops/module-mode-publication/main";
 import { observePublicationReadback, publicationRpc, readPublicationOwner, type PublicationProvider } from "../ops/module-mode-publication/rpc";
 
 // Synthetic parser/RPC evidence only. Never upload these fixtures or treat them as review or chain proof.
@@ -19,7 +23,7 @@ function workerIdentity(overrides: Partial<Omit<NonNullable<ReviewAttempt["worke
     workflowRef: "programmablehq/programmable-open-hook-v2-internal/.github/workflows/protected-module-review-v1.yml@refs/heads/main", ...overrides };
   return { ...fields, identityDigest: reviewDigest("programmable.modules.worker-identity.v1", fields) };
 }
-async function fixture() {
+async function fixture(feeEligibility?: { eligible: boolean; reviewDigest: Hex }) {
   const f = moduleReviewAdminFixture();
   const source = structuredClone(f.source);
   for (const c of source.descriptor.components) c.runtime = "programmable.native-solidity@1";
@@ -44,6 +48,7 @@ async function fixture() {
     { ...attempt, event: "completed", artifactDigest: artifact.artifactDigest, workerIdentity: null, createdAt: detail.job.updatedAt },
   ];
   const release = structuredClone(f.release);
+  if (feeEligibility) Object.assign(release, { schemaVersion: "programmable.module-mode-source.v2", sourceVersion: "module-native-v2", economicsPolicyId: MODULE_MODE_ECONOMICS_POLICY_V2 });
   const codes = new Map<string, Hex>(); let index = 0;
   for (const pin of Object.values(release.contracts)) { const code = `0x60${(++index).toString(16).padStart(2, "0")}` as Hex; (pin as { runtimeCodeHash: Hex }).runtimeCodeHash = keccak256(code); codes.set(pin.address, code); }
   (release as { releaseDigest: Hex }).releaseDigest = computeModuleModeReleaseDigest(release);
@@ -54,7 +59,7 @@ async function fixture() {
   });
   const reader = createAuthenticatedReviewReader({ walletAddress: f.reviewer, accessToken: "test_fixture_session_0123456789" }, fetchImpl);
   const built = await reader.read(subject.submissionId);
-  const host = createHostPreparation(built, release, f.definition);
+  const host = createHostPreparation(built, release, f.definition, feeEligibility);
   const accept = async () => {
     const contents: Omit<ModuleReviewDecisionRecordV1, "decisionDigest"> = { schemaVersion: "programmable.modules.review-decision.v1", subject,
       reviewerWallet: f.reviewer, policyDigest: f.policyDigest, decidedAt: new Date().toISOString(), registryApproved: false, available: false,
@@ -65,7 +70,7 @@ async function fixture() {
     detail.job.state = "accepted"; detail.job.reviewRevision++;
     return reader.read(subject.submissionId);
   };
-  return { ...f, source, subject, artifact, detail, release, codes, reader, fetchImpl, built, host, accept, digestArtifact };
+  return { ...f, source, subject, artifact, detail, release, codes, reader, fetchImpl, built, host, accept, digestArtifact, feeEligibility };
 }
 
 // Real SDK source inventory with synthetic review/build evidence, never protected-worker authority.
@@ -111,13 +116,21 @@ async function starterFixture(changeSource?: (source: ModuleSubmissionRequest) =
 }
 
 function providers(f: Awaited<ReturnType<typeof fixture>>, plan: ReturnType<typeof prepareModulePublication>) {
-  const transactions = { factory: h(70), family: h(71), revision: h(72) };
-  const block = { number: "0x100", hash: h(50), timestamp: `0x${Math.floor(Date.now() / 1000).toString(16)}`, transactions: Object.values(transactions) };
+  const transactions = { factory: h(70), family: h(71), revision: h(72),
+    ...(f.feeEligibility ? { feeEligibility: BigInt(f.feeEligibility.reviewDigest) !== 0n ? h(73) : null } : {}) };
+  const block = { number: "0x100", hash: h(50), timestamp: `0x${Math.floor(Date.now() / 1000).toString(16)}`, transactions: Object.values(transactions).filter(Boolean) };
   const b = plan.publication.entry.nativeBinding;
   const revision = { familyId: b.familyId, factory: b.factory, factoryCodeHash: b.factoryCodeHash, moduleCodeHash: b.moduleCodeHash, manifestHash: b.manifestHash, callbackGas: b.callbackGas, enabled: true };
-  const map = new Map(Object.values(transactions).map((hash, i) => [hash, plan.calls[i]]));
+  const map = new Map<Hex, (typeof plan.calls)[number]>();
+  for (const [key, action] of [["factory", "deployFactory"], ["family", "registerReviewedFamily"], ["revision", "approveRevision"], ["feeEligibility", "setFamilyFeeEligibility"]] as const) {
+    const hash = transactions[key]; if (hash) map.set(hash, plan.calls.find(call => call.action === action)!);
+  }
   const log = { address: plan.release.contracts.registry.address, topics: encodeEventTopics({ abi: REGISTRY_ABI, eventName: "RevisionApproved", args: { packageId: b.packageId, familyId: b.familyId } }),
     data: encodeAbiParameters(parseAbiParameters("(bytes32 familyId,address factory,bytes32 factoryCodeHash,bytes32 moduleCodeHash,bytes32 manifestHash,uint32 callbackGas,bool enabled)"), [revision]), removed: false };
+  const eligibility = f.feeEligibility ? { ...f.feeEligibility } : undefined;
+  const feeLog = eligibility ? { address: plan.release.contracts.registry.address,
+    topics: encodeEventTopics({ abi: REGISTRY_V2_ABI, eventName: "FamilyFeeEligibilityReviewed", args: { familyId: b.familyId, reviewDigest: eligibility.reviewDigest, reviewer: f.reviewer } }),
+    data: encodeAbiParameters([{ type: "bool" }], [eligibility.eligible]), removed: false } : undefined;
   const rpc = vi.fn(async (method: string, params: unknown[]): Promise<unknown> => {
     if (method === "eth_chainId") return "0x1237";
     if (method === "eth_getBlockByNumber") return block;
@@ -127,18 +140,19 @@ function providers(f: Awaited<ReturnType<typeof fixture>>, plan: ReturnType<type
       return f.codes.get(String(params[0])) ?? "0x";
     }
     if (method === "eth_call") {
-      const decoded = decodeFunctionData({ abi: REGISTRY_ABI, data: (params[0] as { data: Hex }).data });
+      const decoded = decodeFunctionData({ abi: REGISTRY_V2_ABI, data: (params[0] as { data: Hex }).data });
       if (decoded.functionName === "owner") return encodeFunctionResult({ abi: REGISTRY_ABI, functionName: "owner", result: f.reviewer });
       if (decoded.functionName === "families") return encodeFunctionResult({ abi: REGISTRY_ABI, functionName: "families", result: [f.source.descriptor.author as Hex, f.source.descriptor.rewardWallet as Hex] });
       if (decoded.functionName === "getRevision") return encodeFunctionResult({ abi: REGISTRY_ABI, functionName: "getRevision", result: revision });
+      if (decoded.functionName === "familyFeeEligibility" && eligibility) return encodeFunctionResult({ abi: REGISTRY_V2_ABI, functionName: "familyFeeEligibility", result: [eligibility.eligible, eligibility.reviewDigest] });
     }
     const hash = params[0] as Hex, call = map.get(hash)!;
     if (method === "eth_getTransactionByHash") return { hash, from: call.from, to: call.to, input: call.data, value: call.value, chainId: "0x1237", blockHash: block.hash, blockNumber: block.number };
-    if (method === "eth_getTransactionReceipt") return { transactionHash: hash, blockHash: block.hash, blockNumber: block.number, status: "0x1", transactionIndex: "0x0", logs: call.action === "approveRevision" ? [log] : [] };
+    if (method === "eth_getTransactionReceipt") return { transactionHash: hash, blockHash: block.hash, blockNumber: block.number, status: "0x1", transactionIndex: "0x0", logs: call.action === "approveRevision" ? [log] : call.action === "setFamilyFeeEligibility" ? [feeLog] : [] };
     throw new Error("Unexpected fixture RPC");
   });
   const result: PublicationProvider[] = [0, 1].map(i => ({ providerId: `fixture${i}`, trustDomain: `independent${i}.invalid`, endpointCommitment: `sha256:${h(i + 11).slice(2)}`, rpc }));
-  return { providers: result, transactions, block, revision, rpc, log };
+  return { providers: result, transactions, block, revision, rpc, log, eligibility, feeLog };
 }
 
 describe("Generic module publication authority and binding", () => {
@@ -212,6 +226,90 @@ describe("Generic module publication authority and binding", () => {
     await expect(f.reader.read(f.subject.submissionId)).rejects.not.toThrow("credential-canary-private");
     f.fetchImpl.mockImplementation(async () => new Response(null, { status: 302, headers: { location: "https://other.invalid" } }));
     await expect(f.reader.read(f.subject.submissionId)).rejects.toThrow("Authenticated module review read failed");
+  });
+});
+
+describe("NativeV2 publication fee review", () => {
+  it("requires explicit eligibility and the current acceptance of that exact manifest", async () => {
+    const eligibility = { eligible: true, reviewDigest: h(1001) }, f = await fixture(eligibility);
+    expect(f.host.nativeBinding.feeEligibility).toEqual(eligibility);
+    expect(f.host.manifest.manifest.runtimeBinding.feeEligibility).toEqual(eligibility);
+    expect(() => createHostPreparation(f.built, f.release, f.definition)).toThrow("explicit family fee eligibility");
+    expect(() => createHostPreparation(f.built, f.release, f.definition, { eligible: true, reviewDigest: h(0) })).toThrow();
+    expect(() => createHostPreparation(f.built, f.release, f.definition, { ...eligibility, feeBps: 30 })).toThrow();
+    expect(() => prepareModulePublication(f.built, f.release, f.definition, f.reviewer, eligibility)).toThrow("Current accepted");
+    const reviewed = await f.accept(), plan = prepareModulePublication(reviewed, f.release, f.definition, f.reviewer, eligibility);
+    expect(plan.calls.map(call => call.action)).toEqual(["deployFactory", "registerReviewedFamily", "setFamilyFeeEligibility", "approveRevision"]);
+    expect(plan.publication.entry.nativeBinding.feeEligibility).toEqual(eligibility);
+    const call = plan.calls[2];
+    expect(call).toMatchObject({ from: f.reviewer, to: f.release.contracts.registry.address, value: "0x0", chainId: 4663 });
+    expect(decodeFunctionData({ abi: REGISTRY_V2_ABI, data: call.data })).toEqual({ functionName: "setFamilyFeeEligibility", args: [f.host.nativeBinding.familyId, true, eligibility.reviewDigest] });
+    for (const changed of [{ ...eligibility, eligible: false }, { ...eligibility, reviewDigest: h(1002) }]) {
+      expect(() => prepareModulePublication(reviewed, f.release, f.definition, f.reviewer, changed)).toThrow("another host manifest");
+    }
+    const v1 = await fixture();
+    expect(v1.host.nativeBinding).not.toHaveProperty("feeEligibility");
+    expect(() => createHostPreparation(v1.built, v1.release, v1.definition, eligibility)).toThrow("NativeV2");
+  });
+  it.each([h(0), h(1003)])("keeps a reviewed false eligibility and handles digest %s without inventing a fee grant", async reviewDigest => {
+    const eligibility = { eligible: false, reviewDigest }, f = await fixture(eligibility), reviewed = await f.accept();
+    const plan = prepareModulePublication(reviewed, f.release, f.definition, f.reviewer, eligibility), p = providers(f, plan);
+    expect(plan.calls.some(call => call.action === "setFamilyFeeEligibility")).toBe(BigInt(reviewDigest) !== 0n);
+    const evidence = await observePublicationReadback(plan, reviewed, p.providers, p.transactions);
+    expect(evidence.feeEligibility).toEqual(eligibility);
+    expect(evidence.receipts).toHaveLength(BigInt(reviewDigest) === 0n ? 3 : 4);
+    if (BigInt(reviewDigest) === 0n) await expect(observePublicationReadback(plan, reviewed, p.providers, { ...p.transactions, feeEligibility: h(73) })).rejects.toThrow("no setter transaction");
+  });
+  it("checks the exact current getter, owner transaction and eligibility event before export", async () => {
+    const eligibility = { eligible: true, reviewDigest: h(1004) }, f = await fixture(eligibility), reviewed = await f.accept();
+    const plan = prepareModulePublication(reviewed, f.release, f.definition, f.reviewer, eligibility), p = providers(f, plan);
+    expect((await observePublicationReadback(plan, reviewed, p.providers, p.transactions)).receipts).toHaveLength(4);
+    expect((await observePublicationReadback(plan, reviewed, p.providers, { ...p.transactions, feeEligibility: null })).receipts).toHaveLength(3);
+    await expect(observePublicationReadback(plan, reviewed, p.providers, { factory: h(70), family: h(71), revision: h(72) })).rejects.toThrow("transaction field");
+    p.eligibility!.eligible = false;
+    await expect(observePublicationReadback(plan, reviewed, p.providers, p.transactions)).rejects.toThrow("Current Registry family fee eligibility");
+    Object.assign(p.eligibility!, eligibility, { reviewDigest: h(1005) });
+    await expect(observePublicationReadback(plan, reviewed, p.providers, p.transactions)).rejects.toThrow("Current Registry family fee eligibility");
+    Object.assign(p.eligibility!, eligibility); p.feeLog!.removed = true;
+    await expect(observePublicationReadback(plan, reviewed, p.providers, p.transactions)).rejects.toThrow("fee eligibility review event");
+    p.feeLog!.removed = false;
+    const rpc = p.rpc.getMockImplementation()!;
+    p.rpc.mockImplementation(async (method, params) => {
+      const value = await rpc(method, params);
+      return method === "eth_getTransactionByHash" && params[0] === h(73) ? { ...(value as object), from: a(1006) } : value;
+    });
+    await expect(observePublicationReadback(plan, reviewed, p.providers, p.transactions)).rejects.toThrow("Included transaction differs");
+  });
+  it("passes the explicit fee input through the existing manifest and authenticated export CLI", async () => {
+    const eligibility = { eligible: true, reviewDigest: h(1007) }, f = await fixture(eligibility), reviewed = await f.accept();
+    const plan = prepareModulePublication(reviewed, f.release, f.definition, f.reviewer, eligibility), p = providers(f, plan);
+    const directory = await mkdtemp(path.join(await realpath(tmpdir()), "module-publication-v2-"));
+    const filenames: Record<string, string> = {};
+    for (const [key, value] of Object.entries({ identity: f.release, definition: f.definition, "fee-eligibility": eligibility,
+      "session-file": { walletAddress: f.reviewer, accessToken: "test_fixture_session_0123456789" }, transactions: p.transactions })) {
+      filenames[key] = path.join(directory, `${key}.json`); await writeFile(filenames[key], JSON.stringify(value), { mode: 0o600 });
+    }
+    const providerUrls = ["https://fixture-a.invalid", "https://fixture-b.invalid"];
+    vi.stubGlobal("fetch", async (url: string | URL | Request, init?: RequestInit) => {
+      if (String(url).startsWith("https://programmable.market/")) return f.fetchImpl(url, init);
+      expect(providerUrls).toContain(String(url));
+      const request = JSON.parse(init!.body as string);
+      return Response.json({ jsonrpc: "2.0", id: request.id, result: await p.rpc(request.method, request.params) });
+    });
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const context = { repositoryRoot: fileURLToPath(new URL("..", import.meta.url)), providers: async () => p.providers.map((provider, i) => ({
+      providerId: provider.providerId, trustDomain: provider.trustDomain, endpointCommitment: provider.endpointCommitment, url: providerUrls[i],
+    })) };
+    const common = ["--identity", filenames.identity, "--definition", filenames.definition, "--submission", f.subject.submissionId, "--session-file", filenames["session-file"]];
+    try {
+      await expect(run(["manifest", ...common, "--output", path.join(directory, "missing")], context)).rejects.toThrow("explicit family fee eligibility");
+      await run(["manifest", ...common, "--fee-eligibility", filenames["fee-eligibility"], "--output", path.join(directory, "manifest")], context);
+      expect(JSON.parse(await readFile(path.join(directory, "manifest/manifest.json"), "utf8"))).toEqual(f.host.manifest);
+      await run(["export", ...common, "--fee-eligibility", filenames["fee-eligibility"], "--transactions", filenames.transactions, "--output", path.join(directory, "export")], context);
+      const evidence = JSON.parse(await readFile(path.join(directory, "export/publication-evidence.json"), "utf8"));
+      expect(evidence.feeEligibility).toEqual(eligibility); expect(evidence.receipts).toHaveLength(4);
+      expect(JSON.parse(await readFile(path.join(directory, "export/export.complete.json"), "utf8"))).toMatchObject({ websitePublished: false, ethereumFinalityProven: false });
+    } finally { vi.unstubAllGlobals(); log.mockRestore(); await rm(directory, { recursive: true, force: true }); }
   });
 });
 
