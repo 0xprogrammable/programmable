@@ -24,7 +24,7 @@ beforeEach(() => { vi.clearAllMocks(); mocks.nativeVersions.mockResolvedValue([]
 describe("source-specific Module Mode product routes", () => {
   it("keeps the current native reader and dispatches only explicit Engine selectors", async () => {
     const f = fixture(); mocks.native.mockResolvedValue({ release: null, catalog: [], reason: "Native disabled" }); mocks.engine.mockResolvedValue(f.availability);
-    expect((await GET()).status).toBe(503); expect(mocks.native).toHaveBeenCalledOnce(); expect(mocks.engine).not.toHaveBeenCalled();
+    expect((await GET(new Request("http://localhost/api/module-mode"))).status).toBe(503); expect(mocks.native).toHaveBeenCalledOnce(); expect(mocks.engine).not.toHaveBeenCalled();
     const response = await GET(new Request(`https://programmable.market/api/module-mode?sourceKind=module-engine-v1&releaseDigest=${f.release.releaseDigest}`));
     expect(response.status).toBe(200); expect(await response.json()).toEqual(f.availability); expect(response.headers.get("cache-control")).toBe("no-store");
     expect(mocks.engine).toHaveBeenCalledWith(f.release.releaseDigest); expect(mocks.native).toHaveBeenCalledOnce();

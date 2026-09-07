@@ -327,7 +327,7 @@ describe("Read-only Module Mode availability", () => {
       ];
       for (const { availability, status } of cases) {
         readAvailability.mockResolvedValueOnce(availability);
-        const response = await route.GET();
+        const response = await route.GET(new Request("http://localhost/api/module-mode"));
         expect(response.status).toBe(status); expect(response.headers.get("cache-control")).toBe("no-store");
         expect(await response.json()).toEqual(availability);
       }

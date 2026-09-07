@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import type { Address, Hex } from "viem";
 import { ModuleEngineBuilder } from "@/components/module-engine-builder";
 import { ModuleEngineConsole } from "@/components/module-engine-console";
+import { ModuleEngineFeeChangeReceipt } from "@/components/module-engine-fee-controls";
 import { LaunchReceiptRecovery, ModuleModeLaunchResult, useModuleWalletRequestPending } from "@/components/module-mode-launch-host";
 import { assertModuleModeWalletUnchanged, submitModuleModeOperation, switchModuleModeNetwork, uploadModuleModeImage, useModuleModeOperation, type ModuleModeWalletSnapshot } from "@/components/module-mode-wallet-state";
 import { useWallet } from "@/components/wallet-provider";
@@ -26,6 +27,7 @@ type Flow = {
   operation?: ModuleModeOperation;
   transactionHash?: Hex;
   receipt?: ModuleEngineReceiptResult;
+  recovered?: boolean;
   message?: string;
 };
 const empty: ModuleEngineAvailability = { schemaVersion: MODULE_ENGINE_AVAILABILITY_SCHEMA, release: null, templates: [], reason: null };
@@ -140,7 +142,7 @@ export function ModuleEngineHost({ releaseDigest, token, versions = [] }: { rele
       const original = await fetchModuleEngineOperationRelease(record.releaseDigest);
       const receipt = await recoverModuleEngineOperation({ client, operation: record, release: original, transactionHash: hash });
       await clearModuleModeOperation(record);
-      if (mounted.current) setFlow({ phase: "mined", account: record.account, operation: record, transactionHash: hash, receipt });
+      if (mounted.current) setFlow({ phase: "mined", account: record.account, operation: record, transactionHash: hash, receipt, recovered: true });
     } catch (error) {
       const reverted = error instanceof ModuleEngineTransactionRevertedError && error.transactionHash === hash;
       if (reverted) { try { await clearModuleModeOperation(record); } catch { /* A remaining record can be verified again. */ } }
@@ -185,6 +187,7 @@ export function ModuleEngineHost({ releaseDigest, token, versions = [] }: { rele
         {(flow.transactionHash ?? recovery.transactionHash) ? <button className={styles.secondaryButton} type="button" disabled={working} onClick={() => void recover((flow.transactionHash ?? recovery.transactionHash) as Hex)}>{checkingReceipt ? "Checking confirmation…" : "Check confirmation"}</button> : null}
       </section> : flow.phase !== "idle" ? <div className={engineStyles.notice} role={flow.phase === "error" || flow.phase === "reverted" ? "alert" : "status"}>
         <p>{flow.message ?? (flow.phase === "mined" ? "Transaction confirmed on Robinhood. Finality and public indexing are still pending." : flow.phase === "signing" ? "Confirm this transaction in your wallet." : "Checking your transaction…")}</p>
+        {flow.recovered && flow.receipt ? <ModuleEngineFeeChangeReceipt result={flow.receipt} /> : null}
         {flow.transactionHash ? <a href={`${ROBINHOOD_BLOCK_EXPLORER_URL}/tx/${flow.transactionHash}`} target="_blank" rel="noreferrer">View transaction<span className={styles.liveRegion}> (opens in a new tab)</span></a> : null}
       </div> : null}
   </>;

@@ -8,8 +8,8 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 15;
 
 /** Read-only: release, packages and publication origins come exclusively from reviewed server configuration. */
-export async function GET(request?: Request): Promise<NextResponse> {
-  const query = request ? new URL(request.url).searchParams : new URLSearchParams();
+export async function GET(request: Request): Promise<NextResponse> {
+  const query = new URL(request.url).searchParams;
   let selection;
   try { selection = parseModuleModeReleaseSelection(query); }
   catch {
