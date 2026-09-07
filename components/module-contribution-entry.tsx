@@ -18,6 +18,6 @@ export function ModuleContributionEntry() {
       <li><span>3</span><div><h2>Submit for review</h2><p>Include your EVM author and reward wallets. After approval and publication, others can add your module and you share in its fees.</p></div></li>
     </ol>
     {error ? <p role="alert">{error}</p> : null}
-    <nav className={styles.resources} aria-label="Module developer resources"><Link href="/docs/developers/module-mode">Developer docs<ArrowRight size={16} /></Link><a href="/agents.md">Agent guide<ArrowRight size={16} /></a></nav>
+    <nav className={styles.resources} aria-label="Module developer resources"><Link href="/developer-reference/module-mode">Developer docs<ArrowRight size={16} /></Link><a href="/agents.md">Agent guide<ArrowRight size={16} /></a></nav>
   </div>;
 }

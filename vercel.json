@@ -15,6 +15,11 @@
   ],
   "redirects": [
     {
+      "source": "/docs/developers/module-mode",
+      "destination": "/developer-reference/module-mode",
+      "permanent": false
+    },
+    {
       "source": "/docs/developers/robinhood-terminal-indexer",
       "destination": "/developer-reference/robinhood-terminal-indexer",
       "permanent": false
