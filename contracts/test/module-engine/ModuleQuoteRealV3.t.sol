@@ -6,10 +6,13 @@ import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/I
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { FullMath } from "@uniswap/v4-core/src/libraries/FullMath.sol";
 import { TickMath } from "@uniswap/v4-core/src/libraries/TickMath.sol";
-import { IUniswapV3FactoryLikeV3, IUniswapV3SwapRouterLikeV3 } from "../../src/StockPairedEthLaunchCoordinatorV3.sol";
+import { IUniswapV3FactoryLikeV3 } from "../../src/StockPairedEthLaunchCoordinatorV3.sol";
 import { ModuleEngineHostV1 } from "../../src/module-engine/ModuleEngineHostV1.sol";
 import { ModuleQuoteEngineV1 } from "../../src/module-engine/ModuleQuoteEngineV1.sol";
-import { ModuleQuoteEthConverterV1 } from "../../src/module-engine/ModuleQuoteEthConverterV1.sol";
+import {
+    ModuleQuoteEthConverterV1,
+    IModuleV3SwapRouter02V1
+} from "../../src/module-engine/ModuleQuoteEthConverterV1.sol";
 import { ModuleV3FeeOracleV1 as Oracle, IModuleV3OraclePoolV1 } from "../../src/module-engine/ModuleV3FeeOracleV1.sol";
 import { ModuleQuoteEngineTestBase, EngineV3Factory, EngineV3Router } from "./ModuleQuoteEngineV1.t.sol";
 import { EngineQuoteToken } from "./ModuleEngineHostV1.t.sol";
@@ -31,7 +34,7 @@ interface IRealV3Pool is IModuleV3OraclePoolV1 {
 }
 
 /// @dev Narrow funded swap caller; price, observations, liquidity and transfer callbacks execute in original V3 code.
-contract RealV3RouteCaller is IUniswapV3SwapRouterLikeV3 {
+contract RealV3RouteCaller is IModuleV3SwapRouter02V1 {
     address public immutable factory;
     address public immutable WETH9;
     address private payer;
@@ -43,7 +46,7 @@ contract RealV3RouteCaller is IUniswapV3SwapRouterLikeV3 {
     }
 
     function exactInput(ExactInputParams calldata p) external payable returns (uint256 amountOut) {
-        require(msg.value == 0 && payer == address(0) && p.deadline >= block.timestamp && p.path.length == 43);
+        require(msg.value == 0 && payer == address(0) && p.path.length == 43);
         address input;
         address output;
         uint24 fee;
@@ -138,10 +141,9 @@ contract ModuleQuoteRealV3Test is ModuleQuoteEngineTestBase {
 
     function _swap(address asset, uint256 amount) private returns (uint256) {
         return routeCaller.exactInput(
-            IUniswapV3SwapRouterLikeV3.ExactInputParams({
+            IModuleV3SwapRouter02V1.ExactInputParams({
                 path: abi.encodePacked(asset, uint24(500), address(weth)),
                 recipient: address(this),
-                deadline: block.timestamp,
                 amountIn: amount,
                 amountOutMinimum: 1
             })

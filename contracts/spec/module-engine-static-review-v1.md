@@ -2,6 +2,11 @@
 
 This is an implementation handoff, not an independent audit or a passed strict Slither gate.
 
+The scanner results below bind to the money-fix source at `118b15ef028a40f73fa61531b0a024898eaf4f73`.
+The later SwapRouter02 compatibility delta changes only the converter's router interface and encoded tuple,
+retaining its own deadline and all funding/oracle checks. It has separate selector/deadline/conversion and
+fixed-block Robinhood fork evidence in `module-engine-host-v1.md`; no new Slither result is claimed for that delta.
+
 Slither 0.11.5 completed analysis of the new Host, QuoteEngine/Converter, Escrow and Settlement source entrypoints
 with solc 0.8.26, optimizer 1000 and Cancun. Dependency/test findings were filtered so the analysis concerns this
 change. The local Foundry build-info adapter first failed (`KeyError: output`); direct solc analysis from outside
@@ -38,9 +43,19 @@ source, not dismissed as detector findings. The exact quote carry, reviewed rout
 quote-specific V3 history/depth/impact guard are described in `module-engine-host-v1.md`. Q128 ETH carry preserves
 fractional platform entitlements with less than 2^-128 wei truncation per conversion and exact ETH conservation.
 
-The local behavioral suite has 41 tests, including 1000 round-trip fuzz cases and three tests using original
+At the money-fix commit, the local behavioral suite had 41 tests, including 1000 round-trip fuzz cases and three tests using original
 Uniswap V3 factory/pool bytecode. New deployable runtime/initcode
 sizes under the pinned Foundry profile are: Host 19,378 / 47,811 bytes; QuoteEngine 19,194 / 34,292 bytes;
-Converter 13,228 / 14,019 bytes; Escrow 2,842 / 3,897 bytes; Settlement 5,261 / 6,266 bytes. The Host's six static
+Converter 13,212 / 14,003 bytes after the SwapRouter02 delta (previously 13,228 / 14,019);
+Escrow 2,842 / 3,897 bytes; Settlement 5,261 / 6,266 bytes. The Host's six static
 constructor arguments add 192 bytes to its initcode envelope, still below EIP-3860. These are local build sizes,
 not deployed addresses or finality evidence.
+
+A separate standard-JSON recompilation with solc 0.8.26, optimizer 1000, Cancun and no CBOR reproduced
+the Foundry bytes and proved Host and QuoteEngine creation/runtime templates byte-identical to the money-fix
+commit. The new Converter creation hash is
+`0x67b7d75d30b22dc9e4f7fbda2c631dfe6a2541e686c3fd8f371510a4e782f7b7`; its unpatched runtime-template hash is
+`0x972f80fdc1a598605b96f5e6cde926a0b6da54d96c25294ae6aedb1119c2c433`. At the fixed Robinhood snapshot,
+patching the six actual dependency immutables yields runtime hash
+`0xf6ad258e17a89c3159bd8baad134486f11d6bbbcd99a19c5a7267582f38d56ed`, checked against the locally
+constructed fork contract. This is not an onchain Converter deployment or source-registration receipt.

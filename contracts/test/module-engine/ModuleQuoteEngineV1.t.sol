@@ -20,7 +20,11 @@ import { StockPairedPositionPlannerV3 } from "../../src/StockPairedPositionPlann
 import { LockedPositionFeeForwarderFactoryV1 } from "../../src/LockedPositionFeeForwarderFactoryV1.sol";
 import { ModuleEngineHostV1 } from "../../src/module-engine/ModuleEngineHostV1.sol";
 import { ModuleQuoteEngineV1 } from "../../src/module-engine/ModuleQuoteEngineV1.sol";
-import { ModuleQuoteEthConverterV1, IModuleWethV1 } from "../../src/module-engine/ModuleQuoteEthConverterV1.sol";
+import {
+    ModuleQuoteEthConverterV1,
+    IModuleWethV1,
+    IModuleV3SwapRouter02V1
+} from "../../src/module-engine/ModuleQuoteEthConverterV1.sol";
 import { ModuleV3FeeOracleV1 as Oracle } from "../../src/module-engine/ModuleV3FeeOracleV1.sol";
 import { ModuleEngineTypesV1 as T } from "../../src/module-engine/ModuleEngineTypesV1.sol";
 import { IUniswapV3FactoryLikeV3, IUniswapV3SwapRouterLikeV3 } from "../../src/StockPairedEthLaunchCoordinatorV3.sol";
@@ -122,7 +126,7 @@ contract EngineV3Factory is IUniswapV3FactoryLikeV3 {
 }
 
 /// @dev Funded deterministic route fixture, not provider/liquidity evidence: 1 whole quote -> 1 ETH.
-contract EngineV3Router is IUniswapV3SwapRouterLikeV3 {
+contract EngineV3Router is IModuleV3SwapRouter02V1 {
     address public immutable factory;
     address public immutable WETH9;
     bool public underpay;
@@ -144,7 +148,7 @@ contract EngineV3Router is IUniswapV3SwapRouterLikeV3 {
     }
 
     function exactInput(ExactInputParams calldata p) external payable returns (uint256 amount) {
-        require(msg.value == 0 && p.deadline >= block.timestamp);
+        require(msg.value == 0);
         address input;
         bytes calldata path = p.path;
         assembly ("memory-safe") { input := shr(96, calldataload(path.offset)) }
@@ -437,6 +441,36 @@ contract ModuleQuoteEngineV1Test is ModuleQuoteEngineTestBase {
         assertEq(received, 1 ether);
         assertEq(address(this).balance - beforeBalance, 1 ether);
         assertEq(weth.balanceOf(address(converter)), 0);
+    }
+
+    function test_router02SelectorAndConverterDeadlineAreEnforcedBeforeFundsMove() public {
+        assertEq(IModuleV3SwapRouter02V1.exactInput.selector, bytes4(0xb858183f));
+        bytes memory route = abi.encodePacked(address(quote), uint24(500), address(weth));
+        (bool legacyAccepted,) = address(v3Router)
+            .call(
+                abi.encodeCall(
+                    IUniswapV3SwapRouterLikeV3.exactInput,
+                    (IUniswapV3SwapRouterLikeV3.ExactInputParams(route, address(this), block.timestamp, 1, 1))
+                )
+            );
+        assertFalse(legacyAccepted);
+        quote.approve(address(converter), 0.003 ether);
+        uint256 quoteBefore = quote.balanceOf(address(this));
+        uint256 routerBefore = quote.balanceOf(address(v3Router));
+        vm.expectRevert(ModuleQuoteEthConverterV1.InvalidConversion.selector);
+        converter.convert(address(quote), 0.003 ether, 1, block.timestamp - 1, route);
+        assertEq(quote.balanceOf(address(this)), quoteBefore);
+        assertEq(quote.balanceOf(address(v3Router)), routerBefore);
+        assertEq(quote.balanceOf(address(converter)), 0);
+        assertEq(quote.allowance(address(converter), address(v3Router)), 0);
+        assertEq(quote.allowance(address(this), address(converter)), 0.003 ether);
+
+        uint256 ethBefore = address(this).balance;
+        uint256 received = converter.convert(address(quote), 0.003 ether, 1, block.timestamp, route);
+        assertEq(received, 0.003 ether);
+        assertEq(address(this).balance - ethBefore, received);
+        assertEq(quote.balanceOf(address(this)), quoteBefore - 0.003 ether);
+        assertEq(quote.allowance(address(converter), address(v3Router)), 0);
     }
 
     function test_predeployedCanonicalPositionLockDoesNotGriefLaunch() public {

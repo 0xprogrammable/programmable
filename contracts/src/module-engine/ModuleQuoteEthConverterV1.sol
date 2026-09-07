@@ -6,7 +6,7 @@ import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.s
 import { Address } from "@openzeppelin/contracts/utils/Address.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { ReentrancyGuardTransient } from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
-import { IUniswapV3FactoryLikeV3, IUniswapV3SwapRouterLikeV3 } from "../StockPairedEthLaunchCoordinatorV3.sol";
+import { IUniswapV3FactoryLikeV3 } from "../StockPairedEthLaunchCoordinatorV3.sol";
 import { LiquidityGrowthFullRangePolicyV3 as Policy } from "../LiquidityGrowthFullRangePolicyV3.sol";
 import { ModuleV3FeeOracleV1 as Oracle, IModuleV3OraclePoolV1 } from "./ModuleV3FeeOracleV1.sol";
 
@@ -25,14 +25,28 @@ interface IModuleWethV1 is IERC20 {
     function withdraw(uint256 amount) external;
 }
 
-/// @notice Generic, atomic quote-to-ETH conversion using the existing V3 SwapRouter ABI.
+/// @dev SwapRouter02 V3 exactInput has no deadline field. The converter enforces its deadline before any transfer.
+interface IModuleV3SwapRouter02V1 {
+    struct ExactInputParams {
+        bytes path;
+        address recipient;
+        uint256 amountIn;
+        uint256 amountOutMinimum;
+    }
+
+    function factory() external view returns (address);
+    function WETH9() external view returns (address);
+    function exactInput(ExactInputParams calldata params) external payable returns (uint256 amountOut);
+}
+
+/// @notice Generic, atomic quote-to-ETH conversion using the SwapRouter02 V3 exactInput ABI.
 /// @dev The engine binds the direct Quote/WETH route in its reviewed configuration. This converter independently
 ///      derives the fee-sale floor from that pool's qualified history. No owner, oracle updater or per-CA list.
 contract ModuleQuoteEthConverterV1 is IModuleQuoteEthConverterV1, ReentrancyGuardTransient {
     using SafeERC20 for IERC20;
     using Address for address payable;
 
-    IUniswapV3SwapRouterLikeV3 public immutable router;
+    IModuleV3SwapRouter02V1 public immutable router;
     IUniswapV3FactoryLikeV3 public immutable factory;
     IModuleWethV1 public immutable override weth;
     bytes32 public immutable routerCodeHash;
@@ -57,7 +71,7 @@ contract ModuleQuoteEthConverterV1 is IModuleQuoteEthConverterV1, ReentrancyGuar
         uint256 receivedEth
     );
 
-    constructor(IUniswapV3SwapRouterLikeV3 router_, IModuleWethV1 weth_) {
+    constructor(IModuleV3SwapRouter02V1 router_, IModuleWethV1 weth_) {
         if (address(router_).code.length == 0 || address(weth_).code.length == 0 || router_.WETH9() != address(weth_)) {
             revert InvalidDependency();
         }
@@ -109,12 +123,8 @@ contract ModuleQuoteEthConverterV1 is IModuleQuoteEthConverterV1, ReentrancyGuar
         if (quote.balanceOf(address(this)) - beforeQuote != quoteAmount) revert InvalidConversion();
         quote.forceApprove(address(router), quoteAmount);
         ethAmount = router.exactInput(
-            IUniswapV3SwapRouterLikeV3.ExactInputParams({
-                path: data,
-                recipient: address(this),
-                deadline: deadline,
-                amountIn: quoteAmount,
-                amountOutMinimum: minimumEth
+            IModuleV3SwapRouter02V1.ExactInputParams({
+                path: data, recipient: address(this), amountIn: quoteAmount, amountOutMinimum: minimumEth
             })
         );
         quote.forceApprove(address(router), 0);

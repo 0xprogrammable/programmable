@@ -191,6 +191,13 @@ between qualified quote CAs; no fixed ETH rate or per-CA review is required.
 
 The converter transfers precisely the operation's quote fees, resets router approval, receives real WETH,
 unwraps it and delivers actual ETH. Existing converter balances cannot stand in for newly delivered output.
+Its router dependency uses only SwapRouter02's V3 `exactInput((bytes,address,uint256,uint256))` interface,
+selector `0xb858183f`, with fields `path`, `recipient`, `amountIn`, `amountOutMinimum`. The older SwapRouter
+deadline tuple (`0xc04b8d59`) is incompatible; no fallback router or selector is attempted. The external converter
+interface retains `convert(quoteAsset,quoteAmount,minimumEth,deadline,route)` and rejects an expired deadline
+before dependency checks, approvals or transfers. The host separately checks the operation deadline, which the
+engine forwards to this conversion. The reviewed nine-field configuration is unchanged. Router/factory/WETH
+addresses and runtimes are still bound in the converter constructor and rechecked during execution.
 
 The engine proves the quote debit and the actual ETH balance increase, resets its converter approval and forwards
 all newly received ETH into `host.depositFees(platformEth, creatorEth)`. It divides converted ETH according to
@@ -297,8 +304,29 @@ executes actual V3 pool mint/swap/observation logic through a narrow test caller
 same revision/configuration and a later 6-decimal CA worth 1000 times less per whole unit, real insufficient
 history/freshness failures and rejection after a post-preview price manipulation. Upstream bytecode/source/license
 pins are in the test fixture; these local pools are not mainnet/provider or independent-audit evidence.
+The helper uses the same four-field SwapRouter02 call; its deadline protection belongs to the converter and host.
 Salt-search gas in test helpers is offchain deployment preparation,
 not a measured production launch transaction cost.
+
+`ModuleQuoteRouter02RobinhoodFork.t.sol` adds an opt-in fixed-block compatibility check against the actually
+installed Robinhood SwapRouter02, V3 factory, WETH and USDG/WETH 500-fee pool. Run it explicitly with:
+
+```sh
+MODULE_ROUTER02_ROBINHOOD_RPC_URL=https://rpc.mainnet.chain.robinhood.com \
+  forge test --match-path test/module-engine/ModuleQuoteRouter02RobinhoodFork.t.sol -vv
+```
+
+The fork selects L2 block 56,934,125, hash
+`0x913b7baa5ac1854dd2ef51cc9273307e1638b8bfbf742afb1bc5c45abcf59a93`, timestamp 1,788,794,192. Orbit's `NUMBER`
+opcode exposes the parent L1 height 25,926,312 at that snapshot; the test distinguishes it from the L2 RPC height.
+The separate heights follow the documented [Arbitrum/Orbit block-number behavior](https://github.com/Uniswap/blocknumberish).
+It checks the actual router/factory/WETH runtime hashes before constructing the local converter. With only its
+test-account USDG balance funded locally, one USDG converts into 402,501,997,655,607 wei of actual ETH against an
+enforced minimum of 397,144,151,975,266 wei. Both converter token balances, its ETH balance and allowances are
+zero afterward. Separate cases prove the deployed router rejects the former deadline tuple and that an expired
+converter call preserves approved funds. All three cases passed at this snapshot; without the explicit RPC
+variable this fork suite is skipped. No transaction is broadcast. This historical local fork is compatibility
+evidence, not current market qualification, finality, a deployed converter, or two published live quote launches.
 
 Required downstream work remains: reviewed compiler/configuration receipts and deployment evidence; source/ABI
 publication; signing/transaction preparation; canonical host registration and indexer readback; contributor worker,
