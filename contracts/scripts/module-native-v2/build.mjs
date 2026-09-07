@@ -27,14 +27,17 @@ export async function sealNativeV2Build(options = {}) {
 }
 
 /** Same deployed runtime is necessary but insufficient: retain the actual published V1 source bytes as well. */
-export async function bindReusedSourceClosure(build, root = REPOSITORY_ROOT) {
+export async function bindReusedSourceClosure(build, root = REPOSITORY_ROOT, { roles: selectedRoles = REUSED_ROLES, domain = 'programmable.module-mode-native-v2-reused-source.v1' } = {}) {
+  need(Array.isArray(selectedRoles) && selectedRoles.length > 0 && selectedRoles.length <= 32 && new Set(selectedRoles).size === selectedRoles.length
+    && selectedRoles.every(role => Object.hasOwn(build.artifacts, role) && Object.hasOwn(build.standardInputs, role)), 'Explicit known reused artifact roles required');
+  need(typeof domain === 'string' && /^programmable\.[a-z0-9.-]{1,120}$/.test(domain), 'Explicit reuse commitment domain required');
   const previous = JSON.parse(await readFile(path.join(root, 'config/module-mode/robinhood.preview.json'), 'utf8'));
   need(previous.sourceVersion === 'module-native-v1' && /^[a-f0-9]{40}$/.test(previous.sourceCommit), 'Historical V1 source commit required');
   const oldFile = async file => (await exec('git', ['show', `${previous.sourceCommit}:${file}`], { cwd: root, maxBuffer: 8 * 1024 * 1024 })).stdout;
   const oldPins = await oldFile('contracts/dependencies/source-pins.json');
   need(sha256(oldPins) === build.commitments.sourcePinsDigest, 'Reused dependency source pins differ from V1');
   const checked = new Map(), roles = {};
-  for (const role of REUSED_ROLES) {
+  for (const role of selectedRoles) {
     roles[role] = {};
     for (const [file, source] of Object.entries(build.standardInputs[role].sources)) {
       const sourceHash = keccak256(toHex(source.content));
@@ -47,5 +50,5 @@ export async function bindReusedSourceClosure(build, root = REPOSITORY_ROOT) {
   }
   const reuseSourceProvenance = { previousReleaseDigest: previous.releaseDigest, previousSourceCommit: previous.sourceCommit,
     dependencySourcePinsDigest: build.commitments.sourcePinsDigest, roles };
-  return { ...build, reuseSourceProvenance, reuseSourceDigest: digest('programmable.module-mode-native-v2-reused-source.v1', reuseSourceProvenance) };
+  return { ...build, reuseSourceProvenance, reuseSourceDigest: digest(domain, reuseSourceProvenance) };
 }
