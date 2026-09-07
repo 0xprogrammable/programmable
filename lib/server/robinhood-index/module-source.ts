@@ -1,4 +1,5 @@
 import preview from "@/config/module-mode/robinhood.preview.json";
+import { bindActiveModuleEngineRelease, type ModuleEngineRelease } from "@/lib/module-engine/catalog";
 import { bindActiveModuleModeRelease, moduleHash, moduleRecord, moduleUint, type ModuleModeRelease } from "@/lib/module-mode/release";
 import type { ModuleModeProvenance } from "@/lib/module-mode/provenance";
 import type { ModuleModeProvenanceV2 } from "@/lib/module-mode/provenance-v2";
@@ -18,7 +19,7 @@ const MAX_COLLECTOR_BYTES = 16 * 1024 * 1024;
  * before the common two-provider Ethereum finalized checkpoint. No flag or digest substitutes for that work.
  */
 export interface ModuleModeFinalizedCollector {
-  authenticateRelease(release: ModuleModeRelease): Promise<void>;
+  authenticateRelease(release: ModuleModeRelease | ModuleEngineRelease): Promise<void>;
   finalizedBoundary(release: ModuleModeRelease): Promise<{
     chainId: 4663; sourceReleaseDigest: string; blockNumber: string; blockHash: string; verificationDigest: string;
   }>;
@@ -242,7 +243,8 @@ export function createModuleModeHttpCollector(input: {
       return { releases: Object.freeze(releases), unavailableSources: Object.freeze(unavailableSources) };
     },
     async authenticateRelease(release) {
-      const actual = bindActiveModuleModeRelease(await request("release", { sourceReleaseDigest: release.releaseDigest }));
+      const value = await request("release", { sourceReleaseDigest: release.releaseDigest });
+      const actual = release.sourceVersion === "module-engine-v1" ? bindActiveModuleEngineRelease(value) : bindActiveModuleModeRelease(value);
       if (JSON.stringify(actual) !== JSON.stringify(release)) throw new Error("Module Mode collector active release differs");
     },
     async finalizedBoundary(release) {
