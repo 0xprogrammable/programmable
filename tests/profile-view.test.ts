@@ -376,7 +376,7 @@ describe("profile workspace loading state", () => {
 
   it("keeps the public profile surface read-only", () => {
     expect(profileViewSource).toContain("<PublicCreatorProfile");
-    expect(profileViewSource).toContain("You’re viewing another wallet’s launches.");
+    expect(profileViewSource).toContain("You’re viewing another wallet’s profile.");
     expect(profileViewSource).toContain('href="/profile">My profile</Link>');
     expect(profileViewSource).toContain(
       "<ProfileRouterLaunches entries={entries}",

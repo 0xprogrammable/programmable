@@ -23,6 +23,7 @@ import { ProfileChainSelector } from "@/components/profile-chain-selector";
 import { ProfileLoadingSkeleton } from "@/components/profile-skeleton";
 export { ProfileLoadingSkeleton } from "@/components/profile-skeleton";
 import { RobinhoodProfileLaunches } from "@/components/robinhood-profile-launches";
+import { ProfileModules } from "@/components/profile-modules";
 import {
   ProfileProjects,
   ProfileProjectsLoadingState,
@@ -3869,6 +3870,7 @@ export function ProfileView({ onchainData, viewChainId = 4663, onChangeChain }: 
       />
       </> : <>
         <RobinhoodProfileLaunches key={account.toLowerCase()} account={account} />
+        <ProfileModules key={`modules:${account.toLowerCase()}`} account={account} ownProfile />
         <RobinhoodProfileRewards />
       </>}
     </div>
@@ -4749,13 +4751,13 @@ export function PublicCreatorProfile({
           </div>
           <p className={styles.address} aria-label={`Profile wallet ${account}`}>{account}</p>
           <p className={styles.publicProfileNote}>
-            {connectedAccount ? "You’re viewing another wallet’s launches." : "Connect this wallet to manage its profile."}
+            {connectedAccount ? "You’re viewing another wallet’s profile." : "Connect this wallet to manage its profile."}
           </p>
         </div>
       </section>
 
       <ProfileChainSelector value={viewChainId} onChange={onChangeChain} />
-      {viewChainId === 4663 ? <RobinhoodProfileLaunches key={account.toLowerCase()} account={account} /> : scopedData.status === "loading" ? (
+      {viewChainId === 4663 ? <><RobinhoodProfileLaunches key={account.toLowerCase()} account={account} /><ProfileModules key={`modules:${account.toLowerCase()}`} account={account} /></> : scopedData.status === "loading" ? (
         <ProfileProjectsLoadingState />
       ) : scopedData.status === "error" ? (
         <section
