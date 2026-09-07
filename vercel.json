@@ -15,6 +15,11 @@
   ],
   "redirects": [
     {
+      "source": "/docs/developers/custom-launch.md",
+      "destination": "/developers/custom-launch-api-v1.md",
+      "permanent": false
+    },
+    {
       "source": "/docs/developers/custom-launch",
       "destination": "/developer-reference/custom-launch",
       "permanent": false
