@@ -7,6 +7,7 @@ export const ENGINE_REVISION = "(bytes32 familyId,bytes32 creationCodeHash,bytes
 export const ENGINE_LAUNCH = "(bytes32 launchId,bytes32 revisionId,address creator,address token,address quoteAsset,address engine,bytes32 engineCodeHash,bytes32 constructorHash,bytes32 initCodeHash,bytes32 configurationHash,bytes32 planHash,bytes32 resourcesHash,uint16 buyCreatorFeeBps,uint16 sellCreatorFeeBps)";
 export const ENGINE_LAUNCH_PARAMETERS = `(string name,string symbol,bytes32 creatorSalt,bytes32 revisionId,address quoteAsset,bytes configuration,bytes creationCode,bytes runtimeTemplate,bytes32 engineSalt,bytes launchData,(string description,string website,string image,bytes extraData) metadata,address[] creatorWallets,uint16[] creatorSharesBps,uint16 buyCreatorFeeBps,uint16 sellCreatorFeeBps,${ENGINE_OPERATION} initialOperation)`;
 export const moduleEngineConstructorParameters = parseAbiParameters(`${ENGINE_CONTEXT} context,bytes configuration`);
+export const moduleEngineLaunchParameters = parseAbiParameters(`${ENGINE_LAUNCH_PARAMETERS} parameters`);
 export const moduleEnginePlanParameters = parseAbiParameters(`uint256 chainId,address host,address creator,${ENGINE_LAUNCH_PARAMETERS} parameters`);
 export const moduleEngineHostAbi = parseAbi([
   "function SOURCE_VERSION() view returns (bytes32)", "function tokenFactory() view returns (address)",
@@ -23,6 +24,7 @@ export const moduleEngineHostAbi = parseAbi([
   `function execute(bytes32 launchId,${ENGINE_OPERATION} operation) payable returns (bytes result)`,
   `event EngineRevisionApproved(bytes32 indexed revisionId,bytes32 indexed familyId,${ENGINE_REVISION} revision)`,
   "event EngineLaunchBound(bytes32 indexed launchId,address indexed token,address indexed engine,address creator,address quoteAsset,bytes32 revisionId,bytes32 constructorHash,bytes32 initCodeHash,bytes32 runtimeCodeHash,bytes32 configurationHash,bytes32 resourcesHash,bytes32 economicsPolicyId,bytes32 planHash)",
+  "event EngineLaunchParametersBound(bytes32 indexed launchId,bytes encodedParameters)",
   "event EngineOperationExecuted(bytes32 indexed launchId,bytes32 indexed operationId,address indexed actor,address recipient,uint256 nonce,address inputAsset,uint256 inputAmount,address outputAsset,uint256 outputAmount,bytes32 resultHash)",
 ] as readonly string[]);
 export const moduleEngineReadAbi = parseAbi([
@@ -36,6 +38,7 @@ export const moduleEngineReadAbi = parseAbi([
   "function balanceOf(address actor) view returns (uint256)", "function allowance(address actor,address spender) view returns (uint256)",
   "function credit(address actor) view returns (uint256)", "function totalLiability() view returns (uint256)", "function unlockTime() view returns (uint256)",
   "function requests(bytes32 requestId) view returns (address payer,address beneficiary,uint256 amount,uint256 refundAfter,bytes32 obligationHash,uint8 status)",
+  "function minimumWindow() view returns (uint256)", "function maximumWindow() view returns (uint256)",
   "function poolId() view returns (bytes32)", "function quoteDecimals() view returns (uint8)",
 ]);
 export const moduleEngineTradeLimitsParameters = parseAbiParameters("(uint256 minimumEthFees,uint160 sqrtPriceLimitX96,bytes conversionRoute) limits");
