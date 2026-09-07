@@ -6,6 +6,8 @@ description: Package, submit and track deterministic Custom launches with scoped
 
 Custom Launch submits your own token, hook and supporting contracts through the Programmable Launch Stamp Router. Choose the chain and contract layout, check public capabilities, then package and submit the exact source with a scoped API key. The controller wallet reviews and signs the authorized transaction separately.
 
+For the complete workflow, start with [Launch through the API](custom-launch-quickstart.md). This page contains the detailed request and compatibility reference. The [Markdown reference](https://programmable.market/developers/custom-launch-api-v1.md) is also available directly to agents and scripts.
+
 ## Choose the Robinhood contract layout
 
 | Layout | Integration |
@@ -117,7 +119,7 @@ Admission does not prove deployed state, completed trades or collected revenue; 
 V4 metadata images are exactly PNG or single-frame GIF, as published by `metadataImage.mediaTypes` and `gifFrames`.
 JPEG, WebP, and animated GIF are rejected by the V4 packer before any network request.
 
-Project-owned token and hook targets at distinct addresses, 3–16 graph targets and all fourteen hook permission bits
+Project-owned token and hook targets at distinct addresses, 3 to 16 graph targets and all fourteen hook permission bits
 are structurally representable in the existing profile. Its graph assigns one role to each physical target. For a
 combined token/hook at the same address, check the separate [MultiRole V2 capabilities](https://api.programmable.market/v4/chains/4663/multi-role-custom-launches/capabilities)
 and guide above; do not split the project to fit the older graph. Structural representation does not prove safety
@@ -174,8 +176,8 @@ The reviewed foundation source closure is bound by
 `0xe87f5edc2dc839bd87a26a80cb53f14b021e603a1753d27aae3a02862058d730`; this source commitment is not, by itself,
 deployment or live-address evidence. The reviewed no-CBOR inputs require Sourcify v2 provider-native `match`; the
 exact-source claim comes from the separate protected-source, reproducible-build, finalized-transaction and deployed-bytecode binding.
-Robinhood Blockscout is optional, currently unproven and degraded. It cannot support an exact-source claim, and its
-failure cannot block or revise finality.
+Robinhood Blockscout is an optional provider. Its observations do not establish the protected exact-source claim,
+and provider failures cannot block or revise finality.
 
 Activated discovery binds non-null V4 `deploymentEvidence` for its deployed trust roots. Production clients must fetch the live deployment ID and descriptor digest, foundation source commitment, finality-policy digest,
 finalized block, pinned finalized-evidence reference, and address, runtime-hash and start-block tuples for the Router,
@@ -205,9 +207,9 @@ The CLI can prepare, validate, submit request bytes, poll status and display the
 broadcasts. Always bind V4 polling to both the API version and chain so the V3 default cannot be used by mistake:
 
 ```sh
-programmable-launch status REQUEST_UUID --api-version 4 --chain-id 4663 --watch --until authorized
+programmable-launch status LAUNCH_ID --api-version 4 --chain-id 4663 --watch --until authorized
 # Stop for separate controller-wallet review, signing and broadcast.
-programmable-launch status REQUEST_UUID --api-version 4 --chain-id 4663 --watch --until finalized
+programmable-launch status LAUNCH_ID --api-version 4 --chain-id 4663 --watch --until finalized
 ```
 
 Provider source verification starts only after `finalized` and remains an independent server-authored process.
@@ -266,7 +268,7 @@ funding domain or nonce. The published domains are
 `programmable.direct-native-hook-graph.funding-intent.v1` and
 `programmable.direct-native-hook-graph.funding-nonce.v1`. Current authorization patch V2 binds four distinct zero ABI
 leaves: `bytes32 nonce`, `bytes32 r`, `bytes32 s` and `uint8 v`. Configure only
-`nonceArgumentPath`, `rArgumentPath`, `sArgumentPath` and `vArgumentPath`; each has 1–16 zero-based indices from 0
+`nonceArgumentPath`, `rArgumentPath`, `sArgumentPath` and `vArgumentPath`; each has 1 to 16 zero-based indices from 0
 through 255. The first index selects a top-level initializer input and later indices may descend static tuple components
 or fixed arrays. Dynamic parents are not supported. The CLI derives the exact calldata offsets from the compiled ABI and proves
 canonical decode and re-encode; applicants do not submit offsets. The backend later inserts only the derived nonce and
@@ -297,7 +299,7 @@ byte-identical retryable under their original immutable policy; revision 2 also 
 for existing clients and resources. Discovery reports `productionLaunchAuthorized: true`. Do not fall back
 to a different create version.
 
-The Router primitive supports 2–16 targets; live profile `3.3.0` requires 3–16 direct CREATE2 graph targets because its
+The Router primitive supports 2 to 16 targets; live profile `3.3.0` requires 3 to 16 direct CREATE2 graph targets because its
 token, hook and initializer roles are distinct. The primary token and hook are project-owned exact artifacts, as are all
 other direct targets. Native and ERC-20 quote currencies are structurally supported. All fourteen Uniswap v4 permission
 bits are structurally supported across masks `0` through `16383`; return-delta permissions require their matching action
@@ -310,7 +312,7 @@ CLI derives their offsets from the exact compiled ABI; the backend patches only 
 requests retain their original descriptor semantics. The initializer has per-launch exact source, build, runtime,
 final-calldata and simulation evidence. There is no separate global initializer trust root.
 
-Pending profile `3.4.0` raises the fresh-graph minimum to four, inclusive of the frozen
+Reference profile `3.4.0` raises the fresh-graph minimum to four, inclusive of the frozen
 `programmable:settlement-fee-vault:v1` module. The applicant cannot choose another platform fee target. Its release
 binding is `sha256:39ccdfdf8cd61620bf5c62bf07fb8428adbd66d2608b1cf3ad583343116d7ed9`; source SHA-256 is
 `sha256:0a01ee8c22d103343d14b1d3890902e3edeecef25ea84a0f03f23a3fe8f1042b`; creation/runtime Keccak-256 are
@@ -556,7 +558,7 @@ available for compatibility, while their fresh POSTs return non-retryable `409 C
 | `sourceDescriptor` | One `DeterministicSourceBundleV2` descriptor |
 | `sourceBundleManifest` | One complete, non-empty, UTF-8 path-sorted manifest |
 | `graphBundle` | One executable `CustomGraphBundleV1` |
-| `projectMetadata` | Canonical token declaration and presentation, required by live `3.3.0` and pending `3.4.0` |
+| `projectMetadata` | Canonical token declaration and presentation, required by live `3.3.0` and reference profile `3.4.0` |
 | `projectMetadataHash` | Domain-framed SHA-256 bound into the graph hash and launch identity |
 | `behaviorScenarioInputs` | Declarative ordered server-runner inputs, required by profile `3.4.0`; no assertions or verdicts |
 | `behaviorScenarioInputsHash` | CLI-derived domain-framed SHA-256 bound into `launchIntentHash` |
@@ -570,19 +572,19 @@ available for compatibility, while their fresh POSTs return non-retryable `409 C
 
 The pack config asks explicitly for `token.name`, `token.symbol`, `presentation.description`,
 `presentation.image`, and `presentation.links`. Name and symbol are owner-supplied canonical public text bounded to 64
-and 16 UTF-8 bytes. Live `3.3.0` and pending `3.4.0` require a useful description (20–4,096 UTF-8 bytes and at least eight Unicode
+and 16 UTF-8 bytes. Live `3.3.0` and reference profile `3.4.0` require a useful description (20 to 4,096 UTF-8 bytes and at least eight Unicode
 letters or numbers), exact non-empty local PNG/JPEG/WebP/GIF bytes, one public HTTPS website and one canonical
 `https://x.com/<handle>` profile. Other links are optional. The packer includes image
 bytes in the source manifest, sorts links and derives `projectMetadata`, `projectMetadataHash` and the metadata-bound
 `graphBundleHash`. It statically compares an unambiguous constructor or initializer name/symbol argument when one
 exists, without forcing arbitrary tokens into a specific constructor. Discovery advertises
 `requiredForProfileVersions = ["3.2.0","3.3.0","3.4.0"]`, `strictMetadataProfileVersions = ["3.3.0","3.4.0"]`, and
-`legacyMetadataProfileVersions = ["3.2.0"]`, so exact `3.2.0`, `3.3.0` and pending `3.4.0` all carry metadata while
-only exact `3.3.0` and pending `3.4.0` use the strict current policy and only exact `3.2.0` preserves its older
+`legacyMetadataProfileVersions = ["3.2.0"]`, so exact `3.2.0`, `3.3.0` and reference profile `3.4.0` all carry metadata while
+only exact `3.3.0` and reference profile `3.4.0` use the strict current policy and only exact `3.2.0` preserves its older
 nullable-image semantics. Finalized launches expose the declaration plus server-authored onchain name/symbol readback through the
 public finalized-metadata endpoint.
 
-Profile `3.4.0` also requires `behaviorScenarioInputs` with 1–128 ordered declarative steps. Each step binds a unique
+Profile `3.4.0` also requires `behaviorScenarioInputs` with 1 to 128 ordered declarative steps. Each step binds a unique
 ID, fixed phase and actor, an exact prepared target, the canonical PoolManager binding or the fixed `v4-actions-v1`
 harness, canonical `valueWei`, and bounded lowercase calldata and hook data. Aggregate calldata plus hook data is at
 most 1 MiB. Scripts, URLs, assertions, expected results, statuses and runner parameters are rejected. The CLI derives
@@ -597,7 +599,7 @@ page for a complete inventory. Each launch item also carries required `launchPro
 `3.1.0`, `3.2.0`, `3.3.0`, or `3.4.0`) so profile-conditional metadata can be interpreted without inference.
 
 The finalized feed remains additive across finalized compatible profile versions. `projectMetadata` and
-`projectMetadataHash` remain conditional to `launchProfileVersion`: exact `3.2.0`, `3.3.0` and pending `3.4.0`
+`projectMetadataHash` remain conditional to `launchProfileVersion`: exact `3.2.0`, `3.3.0` and reference profile `3.4.0`
 carry metadata, while legacy `2.0.0`, `3.0.0` and `3.1.0` remain additive compatibility records under their original
 semantics. An item may include
 server-authored `tradeAdapterDescriptor` only after exact route, PoolKey, asset, runtime and adapter review. The field
@@ -787,9 +789,10 @@ public error code. Never send the API key.
 | `500` | Keep the response `error.requestId`; do not expose the key. Retry only when the operation is safe and the original bytes remain bound. |
 | `503` | Honor `Retry-After` and retry only the byte identical journaled request. |
 
-## Current boundary
+## Supported operations
 
-Generic fee claiming and buyback management for arbitrary hooks are not live. FADE uses a specifically bound adapter;
-an arbitrary Custom hook is not automatically claimable. That adapter does not create a generic capability. The
-reserved `fees:claim` and `buybacks:manage` scopes remain disabled and
-promise no future behavior. Public Hookbuilder and reusable-template intake are not part of this API.
+Generic fee claiming and buyback management for arbitrary hooks are outside the creation and read scopes.
+An arbitrary Custom hook is not automatically claimable. Claims through a specific fee adapter require
+that adapter's contract and authorization. The reserved
+`fees:claim` and `buybacks:manage` scopes remain disabled. Public Hookbuilder and reusable-template intake
+are not part of this API.

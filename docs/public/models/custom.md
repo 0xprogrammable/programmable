@@ -1,65 +1,37 @@
 ---
-description: How deterministic Custom hook bundles become exact, wallet bound Programmable releases
-cover: ../.gitbook/assets/custom-v2.png
-coverY: 0
+description: Launch a project with its own token, Uniswap v4 hook and supporting contracts
 ---
 
 # Custom hooks
 
-Custom is the release path for products that need their own Uniswap v4 hook, application logic or execution graph. It is not one generic contract with a free form configuration. Each request carries its own source identity, permissions, fee policy, dependency set and launch transaction requirements.
+Custom Launch deploys a project with its own token, hook and supporting contracts through the Programmable Launch Stamp Router. The request identifies the source, network, controller wallet, contract graph, funding and execution plan.
 
-A hook is a smart contract that a Uniswap v4 pool calls at defined points in a transaction. It can apply product specific behavior directly around swaps and other pool actions. What it can do depends on its declared permissions and exact code, which is why each Custom request is bound to one exact bundle rather than to a project name.
+A Uniswap v4 hook is a contract called by a pool at specified points in a transaction. Its permissions and code determine how it handles fees, accounting, access and other pool behavior.
 
-## Local packaging and API availability
+## Select the contract layout
 
-Build and test the exact project. The public `programmable-launch` 3.3.9 CLI derives the deterministic source manifest,
-graph bundle, CREATE2 locators, evidence digests and exact-source verification bundle against the [Custom Launch API
-schema](../developers/custom-launch.md). The default `programmable.direct-native-hook-graph-profile.v3` profile uses
-`profileRevision: 3`, `profileVersion: 3.3.0` and exact `solc 0.8.26+commit.8a97fa7a`. It also binds canonical project
-name, symbol, description, an exact source-bound image and links into the request and graph hashes. Exact `3.2.0`, `3.1.0` and `3.0.0`
-requests remain readable and byte-identical retryable under their original immutable policies, and revision 2 remains
-compatible. Profile `3.2.0` keeps its original nullable-image metadata semantics.
-CLI `3.3.9` defaults to live profile `3.3.0`. Explicit profile `3.4.0` output is preparatory, is rejected by live
-capabilities and does not authorize fresh writes until discovery and the backend activate that profile independently.
-Run `pack`, `validate --remote`, `submit` and `status --watch --until authorized` for the byte-identical current V3.3
-request. The CLI and preflight prepare and classify exact bytes; the API server makes the durable decision and exposes
-a wallet handoff only after objective static hard blocks and exact Router simulation pass. Missing behavior execution
-leaves related claims unverified; an authenticated executed failure blocks.
-Stop for every explicit wallet handoff, then resume `status --watch --until finalized`. The API key and CLI never sign
-or broadcast.
+On Robinhood Chain, separate token and hook contracts use the V4 API. One contract implementing both roles uses MultiRole V2. Ethereum Mainnet uses its own V3 contract. Start with [Launch through the API](../developers/custom-launch-quickstart.md) to select the matching client and schema.
 
-Profile 3.3.0 applies role-aware exact-source static admission. Exactly seven objective rules hard-block deployment;
-proxy/delegatecall, mint/tax/pause, liquidity and return-delta surfaces require evidence instead of categorical
-rejection. A hard-block code-and-role match moves the request to `action_required`; other findings remain visible. A final
-Router simulation is mandatory before authorization. If action is required, keep the request ID and contact support
-without sending the API key.
+Read the selected API's capabilities before building. MultiRole's economic verifier recognizes the exact Native20 reference contracts and supported constructor configuration. A different mechanism can require additional verification. The response identifies missing evidence separately from a demonstrated defect.
 
-Existing durable resources record server-authored bundle and evidence checks. `prepared` means the exact artifact exists while the
-signed permit and wallet transaction remain null. An already `authorized` resource supplies the permit-attached
-transaction for separate controller-wallet review. Exact-source provider status begins only after finality and never
-revises it. Static admission and simulation are not an audit or a guarantee of safety, honeypot resistance, liquidity,
-tradeability or fee behavior. A 10 bps claim exists only for a fee-certified profile or adapter and its exact stamped
-PoolKey; arbitrary custom hooks are not automatically fee-enforced. The API does not sign or broadcast, and the API key
-is not wallet authority.
+## Prepare and launch
 
-## Release binding
+1. Build the project from reproducible source and compiler inputs.
+2. Record the controller, creator fees, funding source, initial assets and gas budget.
+3. Use a scoped API key to preflight and submit the exact request.
+4. Follow the resource until it provides an authorized wallet transaction.
+5. Review, sign and send from the controller wallet, then track finality and source verification.
 
-A Custom release binds the source descriptor, manifest digest, graph bundle, launch wallet, chain, contracts, permissions and transaction plan used for that request. If the source or a material configuration changes, it becomes a new launch subject rather than silently inheriting the previous result.
+The API key and client do not sign or broadcast. Material source, metadata, funding or configuration changes create a different request. Preserve the original bytes and idempotency key when retrying an existing request.
 
-The creator sees the final network, destination, calldata and value before signing. Programmable prepares and verifies the route, while the creator wallet remains the only party that can submit the user transaction.
+## Fees and liquidity
 
-Initializing a normal Uniswap v4 pool does not add liquidity. Ordinary concentrated liquidity requires a project-funded position. Zero classical LP is possible only when the exact project hook and initializer implement custom accounting or hold launch inventory; volume cannot create initial liquidity from nothing.
+On Robinhood, Native20 charges **20 bps (0.20%)** of the gross native ETH amount per successful buy or sell for Programmable. Creator fees and the Uniswap pool fee are additional. Setting the creator buy and sell fees to 0 produces no creator fee accruals. [Fees and revenue](../economics.md) defines each fee path and the Dune metrics.
 
-## Public provenance
+An ordinary pool needs a funded liquidity position. Initializing the pool does not supply that liquidity. A project using custom accounting, launch inventory or another reserve model must implement and verify its own settlement behavior. The selected API's funding rules still apply.
 
-The canonical Launch Stamp Router is live on Ethereum at `0x8622DD5bAb44185f2A458ac90384Ac99248f8d56`. A valid stamp binds the recorded launch to the Router execution, token, hook, PoolManager and pool. The public developer manifest provides the current runtime hash, ABI hash, start block and finality policy.
+## Verify the result
 
-{% hint style="warning" %}
-A launch stamp is provenance, not an audit or guarantee. It does not prove current liquidity, sellability, terminal support or economic outcome.
-{% endhint %}
+A finalized launch stamp binds the deployed token, hook, PoolManager and pool to the canonical Router execution. Resolve the Router and its verification rules from the published deployment record.
 
-The finalized Custom metadata feed publishes only Router-finalized identities with their launch-bound project metadata.
-Token `name()` and `symbol()` are read back after deployment; a mismatch remains explicit instead of silently changing
-the submitted identity. The broader public developer feed discovers Classic records and verified Custom records. Custom
-execution remains bundle specific, so users should inspect the exact authorized transaction rather than assume that any
-repository or hook is launchable.
+The stamp records provenance. Source verification, available liquidity, sellability, indexing and external audits are separate checks. Use the [verification guide](../developers/verify.md) and [Robinhood indexing guide](../developers/robinhood-terminal-indexer.md) for their exact requirements.

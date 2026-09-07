@@ -1,31 +1,29 @@
 ---
-description: How Programmable separates launch preparation, execution, finality and public discovery
+description: From launch configuration to wallet execution, verification and public discovery
 ---
 
 # How Programmable works
 
-Programmable records each part of a launch separately. The product interface prepares the launch, the creator wallet signs its transaction, the required network finalizes it, and the public product adds the resulting token and pool to the appropriate discovery surface.
+A launch moves through configuration, transaction preparation, wallet execution and public verification. Programmable records these steps separately so a prepared request, a confirmed transaction and an indexed coin have clear meanings.
 
-## Classic execution
+## Module Mode
 
-Classic uses the current launcher and shared hook on Ethereum. One transaction creates the fixed supply token, initializes its Uniswap v4 ETH pool, locks the one sided position and completes the Initial Buy. The configuration selected before signing determines fees, rewards and custody.
+The builder reads the active engine and module catalog, validates the selected configuration and prepares the launch transaction. The native launcher creates the coin and records its identity, engine, creator and module configuration. The coin's runtime applies its bonding curve and selected module behavior.
 
-## Custom execution
+An indexer verifies the canonical launcher events and getters against the published engine release. It does not require a Custom Launch stamp for a Module Mode coin. The [Module Mode indexing guide](developers/module-mode-indexing.md) defines this source contract.
 
-Custom begins with one deterministic source and graph bundle derived by the public `programmable-launch` CLI and submitted through the authenticated V3.3 API. The CLI and preflight prepare and classify exact bytes; the API server makes the durable decision and exposes a wallet handoff only after objective static hard blocks and exact Router simulation pass. Missing behavior execution leaves behavior, fee, liquidity and routability claims unverified; an authenticated executed failure blocks. When exact-source material is present, the prepared artifact also binds the exact Solidity Standard JSON bytes, compiler build, settings, libraries, contract identity and resolved constructor arguments. A `prepared` result contains the exact artifact but no wallet transaction. An `authorized` result contains the permit-attached transaction for separate controller-wallet signing and broadcast. Post-finality source verification is independent from launch finality; Programmable does not reproduce project tests or audit the project.
+## Custom Launch
 
-## Launch stamps
+The client packages one exact source and deployment plan. The chain-specific API checks the package, permissions, economics and execution evidence required by its profile. A returned wallet handoff binds the transaction to the intended controller, chain and launch. The API key cannot sign for that wallet.
 
-The Launch Stamp Router provides a canonical provenance record for future Router based Classic and Custom launches. Its Ethereum deployment is live, and the developer manifest publishes the address, code hash, ABI hash, start block and finality rules required for independent verification.
+The controller reviews and signs the authorized transaction. The appropriate Launch Stamp Router records the deployed project and its components. Source verification, transaction finality and public indexing each have their own result. The [API quickstart](developers/custom-launch-quickstart.md) explains the sequence and how to recover from a rejected or incomplete request.
+
+## Classic on Ethereum
+
+Classic creates a fixed supply token, initializes its ETH pool, locks the initial liquidity position and completes the initial buy through the selected launcher. The deployed version determines its creator fees, rewards and custody. Read the [Classic reference](models/classic.md) for the exact model.
 
 ## Public discovery
 
-The website combines verified launch records with price and liquidity data when those values are available. The read only Ethereum developer service publishes consistent Classic and Custom records for terminals, scanners, explorers and applications. Integrators should treat origin, indexing freshness, chart availability and transaction support as separate capabilities.
+The website publishes verified launch identities and adds market data when available. A coin is identified by its chain and token address. Its source record explains which launcher or Router created it and which version-specific verifier applies.
 
-{% content-ref url="launch-stamps.md" %}
-[launch-stamps.md](launch-stamps.md)
-{% endcontent-ref %}
-
-{% content-ref url="developers/README.md" %}
-[README.md](developers/README.md)
-{% endcontent-ref %}
+Price, liquidity, chart data and trading support are separate from launch identity. A missing chart does not remove a valid launch. A launch stamp does not prove that another trading application supports the hook. [Index launches](developers/indexing.md) describes the common ingestion rules and links to each source.

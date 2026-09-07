@@ -70,7 +70,7 @@ The website's normalized Module Mode records use these fields:
 | `verificationDigest` | The verification artifact identity |
 | `routerAddress`, `stampHash` | `null` for this native source |
 
-Custom Launches use a separate Launch Stamp Router source. Keep both sources in the same token index using the keys above, and select the verifier by source version. Do not require a Custom stamp for a native Module Mode launch. See the [Custom terminal reference](https://programmable.market/developer-reference/robinhood-terminal-indexer) for that source's rules.
+Custom Launches use a separate Launch Stamp Router source. Keep both sources in the same token index using the keys above, and select the verifier by source version. Do not require a Custom stamp for a native Module Mode launch. See the [Custom terminal reference](https://programmable.market/docs/developers/robinhood-terminal-indexer) for that source's rules.
 
 ## Handle modules generically
 

@@ -49,9 +49,9 @@ describe("public shell polish", () => {
     expect(rootLayout).toContain('creator: "@ProgrammableHQ"');
     expect(homePage).toContain('creator: "@ProgrammableHQ"');
     expect(officialLinks).toContain(
-      "[x.com/ProgrammableHQ](https://x.com/ProgrammableHQ)",
+      "https://x.com/ProgrammableHQ",
     );
-    expect(readme).toContain('href="https://x.com/ProgrammableHQ"');
+    expect(readme).toContain("https://x.com/ProgrammableHQ");
   });
 
   it("keeps the retired X identity out of current public sources", () => {

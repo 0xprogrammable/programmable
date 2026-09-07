@@ -1,29 +1,21 @@
 ---
-description: Start a Classic token or package one exact Custom project locally
+description: Launch a coin, build a custom project or contribute a reusable module
 ---
 
 # Create
 
-Choose Classic when the product fits the standard token launch settings. Choose Custom when behavior depends on project specific hook code or a wider execution graph. The paths share one public product, but their transaction and release requirements differ.
+Start with the launch path that matches your project. Module Mode lets you configure a coin in the website. Custom Launch uses your own source package and an API key. Both lead to a transaction that the launching wallet reviews and signs.
 
-## Launch Classic
+## Configure a coin
 
-Classic is available from [Create](https://programmable.market/launch). The launch wallet supplies token metadata, selects buy and sell transaction fees, chooses reward recipients and Initial Buy custody, then reviews one Ethereum transaction. The standard model does not require a source bundle or Custom Launch API key.
+Open the [Module Mode builder](https://programmable.market/launch/modules), enter the coin details, choose creator fees and add any compatible modules. The builder explains each module's inputs and shows the total fees and required funding before launch. After indexing, open the coin from Explore or your profile to use its supported management actions.
 
-## Build a Custom project
+## Launch custom contracts
 
-Build and test the exact hook project. Use the versioned public `programmable-launch` CLI to derive the deterministic source manifest, graph bundle, address locators, evidence digests and exact-source verification metadata described by the [Custom Launch API schema](../developers/custom-launch.md).
+Use the [Custom Launch quickstart](../developers/custom-launch-quickstart.md) to choose the correct network and contract layout. Package and validate the exact source, submit it with a wallet-bound API key, then follow the returned status and wallet handoff. Keep the same request identity when retrying unchanged bytes.
 
-Run `pack`, `validate`, `submit` and `status` for the byte identical current V3.3 request with a wallet key, partner root or bounded partner subkey; [wallet keys are managed here](https://programmable.market/developers/api-keys). Keep the credential in an encrypted environment or secret store, never in chat or prompts. Local CLI checks and preflight prepare the request; the API server is the decision authority and exposes a wallet handoff only after objective static hard blocks and exact Router simulation pass. Missing behavior execution leaves related claims unverified; an authenticated executed failure blocks. At `authorized`, the controller reviews and signs the exact Router transaction separately.
+## Contribute reusable behavior
 
-## Reusable work
+Module authors submit a versioned implementation, configuration interface, management actions and evidence. Accepted versions can enter the catalog for other creators to select. Rewards depend on qualifying use and the fee contract attached to each launch. Read [Build a module](../developers/module-mode.md) for the contribution workflow and [Creator earnings](earnings.md) for reward accounting.
 
-Reusable public templates remain a planned product with a separate fee and versioning model because one template can affect many later launches. Public template intake and fee share activation are not open. The retained Custom Launch API schema models one concrete project and token bundle; it does not publish reusable templates.
-
-{% content-ref url="launch.md" %}
-[launch.md](launch.md)
-{% endcontent-ref %}
-
-{% content-ref url="templates.md" %}
-[templates.md](templates.md)
-{% endcontent-ref %}
+The [launch guide](launch.md) explains the complete launch flow. The [Classic reference](../models/classic.md) covers the Ethereum model.

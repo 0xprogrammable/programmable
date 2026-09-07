@@ -1,49 +1,34 @@
 ---
-description: Official Programmable product, source, community and analytics links
+description: Product, community, source code and developer entry points
 ---
 
 # Official links
 
-| Resource                | Link                                                                                                               |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| Website                 | [programmable.market](https://programmable.market)                                                                 |
-| Create                  | [programmable.market/launch](https://programmable.market/launch)                                                   |
-| Explore                 | [programmable.market/explore](https://programmable.market/explore)                                                 |
-| GitHub                  | [github.com/programmablehq](https://github.com/programmablehq)                                                     |
-| Custom Launch API keys  | [programmable.market/developers/api-keys](https://programmable.market/developers/api-keys)                         |
-| Custom Launch API guide | [programmable.market/developers/custom-launch-api-v1.md](https://programmable.market/developers/custom-launch-api-v1.md) |
-| Custom Launch V1 OpenAPI | [live reads and write fence](https://programmable.market/openapi/custom-launch-v1.json)                    |
-| Custom Launch V2 OpenAPI | [V2 reads, schemas and write fence](https://programmable.market/openapi/custom-launch-v2.json)                     |
-| Custom Launch V3 OpenAPI | [preparatory profile 3.4 contract; live/default remains discovery-bound profile 3.3](https://programmable.market/openapi/custom-launch-v3.json) |
-| Custom Launch V4 OpenAPI | [Robinhood V4 contract; check live discovery](https://programmable.market/openapi/custom-launch-v4.json) |
-| Custom Launch V4 schema | [Robinhood V4 pack config](https://programmable.market/schemas/custom-launch/v4/pack-config.json) |
-| Custom Launch V4 source status | [post-finality source-verification schema](https://programmable.market/schemas/custom-launch/v4/source-verification-status.json) |
-| Custom Launch CLI 4.0.0 | [Historical Robinhood V4 source; use live discovery for the current installable release](https://github.com/programmablehq/PROGRAMMABLE/tree/53926119030772040eca34b4796a36353c9da2d2/packages/launch) |
-| Custom Launch API      | [api.programmable.market](https://api.programmable.market)                                                         |
-| Custom API readiness    | [api.programmable.market/readyz](https://api.programmable.market/readyz)                                           |
-| Custom Launch CLI 3.3.9 | [public V3 GitHub Release asset](https://github.com/programmablehq/PROGRAMMABLE/releases/download/programmable-launch-v3.3.9/programmable-launch-3.3.9.tgz) |
-| Custom Launch CLI 1.0.1 | [V1 compatibility asset](https://github.com/programmablehq/PROGRAMMABLE/releases/download/programmable-launch-v1.0.1/programmable-launch-1.0.1.tgz) |
-| Launch policy           | [github.com/programmablehq/Launch-Policy](https://github.com/programmablehq/Launch-Policy)                         |
-| Read-only developer API | [developers.programmable.family](https://developers.programmable.family)                                           |
-| X                       | [x.com/ProgrammableHQ](https://x.com/ProgrammableHQ)                                                               |
-| Discord                 | [discord.com/invite/programmable](https://discord.com/invite/programmable)                                         |
-| Dune                    | [Programmable analytics](https://dune.com/0xprogrammable6098/programmable-analytics)                               |
-| V4 token                | [Dexscreener](https://dexscreener.com/robinhood/0x3df16f271060e4941c0386047def159f42e629dc0455db623c5b363eeacbcc1d) |
+## Product and community
 
-Use `api.programmable.market` for authenticated public V3 general-hook creation and exact-credential-principal lifecycle reads with wallet keys, partner roots or bounded partner subkeys. The
-default profile is revision 3 with `profileVersion: 3.3.0`; it requires and binds canonical project metadata, including
-an exact source-bound image, into the launch hashes. Exact `3.2.0`, `3.1.0` and `3.0.0` requests remain readable and byte-identical retryable under their original immutable policies,
-and revision 2 remains compatible. CLI `3.3.9` defaults to live profile `3.3.0`; explicit profile `3.4.0` output remains
-preparatory and is rejected by live capabilities until backend activation. V2 and V1 history and schemas remain readable, while fresh creation returns
-non-retryable `409 CUSTOM_LAUNCH_V2_READ_ONLY` and `409 CUSTOM_LAUNCH_V1_READ_ONLY`; only V3.3 accepts new submissions.
-Legacy Registry and GitHub submission intake is closed. Use the read-only
-developer service and current deployment manifest when verifying Ethereum source or deployment data. Community posts
-and analytics are useful context but do not replace the contract address, canonical chain record or versioned release evidence.
+| Resource | Link |
+| --- | --- |
+| Platform | [programmable.market](https://programmable.market) |
+| Launch a coin | [Create](https://programmable.market/launch) |
+| Browse coins | [Explore on Robinhood](https://programmable.market/explore/robinhood) |
+| Documentation | [Programmable docs](https://programmable.market/docs) |
+| Analytics and burns | [Dune dashboard](https://dune.com/programmablehq/analytics) |
+| Source code | [Programmable on GitHub](https://github.com/programmablehq) |
+| Announcements | [Programmable on X](https://x.com/ProgrammableHQ) |
+| Community | [Programmable Discord](https://discord.com/invite/programmable) |
+| Main token | [V4 identity and tokenomics](../v4-token.md) |
 
-Robinhood Chain V4 availability comes from live discovery. Require `publicWrites: true`, `publicAuthorization: true`
-and `releaseReady: true` in both the V4 and chain 4663 entries; stop when a gate is false or missing. The current
-immutable 4.0.0 release, source commit, release manifest and tarball checksum are published at
-`customLaunchApi.versions.v4.cli.release`. Stable schemas and source links alone are not installation authority.
-API-key handoff uses only `$PROGRAMMABLE_API_KEY`. The user separately signs their wallet transaction, and policy
-profiles are selected by the API server. CLI `3.3.9` remains the Ethereum V3 integration. Trading, generic fee claiming,
-buyback management and external indexing require independent evidence.
+## Developers
+
+| Task | Entry point |
+| --- | --- |
+| Launch custom contracts | [API quickstart](../developers/custom-launch-quickstart.md) |
+| Create or manage API keys | [API-key manager](https://programmable.market/developers/api-keys) |
+| Discover supported profiles and client releases | [Live discovery](https://programmable.market/.well-known/programmable.json) |
+| Read schemas and exact request fields | [API reference](../developers/machine-readable.md) |
+| Contribute a reusable module | [Module contribution guide](../developers/module-mode.md) |
+| Integrate a terminal or explorer | [Indexing guide](../developers/indexing.md) |
+| Check service health and freshness | [Service status](../status.md) |
+| Read launch requirements | [Launch Policy repository](https://github.com/programmablehq/Launch-Policy) |
+
+Use the client and capabilities advertised for your chain and contract layout. The Custom Launch API is served at `api.programmable.market`; the read-only Ethereum Developer API is served at `developers.programmable.family`. Their authentication and response contracts differ. Versioned CLI, schema and ABI links are collected in the technical reference.

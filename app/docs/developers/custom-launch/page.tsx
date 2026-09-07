@@ -14,12 +14,13 @@ const multiRoleProject = PROGRAMMABLE_AGENT_ENTRY.workflows.multiRoleProject;
 export const metadata: Metadata = {
   title: "Custom Launch API · Programmable",
   description:
-    "Package, submit and track live Ethereum V3 launches, and use verified Robinhood Chain V4 release discovery.",
+    "Choose a Custom Launch API, configure fees and funding, and track your project through wallet signing and finality.",
   alternates: { canonical: "/developer-reference/custom-launch" },
 };
 
 const customLaunchSections = [
-  { id: "quickstart", label: "Quickstart" },
+  { id: "start-here", label: "Choose an API" },
+  { id: "quickstart", label: "Ethereum V3 quickstart" },
   { id: "robinhood-v4", label: "Robinhood V4" },
   { id: "authentication", label: "Authentication" },
   { id: "existing-project-integration", label: "Existing projects" },
@@ -33,7 +34,7 @@ const customLaunchSections = [
   { id: "lifecycle", label: "Lifecycle" },
   { id: "discovery", label: "Explore, Profile and claims" },
   { id: "errors", label: "Errors" },
-  { id: "extensions", label: "Future extensions" },
+  { id: "extensions", label: "Supported operations" },
 ] as const;
 
 const requestFields = [
@@ -209,32 +210,72 @@ export default function CustomLaunchApiDocsPage() {
   return (
     <DocsShell
       currentPath="/docs/developers/custom-launch"
-      description="Package exact launch artifacts locally, submit byte-identical V3 requests, and stop for separate controller-wallet review and signing."
+      description="Choose the API for your network and contract layout, prepare the request, then sign from the controller wallet."
       kicker="Developer integration"
       parentHref="/docs/developers"
       parentLabel="Developers"
       sections={customLaunchSections}
       title="Custom Launch API"
     >
-      <p className={styles.bodyCopy}>
-        Use public V3.3 for new custom-hook launches. V2 and V1 history and
-        schemas remain readable, but new requests are permanently write fenced
-        with nonretryable{" "}
-        <code>CUSTOM_LAUNCH_V2_READ_ONLY</code> and{" "}
-        <code>CUSTOM_LAUNCH_V1_READ_ONLY</code>. On Ethereum, only V3.3 accepts new submissions.
-        For Robinhood V4, read the live discovery manifest and use version {robinhoodVersion}{" "}
-        only after its public release gates and immutable CLI evidence pass.
-      </p>
+
+      <section id="start-here">
+        <div className={styles.sectionIntro}>
+          <h2>Choose an API for your project</h2>
+          <p>
+            The <Link href="/docs/developers/custom-launch-quickstart">step-by-step quickstart</Link>{" "}
+            covers API keys, contract layout, fees, funding, submission and error recovery.
+            Use this page for the detailed request and compatibility reference.
+          </p>
+        </div>
+        <dl className={styles.dataList}>
+          <div>
+            <dt>Robinhood, separate token and hook</dt>
+            <dd>
+              Use the <a href="#robinhood-v4">V4 profile and CLI</a> selected by live discovery.
+            </dd>
+          </div>
+          <div>
+            <dt>Robinhood, shared token and hook</dt>
+            <dd>
+              Use the <a href={multiRoleProject.guide}>MultiRole V2 guide</a>,
+              request packer and client. Its request format is separate from V4.
+            </dd>
+          </div>
+          <div>
+            <dt>Ethereum Mainnet</dt>
+            <dd>
+              Follow the <a href="#quickstart">V3 quickstart</a> and the profile
+              accepted by Ethereum capabilities.
+            </dd>
+          </div>
+        </dl>
+        <p className={styles.bodyCopy}>
+          Robinhood Native20 charges <strong>20 bps (0.20%)</strong> for Programmable
+          per successful buy or sell. Creator and pool fees are additional. A zero
+          creator rate produces zero creator rewards while the platform fee still
+          accrues. Read the <a href="#fees">fee calculation and claim rules</a>.
+        </p>
+      </section>
 
       <section id="quickstart">
         <div className={styles.sectionIntro}>
-          <h2>Quickstart</h2>
+          <h2>Ethereum V3 quickstart</h2>
           <p>
             Build exact artifacts locally, let the API make the server-side
             decision, then review and sign in the controller wallet. Public
             V3.3 creation is live on Ethereum Mainnet.
           </p>
         </div>
+
+        <p className={styles.bodyCopy}>
+          Use public V3.3 for new Ethereum custom-hook launches. V2 and V1 history and
+          schemas remain readable, but new requests are permanently write fenced
+          with nonretryable{" "}
+          <code>CUSTOM_LAUNCH_V2_READ_ONLY</code> and{" "}
+          <code>CUSTOM_LAUNCH_V1_READ_ONLY</code>. On Ethereum, only V3.3 accepts new submissions.
+          For Robinhood V4, read the live discovery manifest and use version {robinhoodVersion}{" "}
+          only after its public release gates and immutable CLI evidence pass.
+        </p>
 
         <ol className={styles.steps}>
           <li>
@@ -295,10 +336,10 @@ export default function CustomLaunchApiDocsPage() {
         <aside className={styles.callout}>
           <strong>Follow live capabilities</strong>
           <p>
-            CLI 3.3.9 defaults to live profile 3.3.0. Profile 3.4 in the{" "}
+            CLI 3.3.9 defaults to profile 3.3.0. Profile 3.4 in the{" "}
             <a href="/openapi/custom-launch-v3.json">V3 machine contract</a>{" "}
-            is preparatory and is rejected until discovery and backend
-            capabilities activate it. V2 and V1 accept reads only, and legacy
+            is a separate reference contract. Submit it only when discovery and backend
+            capabilities accept it. V2 and V1 accept reads only, and legacy
             Registry and GitHub submission intake is closed.
           </p>
         </aside>
@@ -536,7 +577,7 @@ export default function CustomLaunchApiDocsPage() {
             authorization patching binds four zero ABI leaves:{" "}
             <code>bytes32 nonce</code>, <code>bytes32 r</code>,{" "}
             <code>bytes32 s</code> and <code>uint8 v</code>. Configure their
-            numeric ABI argument paths with 1–16 indices from 0 through 255.
+            numeric ABI argument paths with 1 to 16 indices from 0 through 255.
             Static tuple and fixed-array descendants are supported; dynamic
             parents and applicant-supplied calldata offsets are not.
           </li>
@@ -583,8 +624,8 @@ export default function CustomLaunchApiDocsPage() {
             <a href="/openapi/custom-launch-v3.json">
               direct-native V3 OpenAPI document
             </a>{" "}
-            includes a preparatory profile 3.4 candidate; it is not evidence of
-            backend activation or a CLI release. The live/default production
+            includes reference profile 3.4; read capabilities for
+            the accepted version and discovery for its CLI release. The Ethereum
             profile for project-owned tokens, hooks and multi-contract launch
             graphs uses{" "}
             <code>programmable.direct-native-hook-graph-profile.v3</code>,{" "}
@@ -605,7 +646,7 @@ export default function CustomLaunchApiDocsPage() {
 
         <ul className={styles.checkList}>
           <li>
-            The Router supports 2–16 targets, while this profile requires 3–16
+            The Router supports 2 to 16 targets, while this profile requires 3 to 16
             because token, hook and initializer roles are distinct. All fourteen
             Uniswap v4 permission bits are supported, including custom-accounting
             return deltas, provided the declared mask, compiled permissions and
@@ -734,8 +775,8 @@ export default function CustomLaunchApiDocsPage() {
           per-target init code is limited to 49,152 bytes and initializer
           calldata to 131,072 bytes. Use the{" "}
           <a href="/openapi/custom-launch-v3.json">V3 OpenAPI contract</a> for every
-          nested field, enum and bound in the preparatory profile 3.4 candidate.
-          Do not submit those pending fields unless live discovery and
+          nested field, enum and bound in reference profile 3.4.
+          Submit that profile only when live discovery and
           capabilities advertise profile 3.4.0. The retained{" "}
           <a href="/openapi/custom-launch-v1.json">V1 contract</a> documents
           compatibility reads and its read-only creation route.
@@ -809,11 +850,11 @@ export default function CustomLaunchApiDocsPage() {
         </p>
 
         <aside className={styles.callout}>
-          <strong>Keep platform, LP and future operations separate</strong>
+          <strong>Use the fee contract for the selected profile</strong>
           <p>
             The pool&apos;s LP fee is separate from this platform charge and must
             be disclosed separately. Generic fee claiming and buyback
-            management for arbitrary hooks are not live. The reserved{" "}
+            management for arbitrary hooks are outside these API scopes. The reserved{" "}
             <code>fees:claim</code> and <code>buybacks:manage</code> scopes remain
             disabled.
           </p>
@@ -1037,19 +1078,18 @@ export default function CustomLaunchApiDocsPage() {
 
       <section id="extensions">
         <div className={styles.sectionIntro}>
-          <h2>Treat future capabilities as separate contracts</h2>
+          <h2>Supported operations</h2>
           <p>
             Only operations, scopes and profile versions advertised by live
-            discovery and capabilities are active. A preparatory OpenAPI update
-            is not activation, and existing keys do not gain a newly enabled
-            scope automatically.
+            discovery and capabilities are available. Check the selected profile
+            before submitting. Existing keys do not gain additional scopes automatically.
           </p>
         </div>
 
         <p className={styles.bodyCopy}>
           Generic fee claims, buyback management, reusable-template publication
           and a public Hookbuilder are not granted by the V3 Custom Launch API.
-          Reserved scopes promise no future behavior.
+          Use the operation and credentials defined by each separate service.
         </p>
       </section>
 
@@ -1059,6 +1099,9 @@ export default function CustomLaunchApiDocsPage() {
       >
         <p>Continue</p>
         <ul>
+          <li>
+            <Link href="/docs/developers/custom-launch-quickstart">Follow the launch quickstart</Link>
+          </li>
           <li>
             <Link href="/developers/api-keys">Create or manage API keys</Link>
           </li>
@@ -1072,7 +1115,7 @@ export default function CustomLaunchApiDocsPage() {
           </li>
           <li>
             <a href="/openapi/custom-launch-v3.json">
-              Review the preparatory profile 3.4 contract
+              Read the Ethereum V3 request contract
             </a>
           </li>
           <li>

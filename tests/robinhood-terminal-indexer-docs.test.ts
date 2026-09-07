@@ -174,7 +174,7 @@ function sortJsonKeys(value: unknown): unknown {
 }
 
 describe("Robinhood terminal and indexer documentation", () => {
-  it("publishes the canonical guide independently of the GitBook fallback", async () => {
+  it("keeps public docs in GitBook and preserves the technical compatibility guide", async () => {
     const rewrites = await nextConfig.rewrites?.();
 
     expect(vercelConfig.rewrites).not.toEqual(
@@ -183,7 +183,7 @@ describe("Robinhood terminal and indexer documentation", () => {
       ]),
     );
     expect(rewrites).toEqual({
-      fallback: [
+      beforeFiles: [
         {
           source: "/docs",
           destination: "https://proxy.gitbook.site/sites/site_V93gQ",
@@ -194,7 +194,7 @@ describe("Robinhood terminal and indexer documentation", () => {
         },
       ],
     });
-    expect(vercelConfig.redirects).toContainEqual({
+    expect(vercelConfig.redirects).not.toContainEqual({
       source: "/docs/developers/robinhood-terminal-indexer",
       destination: "/developer-reference/robinhood-terminal-indexer",
       permanent: false,

@@ -1,23 +1,25 @@
 ---
-description: Current requirements and status for reusable public Programmable templates
+description: Publish reusable behavior through the Module Mode contribution workflow
 ---
 
-# Public templates
+# Reusable modules
 
-A public template is one versioned product that other creators can configure for their own launches. It can include a hook, factory, application or companion service, but every required component and configurable boundary belongs to the same version target.
+Modules are the reusable building blocks offered through Module Mode. A module supplies a versioned implementation and declares its configuration, required capabilities and management actions. Creators select compatible modules when they launch a coin.
 
-Public template intake and template fee share activation are not open. Templates are not part of the current Custom launch submission flow. The Custom Launch API accepts one concrete project and token bundle; it does not publish a reusable catalog entry.
+## Publish a module
 
-## Template or project
+Use the [module contribution API](../developers/module-mode.md) to submit the exact source package, configuration contract, author wallet, reward wallet and required evidence. Review checks the implementation and its compatibility with the host. Catalog publication makes that specific revision available to creators.
 
-The [Custom Launch API](https://programmable.market/developers/custom-launch-api-v1.md) is for one concrete project and token. A future template path would publish reusable behavior that other creators can select. A project that happens to contain reusable code is still a project unless an active template program separately versions and publishes it.
+Every launched coin records the revisions and configuration it selected. A new source revision, dependency, permission or fee rule needs its own version and review. Changes to an existing coin follow its deployed contracts and management permissions.
 
-## Version binding
+## Earn from use
 
-Each template version identifies the source repository, commit, artifacts, parameter bounds, deployment path and payout wallet. A change to behavior, dependencies, factory, fees, authority or allowed configuration creates a new version rather than inheriting the previous record.
+Module rewards accrue when eligible modules are used by a coin that generates qualifying trading fees. The total author allocation is shared among the eligible module families selected for that launch. Adding multiple components from the same family does not create extra shares. [Fees and revenue](../economics.md) lists the fee policy and version-specific rates.
 
-## Published fee model
+A contribution submission, review result or catalog listing does not itself generate revenue. Use the registered reward wallet and the supported claim interface to receive accrued rewards.
 
-The intended public template policy is one 0.2% transaction fee on the supported trading route. The template creator receives 0.1% and Programmable receives 0.1%. This fee is not active until the exact version and payout route are activated. It is one complete fee, not a published rate followed by another unnamed Programmable charge.
+## Custom projects
 
-Partnership templates use a separate policy and review path. They are not available through public intake.
+A Custom Launch submits one concrete token and contract package. It does not create a Module Mode catalog entry. Reusable source in a Custom project can be published in its repository, but catalog distribution uses the separate module contribution workflow.
+
+Historical template application records remain available in [Launch Policy](https://github.com/programmablehq/Launch-Policy). They are records of the former intake process, not the current submission route.
