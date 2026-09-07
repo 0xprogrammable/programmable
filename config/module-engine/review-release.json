@@ -1,1 +1,38 @@
-null
+{
+  "schemaVersion": "programmable.module-engine.release.v1",
+  "sourceVersion": "module-engine-v1",
+  "engineProfile": "programmable.module-engine-solidity@1",
+  "chainId": 4663,
+  "sourceCommit": "17b64b6613108dbc6ffdf767607bde6ea33343cd",
+  "tokenCreationCodeHash": "0x445809d9f7a34e959de4a96dec1e1beddfb265755bf28c57c42744adea1128ef",
+  "economicsPolicyId": "0x781124e941c10961779bc0d3ce1606083d16e1af3a03dccbc10d362b81085cc2",
+  "finalityPolicy": "robinhood-ethereum-finalized-v1",
+  "contracts": {
+    "tokenFactory": {
+      "address": "0x754e8c1ade3c6c4c863590a91f2ed020baf8e779",
+      "runtimeCodeHash": "0x9354ef051bafa1edccb95c91d999e31025c012ee8d93392a78a51d83594845f2"
+    },
+    "launchPolicy": {
+      "address": "0xf3ff250759a66edc7893bba9d34daf4ba4ae4caa",
+      "runtimeCodeHash": "0x1c485a64c77174e0b2a78adf2527128792180def26cbab2ca00fcfa74b73ba91"
+    },
+    "registry": {
+      "address": "0x0082094ebeb3817cd78b2bc3725ca23b5720d884",
+      "runtimeCodeHash": "0x364028382d38d4d1d4994ad305e0538f72ef2f2360a0f671ae82912c44374fdd"
+    },
+    "host": {
+      "address": "0x4ee5822de7296df5959085b95762f8c1c63da614",
+      "runtimeCodeHash": "0x01e10e24635483dff1ddfab9ef3925d34f061f542714e13134042ed7b6129dc0"
+    },
+    "ledger": {
+      "address": "0xd1a00fe1cf3a5fb2aab7d01513f3a9a0fa12f2b8",
+      "runtimeCodeHash": "0xc4123ca7d1adff7e0cadae9add95fc196325478ba89bd89360e7ebcb3e1ca401"
+    },
+    "poolManager": {
+      "address": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
+      "runtimeCodeHash": "0xbd3881180b547f5fe817545743cfb4343e96b1bc6640dcd70c106b0066e95626"
+    }
+  },
+  "startBlock": "57168845",
+  "releaseDigest": "0xed101352062708f9c783aaf7b52fb752d98c5a5a2b0c3955ed14ab7feefa5497"
+}
