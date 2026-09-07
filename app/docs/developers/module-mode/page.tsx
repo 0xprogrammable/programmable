@@ -15,7 +15,7 @@ const sections = [
   { id: "review", label: "Review and availability" },
   { id: "rewards", label: "Author rewards" },
 ] as const;
-const cliDirectory = "/developers/module-mode-cli/v1.0.0-development.3";
+const cliDirectory = "/developers/module-mode-cli/v1.0.0-development.4";
 
 export default function ModuleModeDeveloperPage() {
   return <DocsShell currentPath="/docs/developers/module-mode" title="Build a module"
@@ -73,7 +73,7 @@ export default function ModuleModeDeveloperPage() {
         Use one stable idempotency key for each exact request. If a connection fails, retry the same saved request
         and key. Changed source becomes a new immutable revision.</p>
       <p className={styles.bodyCopy}><a href="/developers/module-mode-api-v1.md">Read the complete API and CLI guide</a>
-        {" · "}<a href={`${cliDirectory}/programmable-module-mode-1.0.0-development.3.mjs`}>Standalone CLI</a></p>
+        {" · "}<a href={`${cliDirectory}/programmable-module-mode-1.0.0-development.4.mjs`}>Standalone CLI</a></p>
     </section>
     <section id="review">
       <h2>Review and availability</h2>

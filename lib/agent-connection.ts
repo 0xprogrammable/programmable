@@ -48,7 +48,7 @@ export const PROGRAMMABLE_AGENT_ENTRY = Object.freeze({
       reviewCapabilities: "https://api.programmable.market/v1/modules/review-capabilities",
       submissions: "https://api.programmable.market/v1/modules/submissions",
       reviewStatus: "https://api.programmable.market/v1/modules/submissions/{submissionId}/review",
-      cliManifest: "https://programmable.market/developers/module-mode-cli/v1.0.0-development.3/manifest.json",
+      cliManifest: "https://programmable.market/developers/module-mode-cli/v1.0.0-development.4/manifest.json",
       authorWalletRequired: true,
       rewardWalletRequired: true,
     },
