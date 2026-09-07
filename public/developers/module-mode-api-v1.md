@@ -6,7 +6,7 @@ A GitHub repository is not required. The descriptor always pins `source.files` w
 
 The source-intake wire contract stays `programmable.modules.api.v0.1`, with source requests in `programmable.modules.submission.v0.1`. Its receipt is a historical record of the saved source. The separate `programmable.modules.review-status.v1` response reports the current build and reviewer workflow; neither response grants onchain admission.
 
-Use the immutable **1.0.0-development.4** standalone CLI for the review commands. Download its [manifest](https://programmable.market/developers/module-mode-cli/v1.0.0-development.4/manifest.json) and [CLI file](https://programmable.market/developers/module-mode-cli/v1.0.0-development.4/programmable-module-mode-1.0.0-development.4.mjs), and verify the file's SHA-256 against `artifact.sha256` in the manifest before running it. It needs Node.js, with no npm install or repository checkout. The older development.1 file remains unchanged and supports intake receipts only. These are development distribution versions; the live API capabilities determine which operations are enabled.
+Use the immutable **1.0.0-development.5** standalone CLI for the review commands. Download its [manifest](https://programmable.market/developers/module-mode-cli/v1.0.0-development.5/manifest.json) and [CLI file](https://programmable.market/developers/module-mode-cli/v1.0.0-development.5/programmable-module-mode-1.0.0-development.5.mjs), and verify the file's SHA-256 against `artifact.sha256` in the manifest before running it. It needs Node.js, with no npm install or repository checkout. The older development.1 file remains unchanged and supports intake receipts only. These are development distribution versions; the live API capabilities determine which operations are enabled.
 
 ## Native and Engine source profiles
 
@@ -59,7 +59,7 @@ Use Node.js 24.14 or newer within the supported Node 24 release line. Set `MODUL
 The standalone CLI works from your own module directory:
 
 ```bash
-MODULE_CLI=/absolute/path/to/programmable-module-mode-1.0.0-development.4.mjs
+MODULE_CLI=/absolute/path/to/programmable-module-mode-1.0.0-development.5.mjs
 MODULE_API_ORIGIN=https://api.programmable.market
 
 node "$MODULE_CLI" module-capabilities \

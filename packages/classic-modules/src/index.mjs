@@ -3,8 +3,10 @@ import { encodeAbiParameters, keccak256, sha256, stringToHex } from 'viem';
 import moduleSchema from '../schemas/module-manifest-v1.json' with { type: 'json' };
 import recipeSchema from '../schemas/recipe-v1.json' with { type: 'json' };
 import { canonicalJson } from './canonical-json.mjs';
+import { ClassicModuleError, nonzeroAddress, familyIdFor, safeRelativePath } from './primitives.mjs';
 
 export { canonicalJson } from './canonical-json.mjs';
+export { ClassicModuleError, familyIdFor, safeRelativePath } from './primitives.mjs';
 export { buildCreatorSplit, encodeCreatorTakeover, MAX_CREATOR_SPLIT_RECIPIENTS, CREATOR_SPLIT_DOMAIN } from './creator-recipients.mjs';
 export const MAX_MODULES = 8;
 export const MAX_CONFIG_BYTES = 256;
@@ -12,7 +14,6 @@ export const MAX_CATALOGUE_ENTRIES = 10_000;
 export const RECIPE_DOMAIN = keccak256(stringToHex('programmable.classic.recipe.v1'));
 export const MAX_UINT256 = (1n << 256n) - 1n;
 export const MAX_QUOTE_LIMIT = (1n << 127n) - 1n;
-const ZERO_ADDRESS = `0x${'0'.repeat(40)}`;
 const ZERO_HASH = `0x${'0'.repeat(64)}`;
 const ajvOptions = { allErrors: true, strict: true, ownProperties: true };
 const ajv = new Ajv(ajvOptions);
@@ -20,14 +21,6 @@ const manifestShape = ajv.compile(moduleSchema);
 const recipeShape = ajv.compile(recipeSchema);
 const configurationValidators = new Map();
 
-export class ClassicModuleError extends Error {
-  constructor(code, message, path = '') {
-    super(message);
-    this.name = 'ClassicModuleError';
-    this.code = code;
-    this.path = path;
-  }
-}
 function requireCondition(condition, code, message, path = '') {
   if (!condition) throw new ClassicModuleError(code, message, path);
 }
@@ -60,20 +53,6 @@ function assertUint(value, maximum = MAX_UINT256, label = 'integer') {
   const integer = BigInt(value);
   requireCondition(integer <= maximum, 'INTEGER_RANGE', `${label} is outside the supported range`);
   return integer;
-}
-function nonzeroAddress(value, label) {
-  requireCondition(typeof value === 'string' && /^0x[0-9a-fA-F]{40}$/.test(value)
-    && value.toLowerCase() !== ZERO_ADDRESS, 'INVALID_ADDRESS', `${label} must be a nonzero address`);
-}
-export function safeRelativePath(value) {
-  return typeof value === 'string' && value.length <= 240
-    && /^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(value)
-    && value.split('/').every((part) => part !== '' && part !== '.' && part !== '..');
-}
-export function familyIdFor(author, salt) {
-  nonzeroAddress(author, 'author');
-  requireCondition(/^0x[0-9a-fA-F]{64}$/.test(salt), 'INVALID_SALT', 'Family salt must be bytes32');
-  return keccak256(encodeAbiParameters([{ type: 'address' }, { type: 'bytes32' }], [author, salt]));
 }
 export function versionIdFor(familyId, version) {
   requireCondition(/^0x[0-9a-fA-F]{64}$/.test(familyId) && familyId.toLowerCase() !== ZERO_HASH,
