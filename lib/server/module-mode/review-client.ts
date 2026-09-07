@@ -2,6 +2,7 @@ import "server-only";
 
 import { randomBytes } from "node:crypto";
 import { getAddress, isAddress } from "viem";
+import { isWebsiteAdminWallet } from "@/lib/admin-access";
 import configuredRelease from "@/config/module-mode/robinhood.preview.json";
 import { isReviewId, parseReviewAttempt, parseReviewJob, parseReviewPlan, reviewDigest, reviewRecord, parseReviewQueueItem, type ReviewDetail } from "@/lib/module-mode/review-contract";
 import { nativeCanonicalJson } from "@/lib/module-mode/native-catalog";
@@ -63,6 +64,7 @@ export function createModuleReviewClient(input: {
       if (typeof rawWallet !== "string" || !isAddress(rawWallet) || BigInt(rawWallet) === 0n) fail(400, "wallet_address_invalid");
       const wallet = getAddress(rawWallet).toLowerCase() as `0x${string}`;
       if (!principal.wallets.some((linked) => linked.toLowerCase() === wallet)) fail(403, "wallet_not_linked");
+      if (!isWebsiteAdminWallet(wallet)) fail(403, "admin_wallet_required");
       const signal = AbortSignal.any([request.signal, AbortSignal.timeout(20_000)]);
       const call = async (path: string, method: "GET" | "POST" = "GET", payload?: unknown, maximum = 4 * 1024 * 1024) => {
         const target = new URL(path, base);

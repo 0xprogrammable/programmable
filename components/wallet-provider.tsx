@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { AdminDashboardLink } from "@/components/admin-dashboard-link";
 import { usePathname } from "next/navigation";
 import type { PrivyClientConfig } from "@privy-io/react-auth";
 import {
@@ -3448,8 +3449,6 @@ export function WalletButton({ compact = false }: { compact?: boolean }) {
     disconnect,
     openWallet,
     preloadWallet,
-    getAccessToken,
-    getIdentityToken,
   } = useWallet();
   const menuRef = useRef<HTMLDivElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
@@ -3457,10 +3456,6 @@ export function WalletButton({ compact = false }: { compact?: boolean }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuCopied, setMenuCopied] = useState(false);
   const [menuError, setMenuError] = useState("");
-  const [partnerAdminAccount, setPartnerAdminAccount] =
-    useState<string | null>(null);
-  const [moduleReviewerAccount, setModuleReviewerAccount] =
-    useState<string | null>(null);
   const hydrationPending = connecting && !openingWallet;
 
   useEffect(() => {
@@ -3489,51 +3484,6 @@ export function WalletButton({ compact = false }: { compact?: boolean }) {
       window.removeEventListener("keydown", closeOnEscape);
     };
   }, [menuOpen]);
-
-  useEffect(() => {
-    const account = wallet?.account ?? null;
-    if (!menuOpen || !account) return;
-    const controller = new AbortController();
-    void (async () => {
-      try {
-        const [accessToken, identityToken] = await Promise.all([
-          getAccessToken(),
-          getIdentityToken().catch(() => null),
-        ]);
-        if (!accessToken || controller.signal.aborted) return;
-        const headers = new Headers({
-          Accept: "application/json",
-          Authorization: `Bearer ${accessToken}`,
-        });
-        if (identityToken) {
-          headers.set("X-Privy-Identity-Token", identityToken);
-        }
-        const query = new URLSearchParams({
-          walletAddress: account,
-          page: "1",
-          pageSize: "1",
-        });
-        const moduleQuery = new URLSearchParams({ walletAddress: account });
-        const [partner, modules] = await Promise.allSettled([
-          fetch(`/api/admin/partners?${query}`, {
-            cache: "no-store", headers, signal: controller.signal, redirect: "error",
-          }),
-          fetch(`/api/admin/modules?${moduleQuery}`, {
-            cache: "no-store", headers, signal: controller.signal, redirect: "error",
-          }),
-        ]);
-        if (controller.signal.aborted) return;
-        setPartnerAdminAccount(partner.status === "fulfilled" && partner.value.ok ? account : null);
-        setModuleReviewerAccount(modules.status === "fulfilled" && modules.value.ok ? account : null);
-      } catch (error) {
-        if (!(error instanceof DOMException && error.name === "AbortError")) {
-          setPartnerAdminAccount(null);
-          setModuleReviewerAccount(null);
-        }
-      }
-    })();
-    return () => controller.abort();
-  }, [getAccessToken, getIdentityToken, menuOpen, wallet?.account]);
 
   const label = disconnecting
     ? "Disconnecting"
@@ -3578,8 +3528,6 @@ export function WalletButton({ compact = false }: { compact?: boolean }) {
       onClick={() => {
         if (wallet) {
           setMenuError("");
-          setPartnerAdminAccount(null);
-          setModuleReviewerAccount(null);
           setMenuOpen((current) => !current);
         } else {
           openWallet();
@@ -3661,27 +3609,8 @@ export function WalletButton({ compact = false }: { compact?: boolean }) {
         >
           API keys
         </Link>
-        {partnerAdminAccount?.toLowerCase()
-            === wallet.account.toLowerCase() ? (
-          <Link
-            href="/admin/partners"
-            prefetch={false}
-            tabIndex={menuOpen ? undefined : -1}
-            onClick={() => setMenuOpen(false)}
-          >
-            Partner admin
-          </Link>
-        ) : null}
-        {moduleReviewerAccount?.toLowerCase() === wallet.account.toLowerCase() ? (
-          <Link
-            href="/admin/modules"
-            prefetch={false}
-            tabIndex={menuOpen ? undefined : -1}
-            onClick={() => setMenuOpen(false)}
-          >
-            Module reviews
-          </Link>
-        ) : null}
+        <AdminDashboardLink account={wallet.account} authenticated={authenticated}
+          menuOpen={menuOpen} onNavigate={() => setMenuOpen(false)} />
         <button
           type="button"
           tabIndex={menuOpen ? undefined : -1}

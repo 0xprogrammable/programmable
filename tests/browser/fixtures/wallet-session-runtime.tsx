@@ -1,4 +1,5 @@
 import { useSyncExternalStore, type ReactNode } from "react";
+import { WEBSITE_ADMIN_WALLET } from "../../../lib/admin-access";
 
 // Only the SDK boundary is substituted. Wallet ownership, selection, login
 // gating and the application dialog remain in the production WalletProvider.
@@ -203,6 +204,8 @@ function chooseScenario(scenario: string) {
     providerAccountOverride: null, providerChainOverride: null,
   };
   switch (scenario) {
+    case "website-admin":
+      update({ ...base, user: user("fixture-website-admin", WEBSITE_ADMIN_WALLET, [WEBSITE_ADMIN_WALLET]), wallets: [wallet(WEBSITE_ADMIN_WALLET)] }); break;
     case "both-owned":
       update({ ...base, user: alphaBoth, wallets: [wallet(accountB, true, 900), wallet(accountA)] }); break;
     case "foreign-linked":
@@ -236,6 +239,7 @@ export function FixtureControls() {
   return <section aria-label="SDK fixture controls">
     <label>SDK scenario <select aria-label="SDK scenario" onChange={(event) => chooseScenario(event.target.value)} defaultValue="primary">
       <option value="primary">Primary wallet with unlinked recent wallet</option>
+      <option value="website-admin">Website admin wallet</option>
       <option value="both-owned">Two linked owned wallets</option>
       <option value="foreign-linked">Foreign linked recent wallet</option>
       <option value="owned-with-foreign">Two owned wallets and one foreign wallet</option>
