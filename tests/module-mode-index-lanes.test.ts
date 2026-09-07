@@ -24,7 +24,7 @@ function fixture() {
   const nativeSource: ModuleModeIndexSource = { sourceKind: "module-native-v1", sourceAddress: a(800), releaseDigest: h(801), startBlock: 50n,
     finalized: point(100), block: async n => point(Number(n)), launches: async () => [] };
   mocks.store.mockReturnValue(store); mocks.custom.mockResolvedValue(custom);
-  mocks.module.mockResolvedValue([{ releaseDigest: nativeSource.releaseDigest, source: async () => nativeSource }]);
+  mocks.module.mockResolvedValue({ lanes: [{ releaseDigest: nativeSource.releaseDigest, source: async () => nativeSource }], unavailableSources: [] });
   return { read: () => saved, write, remove: () => { saved = null; } };
 }
 const request = () => new Request("https://programmable.market/api/ops/robinhood-index", { headers: { authorization: `Bearer ${"a".repeat(48)}` } });
@@ -56,7 +56,7 @@ describe("Independent canonical Robinhood index lanes", () => {
     expect((await GET(request())).status).toBe(503); expect(f.write).not.toHaveBeenCalled(); expect(f.read()).toBeNull();
   });
   it("reports the disabled Module lane and rejects unauthenticated or overridden jobs", async () => {
-    fixture(); mocks.module.mockResolvedValue([]);
+    fixture(); mocks.module.mockResolvedValue({ lanes: [], unavailableSources: [] });
     const response = await GET(request()); expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ custom: { status: "ready" }, moduleMode: { status: "disabled" } });
     mocks.store.mockClear();
@@ -68,10 +68,10 @@ describe("Independent canonical Robinhood index lanes", () => {
     const f = fixture();
     const historical: ModuleModeIndexSource = { sourceKind: "module-native-v1", sourceAddress: a(810), releaseDigest: h(811),
       startBlock: 50n, finalized: point(100), block: async n => point(Number(n)), launches: async () => [] };
-    mocks.module.mockResolvedValue([
+    mocks.module.mockResolvedValue({ lanes: [
       { releaseDigest: h(801), source: async () => { throw new Error("Private current-release provider failure"); } },
       { releaseDigest: historical.releaseDigest, source: async () => historical },
-    ]);
+    ], unavailableSources: [] });
     const response = await GET(request()); const body = await response.json();
     expect(response.status).toBe(503);
     expect(body.moduleMode).toEqual({ status: "unavailable" });
@@ -79,10 +79,22 @@ describe("Independent canonical Robinhood index lanes", () => {
     expect(f.read()?.moduleMode?.releaseDigest).toBe(h(811));
     expect(JSON.stringify(body)).not.toContain("Private");
     const historicalSnapshot = structuredClone(f.read()?.moduleMode);
-    mocks.module.mockResolvedValue([]);
+    mocks.module.mockResolvedValue({ lanes: [], unavailableSources: [] });
     const missing = await GET(request());
     expect(missing.status).toBe(503);
     expect((await missing.json()).moduleSources[h(811)]).toEqual({ status: "unavailable" });
     expect(f.read()?.moduleMode).toEqual(historicalSnapshot);
+  });
+  it("reports an installed source failure before its first snapshot while retaining healthy progress", async () => {
+    const f = fixture();
+    const healthy = await mocks.module();
+    mocks.module.mockResolvedValue({ ...healthy, unavailableSources: [
+      { releaseId: "module-mode-native-v2", reasonCode: "MODULE_MODE_RELEASE_UNAVAILABLE" },
+    ] });
+    const response = await GET(request()); const body = await response.json();
+    expect(response.status).toBe(503);
+    expect(body.moduleMode).toMatchObject({ status: "ready", indexedThrough: "100" });
+    expect(body.moduleUnavailableSources).toEqual([{ releaseId: "module-mode-native-v2", reasonCode: "MODULE_MODE_RELEASE_UNAVAILABLE" }]);
+    expect(f.read()?.moduleMode?.cursor).toEqual(point(100));
   });
 });

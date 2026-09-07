@@ -1,7 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { robinhoodSource } from "@/lib/server/robinhood-index/source";
 import { indexStore } from "@/lib/server/robinhood-index/store";
-import { configuredModuleModeSources } from "@/lib/server/robinhood-index/module-source";
+import { configuredModuleModeSources, type ModuleModeUnavailableSource } from "@/lib/server/robinhood-index/module-source";
 import { moduleModeSnapshots } from "@/lib/server/robinhood-index/model";
 import { syncRobinhoodIndex, syncModuleModeIndex } from "@/lib/server/robinhood-index/sync";
 
@@ -32,9 +32,12 @@ export async function GET(request: Request) {
     const remaining = 165_000 - (Date.now() - startedAt);
     let moduleMode: ModuleLaneResult = { status: "unavailable" };
     const moduleSources: Record<string, ModuleLaneResult> = {};
+    let moduleUnavailableSources: readonly ModuleModeUnavailableSource[] = [];
     if (remaining > 0) {
       try {
-        const lanes = await configuredModuleModeSources(undefined, AbortSignal.timeout(remaining));
+        const inventory = await configuredModuleModeSources(undefined, AbortSignal.timeout(remaining));
+        const { lanes } = inventory;
+        moduleUnavailableSources = inventory.unavailableSources;
         const primary = lanes[0]?.releaseDigest;
         // A slow or failed generation must not permanently starve later sources. Use the existing
         // checkpoint timestamps for scheduling; CAS still fences every shared-envelope write.
@@ -59,8 +62,8 @@ export async function GET(request: Request) {
       } catch { /* Preserve each lane's last verified state; never report a failed source as an empty success. */ }
     }
     const failed = result === null || result.status === "partial" || moduleMode.status === "partial" || moduleMode.status === "unavailable"
-      || Object.values(moduleSources).some(source => source.status === "partial" || source.status === "unavailable");
+      || moduleUnavailableSources.length > 0 || Object.values(moduleSources).some(source => source.status === "partial" || source.status === "unavailable");
     return reply({ ...(result ?? { error: "index_update_unavailable" }),
-      custom: result ?? { status: "unavailable" }, moduleMode, moduleSources }, failed ? 503 : 200);
+      custom: result ?? { status: "unavailable" }, moduleMode, moduleSources, moduleUnavailableSources }, failed ? 503 : 200);
   } catch { return reply({ error: "index_update_unavailable" }, 503); }
 }

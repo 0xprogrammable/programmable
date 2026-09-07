@@ -29,8 +29,16 @@ export interface ModuleModeFinalizedCollector {
   }>;
 }
 export interface ModuleModeReleaseCollector extends ModuleModeFinalizedCollector {
-  listAuthorizedReleases(): Promise<readonly ModuleModeRelease[]>;
+  listAuthorizedSources(): Promise<ModuleModeReleaseInventory>;
 }
+export type ModuleModeUnavailableSource = {
+  releaseId: string;
+  reasonCode: "MODULE_MODE_RELEASE_UNAVAILABLE" | "MODULE_MODE_RELEASE_COLLISION" | "MODULE_MODE_SOURCE_REGISTRY_UNAVAILABLE" | "MODULE_MODE_RELEASE_DISABLED";
+};
+export type ModuleModeReleaseInventory = {
+  releases: readonly ModuleModeRelease[];
+  unavailableSources: readonly ModuleModeUnavailableSource[];
+};
 export type ModuleModeSourceLane = {
   releaseDigest: string;
   source: (signal?: AbortSignal) => Promise<ModuleModeIndexSource>;
@@ -115,16 +123,28 @@ export async function configuredModuleModeSource(collector?: ModuleModeFinalized
 }
 
 /** Discover installed source generations, then authenticate and collect each one independently. */
-export async function configuredModuleModeSources(collector?: ModuleModeReleaseCollector, signal?: AbortSignal): Promise<ModuleModeSourceLane[]> {
-  if (!preview.enabled && preview.status === "preview") return [];
+export async function configuredModuleModeSources(collector?: ModuleModeReleaseCollector, signal?: AbortSignal, primaryProfile: unknown = preview): Promise<{
+  lanes: ModuleModeSourceLane[]; unavailableSources: readonly ModuleModeUnavailableSource[];
+}> {
   const installed = collector ?? createModuleModeHttpCollector({
     backendBaseUrl: process.env.PROGRAMMABLE_CUSTOM_LAUNCH_API_BASE_URL ?? "",
     websiteToken: process.env.PROGRAMMABLE_CUSTOM_LAUNCH_WEBSITE_TOKEN ?? "", fetchBackend: fetch, signal,
   });
-  const primary = bindActiveModuleModeRelease(preview);
-  const releases = await installed.listAuthorizedReleases();
-  const byDigest = new Map([[primary.releaseDigest, primary]]);
-  const bySource = new Map([[primary.contracts.launcher.address, primary.releaseDigest]]);
+  const { releases, unavailableSources: unavailable } = await installed.listAuthorizedSources();
+  const unavailableSources = [...unavailable];
+  const byDigest = new Map<string, ModuleModeRelease>();
+  const bySource = new Map<string, string>();
+  // Launch availability is independent from the inventory of supported historical sources.
+  // A broken current profile is visible but does not stop discovery or collection of other generations.
+  try {
+    const descriptors = primaryProfile && typeof primaryProfile === "object" ? Object.getOwnPropertyDescriptors(primaryProfile) : {};
+    const intentionallyDisabled = descriptors.enabled?.value === false && descriptors.status?.value === "preview";
+    if (!intentionallyDisabled) {
+      const primary = bindActiveModuleModeRelease(primaryProfile);
+      byDigest.set(primary.releaseDigest, primary);
+      bySource.set(primary.contracts.launcher.address, primary.releaseDigest);
+    }
+  } catch { unavailableSources.push({ releaseId: "module-mode-current", reasonCode: "MODULE_MODE_RELEASE_UNAVAILABLE" }); }
   for (const release of releases) {
     const existing = byDigest.get(release.releaseDigest);
     if (existing && JSON.stringify(existing) !== JSON.stringify(release)) throw new Error("Module Mode release authorization changed");
@@ -132,13 +152,14 @@ export async function configuredModuleModeSources(collector?: ModuleModeReleaseC
     if (sourceDigest && sourceDigest !== release.releaseDigest) throw new Error("Module Mode source identity collides");
     byDigest.set(release.releaseDigest, release); bySource.set(release.contracts.launcher.address, release.releaseDigest);
   }
-  return [...byDigest.values()].map(release => ({ releaseDigest: release.releaseDigest,
+  const lanes = [...byDigest.values()].map(release => ({ releaseDigest: release.releaseDigest,
     source: (laneSignal?: AbortSignal) => moduleModeSource(release, collector ?? createModuleModeHttpCollector({
       backendBaseUrl: process.env.PROGRAMMABLE_CUSTOM_LAUNCH_API_BASE_URL ?? "",
       websiteToken: process.env.PROGRAMMABLE_CUSTOM_LAUNCH_WEBSITE_TOKEN ?? "", fetchBackend: fetch,
       signal: signal && laneSignal ? AbortSignal.any([signal, laneSignal]) : signal ?? laneSignal,
     })),
   }));
+  return { lanes, unavailableSources: Object.freeze(unavailableSources) };
 }
 
 /** Server-held service credentials only. Contributor keys and client-supplied profiles never enter this route. */
@@ -196,13 +217,25 @@ export function createModuleModeHttpCollector(input: {
     return envelope.result;
   };
   return {
-    async listAuthorizedReleases() {
-      const result = moduleRecord(await request("sources", {}), ["releases"], "collector.sources");
+    async listAuthorizedSources() {
+      const result = moduleRecord(await request("sources", {}), ["releases", "unavailableSources"], "collector.sources");
       if (!Array.isArray(result.releases) || result.releases.length > 32) throw new Error("Module Mode source inventory exceeds its budget");
       const releases = result.releases.map(bindActiveModuleModeRelease);
       if (new Set(releases.map(release => release.releaseDigest)).size !== releases.length
         || new Set(releases.map(release => release.contracts.launcher.address)).size !== releases.length) throw new Error("Module Mode sources contain duplicate identities");
-      return Object.freeze(releases);
+      if (!Array.isArray(result.unavailableSources) || result.unavailableSources.length > 33) throw new Error("Module Mode unavailable source inventory exceeds its budget");
+      const unavailableSources = result.unavailableSources.map(value => {
+        const entry = moduleRecord(value, ["releaseId", "reasonCode"], "collector.sources.unavailable");
+        if (typeof entry.releaseId !== "string" || entry.releaseId.length > 96 || !/^module-mode-[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(entry.releaseId)
+          || !["MODULE_MODE_RELEASE_UNAVAILABLE", "MODULE_MODE_RELEASE_COLLISION", "MODULE_MODE_SOURCE_REGISTRY_UNAVAILABLE", "MODULE_MODE_RELEASE_DISABLED"].includes(entry.reasonCode as string)
+          || (entry.releaseId === "module-mode-sources") !== (entry.reasonCode === "MODULE_MODE_SOURCE_REGISTRY_UNAVAILABLE")) {
+          throw new Error("Module Mode unavailable source identity is invalid");
+        }
+        return Object.freeze({ releaseId: entry.releaseId, reasonCode: entry.reasonCode as ModuleModeUnavailableSource["reasonCode"] });
+      });
+      if (new Set(unavailableSources.map(entry => entry.releaseId)).size !== unavailableSources.length) throw new Error("Module Mode unavailable sources contain duplicate identities");
+      if (releases.length === 0 && unavailableSources.length === 0) throw new Error("Module Mode source inventory is unavailable");
+      return { releases: Object.freeze(releases), unavailableSources: Object.freeze(unavailableSources) };
     },
     async authenticateRelease(release) {
       const actual = bindActiveModuleModeRelease(await request("release", { sourceReleaseDigest: release.releaseDigest }));
