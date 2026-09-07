@@ -5,6 +5,7 @@ import { validateOpenPackage, type OpenSourcePackage } from "@/packages/classic-
 import type { FieldDisplay } from "@/lib/module-mode/builder";
 import { nativeCanonicalJson, nativeJson } from "@/lib/module-mode/native-catalog";
 import { MODULE_MODE_ECONOMICS_POLICY_V2, MODULE_MODE_FINALITY_POLICY, moduleAddress, moduleBytes, moduleHash, moduleInteger, moduleRecord, moduleUint } from "@/lib/module-mode/release";
+import { validateModuleEngineConfigurationAbi } from "./configuration";
 
 export const MODULE_ENGINE_RELEASE_SCHEMA = "programmable.module-engine.release.v1" as const;
 export const MODULE_ENGINE_SOURCE_VERSION = "module-engine-v1" as const;
@@ -43,11 +44,13 @@ export interface ModuleEngineReviewedSource {
   compiler: { version: string; binarySha256: string; imageDigest: string; settingsHash: Hex; completeInputHash: Hex; reproducible: true };
   engine: ModuleEngineArtifact;
 }
+export interface ModuleEngineConfigurationComponent { readonly name: string; readonly type: string; readonly components?: readonly ModuleEngineConfigurationComponent[] }
+export interface ModuleEngineConfigurationArgument { readonly path: readonly string[]; readonly type: string; readonly components?: readonly ModuleEngineConfigurationComponent[] }
 export interface ModuleEngineCatalogDefinition {
   id: string; title: string; summary: string; detail: string; version: string;
   interface: "quote-v1" | "escrow-v1" | "settlement-v1" | "custom-v1";
   source: { path: string; sha256: string }; schema: OpenConfigSchema; defaults: OpenConfigValue;
-  configurationAbi: readonly { readonly path: readonly string[]; readonly type: string }[];
+  configurationAbi: readonly ModuleEngineConfigurationArgument[];
   constraints: readonly OpenConstraint[]; fields?: Record<string, FieldDisplay>;
 }
 export interface ModuleEngineHostManifest {
@@ -111,10 +114,7 @@ export function bindModuleEngineDefinition(value: unknown): ModuleEngineCatalogD
   need(typeof raw.source.path === "string" && raw.source.path.length <= 300 && /^[a-f0-9]{64}$/.test(raw.source.sha256), "Invalid source path/hash.");
   assertOpenConfigSchema(raw.schema); assertOpenConstraints(raw.constraints);
   need(Array.isArray(raw.configurationAbi) && raw.configurationAbi.length <= 128, "Invalid configuration ABI.");
-  for (const arg of raw.configurationAbi) {
-    moduleRecord(arg, ["path", "type"], "engine.configurationAbi");
-    need(Array.isArray(arg.path) && arg.path.length <= 16 && arg.path.every((key: unknown) => typeof key === "string") && typeof arg.type === "string" && arg.type.length <= 128, "Invalid configuration mapping.");
-  }
+  validateModuleEngineConfigurationAbi(raw.schema, raw.configurationAbi);
   return raw;
 }
 export function bindModuleEngineRevision(value: unknown): ModuleEngineRevisionDefinition {

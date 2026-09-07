@@ -1,7 +1,7 @@
 import { concatHex, decodeAbiParameters, decodeEventLog, decodeFunctionResult, encodeAbiParameters, encodeEventTopics, encodeFunctionData, erc20Abi, getCreate2Address, keccak256, parseAbi, parseAbiParameters, toHex, type Abi, type Address, type Hex, type TransactionReceipt } from "viem";
 import { compileOpenConfig, type OpenConfigValue } from "@/packages/classic-modules/src/open-config.mjs";
 import { evaluateOpenConstraints } from "@/packages/classic-modules/src/open-constraints.mjs";
-import { encodeProgramConfiguration, validateTokenImage } from "@/lib/module-mode/builder";
+import { validateTokenImage } from "@/lib/module-mode/builder";
 import { createModuleNativeClient, type ModuleNativeClient, type ModuleNativeWalletTransaction } from "@/lib/module-mode/native-client";
 import { nativeCanonicalJson } from "@/lib/module-mode/native-catalog";
 import { moduleAddress, moduleBytes, moduleHash, moduleUint } from "@/lib/module-mode/release";
@@ -9,6 +9,7 @@ import { MODULE_DEFAULT_TOKEN_IMAGE, moduleTokenMetadata, type ModuleSocialLinks
 import { MAX_TOKEN_DESCRIPTION_BYTES, MAX_TOKEN_NAME_BYTES } from "@/lib/metadata-policy";
 import { ENGINE_CONTEXT, moduleEngineConstructorParameters, moduleEngineHostAbi, moduleEngineLaunchParameters, moduleEngineLedgerAbi, moduleEnginePlanParameters, moduleEngineReadAbi, moduleEngineTradeLimitsParameters } from "./abi";
 import { bindActiveModuleEngineRelease, bindModuleEngineTemplate, ENGINE_ZERO_ADDRESS as ZERO, ENGINE_ZERO_HASH as ZERO_HASH, MODULE_ENGINE_CONTRACTS, MODULE_ENGINE_SOURCE_ID, moduleEngineOptionalHash, parseModuleEngineAvailability, type ModuleEngineAvailability, type ModuleEnginePermission, type ModuleEngineRelease, type ModuleEngineTemplate } from "./catalog";
+import { encodeModuleEngineConfiguration } from "./configuration";
 
 export type ModuleEngineClient = ModuleNativeClient;
 export const createModuleEngineClient = createModuleNativeClient;
@@ -180,7 +181,7 @@ export async function prepareModuleEngineLaunch(input: PrepareModuleEngineLaunch
   const imageUri = input.imageUri || MODULE_DEFAULT_TOKEN_IMAGE; need(!validateTokenImage({ kind: "uri", uri: imageUri, contentVerified: false }), "Use a public HTTPS token image.");
   const config = compileOpenConfig(m.catalogDefinition.schema, input.configuration, { roles: { launchWallet: account }, assets: { quote: { chainId: "4663", address: quoteAsset, decimals: quoteDecimals } } });
   const constraints = evaluateOpenConstraints(m.catalogDefinition.constraints, { self: { schema: m.catalogDefinition.schema, value: config.value } }); need(constraints.ok, constraints.violations[0]?.message ?? "Configuration constraints failed.");
-  const configuration = encodeProgramConfiguration(m.catalogDefinition.configurationAbi.map(arg => ({ type: arg.type, path: [...arg.path] })), config), configurationHash = keccak256(configuration); need(configuration.length <= 16_384 * 2 + 2, "Configuration is too large.");
+  const configuration = encodeModuleEngineConfiguration(m.catalogDefinition.configurationAbi, config, m.catalogDefinition.schema), configurationHash = keccak256(configuration); need(configuration.length <= 16_384 * 2 + 2, "Configuration is too large.");
   if (m.revision.fixedConfigurationHash !== ZERO_HASH) same(configurationHash, m.revision.fixedConfigurationHash, "Fixed configuration");
   const host = release.contracts.host.address, creatorSalt = moduleEngineOptionalHash(input.creatorSalt, "creatorSalt");
   const predicted = await read(input.client, host, "predictTokenAddress", [name, symbol, account, creatorSalt], block.blockNumber, moduleEngineHostAbi) as readonly [Address, Hex];
@@ -394,16 +395,17 @@ export async function readModuleEngineQuoteAsset(input: { client: ModuleEngineCl
   const routes: { label: string; data: Hex }[] = [];
   if (definition.interface === "quote-v1") {
     const config = compileOpenConfig(definition.schema, definition.defaults, { roles: { launchWallet: input.account }, assets: { quote: { chainId: "4663", address: quoteAsset, decimals } } });
-    const bytes = encodeProgramConfiguration(definition.configurationAbi.map(arg => ({ type: arg.type, path: [...arg.path] })), config); same(keccak256(bytes), revision.fixedConfigurationHash, "Fixed quote configuration");
-    const [poolManager, , , , converter, converterHash] = decodeAbiParameters(parseAbiParameters("address,address,address,address,address,bytes32,uint256,address"), bytes);
-    same(poolManager, block.release.contracts.poolManager.address, "Quote PoolManager"); await code(input.client, converter, converterHash, block.blockNumber);
-    const converterAbi = parseAbi(["function weth() view returns (address)", "function factory() view returns (address)", "function getPool(address,address,uint24) view returns (address)"]);
-    const [wethValue, factoryValue] = await Promise.all([read(input.client, converter, "weth", [], block.blockNumber, converterAbi), read(input.client, converter, "factory", [], block.blockNumber, converterAbi)]);
-    const weth = moduleAddress(wethValue, "converter WETH"), factory = moduleAddress(factoryValue, "converter factory");
+    const bytes = encodeModuleEngineConfiguration(definition.configurationAbi, config, definition.schema); same(keccak256(bytes), revision.fixedConfigurationHash, "Fixed quote configuration");
+    const [configuration] = decodeAbiParameters(parseAbiParameters("(address poolManager,address positionManager,address positionPlanner,address positionForwarderFactory,address converter,bytes32 converterCodeHash,uint256 initialQuotePerTokenX18,address fixedQuoteAsset,bytes feeConversionRouteSuffix)"), bytes);
+    same(configuration.poolManager, block.release.contracts.poolManager.address, "Quote PoolManager"); await code(input.client, configuration.converter, configuration.converterCodeHash, block.blockNumber);
+    const converterAbi = parseAbi(["function weth() view returns (address)", "function feeConversionRoute() view returns (bytes)"]);
+    const weth = moduleAddress(await read(input.client, configuration.converter, "weth", [], block.blockNumber, converterAbi), "converter WETH");
     if (quoteAsset === weth) routes.push({ label: "Unwrap WETH to ETH", data: "0x" });
-    else for (const fee of [100, 500, 3000, 10_000]) {
-      const pool = moduleAddress(await read(input.client, factory, "getPool", [quoteAsset, weth, fee], block.blockNumber, converterAbi), "conversion pool", true);
-      if (pool !== ZERO) { const poolCode = await input.client.getCode({ address: pool, blockNumber: block.blockNumber }); if (poolCode && poolCode !== "0x") routes.push({ label: `Quote → WETH · ${fee / 10_000}% pool`, data: concatHex([quoteAsset, toHex(fee, { size: 3 }), weth]) }); }
+    else { const route = concatHex([quoteAsset, configuration.feeConversionRouteSuffix]); need(route.length === 88 && route.slice(-40).toLowerCase() === weth.slice(2).toLowerCase(), "The reviewed fee route must be a direct pool ending at WETH."); routes.push({ label: "Fixed reviewed route to ETH", data: route }); }
+    if (input.existingToken) {
+      const launch = await boundLaunch(input.client, block, input.existingToken);
+      same(await read(input.client, block.release.contracts.host.address, "fixedConfigurationHash", [launch.launchId], block.blockNumber, moduleEngineHostAbi), revision.fixedConfigurationHash, "Host fixed configuration admission");
+      same(await read(input.client, launch.engine, "feeConversionRoute", [], block.blockNumber, converterAbi), routes[0].data, "Engine fixed fee route");
     }
   }
   await canonical(input.client, block); return { address: quoteAsset, decimals, balance: uint(rawBalance, "quote balance"), blockNumber: block.blockNumber, routes };

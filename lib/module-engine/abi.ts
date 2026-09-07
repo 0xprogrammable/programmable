@@ -19,6 +19,7 @@ export const moduleEngineHostAbi = parseAbi([
   `function getLaunch(bytes32 launchId) view returns (${ENGINE_LAUNCH} launched)`,
   "function launchIdOf(address token) view returns (bytes32)", "function engineLaunchId(address engine) view returns (bytes32)",
   "function nonces(bytes32 launchId,address actor) view returns (uint256)",
+  "function fixedConfigurationHash(bytes32 launchId) view returns (bytes32)",
   "function feeTerms(bytes32 launchId,bool buy) view returns (uint16 platformBps,uint16 creatorBps)",
   "function predictTokenAddress(string name,string symbol,address creator,bytes32 salt) view returns (address token,bytes32 graffiti)",
   `function launch(${ENGINE_LAUNCH_PARAMETERS} parameters) payable returns (${ENGINE_LAUNCH} launched)`,
