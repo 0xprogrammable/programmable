@@ -3,3 +3,8 @@ root: ./docs/public/
 structure:
   readme: README.md
   summary: SUMMARY.md
+
+redirects:
+  launch-stamps: launch-stamps.md
+  trust: trust.md
+  status: status.md
