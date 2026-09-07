@@ -45,6 +45,12 @@
 .sectionHeading h2[tabindex] { scroll-margin-top: calc(var(--header-height, 88px) + 24px); }
 .sectionHeading p { color: var(--mm-muted); font-size: 14px; line-height: 20px; margin: 4px 0 0; }
 .tokenFields { display: grid; gap: 16px; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); }
+.socialFields { margin-block: 24px; min-width: 0; }
+.socialFields h3 { align-items: baseline; display: flex; font-size: 16px; font-weight: 500; gap: 8px; line-height: 24px; margin: 0 0 16px; }
+.socialFields h3 span { color: var(--mm-muted); font-size: 12px; font-weight: 400; }
+.socialGrid { display: grid; gap: 0 16px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.socialGrid[hidden] { display: none; }
+.socialFields > .textButton { font-size: 14px; }
 .imageField { margin-bottom: 24px; min-width: 0; }
 .imageFieldLabel { color: #eee; display: block; font-size: 14px; line-height: 20px; margin-bottom: 8px; }
 .imagePicker { align-items: center; display: flex; gap: 16px; margin-bottom: 8px; }
@@ -215,6 +221,17 @@
 .transactionResult p { color: var(--mm-muted); font-size: 14px; line-height: 20px; margin: 8px 0 16px; }
 .resultLinks { align-items: center; display: flex; flex-wrap: wrap; gap: 12px 24px; }
 .resultLinks a { text-decoration: none; }
+.resultLayout { margin-inline: auto; max-width: 640px; }
+.launchResult { min-width: 0; }
+.launchResult .resultHeading { gap: 16px; }
+.launchResult h2 { font-size: 24px; font-weight: 500; letter-spacing: -0.02em; line-height: 32px; margin: 0; }
+.launchResult > p:not(.liveRegion) { color: var(--mm-muted); font-size: 14px; line-height: 20px; margin: 16px 0 24px; }
+.launchResult > .textButton { display: flex; }
+.successIcon { align-items: center; background: #272727; border: 1px solid #53604c; border-radius: 50%; color: #c1d0b2; display: flex; flex: 0 0 48px; height: 48px; justify-content: center; }
+.contractAddress { display: grid; gap: 8px; margin-block: 24px; }
+.contractAddress label { color: var(--mm-muted); font-size: 12px; line-height: 16px; }
+.contractAddress input { background: var(--mm-control); border: 1px solid #484848; border-radius: 8px; color: var(--mm-ink); font-family: monospace; font-size: 16px; line-height: 24px; min-height: 48px; min-width: 0; padding: 12px; width: 100%; }
+.launchResult .transactionLink { color: var(--mm-muted); margin-top: 8px; }
 .liveRegion { clip-path: inset(50%); height: 1px; overflow: hidden; position: absolute; white-space: nowrap; width: 1px; }
 .page :is(button, a, input, textarea, select, summary):focus-visible,
 .page [tabindex="-1"]:focus-visible { outline: 2px solid #efc3d1; outline-offset: 4px; }
@@ -257,6 +274,8 @@
   .formFooter p { flex: 0 1 auto; }
   .formFooter .primaryButton { width: 100%; }
   .reviewActions > button { flex: 1 1 160px; }
+  .launchResult .resultLinks { align-items: stretch; gap: 12px; }
+  .launchResult .resultLinks > :is(a, button) { flex: 1 1 160px; }
   .reviewRows > div { grid-template-columns: 1fr 1.2fr; }
 }
 
@@ -266,6 +285,7 @@
   .heading > p { font-size: 16px; line-height: 24px; }
   .tokenFields { grid-template-columns: minmax(0, 1fr); gap: 0; }
   .twoFields { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .socialGrid { grid-template-columns: minmax(0, 1fr); }
   .catalogRow { align-items: flex-start; }
   .moduleConfiguration { padding: 12px; }
   .imagePicker { align-items: flex-start; gap: 12px; }

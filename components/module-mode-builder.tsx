@@ -17,7 +17,6 @@ import {
   feeBreakdown,
   formatNativeWei,
   nativeValueBreakdown,
-  programmableFeeAllocation,
   NATIVE_ENGINE_PROFILE,
   PREVIEW_MODULE_CATALOG,
   setModuleSelected,
@@ -32,6 +31,14 @@ import {
 } from "@/lib/module-mode/builder";
 
 const feeOptions = Array.from({ length: 11 }, (_, index) => String(index));
+const socialFields = [
+  { key: "twitter", label: "Twitter / X", placeholder: "https://x.com/…" },
+  { key: "website", label: "Website", placeholder: "https://…" },
+  { key: "telegram", label: "Telegram", placeholder: "https://t.me/…" },
+  { key: "discord", label: "Discord", placeholder: "https://discord.gg/…" },
+  { key: "github", label: "GitHub", placeholder: "https://github.com/…" },
+  { key: "gitbook", label: "GitBook", placeholder: "https://…" },
+] as const;
 
 function downloadDraft(draft: ModuleModeDraft) {
   const url = URL.createObjectURL(new Blob([`${JSON.stringify(draft, null, 2)}\n`], { type: "application/json" }));
@@ -61,10 +68,11 @@ export interface ModuleModeBuilderProps {
   previewDescription?: string;
   statusContent?: ReactNode;
   reviewContent?: ReactNode;
+  resultContent?: ReactNode;
   onEdit?: () => void;
 }
 
-export function ModuleModeBuilder({ catalog = PREVIEW_MODULE_CATALOG, engine = NATIVE_ENGINE_PROFILE, configurationContext = {}, launchAction, minimumInitialBuyWei, previewDescription, statusContent, reviewContent, onEdit }: Readonly<ModuleModeBuilderProps>) {
+export function ModuleModeBuilder({ catalog = PREVIEW_MODULE_CATALOG, engine = NATIVE_ENGINE_PROFILE, configurationContext = {}, launchAction, minimumInitialBuyWei, previewDescription, statusContent, reviewContent, resultContent, onEdit }: Readonly<ModuleModeBuilderProps>) {
   const { hydrated, viewChainId, setViewChainId } = useViewChain();
   useEffect(() => {
     if (!hydrated || viewChainId === 4663) return;
@@ -74,6 +82,7 @@ export function ModuleModeBuilder({ catalog = PREVIEW_MODULE_CATALOG, engine = N
   }, [hydrated, viewChainId, setViewChainId]);
   const [state, setState] = useState(createModuleModeState);
   const [advanced, setAdvanced] = useState(false);
+  const [moreLinks, setMoreLinks] = useState(false);
   const [checked, setChecked] = useState(false);
   const [review, setReview] = useState<ModuleModeDraft | null>(null);
   const [reviewEntries, setReviewEntries] = useState<ModuleModeCatalogEntry[]>([]);
@@ -133,20 +142,22 @@ export function ModuleModeBuilder({ catalog = PREVIEW_MODULE_CATALOG, engine = N
     const next = validateModuleModeDraft(state, catalog, configurationContext, engine, undefined, minimumInitialBuyWei);
     if (!next.ok) {
       if (next.issues.some((issue) => issue.path.startsWith("/modules") || issue.path.startsWith("/funding"))) setAdvanced(true);
+      if (next.issues.some((issue) => /^\/socialLinks\/(discord|github|gitbook)$/.test(issue.path))) setMoreLinks(true);
       requestAnimationFrame(() => { const target = form.current?.querySelector<HTMLElement>('[aria-invalid="true"], [data-invalid="true"]') ?? form.current?.querySelector<HTMLElement>("[data-error-summary]"); target?.focus(); });
       return;
     }
     setReviewEntries([...selected]);
     setReview(next.draft);
     requestAnimationFrame(() => { reviewHeading.current?.focus(); reviewHeading.current?.scrollIntoView({ block: "start", behavior: "auto" }); });
+    if (launchAction) void continueLaunch(next.draft);
   }
   function backToEdit() { if (contextLocked) return; onEdit?.(); setReview(null); setLaunchError(""); setAnnouncement("Back to your draft. All settings are kept."); requestAnimationFrame(() => form.current?.querySelector<HTMLInputElement>("input")?.focus()); }
-  async function continueLaunch() {
-    if (!review || !launchAction || launchAction.disabled || launchAction.busy || continuing || !hydrated || viewChainId !== 4663) return;
+  async function continueLaunch(draft = review) {
+    if (!draft || !launchAction || launchAction.disabled || launchAction.busy || continuing || !hydrated || viewChainId !== 4663) return;
     setContinuing(true); setLaunchError("");
     try {
-      if (review.token.image.kind === "local" && !imageResource) throw new Error("Choose the token image again before continuing. The draft only contains its file fingerprint.");
-      await launchAction.onContinue(review, { tokenImage: imageResource?.blob });
+      if (draft.token.image.kind === "local" && !imageResource) throw new Error("Choose the token image again before launching.");
+      await launchAction.onContinue(draft, { tokenImage: imageResource?.blob });
     }
     catch (error) { setLaunchError(error instanceof Error ? error.message : "The wallet step could not open. Your draft is kept."); }
     finally { setContinuing(false); }
@@ -160,27 +171,23 @@ export function ModuleModeBuilder({ catalog = PREVIEW_MODULE_CATALOG, engine = N
 
       </header>
       {statusContent}
-      <div className={styles.layout}>
-        {review ? (
+      <div className={resultContent ? styles.resultLayout : styles.layout}>
+        {resultContent ? <section className={styles.formPanel}>{resultContent}</section> : review ? (
           <section className={styles.formPanel} aria-labelledby="module-review-title">
-            <div className={styles.sectionHeading}><span className={styles.sectionMarker}><Check size={16} aria-hidden="true" /></span><div><h2 id="module-review-title" ref={reviewHeading} tabIndex={-1}>Review your draft</h2><p>Your configuration checks passed.</p></div></div>
+            <div className={styles.sectionHeading}><div><h2 id="module-review-title" ref={reviewHeading} tabIndex={-1}>{launchAction?.title ?? "Review draft"}</h2>{launchAction?.description ? <p role="status">{launchAction.description}</p> : null}</div></div>
             <dl className={styles.reviewRows}>
               <div><dt>Token</dt><dd>{review.token.name} <span>${review.token.symbol}</span></dd></div>
-              <div><dt>Market</dt><dd>Bonding curve <span>ETH pair</span></dd></div>
-              <div><dt>Initial buy</dt><dd>{state.initialBuyEth.trim()} ETH <span>Network gas is separate</span></dd></div>
-              {hasFunding ? <><div><dt>Additional program budgets</dt><dd>{formatNativeWei(review.totalProgramFundingWei)} ETH <span>Separate from your initial buy and fees</span></dd></div><div><dt>Total ETH value</dt><dd>{formatNativeWei(review.totalNativeValueWei)} ETH <span>Plus network gas</span></dd></div></> : null}
-              <div><dt>Creator fees at launch</dt><dd>{state.buyFeePercent}% buy / {state.sellFeePercent}% sell</dd></div>
-              <div><dt>Programmable fee</dt><dd>+ 0.20% on every swap<span>{programmableFeeAllocation(selected.length)}</span></dd></div>
-              <div><dt>Total at launch</dt><dd>{fees.buy} buy / {fees.sell} sell <span>Fees are collected in ETH</span></dd></div>
-              <div><dt>Modules</dt><dd>{selected.length ? selected.map((entry) => entry.title).join(", ") : "None · just your coin"}</dd></div>
+              <div><dt>Initial buy</dt><dd>{state.initialBuyEth.trim()} ETH</dd></div>
+              {hasFunding ? <div><dt>Module budgets</dt><dd>{formatNativeWei(review.totalProgramFundingWei)} ETH</dd></div> : null}
+              <div><dt>Total before gas</dt><dd>{formatNativeWei(review.totalNativeValueWei)} ETH</dd></div>
+              <div><dt>Swap fees</dt><dd>{fees.buy} buy / {fees.sell} sell <span>Includes the 0.20% Programmable fee</span></dd></div>
             </dl>
-            {selected.map((entry) => <div className={styles.reviewModule} key={entry.id}><h3>{entry.title}</h3><p>{entry.detail}</p><dl>{configurationSummary(entry.schema, state.moduleValues[entry.id], entry.fields, undefined, "", review.modules.find((item) => item.id === entry.id)?.bindings).map((item, index) => <div key={`${item.label}-${index}`}><dt>{item.label}</dt><dd>{item.value}</dd></div>)}{entry.funding ? <div><dt>{entry.funding.label}</dt><dd>{state.moduleFundingEth[entry.id] || "0"} ETH additional</dd></div> : null}</dl></div>)}
-            {review.token.image.kind === "local" ? <p className={styles.help}>{launchAction ? "Preparing this launch uploads your selected image for its public token metadata. Your draft keeps the original file fingerprint." : "Your image stays on this device. The exported draft records its fingerprint; save the prepared image with it."}</p> : null}
-            <div className={styles.previewNotice} role="status" aria-atomic="true"><strong>{launchAction ? launchAction.title ?? "Continue with your wallet." : "This is a configuration preview."}</strong><p>{launchAction?.description ?? previewMessage}</p></div>
+            {selected.length ? <details className={styles.transactionDetails}><summary>Module settings</summary>{selected.map((entry) => <div className={styles.reviewModule} key={entry.id}><h3>{entry.title}</h3><dl>{configurationSummary(entry.schema, state.moduleValues[entry.id], entry.fields, undefined, "", review.modules.find((item) => item.id === entry.id)?.bindings).map((item, index) => <div key={`${item.label}-${index}`}><dt>{item.label}</dt><dd>{item.value}</dd></div>)}{entry.funding ? <div><dt>{entry.funding.label}</dt><dd>{state.moduleFundingEth[entry.id] || "0"} ETH additional</dd></div> : null}</dl></div>)}</details> : null}
+            {!launchAction ? <div className={styles.previewNotice} role="status"><p>{previewMessage}</p></div> : null}
             {reviewContent}
             {launchError ? <p className={styles.fieldError} role="alert">{launchError}</p> : null}
-            <div className={styles.reviewActions}><button type="button" className={styles.secondaryButton} disabled={contextLocked} onClick={backToEdit}><ArrowLeft size={16} aria-hidden="true" /> Edit draft</button><button type="button" className={launchAction ? styles.secondaryButton : styles.primaryButton} onClick={() => { downloadDraft(review); setAnnouncement("Your validated draft was exported."); }}><Download size={17} aria-hidden="true" /> Export draft</button>{launchAction ? <button type="button" className={styles.primaryButton} disabled={continuing || launchAction.disabled || launchAction.busy || !hydrated || viewChainId !== 4663} aria-busy={continuing || launchAction.busy} onClick={() => void continueLaunch()}>{launchAction.label}<ArrowRight size={17} aria-hidden="true" /></button> : null}</div>
-            {imageResource && review.token.image.kind === "local" ? <a className={styles.textButton} href={imageResource.objectUrl} download={`${review.token.symbol.toLowerCase()}-token-image.webp`}><Download size={14} aria-hidden="true" /> Save prepared image</a> : null}
+            <div className={styles.reviewActions}><button type="button" className={styles.secondaryButton} disabled={contextLocked} onClick={backToEdit}><ArrowLeft size={16} aria-hidden="true" /> Edit coin</button>{launchAction ? <button type="button" className={styles.primaryButton} disabled={continuing || launchAction.disabled || launchAction.busy || !hydrated || viewChainId !== 4663} aria-busy={continuing || launchAction.busy} onClick={() => void continueLaunch()}>{launchAction.label}<ArrowRight size={17} aria-hidden="true" /></button> : <button type="button" className={styles.primaryButton} onClick={() => { downloadDraft(review); setAnnouncement("Draft exported."); }}><Download size={17} aria-hidden="true" /> Export draft</button>}</div>
+            {!launchAction && imageResource && review.token.image.kind === "local" ? <a className={styles.textButton} href={imageResource.objectUrl} download={`${review.token.symbol.toLowerCase()}-token-image.webp`}><Download size={14} aria-hidden="true" /> Save image</a> : null}
           </section>
         ) : (
           <form ref={form} onSubmit={submit} noValidate className={styles.formPanel}>
@@ -193,6 +200,13 @@ export function ModuleModeBuilder({ catalog = PREVIEW_MODULE_CATALOG, engine = N
                 <TextField label="Symbol" name="symbol" value={state.symbol} placeholder="COIN" required issue={fieldIssue("symbol")} onChange={(value) => update("symbol", value)} />
               </div>
               <div className={styles.field}><label htmlFor="module-description">Description <span>Optional</span></label><textarea id="module-description" name="description" value={state.description} rows={2} placeholder="What’s the story?" aria-invalid={Boolean(fieldIssue("description")) || undefined} aria-describedby={fieldIssue("description") ? "module-description-error" : undefined} onChange={(event) => update("description", event.target.value)} />{fieldIssue("description") ? <p className={styles.fieldError} id="module-description-error">{fieldIssue("description")?.message}</p> : null}</div>
+              <div className={styles.socialFields} role="group" aria-labelledby="module-socials-title">
+                <h3 id="module-socials-title">Links <span>Optional</span></h3>
+                <div className={styles.socialGrid}>{socialFields.slice(0, 3).map(({ key, label, placeholder }) => <TextField key={key} label={label} name={`social-${key}`} value={state.socialLinks?.[key] ?? ""} placeholder={placeholder} inputMode="url" issue={fieldIssue(`socialLinks/${key}`)} onChange={(value) => update("socialLinks", { ...state.socialLinks, [key]: value })} />)}</div>
+                <div id="module-more-links" className={styles.socialGrid} hidden={!moreLinks}>{socialFields.slice(3).map(({ key, label, placeholder }) => <TextField key={key} label={label} name={`social-${key}`} value={state.socialLinks?.[key] ?? ""} placeholder={placeholder} inputMode="url" issue={fieldIssue(`socialLinks/${key}`)} onChange={(value) => update("socialLinks", { ...state.socialLinks, [key]: value })} />)}</div>
+                <button className={styles.textButton} type="button" aria-expanded={moreLinks} aria-controls="module-more-links" onClick={() => setMoreLinks((current) => !current)}>{moreLinks ? <ChevronDown size={16} className={styles.chevronOpen} aria-hidden="true" /> : <Plus size={16} aria-hidden="true" />}{moreLinks ? "Fewer links" : "Add more links"}</button>
+                {fieldIssue("socialLinks") ? <p className={styles.fieldError}>{fieldIssue("socialLinks")?.message}</p> : null}
+              </div>
               <TextField label="Initial buy" name="initialBuyEth" value={state.initialBuyEth} placeholder="0.00" suffix="ETH" inputMode="decimal" required issue={fieldIssue("initialBuyEth")} help={minimumInitialBuyWei ? `Minimum ${formatNativeWei(minimumInitialBuyWei)} ETH, plus gas.` : "Your first purchase at launch, plus gas."} onChange={(value) => update("initialBuyEth", value)} />
             </section>
             <section className={styles.formSection} aria-labelledby="module-fees-title">
@@ -211,11 +225,11 @@ export function ModuleModeBuilder({ catalog = PREVIEW_MODULE_CATALOG, engine = N
               </div>
             </section>
             {issues.length ? <div className={styles.errorSummary} tabIndex={-1} data-error-summary><strong>Check your draft</strong><ul>{issues.map((issue, index) => <li key={`${issue.path}-${index}`}>{issue.message}</li>)}</ul></div> : null}
-            <div className={styles.formFooter}><button type="submit" className={styles.primaryButton} disabled={imageBusy}>{launchAction ? "Review coin" : "Review draft"} <ArrowRight size={18} aria-hidden="true" /></button></div>
+            <div className={styles.formFooter}><button type="submit" className={styles.primaryButton} disabled={imageBusy || Boolean(launchAction?.disabled)}>{launchAction?.label ?? "Review draft"} <ArrowRight size={18} aria-hidden="true" /></button></div>
             </fieldset>
           </form>
         )}
-        <aside className={styles.previewPanel} aria-labelledby="module-preview-title">
+        {!resultContent ? <aside className={styles.previewPanel} aria-labelledby="module-preview-title">
           <div className={styles.coinCard}>
             <div className={styles.coinCardHeading}>
               <div className={styles.coinAvatar}>{tokenImageSource ? <Image src={tokenImageSource} alt="Your selected token image" fill sizes="64px" unoptimized /> : <span aria-hidden="true">{state.symbol.trim().slice(0, 2) || "✳"}</span>}</div>
@@ -239,14 +253,14 @@ export function ModuleModeBuilder({ catalog = PREVIEW_MODULE_CATALOG, engine = N
           </div>
           <Link href="/developers/modules" className={styles.buildModuleLink}>Build a module<ArrowRight size={16} aria-hidden="true" /></Link>
           {!launchAction ? <p className={styles.availabilityNote}>Preview only. Wallet launching is not available yet.</p> : null}
-        </aside>
+        </aside> : null}
       </div>
       <div className={styles.liveRegion} role="status" aria-live="polite">{announcement}</div>
     </div>
   );
 }
 
-function TextField({ label, name, value, onChange, placeholder, suffix, inputMode = "text", help, issue, required = false }: { label: string; name: string; value: string; onChange: (value: string) => void; placeholder?: string; suffix?: string; inputMode?: "text" | "decimal"; help?: string; issue?: BuilderIssue; required?: boolean }) {
+function TextField({ label, name, value, onChange, placeholder, suffix, inputMode = "text", help, issue, required = false }: { label: string; name: string; value: string; onChange: (value: string) => void; placeholder?: string; suffix?: string; inputMode?: "text" | "decimal" | "url"; help?: string; issue?: BuilderIssue; required?: boolean }) {
   const id = `module-${name}`;
-  return <div className={styles.field}><label htmlFor={id}>{label}{required ? <span className={styles.liveRegion}> (required)</span> : null}</label><div className={styles.inputWithUnit}><input id={id} name={name} type="text" value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} inputMode={inputMode} required={required} autoComplete="off" spellCheck={name === "name"} aria-label={suffix ? `${label} (${suffix})` : undefined} aria-invalid={Boolean(issue) || undefined} aria-describedby={[help ? `${id}-help` : "", issue ? `${id}-error` : ""].filter(Boolean).join(" ") || undefined} />{suffix ? <span aria-hidden="true">{suffix}</span> : null}</div>{help ? <p className={styles.help} id={`${id}-help`}>{help}</p> : null}{issue ? <p className={styles.fieldError} id={`${id}-error`}>{issue.message}</p> : null}</div>;
+  return <div className={styles.field}><label htmlFor={id}>{label}{required ? <span className={styles.liveRegion}> (required)</span> : null}</label><div className={styles.inputWithUnit}><input id={id} name={name} type={inputMode === "url" ? "url" : "text"} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} inputMode={inputMode} required={required} autoComplete="off" autoCapitalize={inputMode === "url" ? "none" : undefined} spellCheck={name === "name"} aria-label={suffix ? `${label} (${suffix})` : undefined} aria-invalid={Boolean(issue) || undefined} aria-describedby={[help ? `${id}-help` : "", issue ? `${id}-error` : ""].filter(Boolean).join(" ") || undefined} />{suffix ? <span aria-hidden="true">{suffix}</span> : null}</div>{help ? <p className={styles.help} id={`${id}-help`}>{help}</p> : null}{issue ? <p className={styles.fieldError} id={`${id}-error`}>{issue.message}</p> : null}</div>;
 }
