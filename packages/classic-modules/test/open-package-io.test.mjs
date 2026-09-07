@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { loadOpenSourcePackage, compileOpenTemplateFiles } from '../src/open-package-io.mjs';
 import { runCli } from '../src/cli.mjs';
+import { openPackageId } from '../src/open-packages.mjs';
 import { SOURCE, HELP, sourcePackage, templateFor, context, OTHER_CREATOR } from '../examples/open-packages/fixture.mjs';
 
 async function fixture(t) {
@@ -74,4 +75,31 @@ test('invalid edited configuration remains intact and writes no successful previ
   assert.equal(result.status, 1); assert.equal(result.result.errors[0].id, 'ordered-limits');
   await assert.rejects(fs.stat(path.join(root, 'bad-plan.json')), { code: 'ENOENT' });
   assert.equal(await fs.readFile(templatePath, 'utf8'), edited);
+});
+
+test('CLI applies defaults and fixed parameters and rejects overrides without writing a plan', async (t) => {
+  const root = await fixture(t);
+  const pkg = sourcePackage();
+  pkg.configuration.fields.quoteAsset = { type: 'address', binding: { mode: 'fixed', value: OTHER_CREATOR } };
+  pkg.configuration.required.push('quoteAsset');
+  pkg.configuration.fields.minimum.binding = { mode: 'input', default: '10' };
+  const template = templateFor(pkg); delete template.instances[0].parameters.minimum;
+  await fs.writeFile(path.join(root, 'package.json'), JSON.stringify(pkg));
+  await fs.writeFile(path.join(root, 'template.json'), JSON.stringify(template));
+  const command = { template: 'template.json', packages: 'packages.json', bindings: 'bindings.json', out: 'bound-plan.json' };
+  const accepted = await cli(root, 'plan-open-template', command);
+  assert.equal(accepted.status, 0, JSON.stringify(accepted));
+  assert.deepEqual(accepted.result.plan.instances[0].configuration.quoteAsset, OTHER_CREATOR);
+  assert.equal(accepted.result.plan.instances[0].configuration.minimum, '10');
+  assert.equal(accepted.result.plan.instances[0].packageId, openPackageId(pkg));
+  assert.equal(accepted.result.launchable, false);
+  template.instances[0].parameters.quoteAsset = pkg.author;
+  const edited = JSON.stringify(template);
+  await fs.writeFile(path.join(root, 'template.json'), edited);
+  const rejected = await cli(root, 'plan-open-template', { ...command, out: 'override-plan.json' });
+  assert.equal(rejected.status, 1);
+  assert.equal(rejected.result.errors[0].code, 'OPEN_CONFIG_FIXED_OVERRIDE');
+  assert.equal(rejected.result.errors[0].path, '/quoteAsset');
+  await assert.rejects(fs.stat(path.join(root, 'override-plan.json')), { code: 'ENOENT' });
+  assert.equal(await fs.readFile(path.join(root, 'template.json'), 'utf8'), edited);
 });

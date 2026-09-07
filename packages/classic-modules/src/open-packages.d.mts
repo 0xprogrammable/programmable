@@ -1,8 +1,8 @@
 import type { OpenConfigSchema, OpenConfigContext, OpenConfigValue, OpenConfigBinding, OpenAbiParameter } from './open-config.mjs';
 import type { OpenConstraint } from './open-constraints.mjs';
 
-export { assertOpenConfigSchema, compileOpenConfig, OPEN_CONFIG_LIMITS, OpenConfigError } from './open-config.mjs';
-export type { OpenConfigSchema, OpenConfigContext, OpenCompiledConfig, OpenConfigBinding } from './open-config.mjs';
+export { assertOpenConfigSchema, compileOpenConfig, resolveOpenConfigBindings, OPEN_CONFIG_LIMITS, OpenConfigError } from './open-config.mjs';
+export type { OpenConfigSchema, OpenConfigContext, OpenCompiledConfig, OpenConfigBinding, OpenConfigParameterBinding, OpenResolvedConfig } from './open-config.mjs';
 export { assertOpenConstraints, evaluateOpenConstraints, OPEN_CONSTRAINT_LIMITS, OpenConstraintError } from './open-constraints.mjs';
 export type { OpenConstraint, OpenConstraintExpression, OpenConstraintResult } from './open-constraints.mjs';
 export type OpenHex = `0x${string}`;

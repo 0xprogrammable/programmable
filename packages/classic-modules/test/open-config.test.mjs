@@ -157,7 +157,7 @@ test('address literals, roles, assets and components are explicit distinct input
   error(() => compileOpenConfig({ type: 'address' }, { role: 'creator' }, context()), 'OPEN_CONFIG_ADDRESS', '');
   error(() => compileOpenConfig({ type: 'account' }, ACCOUNT), 'OPEN_CONFIG_TYPE', '');
   error(() => compileOpenConfig({ type: 'account' }, { role: 'creator', address: ACCOUNT }, context()), 'OPEN_CONFIG_UNKNOWN_FIELD', '/address');
-  error(() => compileOpenConfig({ type: 'asset' }, { address: QUOTE }, context()), 'OPEN_CONFIG_UNKNOWN_FIELD', '/address');
+  error(() => compileOpenConfig({ type: 'asset' }, { address: QUOTE }, context()), 'OPEN_CONFIG_REQUIRED', '/chainId');
   error(() => compileOpenConfig({ type: 'component' }, { role: 'vault' }, context()), 'OPEN_CONFIG_UNKNOWN_FIELD', '/role');
   error(() => compileOpenConfig({ type: 'address' }, '0x52908400098527886E0F7030069857D2E4169Ee7'), 'OPEN_CONFIG_ADDRESS', '');
   const reference = compileOpenConfig({ type: 'account' }, { role: 'namespace.creator' }, { roles: { 'namespace.creator': ACCOUNT } });
