@@ -12,7 +12,7 @@ Identify a coin by its chain and token contract address. Select a verifier by it
 | --- | --- |
 | Module Mode on Robinhood | [Native launcher guide](module-mode-indexing.md) and [indexer contract](https://programmable.market/api/module-mode/indexer/v1) |
 | Custom V4 on Robinhood | [Router V1 guide](robinhood-terminal-indexer.md) and [finalized feed](https://api.programmable.market/v4/chains/4663/finalized-custom-launches) |
-| MultiRole Custom on Robinhood | [Router V2 guide](robinhood-terminal-indexer.md#multi-role-v2) and [MultiRole finalized feed](https://api.programmable.market/v4/chains/4663/multi-role-custom-launches/finalized) |
+| MultiRole Custom on Robinhood | [Router V2 guide](robinhood-terminal-indexer.md#multirole-v2) and [MultiRole finalized feed](https://api.programmable.market/v4/chains/4663/multi-role-custom-launches/finalized) |
 | Ethereum Classic and Custom | [Developer manifest](https://developers.programmable.family/api/v2/manifest), [launch feed](https://developers.programmable.family/api/v2/launches) and [Router verification](verify.md) |
 
 Robinhood Chain is `eip155:4663`; Ethereum Mainnet is `eip155:1`. Never merge contracts with the same address on different chains. API request UUIDs and Router launch IDs are different identifiers and should be stored separately.

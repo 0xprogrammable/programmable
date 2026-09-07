@@ -11,7 +11,7 @@ Robinhood Custom Launches have two provenance interfaces. Separate token and hoo
 | Layout | Integration |
 | --- | --- |
 | Separate token and hook contracts | [V4 Router V1](#start-with-the-live-authorities) |
-| Shared token/hook or other supported combined roles | [MultiRole V2](#multi-role-v2) |
+| Shared token/hook or other supported combined roles | [MultiRole V2](#multirole-v2) |
 
 The V1 addresses, events, schema and exact-source rules below apply to the V4 source. MultiRole uses the separate section at the end of this guide. Launch availability is read from each source's capabilities; historical finalized records retain their own bindings.
 
