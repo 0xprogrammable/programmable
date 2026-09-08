@@ -41,8 +41,8 @@ instruction can be ignored. Considering every valid destination, including unuse
 rejection; the policy deliberately makes no full-program reachability claim.
 
 The execution rules are documented by Ethereum's
-[legacy jump-destination analysis](https://github.com/ethereum/execution-specs/blob/master/src/ethereum/forks/cancun/vm/runtime.py)
-and [control-flow instructions](https://github.com/ethereum/execution-specs/blob/master/src/ethereum/forks/cancun/vm/instructions/control_flow.py).
+[legacy jump-destination analysis](https://github.com/ethereum/execution-specs/blob/4d9544d8b11f4f04ed6a3fb8ab8c4e084354198c/src/ethereum/forks/cancun/vm/runtime.py)
+and [control-flow instructions](https://github.com/ethereum/execution-specs/blob/4d9544d8b11f4f04ed6a3fb8ab8c4e084354198c/src/ethereum/forks/cancun/vm/instructions/control_flow.py).
 This argument does not apply to a different bytecode mode, future execution semantics, constructors, separately called
 contracts, initialization behavior, or economic invariants. Those remain independent source and simulation checks.
 
