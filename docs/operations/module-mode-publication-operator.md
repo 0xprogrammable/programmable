@@ -122,6 +122,14 @@ shows the sender, transaction recipient, resulting contract/token, function,
 arguments, exact ETH value, maximum gas cost and source commitments. It disables
 wallet actions in `--ui-check` mode and rejects cross-origin requests.
 
+For publication and Native/Engine lifecycle operations, `--max-gas` is the fixed
+gas allowance displayed and sent to the wallet. Preparation, arm and retry each
+require `ceil(max(provider estimates) * 1.05) + 25000` to fit within that allowance,
+and the balance must cover the exact ETH value plus `maxGas * maxFeePerGas`.
+Changing the allowance or fee fields requires a new preparation and owner review;
+an unresolved request can only be retried with its original wallet fields. The
+displayed maximum gas cost is a cap, not the transaction's actual cost.
+
 Record and verify each actual receipt before the next step. The server verifies
 all preceding recorded operations, exact transaction payload/nonce/gas fields,
 canonical inclusion, deployed runtime and registry post-state. Record/check are
