@@ -1,7 +1,14 @@
 import { encodeAbiParameters, encodeEventTopics, getCreate2Address, keccak256, parseAbiParameters, toHex, type Address, type Hex } from "viem";
 import { computeModuleModeReleaseDigest } from "../../lib/module-mode/release";
-import preview from "../../config/module-mode/robinhood.preview.json";
+import historicalReleases from "../../config/module-mode/historical-releases.json";
 import { moduleModeLaunchAbi } from "../../lib/module-mode/provenance";
+
+const historicalNativeV1 = historicalReleases.releases.find(entry =>
+  entry.release.releaseDigest === "0x546172aa670b543c19f00a707a0e9328acfd770f3040fbdd03a8bc709f786dee");
+if (!historicalNativeV1 || historicalNativeV1.release.sourceVersion !== "module-native-v1") {
+  throw new Error("The exact historical Native V1 fixture source is missing.");
+}
+const referenceRelease = historicalNativeV1.release;
 
 export const h = (n: number) => `0x${n.toString(16).padStart(64, "0")}` as Hex;
 export const a = (n: number) => `0x${n.toString(16).padStart(40, "0")}` as Address;
@@ -9,9 +16,9 @@ const selectionType = "(bytes32 packageId,address factory,bytes32 factoryCodeHas
 
 // Synthetic test-only coordinates and runtimes, never deployment or finality evidence.
 export function moduleEvidenceFixture(seed = 0, moduleCount = 2) {
-  const roles = Object.keys(preview.contracts) as (keyof typeof preview.contracts)[];
+  const roles = Object.keys(referenceRelease.contracts) as (keyof typeof referenceRelease.contracts)[];
   const contracts = Object.fromEntries(roles.map((role, i) => [role, { address: a(i + 1), runtimeCodeHash: keccak256(toHex(`fixture ${role}`)) }])) as Record<typeof roles[number], {address: Address; runtimeCodeHash: Hex}>;
-  const release = { ...preview, enabled: true, status: "active", releaseDigest: h(999), sourceCommit: "a".repeat(40),
+  const release = { ...referenceRelease, enabled: true, status: "active", releaseDigest: h(999), sourceCommit: "a".repeat(40),
     deploymentEvidenceDigest: h(901), sourceVerificationDigest: h(902), lifecycleEvidenceDigest: h(903), startBlock: "50",
     minimumInitialBuyNative: "1000", tokenCreationCodeHash: keccak256("0x60026002"), contracts };
   release.releaseDigest = computeModuleModeReleaseDigest(release);

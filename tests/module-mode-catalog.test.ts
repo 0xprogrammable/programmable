@@ -8,7 +8,7 @@ import { bindActiveModuleModeRelease, computeModuleModeReleaseDigest, MODULE_MOD
 import {
   bindModuleModeCatalogFile, computeModuleModeHostManifestHash, createModuleModeAvailabilityReader,
   createModuleModeHostManifest, createModuleModeHistoricalAvailabilityReader, MODULE_MODE_CATALOG_SCHEMA, moduleModePublicationUrl,
-  verifyModuleModePublication, type ModuleModeAvailabilityDependencies, type ModuleModeCatalogDefinition, type ModuleModeHostReleaseIdentity,
+  verifyModuleModePublication, type ModuleModeAvailabilityDependencies, type ModuleModeCatalogDefinition,
 } from "../lib/server/module-mode/catalog";
 import { computeModuleReviewDecisionDigestV1, type ModuleReviewDecisionRecordV1 } from "../lib/server/module-mode/review-decision-wire-v1";
 import { createModuleModeHttpCollector } from "../lib/server/robinhood-index/module-source";
@@ -16,9 +16,22 @@ import { validateModuleSubmissionRequest, type ModuleSubmissionRequest } from ".
 import { canonicalizeJson } from "../lib/server/projection-target/canonical-json";
 import configuredRelease from "../config/module-mode/robinhood.preview.json";
 import catalogFile from "../config/module-mode/catalog.json";
+import historicalReleases from "../config/module-mode/historical-releases.json";
 import { a, h, moduleEvidenceFixture } from "./fixtures/module-mode-evidence";
 
 const pendingRelease = { ...configuredRelease, enabled: false, status: "preview", lifecycleEvidenceDigest: null };
+const NATIVE_V1_RELEASE_DIGEST = "0x546172aa670b543c19f00a707a0e9328acfd770f3040fbdd03a8bc709f786dee";
+const NATIVE_V2_PACKAGE_ID = "0x1dce78b835a0b6ca3cd560462226418d6851bb60909a357b8cb9529721733c31";
+
+function historicalNativeV1() {
+  const matches = historicalReleases.releases.filter(entry => entry.release.releaseDigest === NATIVE_V1_RELEASE_DIGEST);
+  expect(matches).toHaveLength(1);
+  const { release: profile, catalog } = matches[0];
+  const release = bindActiveModuleModeRelease(profile);
+  expect(release.sourceVersion).toBe("module-native-v1");
+  expect(release.sourceCommit).toBe("9a2a1257a1b97dc0658157247890105a26e824ec");
+  return { release, catalog };
+}
 
 // Entirely synthetic parser/transport fixtures. These objects are never deployment, review or provider evidence.
 function fixture(options: { requiresHost?: string[]; managementCapabilities?: string[]; v2?: boolean } = {}) {
@@ -163,7 +176,7 @@ describe("Module Mode host publication identity", () => {
   });
 });
 
-describe("Reviewed starter publication bytes", () => {
+describe("Reviewed Native V1 historical publication bytes", () => {
   // Canonical export integrity checks only; these do not grant review authority or prove finality.
   it.each([
     {
@@ -189,8 +202,13 @@ describe("Reviewed starter publication bytes", () => {
       },
     },
   ])("preserves and binds the canonical $name export", expected => {
-    const release = configuredRelease as ModuleModeHostReleaseIdentity;
-    const publication = bindModuleModeCatalogFile(catalogFile, release).entries.find(item => item.entry.nativeBinding.packageId === expected.packageId);
+    const { release, catalog } = historicalNativeV1();
+    const boundCatalog = bindModuleModeCatalogFile(catalog, release);
+    expect(boundCatalog.entries.map(item => item.entry.nativeBinding.packageId)).toEqual([
+      "0xc282a1952918d927ab564e62260b9c77c55319d7e1a226cc7490bd25fcd825f2",
+      "0xbb60720f5c3a0d49ed1ab63fa5c92a3db36404362827d4c952b99eca04558a08",
+    ]);
+    const publication = boundCatalog.entries.find(item => item.entry.nativeBinding.packageId === expected.packageId);
     expect(publication).toBeDefined();
     if (!publication) throw new Error("Reviewed starter publication is missing.");
     const responses = Object.fromEntries(Object.entries(expected.fileSha256).map(([kind, digest]) => {
@@ -205,6 +223,45 @@ describe("Reviewed starter publication bytes", () => {
     expect(publication.entry.nativeBinding).toMatchObject({ manifestHash: expected.manifestHash, reviewDigest: expected.reviewDigest });
     expect(computeModuleModeHostManifestHash(responses.manifest)).toBe(expected.manifestHash);
     expect(responses.review).toMatchObject({ decisionDigest: expected.reviewDigest, registryApproved: false, available: false });
+  });
+});
+
+describe("Reviewed Native V2 current publication bytes", () => {
+  it("binds the current source, immutable export and explicit family fee eligibility", () => {
+    const release = bindActiveModuleModeRelease(configuredRelease);
+    expect(release).toMatchObject({
+      schemaVersion: "programmable.module-mode-source.v2", sourceVersion: "module-native-v2",
+      sourceCommit: "17b64b6613108dbc6ffdf767607bde6ea33343cd",
+      releaseDigest: "0xe81f122e0bd21e0984e21c71ffce56f315e82f22e485cc19e0e490d4d5b7bd49",
+      economicsPolicyId: MODULE_MODE_ECONOMICS_POLICY_V2,
+      deploymentEvidenceDigest: "0x1d78338a6230dadfdfd5c94595d886a79682380faabc5c8c2fdfc6ad71dc9284",
+      sourceVerificationDigest: "0x7516811126198aeb7c1503b47ab0ac485d01054ab76f5687d4b02a28f3dd309f",
+      lifecycleEvidenceDigest: "0x613ebdce2ef1057d902da6924bdb1f209bc99b628b3a75f2e63804a5055ac5bc",
+    });
+    const catalog = bindModuleModeCatalogFile(catalogFile, release);
+    expect(catalog.entries.map(item => item.entry.nativeBinding.packageId)).toEqual([NATIVE_V2_PACKAGE_ID]);
+    const publication = catalog.entries[0];
+    const fileSha256 = {
+      source: "26c4a5cbe5eca20f30fff9dadbc54425239b0b277ce463f059eea065dc81e002",
+      manifest: "d5ae8800f3e3cb37f46313a1864281a6fd27dd44614a10e17e4a0160571fa843",
+      review: "021e24d57de3675f59fc50a8386997598da1f33860d3e4f1d852fe1a6eb616dd",
+    };
+    const responses = Object.fromEntries(Object.entries(fileSha256).map(([kind, digest]) => {
+      const bytes = readFileSync(new URL(`../public/developers/modules/${NATIVE_V2_PACKAGE_ID}/${kind}.json`, import.meta.url));
+      expect(createHash("sha256").update(bytes).digest("hex")).toBe(digest);
+      return [kind, JSON.parse(bytes.toString("utf8"))];
+    }));
+    expect(verifyModuleModePublication({ release, publication,
+      source: responses.source, manifest: responses.manifest, review: responses.review })).toEqual(publication.entry);
+    expect(publication.requestDigest).toBe("0x7cff3df2149ad452c89c35697fab444188dc7e470965d057234b2f16c397293d");
+    expect(publication.entry.version).toBe("1.0.0");
+    expect(publication.entry.nativeBinding).toMatchObject({
+      manifestHash: "0xb9db36ccf646c8d612a9ff7f7fffc715a601645005bf07823ebfe0333b22add2",
+      reviewDigest: "0x494889ce7b023fb6a65c0c4904ae71e66d81a98fa6c49b40e0bb1fb7d2749859",
+      feeEligibility: { eligible: true, reviewDigest: "0xae7f1bd25b574b70725630362f4282cbca410a3e19beccf88eda548f31f86d06" },
+    });
+    expect(responses.review).toMatchObject({ registryApproved: false, available: false });
+    expect(() => bindModuleModeCatalogFile(catalogFile, historicalNativeV1().release)).toThrow("another release");
   });
 });
 
@@ -223,10 +280,10 @@ describe("Read-only Module Mode availability", () => {
     }, dependencies: { ...f.dependencies, collector: () => ({ authenticateRelease: async () => { throw new Error("Unavailable authority"); } }) } });
     expect(await rejected(f.release.releaseDigest)).toMatchObject({ release: null, catalog: [] });
   });
-  it("keeps the reviewed starter catalogue unavailable while the release is disabled", async () => {
+  it("keeps the reviewed current catalogue unavailable while the release is disabled", async () => {
     expect(catalogFile.schemaVersion).toBe(MODULE_MODE_CATALOG_SCHEMA);
     expect(catalogFile.sourceReleaseDigest).toBe(configuredRelease.releaseDigest);
-    expect(catalogFile.entries).toHaveLength(2);
+    expect(catalogFile.entries.map(publication => publication.entry.nativeBinding.packageId)).toEqual([NATIVE_V2_PACKAGE_ID]);
     const f = fixture(); const read = createModuleModeAvailabilityReader({ ...f.dependencies, releaseProfile: pendingRelease, catalogFile });
     const result = await read();
     expect(result.release).toBeNull(); expect(result.reason).toContain("being prepared");
