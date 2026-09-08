@@ -12,8 +12,9 @@ export const LIFECYCLE_OPERATOR_SCHEMA = 'programmable.module-mode-lifecycle-ope
 const SELECTIONS = '(bytes32 packageId,address factory,bytes32 factoryCodeHash,bytes32 moduleCodeHash,uint32 callbackGas,bytes config)[]';
 const same = (a, b, label) => need(canonicalJson(a) === canonicalJson(b), `${label} differs`);
 export function predictLifecycleToken(identity, owner, action) {
+  const generation = identity.sourceVersion === 'module-native-v2' ? 'v2' : 'v1';
   const graffiti = keccak256(encodeAbiParameters(parseAbiParameters('string,uint256,address,address,bytes32'),
-    ['programmable.module-mode.native-token.v1', 4663n, identity.contracts.launcher.address, owner, hash(action.creatorSalt)]));
+    [`programmable.module-mode.native-token.${generation}`, 4663n, identity.contracts.launcher.address, owner, hash(action.creatorSalt)]));
   const salt = keccak256(encodeAbiParameters(parseAbiParameters('string,string,uint8,address,bytes32'),
     [action.name, action.symbol, 18, identity.contracts.launcher.address, graffiti]));
   return { token: getCreate2Address({ from: identity.contracts.tokenFactory.address, salt, bytecodeHash: identity.tokenCreationCodeHash }).toLowerCase(), graffiti };

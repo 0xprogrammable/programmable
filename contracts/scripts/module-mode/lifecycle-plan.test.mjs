@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { decodeFunctionData, encodeAbiParameters, encodeFunctionResult, encodeFunctionData, keccak256, parseAbi, parseAbiParameters, toHex } from 'viem';
+import { concatHex, decodeFunctionData, decodeFunctionResult, encodeAbiParameters, encodeFunctionResult, encodeFunctionData, keccak256, parseAbi, parseAbiParameters, toHex } from 'viem';
 import { hexQuantity } from './core.mjs';
-import { createLifecyclePlan, assertLifecyclePlan, createLifecycleCollectorPlan, bindLifecycleLaunchReference, lifecycleLaunchCommitments } from './lifecycle-plan.mjs';
+import { createLifecyclePlan, assertLifecyclePlan, createLifecycleCollectorPlan, bindLifecycleLaunchReference, lifecycleLaunchCommitments, predictLifecycleToken } from './lifecycle-plan.mjs';
 import { publicationFixture, launchAction } from './publication-test-fixtures.mjs';
 import { publicationV2Fixture, nativeLaunchReference, lifecycleV2RpcFixture } from './lifecycle-v2-test-fixtures.mjs';
 import { publicationValidators } from './publication-shared.mjs';
@@ -19,6 +19,49 @@ async function launchReference(f, selected = false, changes = {}) {
     stepIndex: 0, kind: 'launch', transaction, receipt } };
 }
 
+test('V1 and V2 token predictions match their independent contract domains and CREATE2 formula', async () => {
+  const api = await publicationValidators(), predictions = [];
+  for (const [fixture, domain] of [[publicationFixture, 'programmable.module-mode.native-token.v1'], [publicationV2Fixture, 'programmable.module-mode.native-token.v2']]) {
+    const f = await fixture(), pins = f.identity.contracts;
+    for (const selected of [false, true]) {
+      const action = launchAction(f, selected);
+      // ModuleNativeLaunchV1/V2._effectiveGraffiti and UERC20Factory's salt.
+      // The oracle supplies literal contract domains and hashes CREATE2 directly,
+      // independently of predictLifecycleToken and its sourceVersion dispatch.
+      const graffiti = keccak256(encodeAbiParameters(parseAbiParameters('string,uint256,address,address,bytes32'),
+        [domain, 4663n, pins.launcher.address, f.owner, action.creatorSalt]));
+      const salt = keccak256(encodeAbiParameters(parseAbiParameters('string,string,uint8,address,bytes32'),
+        [action.name, action.symbol, 18, pins.launcher.address, graffiti]));
+      const token = `0x${keccak256(concatHex(['0xff', pins.tokenFactory.address, salt, f.identity.tokenCreationCodeHash])).slice(-40)}`;
+      assert.deepEqual(predictLifecycleToken(f.identity, f.owner, action), { token, graffiti });
+      const plan = await createLifecyclePlan({ ...f, modules: selected ? [f.module] : [], action }), step = plan.steps[0];
+      assert.equal(step.target, token); assert.equal(step.expectation.token, token);
+      const prediction = step.preReads.find(read => read.functionName === 'predictTokenAddress');
+      assert.deepEqual(decodeFunctionResult({ abi: api.moduleNativeLaunchAbiFor(f.identity), functionName: 'predictTokenAddress', data: prediction.result }).map(value => value.toLowerCase()), [token, graffiti]);
+      assert.equal(step.expectation.poolId, keccak256(encodeAbiParameters(parseAbiParameters('address,address,uint24,int24,address'),
+        ['0x0000000000000000000000000000000000000000', token, 0, 200, pins.hook.address])));
+      if (!selected) predictions.push({ token, graffiti });
+    }
+  }
+  assert.notEqual(predictions[0].token, predictions[1].token);
+  assert.notEqual(predictions[0].graffiti, predictions[1].graffiti);
+});
+
+test('V2 prediction preserves the two publicly observed launcher vectors', () => {
+  // Both providers returned these values at Robinhood block 57263393,
+  // hash 0x08cea9cd7bea0b804ef92a089cd297b8e4e98461a622789c8b44a69348c7be23.
+  // Fixed public inputs/results only; this regression makes no provider calls.
+  const owner = '0x79879fe6f00c0986ca521ea6f5b276b5e28b1b9c';
+  const identity = { sourceVersion: 'module-native-v2', tokenCreationCodeHash: '0x445809d9f7a34e959de4a96dec1e1beddfb265755bf28c57c42744adea1128ef', // gitleaks:allow -- public UERC20 creation-bytecode commitment
+    contracts: { launcher: { address: '0x362dac28ac64ce11989a90e0da6715313e0162c5' }, tokenFactory: { address: '0x754e8c1ade3c6c4c863590a91f2ed020baf8e779' } } };
+  const vectors = [
+    { name: 'Module53 Plain Canary', symbol: 'M53P', creatorSalt: '0xdfa72fe0fc203b78d2248b6f90569930bff67ebfcc54366fa4511eaaf336a91e',
+      expected: { token: '0xbf993e56a0259300d45cf2385ddb7d12cdfa340f', graffiti: '0x211d0dfde9cd7a94c7276a5225f5a28f2fe1aa4ca392e2dc08d6de68f5aed0af' } }, // gitleaks:allow -- public M53P token prediction and graffiti
+    { name: 'Module53 Cap Canary', symbol: 'M53C', creatorSalt: '0xe1e7795d2e8fa6bdbfe3eb2f2bda958fcc8ed0f1e75e4588bb628a8be857194f',
+      expected: { token: '0xf364cbe8a0019c61f03b4cf1180153966fd8f9a2', graffiti: '0xa4497ebe93e13d69f2612fec0af1a715ebdf96fe5aecd19a2d5c2f2e0768df6f' } }, // gitleaks:allow -- public M53C token prediction and graffiti
+  ];
+  for (const { expected, ...action } of vectors) assert.deepEqual(predictLifecycleToken(identity, owner, action), expected);
+});
 
 test('plain canary has no modules, zero creator fee, exact initial value and bound prediction', async () => {
   const f = await publicationFixture(), action = launchAction(f), plan = await createLifecyclePlan({ ...f, modules: [], action });
