@@ -181,8 +181,9 @@ export function publicationWalletRequest(plan, observation, ceilings) {
   need(step && BigInt(step.value) <= BigInt(ceilings.maxValue), 'ETH value exceeds the owner reviewed ceiling');
   need(BigInt(observation.gasLimit) <= BigInt(ceilings.maxGas), 'Gas estimate exceeds the owner reviewed ceiling');
   need(priority <= maxFee && 2n * BigInt(observation.baseFeePerGas) + priority <= maxFee, 'Fee ceiling cannot cover the current base fee');
-  need(BigInt(observation.minimumBalance) >= BigInt(step.value) + BigInt(observation.gasLimit) * maxFee, 'Owner balance cannot cover ETH value and maximum gas cost');
-  return { chainId: '0x1237', from: plan.owner, to: step.to, value: hexQuantity(step.value), data: step.data, nonce: hexQuantity(observation.nonce), gas: hexQuantity(observation.gasLimit),
+  // Keep the full fresh estimate buffer within the fixed gas allowance shown to the owner.
+  need(BigInt(observation.minimumBalance) >= BigInt(step.value) + BigInt(ceilings.maxGas) * maxFee, 'Owner balance cannot cover ETH value and maximum gas cost');
+  return { chainId: '0x1237', from: plan.owner, to: step.to, value: hexQuantity(step.value), data: step.data, nonce: hexQuantity(observation.nonce), gas: hexQuantity(ceilings.maxGas),
     maxFeePerGas: hexQuantity(maxFee), maxPriorityFeePerGas: hexQuantity(priority), accessList: [], type: '0x2' };
 }
 export async function preparePublicationRequest(plan, stepIndex, providers, ceilings) {
@@ -202,8 +203,7 @@ export async function revalidatePublicationRequest(plan, prepared, providers, ce
   need(Date.now() >= prepared.issuedAt && prepared.expiresAt - Date.now() >= 60000, 'Owner request has expired');
   const fresh = await observePublicationOperation(plan, prepared.stepIndex, providers), next = publicationWalletRequest(plan, fresh, ceilings);
   if (isEngineOperationPlan(plan)) equalEngineSimulation(plan, prepared.stepIndex, fresh.simulatedResult, prepared.observation.simulatedResult);
-  for (const key of Object.keys(next).filter(key => key !== 'gas')) need(canonicalJson(next[key]) === canonicalJson(prepared.request[key]), `Owner request changed: ${key}`);
-  need(BigInt(next.gas) <= BigInt(prepared.request.gas), 'Fresh gas estimate exceeds the reviewed request');
+  for (const key of Object.keys(next)) need(canonicalJson(next[key]) === canonicalJson(prepared.request[key]), `Owner request changed: ${key}`);
   need(BigInt(fresh.minimumBalance) >= BigInt(prepared.request.value) + BigInt(prepared.request.gas) * BigInt(prepared.request.maxFeePerGas), 'Owner balance fell below value and maximum gas cost'); return fresh;
 }
 function receiptLogs(logs) {
@@ -278,8 +278,7 @@ export async function preparePublicationRetry(plan, entry, providers, ceilings, 
   assertPublicationRequest(plan, entry);
   const observation = await observePublicationOperation(plan, entry.stepIndex, providers), next = publicationWalletRequest(plan, observation, ceilings);
   if (isEngineOperationPlan(plan)) equalEngineSimulation(plan, entry.stepIndex, observation.simulatedResult, entry.observation.simulatedResult);
-  for (const key of Object.keys(next).filter(key => key !== 'gas')) need(canonicalJson(next[key]) === canonicalJson(entry.request[key]), `Retry wallet field changed: ${key}`);
-  need(BigInt(next.gas) <= BigInt(entry.request.gas), 'Retry estimate exceeds the original reviewed gas');
+  for (const key of Object.keys(next)) need(canonicalJson(next[key]) === canonicalJson(entry.request[key]), `Retry wallet field changed: ${key}`);
   need(BigInt(observation.minimumBalance) >= BigInt(entry.request.value) + BigInt(entry.request.gas) * BigInt(entry.request.maxFeePerGas), 'Retry is not funded for original gas plus value');
   const issuedAt = Date.now(), body = { planDigest: plan.planDigest, stepIndex: entry.stepIndex, request: entry.request, observation,
     issuedAt, expiresAt: issuedAt + 300000, retryAttempt, originalRequestDigest: entry.requestDigest };

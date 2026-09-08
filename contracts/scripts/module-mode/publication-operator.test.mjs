@@ -5,11 +5,23 @@ import { decodeFunctionData, encodeFunctionResult, keccak256, parseAbi } from 'v
 import { hexQuantity } from './core.mjs';
 import { createPublicationPlan, assertPublicationPlan, bindPublicationModule, assertAuthenticatedOperationPlan, registryAbi, registryV2Abi } from './publication-plan.mjs';
 import { publicationFixture } from './publication-test-fixtures.mjs';
+import { lifecycleV2RpcFixture } from './lifecycle-v2-test-fixtures.mjs';
 import { publicationWalletRequest, assertPublicationRequest, observePublicationOperation, preparePublicationRequest, revalidatePublicationRequest, observePublicationReceipt, preparePublicationRetry } from './publication-rpc.mjs';
 import { startPublicationOperator } from './publication-operator.mjs';
 
 const ceilings = { maxGas: '2000000', maxFeePerGas: '1000', maxPriorityFeePerGas: '10', maxValue: '1000' };
 const h = n => `0x${n.toString(16).padStart(64, '0')}`;
+const reviewedLaunchCeilings = { maxGas: '4600000', maxFeePerGas: '800000000', maxPriorityFeePerGas: '10000000', maxValue: '400000000000000' };
+async function gasDriftFixture() {
+  const fixture = await lifecycleV2RpcFixture('launch', false);
+  let estimate = 4292099n, balance;
+  const providers = fixture.providers.map(provider => ({ ...provider, rpc(method, params) {
+    if (method === 'eth_estimateGas') return Promise.resolve(hexQuantity(estimate));
+    if (method === 'eth_getBalance' && balance !== undefined) return Promise.resolve(hexQuantity(balance));
+    return provider.rpc(method, params);
+  } }));
+  return { ...fixture, providers, setEstimate(value) { estimate = value; }, setBalance(value) { balance = value; } };
+}
 function rpcFixture() {
   const owner = '0x0000000000000000000000000000000000000001', registry = '0x0000000000000000000000000000000000000002', runtime = '0x600100';
   const family = h(4), wallet = '0x0000000000000000000000000000000000000003';
@@ -76,11 +88,54 @@ test('NativeV2 false/zero keeps the untouched default and NativeV1 cannot adopt 
   await assert.rejects(bindPublicationModule(v1.module, v1.identity, v1.owner));
 });
 test('wallet ceilings include ETH value and gas, with no automatic fee raise', () => {
-  const f = rpcFixture(); f.step.value = '1000'; const observation = { state: 'operation-simulated', stepIndex: 0, gasLimit: '100000', baseFeePerGas: '1', minimumBalance: '100001000', nonce: '1' };
-  const request = publicationWalletRequest(f.plan, observation, ceilings); assert.equal(request.value, '0x3e8');
-  assert.throws(() => publicationWalletRequest(f.plan, { ...observation, minimumBalance: '100000999' }, ceilings), /balance/);
+  const f = rpcFixture(); f.step.value = '1000'; const observation = { state: 'operation-simulated', stepIndex: 0, gasLimit: '100000', baseFeePerGas: '1', minimumBalance: '2000001000', nonce: '1' };
+  const request = publicationWalletRequest(f.plan, observation, ceilings); assert.equal(request.value, '0x3e8'); assert.equal(BigInt(request.gas), 2000000n);
+  assert.throws(() => publicationWalletRequest(f.plan, { ...observation, minimumBalance: '2000000999' }, ceilings), /balance/);
   assert.throws(() => publicationWalletRequest(f.plan, observation, { ...ceilings, maxValue: '999' }), /ETH value/);
   assert.throws(() => publicationWalletRequest(f.plan, observation, { ...ceilings, maxGas: '99999' }), /Gas estimate/);
+});
+test('fixed reviewed launch gas tolerates modest estimate drift without changing the armed or retry request', async () => {
+  const f = await gasDriftFixture(), prepared = await preparePublicationRequest(f.plan, 0, f.providers, reviewedLaunchCeilings), original = structuredClone(prepared);
+  assert.equal(prepared.observation.gasLimit, '4531704');
+  // Archived not-armed Native V2 observations: 4292099 -> 4292479 gas.
+  f.setEstimate(4292479n);
+  const fresh = await revalidatePublicationRequest(f.plan, prepared, f.providers, reviewedLaunchCeilings);
+  assert.equal(fresh.gasLimit, '4532103'); assert.equal(BigInt(prepared.request.gas), 4600000n);
+  assert.deepEqual(prepared, original);
+  const retry = await preparePublicationRetry(f.plan, { ...prepared, transactionHash: null }, f.providers, reviewedLaunchCeilings, prepared.requestDigest, 1);
+  assert.deepEqual(retry.request, original.request); assertPublicationRequest(f.plan, retry);
+  f.setEstimate(4357142n); // ceil(estimate * 1.05) + 25000 reaches the ceiling exactly.
+  assert.equal((await revalidatePublicationRequest(f.plan, prepared, f.providers, reviewedLaunchCeilings)).gasLimit, '4600000');
+  assert.deepEqual(prepared, original);
+});
+test('fixed reviewed launch gas still requires the full fresh buffer and balance for its maximum cost', async () => {
+  const f = await gasDriftFixture(), prepared = await preparePublicationRequest(f.plan, 0, f.providers, reviewedLaunchCeilings);
+  for (const estimate of [4357143n, 4600001n]) {
+    f.setEstimate(estimate); // The first raw estimate fits, but its unchanged buffer needs 4600001 gas.
+    await assert.rejects(preparePublicationRequest(f.plan, 0, f.providers, reviewedLaunchCeilings), /Gas estimate/);
+    await assert.rejects(revalidatePublicationRequest(f.plan, prepared, f.providers, reviewedLaunchCeilings), /Gas estimate/);
+    await assert.rejects(preparePublicationRetry(f.plan, { ...prepared, transactionHash: null }, f.providers, reviewedLaunchCeilings, prepared.requestDigest, 1), /Gas estimate/);
+  }
+  f.setEstimate(4292479n);
+  const maximumCost = BigInt(prepared.request.value) + 4600000n * BigInt(prepared.request.maxFeePerGas);
+  f.setBalance(maximumCost); await revalidatePublicationRequest(f.plan, prepared, f.providers, reviewedLaunchCeilings);
+  f.setBalance(maximumCost - 1n);
+  await assert.rejects(preparePublicationRequest(f.plan, 0, f.providers, reviewedLaunchCeilings), /balance/);
+  await assert.rejects(revalidatePublicationRequest(f.plan, prepared, f.providers, reviewedLaunchCeilings), /balance/);
+  await assert.rejects(preparePublicationRetry(f.plan, { ...prepared, transactionHash: null }, f.providers, reviewedLaunchCeilings, prepared.requestDigest, 1), /balance/);
+});
+test('fixed launch gas cannot replace reviewed gas, fees, value, nonce or calldata at arm or retry', async () => {
+  const f = await gasDriftFixture(), prepared = await preparePublicationRequest(f.plan, 0, f.providers, reviewedLaunchCeilings);
+  for (const change of [{ maxGas: '4599999' }, { maxGas: '4600001' }, { maxFeePerGas: '800000001' }, { maxPriorityFeePerGas: '10000001' }]) {
+    await assert.rejects(revalidatePublicationRequest(f.plan, prepared, f.providers, { ...reviewedLaunchCeilings, ...change }), /changed/);
+    await assert.rejects(preparePublicationRetry(f.plan, { ...prepared, transactionHash: null }, f.providers, { ...reviewedLaunchCeilings, ...change }, prepared.requestDigest, 1), /changed/);
+  }
+  for (const [key, value] of [['gas', '0x1'], ['nonce', '0x3'], ['value', '0x0'], ['data', '0x00'], ['maxFeePerGas', '0x1']]) {
+    assert.notEqual(value, prepared.request[key]);
+    const changed = structuredClone(prepared); changed.request[key] = value;
+    await assert.rejects(revalidatePublicationRequest(f.plan, changed, f.providers, reviewedLaunchCeilings), /digest differs/);
+    await assert.rejects(preparePublicationRetry(f.plan, { ...changed, transactionHash: null }, f.providers, reviewedLaunchCeilings, changed.requestDigest, 1), /digest differs/);
+  }
 });
 test('independent providers and no pending owner nonce are required', async () => {
   const f = rpcFixture(); await observePublicationOperation(f.plan, 0, f.providers);
