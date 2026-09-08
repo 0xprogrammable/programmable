@@ -10,6 +10,8 @@ import { moduleEngineUtcTimestamp } from "@/lib/module-engine/presentation";
 import { createModuleEngineClient, ENGINE_OPERATIONS, isModuleEngineFeeTransaction, prepareModuleEngineFeeChange, type ModuleEngineFeeChangeIntent, type ModuleEngineReceiptResult, moduleEngineDepositIntent, moduleEngineSettlementPaymentIntent, moduleEngineSettlementRequestIntent, moduleEngineTradeIntent, moduleEngineWithdrawalIntent, prepareModuleEngineApproval, prepareModuleEngineClaim, prepareModuleEngineOperation, quoteModuleEngineTrade, readModuleEngineAdministration, readModuleEngineQuoteAsset, type ModuleEngineAdministration, type ModuleEngineApprovalRequired, type ModuleEngineClient, type PreparedModuleEngineTransaction } from "@/lib/module-engine/client";
 import { ModuleEngineTransactionReview, type ModuleEngineWalletActions } from "./module-engine-transaction-review";
 import { ModuleEngineFeeControls, ModuleEngineFeeChangeReceipt } from "./module-engine-fee-controls";
+import { ModuleEngineCustomOperationFields } from "./module-engine-custom-operation";
+import { emptyModuleEngineCustomOperation, moduleEngineCustomOperationIntent } from "@/lib/module-engine/custom-operation";
 import styles from "@/components/module-mode-builder.module.css";
 import engineStyles from "./module-engine-ui.module.css";
 
@@ -19,6 +21,7 @@ const labels: Record<Action, string> = { buy: "Buy tokens", sell: "Sell tokens",
 export function ModuleEngineConsole({ release, template, token, client: suppliedClient, wallet, onConnect, onSwitch, onSubmit, blocked, blockedReason, statusContent }: ModuleEngineConsoleProps) {
   const client = useMemo(() => suppliedClient ?? createModuleEngineClient(), [suppliedClient]);
   const [snapshot, setSnapshot] = useState<ModuleEngineAdministration | null>(null); const [action, setAction] = useState<Action | null>(null);
+  const [customOperationId, setCustomOperationId] = useState(""); const [customForm, setCustomForm] = useState(emptyModuleEngineCustomOperation); const [customReview, setCustomReview] = useState(false);
   const [amount, setAmount] = useState(""); const [recipient, setRecipient] = useState(""); const [requestId, setRequestId] = useState(""); const [refundTime, setRefundTime] = useState(""); const [reference, setReference] = useState("");
   const [routes, setRoutes] = useState<{ label: string; data: Hex }[]>([]); const [route, setRoute] = useState("");
   const [prepared, setPrepared] = useState<PreparedModuleEngineTransaction | null>(null); const [approval, setApproval] = useState<ModuleEngineApprovalRequired | null>(null);
@@ -31,19 +34,21 @@ export function ModuleEngineConsole({ release, template, token, client: supplied
   const current = snapshot?.actor.toLowerCase() === wallet.account?.toLowerCase() && snapshot?.launch.token.toLowerCase() === token.toLowerCase() ? snapshot : null;
   const expectedActions: Action[] = profile === "quote-v1" ? ["buy", "sell"] : profile === "escrow-v1" ? ["deposit", "withdraw"] : profile === "settlement-v1" ? ["request", "fulfill", "refund"] : [];
   const actions = expectedActions.filter(key => current?.permissions.some(p => p.operationId === ENGINE_OPERATIONS[key] && (p.authorization === 0 || current.actor === current.launch.creator)));
+  const customPermissions = current?.permissions.filter(permission => !expectedActions.some(key => ENGINE_OPERATIONS[key] === permission.operationId) && (permission.authorization === 0 || current.actor === current.launch.creator)) ?? [];
+  const customPermission = customPermissions.find(permission => permission.operationId === customOperationId) ?? customPermissions[0];
   const selected = action && actions.includes(action) ? action : actions[0];
   const request = current?.settlement?.request;
   const canPrepare = Boolean(current && selected && (selected !== "fulfill" || current.settlement?.canFulfill) && (selected !== "refund" || current.settlement?.canRefund) && (selected !== "withdraw" || current.escrow && current.escrow.credit > 0n && current.timestamp >= current.escrow.unlockTime));
   const humanError = (caught: unknown) => caught instanceof Error ? caught.message.replace(/^Module engine: /, "") : "The current coin state could not be verified.";
   function edit(change: () => void) { change(); setPrepared(null); setApproval(null); setError(null); }
-  function backToEdit() { if (prepared && isModuleEngineFeeTransaction(prepared)) { setPrepared(null); requestAnimationFrame(() => feeReturnFocus.current?.focus()); return; } const id = prepared?.kind === "approve" ? "engine-operation-approval-review" : prepared?.kind === "claim" ? "engine-claim-review" : "engine-action-review"; setPrepared(null); requestAnimationFrame(() => document.getElementById(id)?.focus()); }
+  function backToEdit() { if (prepared && isModuleEngineFeeTransaction(prepared)) { setPrepared(null); requestAnimationFrame(() => feeReturnFocus.current?.focus()); return; } const id = prepared?.kind === "approve" ? "engine-operation-approval-review" : prepared?.kind === "claim" ? "engine-claim-review" : customReview ? "engine-custom-action-review" : "engine-action-review"; setPrepared(null); requestAnimationFrame(() => document.getElementById(id)?.focus()); }
   async function refresh() {
     if (!wallet.account) return; setBusy(true); setError(null);
     try { const account = moduleAddress(wallet.account, "account"); const state = await readModuleEngineAdministration({ client, release, template, token, account, ...(requestId.trim() ? { requestId: moduleHash(requestId.trim(), "request ID") } : {}) }); setSnapshot(state); if (profile === "quote-v1") { const quote = await readModuleEngineQuoteAsset({ client, release, template, quoteAsset: state.launch.quoteAsset, account, existingToken: token }); setRoutes(quote.routes); setRoute(quote.routes[0]?.data ?? ""); } }
     catch (caught) { setError(humanError(caught)); } finally { setBusy(false); }
   }
   async function prepareAction() {
-    if (!current || !selected || !wallet.account) return; setBusy(true); setError(null); setNotice(null);
+    if (!current || !selected || !wallet.account) return; setBusy(true); setError(null); setNotice(null); setCustomReview(false);
     try {
       const account = moduleAddress(wallet.account, "account"); assertModuleModeWalletUnchanged(wallet, account);
       const quoteAsset = current.launch.quoteAsset, target = recipient.trim() ? moduleAddress(recipient.trim(), "recipient") : account;
@@ -65,6 +70,15 @@ export function ModuleEngineConsole({ release, template, token, client: supplied
       if (result.kind === "approval-required") setApproval(result); else setPrepared(result);
     } catch (caught) { setError(humanError(caught)); } finally { setBusy(false); }
   }
+  async function prepareCustomAction() {
+    if (!current || !customPermission || !wallet.account) return; setBusy(true); setError(null); setNotice(null);
+    try {
+      const account = moduleAddress(wallet.account, "account"); assertModuleModeWalletUnchanged(wallet, account);
+      const intent = moduleEngineCustomOperationIntent({ permission: customPermission, form: customForm, account, token: current.launch.token, quoteAsset: current.launch.quoteAsset, quoteDecimals: current.quoteDecimals });
+      const result = await prepareModuleEngineOperation({ client, release, template, account, token, intent });
+      if (result.kind === "approval-required") setApproval(result); else { setCustomReview(true); setPrepared(result); }
+    } catch (caught) { setError(humanError(caught)); } finally { setBusy(false); }
+  }
   async function prepareFeeChange(intent: ModuleEngineFeeChangeIntent) {
     if (!wallet.account) return; feeReturnFocus.current = document.activeElement as HTMLElement | null; setBusy(true); setError(null); setNotice(null);
     try { const account = moduleAddress(wallet.account, "account"); assertModuleModeWalletUnchanged(wallet, account); setPrepared(await prepareModuleEngineFeeChange({ client, release, template, token, account, intent })); }
@@ -84,7 +98,7 @@ export function ModuleEngineConsole({ release, template, token, client: supplied
       assertModuleModeWalletUnchanged(wallet, prepared.account); if (prepared.releaseDigest !== release.releaseDigest) throw new Error("The selected source release changed. Review again.");
       const result = await onSubmit(prepared);
       setFeeReceipt(result.feeChange ? { account: prepared.account, result } : null);
-      if (prepared.kind === "execute" && prepared.operation.operationId === ENGINE_OPERATIONS.request) { const [id] = decodeAbiParameters(parseAbiParameters("bytes32"), prepared.result); setRequestId(id); }
+      if (profile === "settlement-v1" && !customReview && prepared.kind === "execute" && prepared.operation.operationId === ENGINE_OPERATIONS.request) { const [id] = decodeAbiParameters(parseAbiParameters("bytes32"), prepared.result); setRequestId(id); }
       setPrepared(null); setApproval(null); setSnapshot(null); setNotice(`Transaction mined: ${result.transactionHash}. Refresh balances to see the updated state. Finality is still pending.`);
     } catch (caught) { setError(humanError(caught)); } finally { setBusy(false); }
   }
@@ -105,11 +119,12 @@ export function ModuleEngineConsole({ release, template, token, client: supplied
         {selected === "request" || selected === "fulfill" ? <div className={styles.field}><label htmlFor="engine-operation-reference">{selected === "request" ? "Obligation reference" : "Fulfillment reference"}</label><textarea id="engine-operation-reference" value={reference} onChange={event => edit(() => setReference(event.target.value))} required /><p className={styles.help}>A fingerprint of this reference is recorded permanently with the action.</p></div> : null}
         {selected === "buy" || selected === "sell" ? <><div className={styles.field}><label htmlFor="engine-operation-route">Fee conversion route <span>Fixed by template</span></label><input id="engine-operation-route" readOnly value={routes.find(item => item.data === route)?.label ?? "No fixed route is available"} /></div><p className={styles.help}>Platform: {(current.fees.buyPlatformBps / 100).toFixed(2)}%. Creator: {selected === "buy" ? current.fees.buyCreatorBps / 100 : current.fees.sellCreatorBps / 100}%. The review uses a current contract simulation and 1% slippage limits for output and ETH fee conversion.</p></> : null}
       </fieldset><div className={engineStyles.actions}><button id="engine-action-review" type="submit" className={styles.primaryButton} disabled={busy || blocked || !canPrepare || Boolean(prepared)}>Review {selected === "fulfill" ? "fulfillment" : selected === "refund" ? "refund" : selected === "deposit" ? "deposit" : selected === "withdraw" ? "withdrawal" : selected === "request" ? "request" : "trade"}</button></div>{!canPrepare ? <p className={styles.help}>This action is not currently authorized for your wallet or its time condition has not been reached. Refresh to check again.</p> : null}</form> : null}
+      {customPermission ? <form className={styles.formPanel} onSubmit={event => { event.preventDefault(); void prepareCustomAction(); }}><fieldset className={styles.formFields} disabled={busy || Boolean(prepared)}><h2>Advanced actions</h2><div className={styles.field}><label htmlFor="engine-custom-operation">Reviewed action</label><select id="engine-custom-operation" value={customPermission.operationId} onChange={event => edit(() => { setCustomOperationId(event.target.value); setCustomForm(emptyModuleEngineCustomOperation()); })}>{customPermissions.map((permission, index) => <option key={permission.operationId} value={permission.operationId}>Operation {index + 1} · {permission.operationId.slice(0, 8)}…{permission.operationId.slice(-8)}</option>)}</select></div><ModuleEngineCustomOperationFields id="engine-custom-action" permission={customPermission} value={customForm} account={wallet.account} onChange={value => edit(() => setCustomForm(value))} /></fieldset><div className={engineStyles.actions}><button id="engine-custom-action-review" type="submit" className={styles.primaryButton} disabled={busy || blocked || Boolean(prepared)}>Review action</button></div></form> : null}
       <section className={styles.formPanel}><h2>ETH fee claims</h2><dl className={styles.reviewRows}><div><dt>Claimable by your wallet</dt><dd>{formatUnits(current.fees.claimable, 18)} ETH</dd></div><div><dt>Already claimed</dt><dd>{formatUnits(current.fees.claimed, 18)} ETH</dd></div><div><dt>Accrued from this launch</dt><dd>{formatUnits(current.fees.contributionByLaunch, 18)} ETH</dd></div></dl><p className={styles.help}>Creator, author and platform allocations accrue to their entitled wallets. This claim withdraws your wallet’s total fee balance in this ledger to your wallet.</p><div className={engineStyles.actions}><button id="engine-claim-review" type="button" className={styles.secondaryButton} disabled={busy || blocked || current.fees.claimable === 0n || Boolean(prepared)} onClick={() => void prepareClaim()}>Review ETH claim</button></div></section>
       <ModuleEngineFeeControls key={token + ":" + release.releaseDigest + ":" + current.actor} client={client} release={release} template={template} token={token} account={current.actor} disabled={busy || blocked || step !== "prepare" || Boolean(prepared)} onPrepare={prepareFeeChange} />
     </div> : <p className={styles.help}>Refresh to load your available actions and fee balances.</p>}
     {approval && !prepared ? <div className={engineStyles.notice} role="status"><p>Allow the contract to use exactly {current ? formatUnits(approval.amount, approval.token === token ? 18 : current.quoteDecimals) : approval.amount.toString()} tokens for this action.</p><button id="engine-operation-approval-review" type="button" className={styles.secondaryButton} disabled={busy || blocked} onClick={() => void prepareApproval()}>{approval.currentAllowance > 0n ? "Review allowance reset" : "Review exact approval"}</button></div> : null}
-    {prepared ? <ModuleEngineTransactionReview prepared={prepared} busy={busy} disabled={blocked || step !== "prepare"} onConfirm={() => void confirm()} onEdit={backToEdit} quoteAsset={current?.launch.quoteAsset} quoteDecimals={current?.quoteDecimals} /> : null}
+    {prepared ? <ModuleEngineTransactionReview prepared={prepared} busy={busy} disabled={blocked || step !== "prepare"} onConfirm={() => void confirm()} onEdit={backToEdit} quoteAsset={current?.launch.quoteAsset} quoteDecimals={current?.quoteDecimals} genericAction={customReview} /> : null}
     {!prepared && feeReceipt?.account === wallet.account?.toLowerCase() && feeReceipt?.result.launch?.token === token.toLowerCase() ? <ModuleEngineFeeChangeReceipt result={feeReceipt.result} /> : null}
     {blocked ? <p className={engineStyles.notice} role="status">{blockedReason ?? "Resolve the pending operation before sending another transaction."}</p> : null}
     {error ? <p ref={errorFocus} tabIndex={-1} className={styles.fieldError} role="alert">{error}</p> : null}{notice ? <p className={engineStyles.notice} role="status">{notice}</p> : null}
