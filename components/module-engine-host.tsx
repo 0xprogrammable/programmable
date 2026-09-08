@@ -94,7 +94,7 @@ export function ModuleEngineHost({ releaseDigest, token, versions = [] }: { rele
   const working = ["checking", "signing", "pending"].includes(flow.phase) || checkingReceipt;
   const blocked = loading || Boolean(loadError) || !release || working || unresolved || requestPending
     || connecting || openingWallet || switchingNetwork || disconnecting || (Boolean(wallet?.account) && !authReady);
-  const blockedReason = loadError ?? (loading ? "Checking this template version…" : saved.error ?? (unresolved ? "Resolve the saved transaction below before sending another request." : working ? "Checking your transaction…" : requestPending ? "Complete the open wallet request before continuing." : undefined));
+  const blockedReason = loadError ?? (loading ? "Checking this template version…" : saved.error ?? (unresolved ? "Resolve the saved transaction below before sending another request." : working ? "Checking your transaction…" : requestPending ? "Complete the open wallet request before continuing." : !release ? availability.reason ?? "This template version is temporarily unavailable." : undefined));
 
   async function submit(prepared: PreparedModuleEngineTransaction): Promise<ModuleEngineReceiptResult> {
     if (busy.current || blocked) throw new Error(blockedReason ?? "This request is not available yet.");
