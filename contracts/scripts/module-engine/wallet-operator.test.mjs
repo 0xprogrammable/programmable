@@ -2,9 +2,10 @@ import test from 'node:test';
 import { mkdtemp, chmod, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { REPOSITORY_ROOT } from '../module-mode/build.mjs';
+import { canonicalJson, sha256 } from '../module-mode/core.mjs';
 import { armJournal, armRetryJournal, journalEntry, recordTransaction, recordReceipt } from '../module-mode/journal.mjs';
 import assert from 'node:assert/strict';
-import { decodeFunctionData, erc20Abi } from 'viem';
+import { decodeFunctionData, decodeFunctionResult, encodeFunctionData, encodeFunctionResult, erc20Abi } from 'viem';
 import { engineWalletFixture, engineWorld, a, h } from './wallet-test-fixtures.mjs';
 import { createEnginePublicationOperatorPlan, assertEnginePublicationOperatorPlan, assertCurrentEngineReview } from './publication-plan.mjs';
 import { createEngineLifecycleOperatorPlan, assertEngineLifecycleOperatorPlan } from './lifecycle-operator-plan.mjs';
@@ -123,6 +124,30 @@ test('Engine receipt rejects a changed wallet request, wrong network, missing/du
   const prepared = await preparePublicationRequest(next, 0, world.providers, ceilings), execution = await world.mine(prepared), receipt = world.receipts.get(execution.transactionHash);
   receipt.logs[0].data = `${receipt.logs[0].data.slice(0, -64)}${h(0).slice(2)}`;
   await assert.rejects(observePublicationReceipt(next, execution, world.providers), /result hash/);
+});
+test('Engine token creator normalizes ABI address casing and rejects a different address', async () => {
+  const f = await engineWalletFixture(), previousHost = f.identity.contracts.host.address, host = a(0xabcd);
+  const creatorResult = encodeFunctionResult({ abi: f.api.moduleEngineReadAbi, functionName: 'creator', result: host });
+  const decodedCreator = decodeFunctionResult({ abi: f.api.moduleEngineReadAbi, functionName: 'creator', data: creatorResult });
+  assert.notEqual(decodedCreator, host); assert.equal(decodedCreator.toLowerCase(), host);
+  // Rebind the existing synthetic review fixture to a Host whose ABI-decoded address has checksum capitals.
+  f.identity.contracts.host.address = host;
+  f.identity.releaseDigest = f.api.computeModuleEngineReleaseDigest(f.identity);
+  f.codes.set(host, f.codes.get(previousHost)); f.codes.delete(previousHost);
+  f.bundle.manifest = f.api.createReviewedModuleEngineManifest({ job: { artifact: f.artifact, plan: f.bundle.buildPlan },
+    descriptor: f.source.descriptor, release: f.identity, definition: f.definition.catalogDefinition, revision: f.definition.revision });
+  f.bundle.review.command.hostManifestHash = f.api.computeModuleEngineHostManifestHash(f.bundle.manifest);
+  const review = { ...f.bundle.review }; delete review.decisionDigest;
+  f.bundle.review.decisionDigest = `0x${sha256(canonicalJson({ domain: review.schemaVersion, value: review }))}`;
+  const plan = await createEngineLifecycleOperatorPlan(f), world = engineWorld(f, plan);
+  const entry = await world.mine(await preparePublicationRequest(plan, 0, world.providers, ceilings));
+  const evidence = await observePublicationReceipt(plan, entry, world.providers);
+  assert.equal(evidence.status, 'included-code-verified-unfinalized');
+  assert.equal(evidence.canary.token, plan.steps[0].expectation.token);
+  const creatorData = encodeFunctionData({ abi: f.api.moduleEngineReadAbi, functionName: 'creator' });
+  world.mutations.rpc = (method, params) => method === 'eth_call' && params[0].to === evidence.canary.token && params[0].data === creatorData
+    ? encodeFunctionResult({ abi: f.api.moduleEngineReadAbi, functionName: 'creator', result: a(0xabce) }) : undefined;
+  await assert.rejects(observePublicationReceipt(plan, entry, world.providers), /Engine token creator differs/);
 });
 test('Engine same server has a disabled inspection mode and retains the original wallet/source authority gate', async () => {
   const f = await engineWalletFixture(), plan = await createEngineLifecycleOperatorPlan(f);
