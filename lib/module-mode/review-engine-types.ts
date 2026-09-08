@@ -12,7 +12,11 @@ export const MODULE_ENGINE_QUOTE_ENVIRONMENT_V1 = Object.freeze({
   profile: "programmable.engine-quote-v4-v3@1",
   sourceDigest: "0xa0d03aa0af44d281907d91efb03805411b4f72831035b1fc3b4c63462ad0d39f",
 } as const);
-export type ModuleEngineTestEnvironmentV1 = typeof MODULE_ENGINE_QUOTE_ENVIRONMENT_V1;
+export const MODULE_ENGINE_QUOTE_NVDA_ENVIRONMENT_V1 = Object.freeze({
+  profile: "programmable.engine-quote-nvda-v4-v3@1",
+  sourceDigest: "0x99893b6a331147270eec445b65cbb3ee43265fb8aba36f72063c1542ef7ff41d",
+} as const);
+export type ModuleEngineTestEnvironmentV1 = typeof MODULE_ENGINE_QUOTE_ENVIRONMENT_V1 | typeof MODULE_ENGINE_QUOTE_NVDA_ENVIRONMENT_V1;
 export const MODULE_ENGINE_CONTEXT_ABI_V1 = [
   { name: "host", type: "address" }, { name: "launchId", type: "bytes32" },
   { name: "token", type: "address" }, { name: "creator", type: "address" },
