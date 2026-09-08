@@ -5,7 +5,7 @@ import { compileOpenConfig } from "../../packages/classic-modules/src/open-confi
 import { nativeCanonicalJson, nativeJson } from "./native-catalog";
 import { encodeModuleEngineConfiguration, parseModuleEngineConfigurationAbi } from "../module-engine/configuration";
 import { reviewDigest as moduleReviewDigestV1, parseReviewSubject, type ReviewSubject as ModuleReviewSubjectV1 } from "./review-contract";
-import { MODULE_ENGINE_QUOTE_ENVIRONMENT_V1 } from "./review-engine-types";
+import { MODULE_ENGINE_QUOTE_ENVIRONMENT_V1, MODULE_ENGINE_QUOTE_NVDA_ENVIRONMENT_V1 } from "./review-engine-types";
 import { MODULE_ENGINE_BUILD_SCHEMA_V1, MODULE_ENGINE_PLAN_SCHEMA_V1, MODULE_ENGINE_PROFILE_V1, MODULE_ENGINE_CONFIGURATION_CODEC_V1, MODULE_ENGINE_CONTEXT_ABI_V1, MODULE_ENGINE_CONSTRUCTOR_ABI_V1, type ModuleEngineBuildArtifactV1, type ModuleEngineBuildPlanV1, type ModuleEngineContractArtifactV1, type ModuleEngineCompiledCaseV1, type ModuleEngineTestResultV1 } from "./review-engine-types";
 type ModuleDigestV1 = Hex;
 export const ENGINE_REVIEW_COMPILER = Object.freeze({version:"0.8.26+commit.8a97fa7a",binarySha256:"sha256:35ba6661f3bdaed995fc7af14c405502290cf681b3fd062fe8738cfdf6db14ed",imageDigest:"sha256:d8e448a56fc63242f70026718378bd4b00f8c82e78d20eefb199224a4d8e33d8"});
@@ -77,14 +77,16 @@ function subjectValid(subject: ModuleReviewSubjectV1) {
   exact(subject, ["submissionId", "principalId", "author", "requestDigest"]);
   need(UUID.test(subject.submissionId) && UUID.test(subject.principalId) && ADDRESS.test(subject.author) && DIGEST.test(subject.requestDigest), "MODULE_BUILD_SUBJECT_INVALID");
 }
+function testEnvironmentValid(value: unknown) {
+  const environment = exact(value, ["profile", "sourceDigest"]);
+  need([MODULE_ENGINE_QUOTE_ENVIRONMENT_V1, MODULE_ENGINE_QUOTE_NVDA_ENVIRONMENT_V1].some(installed =>
+    environment.profile === installed.profile && environment.sourceDigest === installed.sourceDigest), "MODULE_ENGINE_TEST_ENVIRONMENT_INVALID");
+}
 
 export function validateModuleEngineBuildPlanV1(value: unknown, subject: ModuleReviewSubjectV1): ModuleEngineBuildPlanV1 {
   subjectValid(subject);
   const p = exact(value, ["schemaVersion", "submissionId", "requestDigest", "engineComponentId", "configurationCodec", "configurationAbi", "immutableBindings", "operationPermissions", "moneyRights", "coinRights", "testEconomics", "executionGas", "cases", ...(Object.hasOwn(object(value), "testEnvironment") ? ["testEnvironment"] : [])]);
-  if(Object.hasOwn(p,"testEnvironment")) {
-    const environment=exact(p.testEnvironment,["profile","sourceDigest"]);
-    need(environment.profile===MODULE_ENGINE_QUOTE_ENVIRONMENT_V1.profile && environment.sourceDigest===MODULE_ENGINE_QUOTE_ENVIRONMENT_V1.sourceDigest,"MODULE_ENGINE_TEST_ENVIRONMENT_INVALID");
-  }
+  if(Object.hasOwn(p,"testEnvironment")) testEnvironmentValid(p.testEnvironment);
   need(p.schemaVersion === MODULE_ENGINE_PLAN_SCHEMA_V1 && p.submissionId === subject.submissionId && p.requestDigest === subject.requestDigest, "MODULE_ENGINE_SUBJECT_MISMATCH");
   need(p.configurationCodec === MODULE_ENGINE_CONFIGURATION_CODEC_V1, "MODULE_ENGINE_CODEC_UNSUPPORTED");
   parseModuleEngineConfigurationAbi(p.configurationAbi);
@@ -312,10 +314,7 @@ export function parseEngineReviewArtifact(value: unknown, subject: ModuleReviewS
   need(json(raw.reviewRequired)===json(MODULE_ENGINE_REVIEW_AREAS_V1),"MODULE_ENGINE_REVIEW_COVERAGE_INVALID");
   need(raw.configurationCodec===MODULE_ENGINE_CONFIGURATION_CODEC_V1,"MODULE_ENGINE_CODEC_UNSUPPORTED"); parseModuleEngineConfigurationAbi(raw.configurationAbi);
   const artifact=raw as unknown as ModuleEngineBuildArtifactV1;
-  if(Object.hasOwn(raw,"testEnvironment")) {
-    const environment=exact(raw.testEnvironment,["profile","sourceDigest"]);
-    need(environment.profile===MODULE_ENGINE_QUOTE_ENVIRONMENT_V1.profile && environment.sourceDigest===MODULE_ENGINE_QUOTE_ENVIRONMENT_V1.sourceDigest,"MODULE_ENGINE_TEST_ENVIRONMENT_INVALID");
-  }
+  if(Object.hasOwn(raw,"testEnvironment")) testEnvironmentValid(raw.testEnvironment);
   need(Array.isArray(artifact.cases) && artifact.cases.length>0 && artifact.cases.length<=16,"MODULE_ENGINE_CASES_INVALID");
   const engine=artifact.engine;
   need(engine && engine.abiHash===moduleReviewDigestV1("programmable.modules.abi.v1",engine.abi),"MODULE_ENGINE_ABI_INVALID");

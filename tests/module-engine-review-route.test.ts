@@ -10,7 +10,7 @@ import { WEBSITE_ADMIN_WALLET } from "../lib/admin-access";
 import { computeModuleEngineHostManifestHash, computeModuleEngineReleaseDigest, type ModuleEngineCatalogDefinition } from "../lib/module-engine/catalog";
 import { createReviewedModuleEngineManifest } from "../lib/module-mode/review-engine-manifest";
 import type { ModuleEngineBuildArtifactV1, ModuleEngineBuildPlanV1 } from "../lib/module-mode/review-engine-types";
-import { MODULE_ENGINE_QUOTE_ENVIRONMENT_V1 } from "../lib/module-mode/review-engine-types";
+import { MODULE_ENGINE_QUOTE_ENVIRONMENT_V1, MODULE_ENGINE_QUOTE_NVDA_ENVIRONMENT_V1 } from "../lib/module-mode/review-engine-types";
 import { moduleEngineStandardInputV1, parseEngineReviewArtifact, validateModuleEngineBuildPlanV1, verifyModuleEngineBuildArtifactV1 } from "../lib/module-mode/review-engine-contract";
 import { parseReviewSubject, reviewDigest, type ReviewJob } from "../lib/module-mode/review-contract";
 import { computeModuleModeHostManifestHash, createModuleModeHostManifest, type ModuleModeHostReleaseIdentity } from "../lib/server/module-mode/catalog";
@@ -40,12 +40,50 @@ const nativeV2IdentityBytes = readFileSync(new URL("../config/module-mode/review
 const nativeV2Identity = JSON.parse(nativeV2IdentityBytes.toString()) as ModuleModeHostReleaseIdentity;
 
 describe("source-bound Quote dependency environment", () => {
+  const environments = [MODULE_ENGINE_QUOTE_ENVIRONMENT_V1, MODULE_ENGINE_QUOTE_NVDA_ENVIRONMENT_V1];
+  // Synthetic parser fixtures only; these digests are not protected-worker execution evidence.
+  const artifactWithEnvironment = (testEnvironment: unknown, planDigest = frozen.artifact.planDigest) => {
+    const { artifactDigest: _digest, ...contents } = frozen.artifact; void _digest;
+    const changed = { ...contents, testEnvironment, planDigest, tests: { ...contents.tests, planDigest } };
+    return { ...changed, artifactDigest: reviewDigest("programmable.modules.engine-build.v1", changed) };
+  };
   it("preserves the ordinary protected artifact and exact plan digest", () => {
     const subject=parseReviewSubject(frozen.subject), plan=validateModuleEngineBuildPlanV1(frozen.plan,subject);
     expect(reviewDigest("programmable.modules.engine-build-plan.v1",plan)).toBe(frozen.artifact.planDigest);
     expect(reviewDigest("programmable.modules.compiler-input.v1",moduleEngineStandardInputV1(frozen.source,subject,plan))).toBe(frozen.artifact.compiler.completeInputHash);
     expect(()=>verifyModuleEngineBuildArtifactV1(frozen.artifact as ModuleEngineBuildArtifactV1,subject,plan,frozen.source)).not.toThrow();
     expect(validateModuleEngineBuildPlanV1({...plan,testEnvironment:MODULE_ENGINE_QUOTE_ENVIRONMENT_V1},subject).testEnvironment).toEqual(MODULE_ENGINE_QUOTE_ENVIRONMENT_V1);
+  });
+  it.each(environments)("accepts the exact installed $profile in plans and bound artifacts", environment => {
+    const subject = parseReviewSubject(frozen.subject);
+    const plan = validateModuleEngineBuildPlanV1({ ...frozen.plan, testEnvironment: environment }, subject);
+    const artifact = artifactWithEnvironment(environment, reviewDigest("programmable.modules.engine-build-plan.v1", plan));
+    expect(plan.testEnvironment).toEqual(environment);
+    expect(parseEngineReviewArtifact(artifact, subject).testEnvironment).toEqual(environment);
+    expect(parseEngineReviewArtifact(artifact, subject, plan).testEnvironment).toEqual(environment);
+    expect(() => verifyModuleEngineBuildArtifactV1(artifact as ModuleEngineBuildArtifactV1, subject, plan, frozen.source)).not.toThrow();
+  });
+  it.each([
+    { ...MODULE_ENGINE_QUOTE_ENVIRONMENT_V1, sourceDigest: MODULE_ENGINE_QUOTE_NVDA_ENVIRONMENT_V1.sourceDigest },
+    { ...MODULE_ENGINE_QUOTE_NVDA_ENVIRONMENT_V1, sourceDigest: MODULE_ENGINE_QUOTE_ENVIRONMENT_V1.sourceDigest },
+    ...environments.flatMap(environment => [
+      { ...environment, profile: "programmable.engine-quote-uninstalled@1" },
+      { ...environment, sourceDigest: `0x${"00".repeat(32)}` },
+      { ...environment, rpcUrl: "https://caller.example.invalid" },
+      { ...environment, bytecode: "0x00" },
+      { ...environment, state: {} },
+    ]),
+  ])("rejects altered or cross-profile environment data in plans and artifacts %j", environment => {
+    const subject = parseReviewSubject(frozen.subject);
+    expect(() => validateModuleEngineBuildPlanV1({ ...frozen.plan, testEnvironment: environment }, subject)).toThrow();
+    expect(() => parseEngineReviewArtifact(artifactWithEnvironment(environment), subject)).toThrow();
+  });
+  it.each(environments)("rejects changing $profile after the plan was selected", environment => {
+    const subject = parseReviewSubject(frozen.subject);
+    const plan = validateModuleEngineBuildPlanV1({ ...frozen.plan, testEnvironment: environment }, subject);
+    const other = environments.find(installed => installed.profile !== environment.profile)!;
+    const artifact = artifactWithEnvironment(other, reviewDigest("programmable.modules.engine-build-plan.v1", plan));
+    expect(() => parseEngineReviewArtifact(artifact, subject, plan)).toThrow("MODULE_ENGINE_BUILD_PLAN_MISMATCH");
   });
   it.each([null,undefined,{},"quote",{...MODULE_ENGINE_QUOTE_ENVIRONMENT_V1,profile:"other"},{...MODULE_ENGINE_QUOTE_ENVIRONMENT_V1,sourceDigest:`0x${"00".repeat(32)}`},{...MODULE_ENGINE_QUOTE_ENVIRONMENT_V1,rpcUrl:"https://caller.example.invalid"},{...MODULE_ENGINE_QUOTE_ENVIRONMENT_V1,bytecode:"0x00"},{...MODULE_ENGINE_QUOTE_ENVIRONMENT_V1,state:{}}])("rejects caller-controlled environment data %j",value=>{
     expect(()=>validateModuleEngineBuildPlanV1({...frozen.plan,testEnvironment:value},parseReviewSubject(frozen.subject))).toThrow();
