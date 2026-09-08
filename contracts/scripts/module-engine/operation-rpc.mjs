@@ -61,8 +61,9 @@ async function boundLaunch(plan, step, providers, block, c, api) {
   await c.code(providers, { address: expected.engine, runtimeCodeHash: expected.engineCodeHash }, block);
   const tokenRuntime = bytes(c.same(await c.pair(providers, 'eth_getCode', [expected.token, block]), 'Engine token runtime')); need(tokenRuntime !== '0x', 'Engine token runtime missing');
   const parameters = launchStep(plan.action.kind === 'launch' ? plan : plan.action.launch.plan).arguments[0];
-  for (const [name, expectedValue] of [['name', parameters.name], ['symbol', parameters.symbol], ['creator', host], ['decimals', 18], ['totalSupply', 1000000000n * 10n ** 18n]])
+  for (const [name, expectedValue] of [['name', parameters.name], ['symbol', parameters.symbol], ['decimals', 18], ['totalSupply', 1000000000n * 10n ** 18n]])
     equal(await c.read(providers, expected.token, api.moduleEngineReadAbi, name, [], block), expectedValue, `Engine token ${name}`);
+  equal(address(await c.read(providers, expected.token, api.moduleEngineReadAbi, 'creator', [], block)), host, 'Engine token creator');
   const graffiti = keccak256(encodeAbiParameters(parseAbiParameters('string,address,bytes32'), ['programmable.module-engine.token.v1', expected.creator, parameters.creatorSalt]));
   equal(await c.read(providers, expected.token, api.moduleEngineReadAbi, 'graffiti', [], block), graffiti, 'Engine token graffiti');
   equal(address(await c.read(providers, pins.tokenFactory.address, api.moduleEngineReadAbi, 'getUERC20Address', [parameters.name, parameters.symbol, 18, host, graffiti], block)), expected.token, 'Factory token identity');
