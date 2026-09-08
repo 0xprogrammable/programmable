@@ -162,10 +162,11 @@ describe("Module Mode joins the canonical Robinhood index",()=>{
   });
   it("authenticates the checked-in active release before exposing its index source",async()=>{
     const release=bindActiveModuleModeRelease(configuredRelease); const c=collector([]);
+    expect(release.releaseDigest).toBe("0xe81f122e0bd21e0984e21c71ffce56f315e82f22e485cc19e0e490d4d5b7bd49");
     const boundary=point(BigInt(release.startBlock)+199n);
     c.finalizedBoundary=vi.fn(async()=>({chainId:4663 as const,sourceReleaseDigest:release.releaseDigest,
       blockNumber:boundary.number,blockHash:boundary.hash,verificationDigest:h(920)}));
-    expect(await configuredModuleModeSource(c)).toMatchObject({sourceKind:"module-native-v1",
+    expect(await configuredModuleModeSource(c)).toMatchObject({sourceKind:"module-native-v2",
       sourceAddress:release.contracts.launcher.address,releaseDigest:release.releaseDigest,
       startBlock:BigInt(release.startBlock),finalized:boundary});
     expect(c.authenticateRelease).toHaveBeenCalledExactlyOnceWith(release);

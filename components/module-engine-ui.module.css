@@ -30,3 +30,5 @@
 
 .templateDetails { margin-bottom: 16px; }
 .templateDetails > p:first-child { font-size: 14px; line-height: 20px; margin: 0 0 8px; }
+
+.customAssetFields { align-items: start; }

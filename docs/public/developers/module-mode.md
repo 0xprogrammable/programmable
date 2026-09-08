@@ -53,7 +53,11 @@ General quote trading leaves `fixedQuoteAsset` zero but still binds the reviewed
 
 Both wallets must be nonzero EVM addresses. The author must match the wallet that owns the API key. The reward wallet may be different. A family identifies one contribution across its revisions; helper contracts and repeated instances do not create additional reward shares.
 
-Configuration fields and management actions must be described in the supported manifests. The host validates those declarations and renders the corresponding controls. Arbitrary frontend code from a submission is not executed by the website. If the module requires a new control type, runtime capability or market engine, include that requirement in the submission for review.
+Configuration fields and management actions must be described in the supported manifests. The website renders the supported configuration fields and the quote, escrow and settlement controls for their reviewed interfaces. Other admitted Engine operations use **Advanced actions**, with the exact reviewed operation ID, allowed asset roles, amounts, recipient and action data. Required custom initial actions use the same controls during launch. The website simulates the complete host transaction and revalidates permissions before the wallet request; it does not infer a payload ABI or explain opaque action data from its operation ID. Contributors must document that data format.
+
+Custom Engine launches also expose **Advanced launch inputs** for exact creator and engine salts and initialization bytes. These values use the existing compiler and full launch simulation. An entered custom engine salt is preserved; blank salts use fresh random values. The standard quote interface retains its existing address mining. A successful local preparation does not establish public availability or live lifecycle evidence.
+
+Arbitrary frontend code from a submission is not executed by the website. If the module requires a new control type, runtime capability or market engine, include that requirement in the submission for review.
 
 ## Submit and follow the review
 
@@ -67,10 +71,13 @@ Use the [API and CLI reference](https://programmable.market/developers/module-mo
 | Read one submission | `GET /v1/modules/submissions/:id` |
 | Read review capabilities | `GET /v1/modules/review-capabilities` |
 | Read build and review progress | `GET /v1/modules/submissions/:id/review` |
+| Export an accepted build | `GET /v1/modules/submissions/:id/review-export` |
 
 Prepare and test the package locally, save the exact request and submit it with a stable idempotency key. Keep the returned submission ID. If the connection fails, retry those same bytes with the same key. Changed source requires a new revision.
 
 The intake receipt records that the package was received. Read the separate review resource for current progress and `nextAction`. Review acceptance is followed by registry admission, deployed-code verification and catalog activation. Availability is determined by the active release and catalog.
+
+After acceptance, the author's `modules:read` key can download the exact plan, artifact and decision through the [HTTP build export](https://programmable.market/developers/module-mode-api-v1.md#export-an-accepted-build-over-http). The response is bounded to 3 MiB. The existing CLI has no export command and keeps its 1 MiB response limit. The export grants no publication authority: the existing authorized operator still performs the protected publication steps, and launch or management transactions require their existing wallet authority.
 
 ## Existing coins and indexing
 

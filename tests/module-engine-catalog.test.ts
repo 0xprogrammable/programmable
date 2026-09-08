@@ -6,7 +6,7 @@ import { MODULE_MODE_ECONOMICS_POLICY_V2, MODULE_MODE_FINALITY_POLICY } from "..
 import { reviewDigest, type ReviewSubject } from "../lib/module-mode/review-contract";
 import type { ModuleEngineBuildArtifactV1, ModuleEngineBuildPlanV1 } from "../lib/module-mode/review-engine-types";
 import { createReviewedModuleEngineManifest } from "../lib/module-mode/review-engine-manifest";
-import { createModuleEngineAvailabilityReader, createModuleEngineHistoricalAvailabilityReader, configuredModuleEngineReleaseDigests, MODULE_ENGINE_HISTORICAL_RELEASES_SCHEMA, readModuleEngineAvailability, readModuleEngineLaunchVersions, type ModuleEngineAvailabilityDependencies } from "../lib/server/module-engine/catalog";
+import { createModuleEngineAvailabilityReader, createModuleEngineHistoricalAvailabilityReader, MODULE_ENGINE_HISTORICAL_RELEASES_SCHEMA, readModuleEngineAvailability, readModuleEngineLaunchVersions, type ModuleEngineAvailabilityDependencies } from "../lib/server/module-engine/catalog";
 import { bindModuleEngineCatalogFile, MODULE_ENGINE_CATALOG_SCHEMA, verifyModuleEnginePublication, type ModuleEngineCatalogPublication } from "../lib/server/module-engine/publication";
 import { MODULE_MODE_AVAILABILITY_TTL_MS, MODULE_MODE_PUBLICATION_TTL_MS, MODULE_MODE_UNAVAILABLE_TTL_MS, moduleModePublicationUrl } from "../lib/server/module-mode/catalog";
 import { computeModuleReviewDecisionDigestV1, type ModuleReviewDecisionRecordV1 } from "../lib/server/module-mode/review-decision-wire-v1";
@@ -132,9 +132,13 @@ describe("Engine publication authority and immutable bytes", () => {
 });
 
 describe("bounded Engine availability using the existing source authority", () => {
-  it("starts honestly disabled without fabricated release IDs, network calls or templates", async () => {
-    expect(configuredModuleEngineReleaseDigests()).toEqual([]);
-    expect(await readModuleEngineAvailability()).toEqual({ schemaVersion: MODULE_ENGINE_AVAILABILITY_SCHEMA, release: null, templates: [], reason: "Engine modules are being prepared." });
+  it("keeps an absent release unavailable without network calls or templates", async () => {
+    const collector = vi.fn(() => { throw new Error("An absent release must not access the source authority"); });
+    const fetchPublic = vi.fn<typeof fetch>();
+    const read = createModuleEngineAvailabilityReader({ releaseProfile: null, catalogFile: null, collector, fetchPublic });
+    expect(await read()).toEqual({ schemaVersion: MODULE_ENGINE_AVAILABILITY_SCHEMA, release: null, templates: [], reason: "Engine modules are being prepared." });
+    expect(collector).not.toHaveBeenCalled();
+    expect(fetchPublic).not.toHaveBeenCalled();
     expect((await readModuleEngineAvailability(hash(999))).release).toBeNull();
   });
   it("authenticates the installed release and returns only the public template shape", async () => {

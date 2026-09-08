@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { validateModuleSubmissionRequest } from "../packages/classic-modules/src/open-transport.mjs";
 import frozen from "./fixtures/module-engine-review-build.json";
-import configuredNativeRelease from "../config/module-mode/robinhood.preview.json";
+import historicalNativeReleases from "../config/module-mode/historical-releases.json";
 import { fixture as engineClientFixture } from "./module-engine-fixture";
 import { moduleReviewAdminFixture } from "./fixtures/module-review-admin";
 import { WEBSITE_ADMIN_WALLET } from "../lib/admin-access";
@@ -29,6 +29,12 @@ vi.mock("@/lib/server/creator-article/wallet-principal.server", () => ({
 const reviewer = WEBSITE_ADMIN_WALLET.toLowerCase() as `0x${string}`;
 const nativeIdentityKeys = ["schemaVersion", "sourceVersion", "chainId", "sourceCommit", "startBlock",
   "minimumInitialBuyNative", "tokenCreationCodeHash", "finalityPolicy", "contracts", "releaseDigest"];
+const historicalNativeV1 = historicalNativeReleases.releases.find(entry =>
+  entry.release.releaseDigest === "0x546172aa670b543c19f00a707a0e9328acfd770f3040fbdd03a8bc709f786dee");
+if (!historicalNativeV1 || historicalNativeV1.release.sourceVersion !== "module-native-v1") {
+  throw new Error("The exact historical Native V1 review fixture source is missing.");
+}
+const configuredNativeRelease = historicalNativeV1.release;
 const nativeV1Identity = Object.fromEntries(nativeIdentityKeys.map(key => [key, configuredNativeRelease[key as keyof typeof configuredNativeRelease]]));
 const nativeV2IdentityBytes = readFileSync(new URL("../config/module-mode/review-release.json", import.meta.url));
 const nativeV2Identity = JSON.parse(nativeV2IdentityBytes.toString()) as ModuleModeHostReleaseIdentity;

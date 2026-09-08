@@ -25,6 +25,8 @@ printf '%s  %s\n' "$gitleaks_sha256" "$scan_dir/$gitleaks_archive" \
 tar --extract --gzip --file "$scan_dir/$gitleaks_archive" \
   --directory "$scan_dir" gitleaks
 
+PROGRAMMABLE_GITLEAKS_BINARY="$scan_dir/gitleaks" node --test "$workspace/scripts/security/gitleaks-policy.test.mjs"
+
 head_sha="$(git -C "$workspace" rev-parse HEAD)"
 base_sha="${PROGRAMMABLE_GITLEAKS_BASE_SHA:-}"
 if [[ ! "$base_sha" =~ ^[0-9a-f]{40}$ ]] \

@@ -13,10 +13,10 @@ import { ENGINE_OPERATIONS, type ModuleEngineClient, type ModuleEngineOperation,
 import { fixture, ACCOUNT, QUOTE, TOKEN, addr, hash, CODE_HASH } from "../module-engine-fixture";
 import "./module-engine-ui.css";
 
-const scenarios = ["builder-general", "builder-library", "builder-fixed", "builder-approval", "builder-quote", "console-escrow", "console-unlocked", "console-settlement", "console-refund", "console-stranger", "console-quote", "unavailable"];
+const scenarios = ["builder-general", "builder-library", "builder-fixed", "builder-approval", "builder-quote", "console-escrow", "console-unlocked", "console-settlement", "console-refund", "console-stranger", "console-quote", "builder-custom", "console-custom", "console-custom-stranger", "unavailable"];
 const scenario = new URLSearchParams(location.search).get("scenario") ?? scenarios[0];
 const test = fixture(), m = test.template.manifest.manifest;
-const settlement = scenario.includes("settlement") || scenario.includes("refund") || scenario.includes("stranger");
+const settlement = !scenario.includes("custom") && (scenario.includes("settlement") || scenario.includes("refund") || scenario.includes("stranger"));
 const quoteProfile = scenario.includes("quote");
 const unlocked = scenario.includes("unlocked");
 const payer = addr(89), stranger = addr(85), beneficiary = addr(88), requestId = hash(86);
@@ -56,6 +56,17 @@ if (quoteProfile) {
   delete m.catalogDefinition.fields;
   m.revision.fixedConfigurationHash = keccak256(encodeModuleEngineConfiguration(m.catalogDefinition.configurationAbi, compileOpenConfig(m.catalogDefinition.schema, m.catalogDefinition.defaults), m.catalogDefinition.schema));
   m.revision.operationPermissions = [{ operationId: ENGINE_OPERATIONS.buy, inputRoles: 2, outputRoles: 1, authorization: 0 }, { operationId: ENGINE_OPERATIONS.sell, inputRoles: 1, outputRoles: 2, authorization: 0 }];
+}
+if (scenario.includes("custom")) {
+  m.catalogDefinition.interface = "custom-v1";
+  m.catalogDefinition.title = "Custom engine action";
+  m.catalogDefinition.detail = "Fixture for explicit reviewed operation data and asset permissions.";
+  m.revision.moneyRights = 7;
+  m.revision.operationPermissions = [
+    { operationId: hash(501), inputRoles: 6, outputRoles: 1, authorization: 0 },
+    { operationId: hash(502), inputRoles: 0, outputRoles: 2, authorization: 1 },
+  ];
+  if (scenario === "builder-custom") m.revision.initialOperationId = hash(501);
 }
 test.template.manifestHash = computeModuleEngineHostManifestHash(test.template.manifest);
 if (scenario === "builder-library") {

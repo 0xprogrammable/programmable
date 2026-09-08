@@ -135,12 +135,15 @@ describe("Module review admin BFF", () => {
   });
   it("checks a private manifest against the real pending host identity without an active release", async () => {
     const f = setup({ release: "pending" });
+    expect(pendingRelease.sourceVersion).toBe("module-native-v2");
     expect(pendingRelease.releaseDigest).toBe(computeModuleModeReleaseDigest(pendingRelease));
     expect(pendingRelease.lifecycleEvidenceDigest).toBeNull();
     expect(() => bindActiveModuleModeRelease(pendingRelease)).toThrow("release.enabled");
     // Only the host identity is real here; the source/build fixture remains synthetic and unapproved.
+    const feeEligibility = { eligible: false, reviewDigest: `0x${"00".repeat(32)}` as const };
     const manifest = createModuleModeHostManifest({ release: pendingRelease as ModuleModeHostReleaseIdentity,
-      definition: f.definition, nativeBinding: f.binding, descriptor: f.source.descriptor });
+      definition: f.definition, nativeBinding: { ...f.binding, feeEligibility }, descriptor: f.source.descriptor });
+    expect(manifest.manifest.runtimeBinding.feeEligibility).toEqual(feeEligibility);
     const result = await f.client.handle(f.post("manifest", { expectedReviewRevision: 2, hostManifestJson: JSON.stringify(manifest) }), "manifest", f.subject.submissionId);
     expect(result.status).toBe(200);
     expect(await result.json()).toMatchObject({ hostManifestHash: computeModuleModeHostManifestHash(manifest), artifactDigest: f.artifact.artifactDigest });

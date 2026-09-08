@@ -27,12 +27,14 @@ describe("Module Mode native source provenance",()=>{
   });
   it("pins the deployed source identity and rejects pending public provenance",()=>{
     expect(configuredRelease).toMatchObject({
-      schemaVersion: "programmable.module-mode-source.v1", sourceVersion: "module-native-v1", chainId: 4663,
-      releaseDigest: "0x546172aa670b543c19f00a707a0e9328acfd770f3040fbdd03a8bc709f786dee",
-      sourceCommit: "9a2a1257a1b97dc0658157247890105a26e824ec",
-      deploymentEvidenceDigest: "0xc75f4baa2142d61e4f007bf969d9a52638ab2ffa80af333f8612144ba07ba705",
-      sourceVerificationDigest: "0x429c32b033bee913c85424c27d1bd1f34e1a5f9af82ce5b0d89ee3b9da51e7b1",
-      startBlock: "56160214", minimumInitialBuyNative: "400000000000000",
+      schemaVersion: "programmable.module-mode-source.v2", sourceVersion: "module-native-v2", chainId: 4663,
+      releaseDigest: "0xe81f122e0bd21e0984e21c71ffce56f315e82f22e485cc19e0e490d4d5b7bd49",
+      sourceCommit: "17b64b6613108dbc6ffdf767607bde6ea33343cd",
+      economicsPolicyId: "0x781124e941c10961779bc0d3ce1606083d16e1af3a03dccbc10d362b81085cc2",
+      deploymentEvidenceDigest: "0x1d78338a6230dadfdfd5c94595d886a79682380faabc5c8c2fdfc6ad71dc9284",
+      sourceVerificationDigest: "0x7516811126198aeb7c1503b47ab0ac485d01054ab76f5687d4b02a28f3dd309f",
+      lifecycleEvidenceDigest: "0x613ebdce2ef1057d902da6924bdb1f209bc99b628b3a75f2e63804a5055ac5bc",
+      startBlock: "57167553", minimumInitialBuyNative: "400000000000000",
       tokenCreationCodeHash: "0x445809d9f7a34e959de4a96dec1e1beddfb265755bf28c57c42744adea1128ef",
       finalityPolicy: "robinhood-ethereum-finalized-v1",
     });

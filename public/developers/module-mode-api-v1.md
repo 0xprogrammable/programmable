@@ -133,7 +133,7 @@ node "$MODULE_CLI" review-status-module \
 | `build_failed` | `await_review_plan` | Read `lastError`; the operator must address the build plan or request source changes. |
 | `changes_requested` | `submit_new_version` | Apply the review feedback, update the source version and hashes, and submit a linked revision. |
 | `rejected` | `review_rejection` | Read the reason before deciding whether a revised contribution is appropriate. |
-| `accepted` | `await_registry_admission` | Review is complete. Registry admission, deployed-code verification and public catalog activation are still required. |
+| `accepted` | `await_registry_admission` | Download the [accepted build export](#export-an-accepted-build-over-http). Registry admission, deployed-code verification and public catalog activation are still required. |
 
 The projected decision uses `outcome: "accept" | "request_changes" | "reject"`, plus its reason, reviewer wallet, decision time and digest. An accepted decision references the recorded build artifact and host manifest. `buildEvidenceRecorded` and these digests describe records held by the review service; the status response is not the full artifact or an independent audit. It still returns `sourceRevisionVerified: false`, `runtimeVerified: false`, `approved: false` and `available: false`, including after acceptance. Source-byte verification proves only that uploaded bytes match the declared source hashes.
 
@@ -150,6 +150,44 @@ node "$MODULE_CLI" prepare-module-submission \
 ```
 
 Submit this new revision with its own stable idempotency key. The old source request remains immutable. `--supersedes` is also accepted with the one-step `--package` upload; it cannot override a prepared request's already pinned supersession.
+
+## Export an accepted build over HTTP
+
+After `review.state` becomes `accepted`, use `GET /v1/modules/submissions/:id/review-export` to download the exact accepted build plan, artifact and reviewer decision. Use a normal key with `modules:read`, owned by the same principal and author wallet as the submission. A key for another linked wallet of that principal cannot export this build.
+
+Read `GET /v1/modules/review-capabilities` first and require `statusReadAvailable: true`. Then use the submission UUID from the original intake receipt. The request accepts no query string or body. Populate the Authorization header from `PROGRAMMABLE_MODULES_API_KEY` in your HTTP client's secret environment:
+
+```http
+GET /v1/modules/submissions/{submissionId}/review-export HTTP/1.1
+Host: api.programmable.market
+Authorization: Bearer <module-api-key>
+```
+
+The successful response uses `schemaVersion: "programmable.modules.review-export.v1"` and contains:
+
+| Field | Meaning |
+| --- | --- |
+| `submissionId`, `packageId`, `familyId`, `requestDigest`, `author`, `rewardWallet`, `version` | Identity fields that must match the saved intake receipt. |
+| `reviewRevision` | The current accepted revision, equal to `review.command.expectedReviewRevision + 1`. |
+| `buildAttempt` | The completed worker attempt bound to the same request, plan and artifact. |
+| `reviewedBuild` | The existing `{subject, plan, artifact}` objects, retaining their Native or Engine schemas. |
+| `review` | The complete accepted `programmable.modules.review-decision.v1` record, bound to that subject and artifact. |
+| `registryApproved`, `available` | Always `false` for this export. Read the active public catalog for actual availability. |
+
+The server revalidates the stored source, plan, artifact, completed attempt and accepted decision before returning them. It does not compile or execute source during the read. The response omits the source upload, worker identity, lease tokens and internal attempt log. Retain the original source request alongside the export.
+
+The complete response is limited to **3 MiB** and uses `Cache-Control: no-store` with `Vary: Authorization`. Use an HTTP client that rejects redirects, bounds the decoded response to 3 MiB, validates the response schema and binds every identity field to the original receipt. The existing standalone CLI has no review-export command; its generic response limit remains **1 MiB**.
+
+| Status / code | Next action |
+| --- | --- |
+| 401 / `AUTHENTICATION_REQUIRED` | Use an active, unexpired key for the author wallet. |
+| 403 / `INSUFFICIENT_SCOPE` | Use a key with `modules:read`. |
+| 404 / `MODULE_SUBMISSION_NOT_FOUND` | Check the saved submission ID and author wallet. An older API deployment may also return 404 for an unsupported export route, even when review-status reads are ready. |
+| 409 / `MODULE_REVIEW_EXPORT_NOT_ACCEPTED` | Read the existing review-status resource and follow its `nextAction`. |
+| 503 / `MODULE_REVIEW_EXPORT_BINDING_INVALID` | Preserve the source receipt and report the inconsistent source, build or decision binding. No partial export is returned. |
+| 503 / `MODULE_REVIEW_EXPORT_UNAVAILABLE` or `MODULE_REVIEW_UNAVAILABLE` | Keep the receipt and check service readiness later; do not create a duplicate submission. |
+
+An accepted export gives the contributor a copy of the recorded build and decision. Publication still uses the existing authorized operator's fresh protected reads, exact host-manifest binding, Registry admission, deployed-code verification and public catalog activation. Supplying export JSON grants no reviewer or Registry authority. Launches, management actions and claims continue through their existing wallet-authorized paths.
 
 ## SDK
 
