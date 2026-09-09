@@ -351,7 +351,7 @@ function IndexedLaunchList({ embedded, enabled, chainId }: { embedded: boolean; 
           <ul className={styles.list} id={listId} aria-label={`${chainName} launches`} aria-busy={pending || loading}>
             {items.map((launch, index) => {
               const details = presentations.get(launch.tokenAddress.toLowerCase());
-              const hasAsset = !launch.launchProjection || launch.launchProjection.primaryAsset !== null;
+              const hasAsset = !launch.launchProjection || launch.launchProjection.primaryComponentId !== null;
               return (
               <li key={launch.tokenAddress.toLowerCase()} className={styles.item}>
                 <article className={styles.row}>
