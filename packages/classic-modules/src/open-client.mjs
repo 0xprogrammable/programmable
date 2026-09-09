@@ -3,6 +3,8 @@ import { canonicalJson } from './canonical-json.mjs';
 import { MODULE_SUBMISSION_FORMAT, MODULE_TRANSPORT_LIMITS, ModuleTransportError,
   validateModuleSubmissionRequest } from './open-transport.mjs';
 import { MODULE_REVIEW_CAPABILITIES_SCHEMA, MODULE_REVIEW_STATUS_SCHEMA, bindModuleReviewCapabilities, bindModuleReviewStatus } from './open-review.mjs';
+import { MODULE_CONTEXT_SCHEMA, bindModuleContext } from './open-context.mjs';
+export { MODULE_CONTEXT_SCHEMA } from './open-context.mjs';
 export { MODULE_REVIEW_CAPABILITIES_SCHEMA, MODULE_REVIEW_STATUS_SCHEMA } from './open-review.mjs';
 
 export const MODULE_API_SCHEMA = 'programmable.modules.api.v0.1';
@@ -106,7 +108,7 @@ async function boundedJson(response) {
   } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
 }
 function responseError(response, body, apiKey) {
-  const problem = plain(body) && [MODULE_API_SCHEMA, MODULE_REVIEW_CAPABILITIES_SCHEMA, MODULE_REVIEW_STATUS_SCHEMA].includes(body.schemaVersion) && plain(body.error) ? body.error : {};
+  const problem = plain(body) && [MODULE_API_SCHEMA, MODULE_CONTEXT_SCHEMA, MODULE_REVIEW_CAPABILITIES_SCHEMA, MODULE_REVIEW_STATUS_SCHEMA].includes(body.schemaVersion) && plain(body.error) ? body.error : {};
   const code = typeof problem.code === 'string' && /^[A-Z][A-Z0-9_]{0,95}$/.test(problem.code)
     && (!apiKey || !problem.code.includes(apiKey)) ? problem.code : 'MODULE_API_HTTP';
   const path = typeof problem.path === 'string' && problem.path.length <= 512 && !/[\u0000-\u001f\u007f]/.test(problem.path)
@@ -180,6 +182,13 @@ export function createModuleApiClient({ apiOrigin, apiKey, timeoutMs = MODULE_AP
   }
   return Object.freeze({
     capabilities, reviewCapabilities,
+    async context() {
+      requireKey();
+      await capabilities();
+      const { body } = await request('/v1/modules/context', { authenticated: true });
+      try { return noKeyEcho(bindModuleContext(body)); }
+      catch { throw new ModuleApiError('MODULE_CONTEXT_RESPONSE', 'The API returned inconsistent author, permissions or module preparation requirements'); }
+    },
     async reviewStatus(id) {
       requireKey(); const expectedId = submissionId(id);
       const caps = await reviewCapabilities();

@@ -166,15 +166,9 @@ export const PROGRAMMABLE_READ_ONLY_AGENT_SETUP_TEXT = [
   "Launch history can include requests from other API keys and linked wallets in the same account. The key is not isolated to one project or controller wallet’s history.",
   "Respect the key’s saved chain restriction. Current chain access is checked for each request; do not infer access from a scope name or from an absent chain list.",
 ].join("\n\n");
-export const PROGRAMMABLE_MODULE_AGENT_SETUP_TEXT_V1 = [
-  "Prepare a Programmable Module Mode contribution as a source package.",
-  "Use an API key that includes modules:submit and modules:read. A combined Programmable key supports both modules and launches. Read it from $PROGRAMMABLE_MODULES_API_KEY in the environment or secret store; never paste, print or copy the secret into chat, source code, logs or command history.",
-  `Use the existing Programmable API origin ${moduleApiOrigin}. First read GET ${moduleApiOrigin}/v1/modules/capabilities. Continue only when that live response explicitly allows submissions; an absent route or unavailable capability is not permission to submit.`,
-  "Use the package schema and limits reported by those capabilities. Build and test your own module locally, then prepare its source package, configuration, declared permissions and documentation. Include the nonzero EVM author wallet bound to your API key and your chosen nonzero EVM reward wallet. Upload all pinned source files; a GitHub repository or pull request is not required. The intake accepts source without executing it. Do not invent missing package fields.",
-  "When available, submit the source package through POST /v1/modules/submissions and read its status through GET /v1/modules/submissions/:id using the returned submission ID and the same API origin. Follow the endpoint's current authentication and idempotency contract.",
-  "A draft_received result only records receipt. It is not an approval, audit, deployment, catalog listing or permission to bind the module to a live launch. Keep review and runtime integration as separate steps.",
-  "A module-only key cannot create launches. A combined key may use Custom launch routes with its custom-launch scopes. Neither key can approve modules or sign wallet transactions.",
-].join("\n\n");
+export const PROGRAMMABLE_MODULE_AGENT_SETUP_TEXT_V1 = buildAgentInstructions({
+  intent: "Build and submit a reusable Module Mode source package for the user's idea",
+});
 
 function hasStandardScopes(scopes: readonly string[]) {
   return scopes.length === fixedScopes.length

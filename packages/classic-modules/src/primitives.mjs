@@ -19,8 +19,8 @@ export function nonzeroAddress(value, label) {
 }
 export function safeRelativePath(value) {
   return typeof value === 'string' && value.length <= 240
-    && /^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(value)
-    && value.split('/').every((part) => part !== '' && part !== '.' && part !== '..');
+    && value.split('/').every((part) => /^[A-Za-z0-9._@+()[\]-]+$/u.test(part)
+      && part !== '.' && part !== '..');
 }
 export function familyIdFor(author, salt) {
   nonzeroAddress(author, 'author');

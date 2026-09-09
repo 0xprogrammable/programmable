@@ -1,8 +1,8 @@
 {
   "name": "@programmable/classic-modules",
-  "version": "1.0.0-development.6",
+  "version": "1.0.0-development.7",
   "private": true,
-  "description": "Local contributor validation and deterministic recipes for Classic Modules V1",
+  "description": "Open Module source submissions, authenticated contributor context and deterministic configuration",
   "type": "module",
   "bin": { "programmable-classic-modules": "bin/programmable-classic-modules.mjs" },
   "types": "./src/index.d.mts",

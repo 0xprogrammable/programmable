@@ -1,0 +1,161 @@
+{
+  "schemaVersion": "programmable.modules.context.v1",
+  "identity": {
+    "author": "0x1111111111111111111111111111111111111111",
+    "defaultRewardWallet": "0x1111111111111111111111111111111111111111"
+  },
+  "authorization": {
+    "scopes": [
+      "modules:read",
+      "modules:submit"
+    ],
+    "requiredScopes": [
+      "modules:submit",
+      "modules:read"
+    ],
+    "missingScopes": [],
+    "canSubmit": true,
+    "canRead": true
+  },
+  "intake": {
+    "available": true,
+    "submissionFormat": "programmable.modules.submission.v0.1",
+    "descriptorFormat": "programmable.classic.source-package.v0.1",
+    "openRuntimeIdentifiers": true,
+    "openHostRequirements": true,
+    "categoryRequired": false,
+    "repositoryRequired": false,
+    "limits": {
+      "httpBytes": 25165824,
+      "sourceBytes": 16777216,
+      "sourceFileBytes": 4194304,
+      "sourceFiles": 128,
+      "pageSize": 20,
+      "requestSeconds": 15,
+      "concurrentUploads": 2,
+      "descriptorBytes": 524288
+    }
+  },
+  "inputs": {
+    "requiredUserInput": [
+      "idea"
+    ],
+    "optionalUserInput": [
+      "rewardWallet"
+    ],
+    "authorSource": "api_key_wallet",
+    "rewardWalletDefault": "author",
+    "agentPreparedFields": [
+      "name",
+      "version",
+      "familySalt",
+      "source",
+      "components",
+      "configuration",
+      "ports",
+      "constraints",
+      "management",
+      "requiresHost",
+      "documentation",
+      "files"
+    ]
+  },
+  "review": {
+    "available": true,
+    "statusReadAvailable": true,
+    "planRequired": true,
+    "unknownRequirements": "await_review_plan",
+    "profiles": [
+      {
+        "id": "programmable.native-solidity@1",
+        "configurationCodec": "programmable.native-abi@1",
+        "compilerVersion": "0.8.26+commit.8a97fa7a",
+        "compilerSettings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 1000
+          },
+          "evmVersion": "cancun",
+          "viaIR": true,
+          "metadata": {
+            "bytecodeHash": "none"
+          }
+        },
+        "componentRuntimes": {
+          "program": [
+            "programmable.native-solidity@1",
+            "programmable.module-native-runtime@1"
+          ],
+          "factory": [
+            "programmable.native-solidity@1",
+            "evm-solidity-0.8.26@1"
+          ]
+        },
+        "limits": {
+          "callbacksPerCase": 16,
+          "minCallbackGas": 25000,
+          "maxCallbackGas": 500000
+        }
+      },
+      {
+        "id": "programmable.module-engine-solidity@1",
+        "configurationCodec": "programmable.engine-abi@1",
+        "compilerVersion": "0.8.26+commit.8a97fa7a",
+        "compilerSettings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 1000
+          },
+          "evmVersion": "cancun",
+          "viaIR": true,
+          "metadata": {
+            "bytecodeHash": "none"
+          }
+        },
+        "componentRuntimes": {
+          "engine": [
+            "programmable.module-engine-solidity@1"
+          ]
+        },
+        "limits": {
+          "minExecutionGas": 50000,
+          "maxExecutionGas": 3000000,
+          "operationsPerCase": 16,
+          "operationPermissions": 32
+        },
+        "testEnvironments": [
+          {
+            "profile": "programmable.engine-quote-v4-v3@1",
+            "sourceDigest": "0xa0d03aa0af44d281907d91efb03805411b4f72831035b1fc3b4c63462ad0d39f",
+            "coverage": "service_owned_quote_fixture",
+            "arbitraryDependencies": false
+          }
+        ]
+      }
+    ],
+    "limits": {
+      "sourceBytes": 4194304,
+      "standardJsonBytes": 5242880,
+      "compilerOutputBytes": 52428800,
+      "artifactBytes": 2097152,
+      "runtimeBytes": 24576,
+      "creationBytes": 49152,
+      "configBytes": 16384,
+      "cases": 16
+    },
+    "dependencies": "submitted_source_only",
+    "submittedCommandsExecuted": false,
+    "approval": "manual",
+    "publicationSeparate": true
+  },
+  "links": {
+    "guide": "https://programmable.market/developers/module-mode-api-v1.md",
+    "capabilities": "/v1/modules/capabilities",
+    "reviewCapabilities": "/v1/modules/review-capabilities",
+    "submit": "/v1/modules/submissions",
+    "submissions": "/v1/modules/submissions",
+    "review": "/v1/modules/submissions/{submissionId}/review"
+  },
+  "approved": false,
+  "available": false
+}

@@ -2,6 +2,7 @@ import type { OpenHex } from './open-packages.mjs';
 import type { MODULE_SUBMISSION_FORMAT, ModuleSubmissionRequest } from './open-transport.mjs';
 
 export const MODULE_API_SCHEMA: 'programmable.modules.api.v0.1';
+export const MODULE_CONTEXT_SCHEMA: 'programmable.modules.context.v1';
 export const MODULE_REVIEW_CAPABILITIES_SCHEMA: 'programmable.modules.review-capabilities.v1';
 export const MODULE_REVIEW_STATUS_SCHEMA: 'programmable.modules.review-status.v1';
 export const MODULE_API_CLIENT_LIMITS: Readonly<{ responseBytes: number; timeoutMs: 20000; pageSize: 20 }>;
@@ -23,6 +24,20 @@ export interface ModuleSubmissionReceipt {
   supersedesSubmissionId: string | null;
   status: 'draft_received'; reviewStatus: 'unreviewed'; sourceBytesVerified: true; sourceRevisionVerified: false;
   buildVerified: false; runtimeVerified: false; approved: false; available: false;
+}
+export interface ModuleContext {
+  schemaVersion: typeof MODULE_CONTEXT_SCHEMA;
+  identity: { author: OpenHex; defaultRewardWallet: OpenHex };
+  authorization: { scopes: string[]; requiredScopes: string[]; missingScopes: string[]; canSubmit: boolean; canRead: boolean };
+  intake: { available: boolean; submissionFormat: typeof MODULE_SUBMISSION_FORMAT; descriptorFormat: 'programmable.classic.source-package.v0.1';
+    openRuntimeIdentifiers: true; openHostRequirements: true; categoryRequired: false; repositoryRequired: false;
+    limits: ModuleApiCapabilities['limits'] & { descriptorBytes: number } };
+  inputs: { requiredUserInput: ['idea']; optionalUserInput: string[]; authorSource: 'api_key_wallet'; rewardWalletDefault: 'author'; agentPreparedFields: string[] };
+  review: { available: boolean; statusReadAvailable: boolean; planRequired: true; unknownRequirements: 'await_review_plan';
+    profiles: { id: string; configurationCodec: string; compilerVersion: string; componentRuntimes: Record<string, string[]>; [key: string]: unknown }[];
+    limits: Record<string, number>; dependencies: 'submitted_source_only'; submittedCommandsExecuted: false; approval: 'manual'; publicationSeparate: true; [key: string]: unknown };
+  links: { guide: string; capabilities: string; reviewCapabilities: string; submit: string; submissions: string; review: string };
+  approved: false; available: false;
 }
 export interface ModuleSubmissionResponse { schemaVersion: typeof MODULE_API_SCHEMA; submission: ModuleSubmissionReceipt }
 export interface ModuleSubmissionPage { schemaVersion: typeof MODULE_API_SCHEMA; submissions: ModuleSubmissionReceipt[]; nextCursor: string | null }
@@ -47,6 +62,7 @@ export interface ModuleReviewStatus {
 }
 export interface ModuleApiClient {
   capabilities(): Promise<ModuleApiCapabilities>;
+  context(): Promise<ModuleContext>;
   reviewCapabilities(): Promise<ModuleReviewCapabilities>;
   reviewStatus(submissionId: string): Promise<ModuleReviewStatus>;
   submit(request: ModuleSubmissionRequest, options: { idempotencyKey: string }): Promise<ModuleSubmissionResponse & { idempotent: boolean }>;

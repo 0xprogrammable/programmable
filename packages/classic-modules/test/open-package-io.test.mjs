@@ -6,6 +6,7 @@ import path from 'node:path';
 import { loadOpenSourcePackage, compileOpenTemplateFiles } from '../src/open-package-io.mjs';
 import { runCli } from '../src/cli.mjs';
 import { openPackageId } from '../src/open-packages.mjs';
+import { safeRelativePath } from '../src/primitives.mjs';
 import { SOURCE, HELP, sourcePackage, templateFor, context, OTHER_CREATOR } from '../examples/open-packages/fixture.mjs';
 
 async function fixture(t) {
@@ -46,6 +47,36 @@ test('source file symlink and catalogue traversal are rejected', async (t) => {
   await assert.rejects(loadOpenSourcePackage(root, 'package.json'));
   await fs.writeFile(path.join(root, 'packages.json'), JSON.stringify(['../package.json']));
   await assert.rejects(compileOpenTemplateFiles(root, { templatePath: 'template.json', packagesPath: 'packages.json', bindingsPath: 'bindings.json' }));
+});
+
+test('open source intake packages normal app routes and scoped paths without permitting path escape', async (t) => {
+  const root = await fixture(t);
+  for (const sourcePath of ['app/[slug]/page.tsx', 'app/(group)/[[...rest]]/page.tsx',
+    '@scope/library/index.ts', 'src/routes/+page.svelte', '.config/app.json']) {
+    const pkg = sourcePackage();
+    pkg.source.files[0].path = sourcePath;
+    pkg.components[0].sourcePath = sourcePath;
+    pkg.components[0].runtime = 'example.unfamiliar-app@1';
+    pkg.requiresHost = ['example.new-integration@1'];
+    await fs.mkdir(path.dirname(path.join(root, sourcePath)), { recursive: true });
+    await fs.writeFile(path.join(root, sourcePath), SOURCE);
+    await fs.writeFile(path.join(root, 'package.json'), JSON.stringify(pkg));
+    const pack = await loadOpenSourcePackage(root, 'package.json');
+    assert.ok(pack.files.some((file) => file.path === sourcePath));
+    assert.equal(pack.onchainApproved, false);
+  }
+  for (const sourcePath of ['', '/app/a.ts', '../a.ts', 'app/../a.ts', './a.ts',
+    'app//a.ts', 'app/a.ts/', 'C:/a.ts', 'app\\a.ts', 'app/%2e%2e/a.ts',
+    'app/\u0000a.ts', 'app/\na.ts', 'app/$(cmd).ts', 'app/`cmd`.ts', 'a'.repeat(241)]) {
+    assert.equal(safeRelativePath(sourcePath), false, JSON.stringify(sourcePath));
+  }
+  const linkedParent = path.join(root, 'app', '[linked]');
+  await fs.symlink(path.join(root, 'fixture'), linkedParent);
+  const pkg = sourcePackage();
+  pkg.source.files[0].path = 'app/[linked]/source.txt';
+  pkg.components[0].sourcePath = pkg.source.files[0].path;
+  await fs.writeFile(path.join(root, 'package.json'), JSON.stringify(pkg));
+  await assert.rejects(loadOpenSourcePackage(root, 'package.json'));
 });
 
 test('CLI performs source -> pack -> configuration preview with exclusive output and no approval', async (t) => {
