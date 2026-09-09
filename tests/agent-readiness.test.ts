@@ -121,6 +121,8 @@ describe("agent-readable public surface", () => {
       "/api/custom-launch/registry/v2/manifest",
       "/api/custom-launch/registry/v2/readiness",
       "/api/explore",
+      "/api/explore/ethereum",
+      "/api/explore/robinhood",
       "/api/explore/token",
       "/api/explore/token/analytics",
       "/api/explore/token/chart",
@@ -143,6 +145,8 @@ describe("agent-readable public surface", () => {
     expect(
       programmablePublicOpenApi["x-programmable-availability"].exploreIndexing,
     ).toEqual({
+      scope: "legacy-routes-only",
+      paths: ["/api/explore", "/api/explore/token", "/api/explore/token/analytics", "/api/explore/token/chart"],
       status: "reset",
       publicReadStatus: 503,
       providerCalls: false,
@@ -151,7 +155,7 @@ describe("agent-readable public surface", () => {
     });
     expect(
       programmablePublicOpenApi["x-programmable-boundary"].marketData,
-    ).toContain("while Explore indexing is reset");
+    ).toContain("legacy reset routes");
     expect(JSON.stringify(programmablePublicOpenApi)).not.toMatch(
       /gmgn|dexscreener|bitquery/iu,
     );
@@ -160,6 +164,8 @@ describe("agent-readable public surface", () => {
       "/api/custom-launch/registry/v2/manifest",
       "/api/custom-launch/registry/v2/readiness",
       "/api/explore",
+      "/api/explore/ethereum",
+      "/api/explore/robinhood",
       "/api/explore/token",
       "/api/explore/token/analytics",
       "/api/explore/token/chart",

@@ -1,6 +1,7 @@
 import { V4_API_DISCOVERY, V4_API_PROFILE_VERSION } from "@/lib/custom-launch/v4-api-discovery";
 import { robinhoodV4PublicContractDiscovery, robinhoodV4PublicPolicyDescription } from "@/lib/custom-launch/v4-public-contract-discovery";
 import { V4_TOKEN_ADDRESS } from "@/components/docs-public-policy";
+import { chainExplorePaths, chainExploreSchemas } from "@/lib/public-chain-explore-openapi";
 
 const SITE_ORIGIN = "https://programmable.market";
 const CUSTOM_LAUNCH_API_ORIGIN = "https://api.programmable.market";
@@ -45,11 +46,11 @@ export const programmablePublicOpenApi = {
   openapi: "3.1.0",
   info: {
     title: "Programmable developer APIs",
-    version: "1.10.0",
+    version: "1.11.0",
     summary:
-      "Explore indexing reset, Ethereum V3 creation and Robinhood V4 launch discovery.",
+      "Ethereum and Robinhood Explore feeds, Custom launch contracts and release discovery.",
     description:
-      robinhoodV4PublicPolicyDescription(V4_API_PROFILE_VERSION, "The programmable.market Explore endpoints remain unauthenticated and read-only, but token indexing is intentionally reset while a replacement indexer is built. Valid Explore list, detail and analytics requests return a deterministic 503 reset response; chart requests return the provider-neutral market-chart-error.v2 reset response. At the separately hosted Custom Launch API, fresh writes use the public Ethereum V3.3 contract. Robinhood Chain V4 exposes a public self-serve launch path when live publicWrites, publicAuthorization and releaseReady discovery fields are all true. Clients must verify these gates before creating. The required default policy for new Robinhood V4 API Custom launches is 20 bps to the published recipient. It is policy configuration, not proof of canonical onchain fee enforcement, a charged fee or platform revenue, and missing onchain fee enforcement is not itself a write blocker. V2 and V1 history remain readable, while both legacy creation routes are write-fenced with non-retryable 409 CUSTOM_LAUNCH_V2_READ_ONLY and CUSTOM_LAUNCH_V1_READ_ONLY responses. CLI and model checks prepare a request; only the API server decides whether verified evidence permits a wallet handoff. Legacy Registry and GitHub submission intake is closed. An API key and the CLI never sign or broadcast a controller-wallet transaction."),
+      robinhoodV4PublicPolicyDescription(V4_API_PROFILE_VERSION, "The unauthenticated GET /api/explore/ethereum and GET /api/explore/robinhood endpoints serve chain-specific verified launch pages. Their response status distinguishes current, incomplete, saved and unavailable reads; module catalog filters do not restrict source submission ideas. The legacy /api/explore and /api/explore/token routes, including analytics and chart, retain their indexing-reset responses. At the separately hosted Custom Launch API, fresh writes use the public Ethereum V3.3 contract. Robinhood Chain V4 exposes a public self-serve launch path when live publicWrites, publicAuthorization and releaseReady discovery fields are all true. Clients must verify these gates before creating. The required default policy for new Robinhood V4 API Custom launches is 20 bps to the published recipient. It is policy configuration, not proof of canonical onchain fee enforcement, a charged fee or platform revenue, and missing onchain fee enforcement is not itself a write blocker. V2 and V1 history remain readable, while both legacy creation routes are write-fenced with non-retryable 409 CUSTOM_LAUNCH_V2_READ_ONLY and CUSTOM_LAUNCH_V1_READ_ONLY responses. CLI and model checks prepare a request; only the API server decides whether verified evidence permits a wallet handoff. Legacy Registry and GitHub submission intake is closed. An API key and the CLI never sign or broadcast a controller-wallet transaction."),
     contact: {
       name: "Programmable",
       url: `${SITE_ORIGIN}/docs/developers`,
@@ -65,7 +66,7 @@ export const programmablePublicOpenApi = {
     {
       name: "Discovery",
       description:
-        "Explore token reads are intentionally unavailable while indexing is rebuilt.",
+        "Verified chain-specific launch feeds and the explicit reset contracts of legacy Explore routes.",
     },
     {
       name: "Operations",
@@ -86,6 +87,7 @@ export const programmablePublicOpenApi = {
     },
   ],
   paths: {
+    ...chainExplorePaths,
     "/api": {
       get: {
         operationId: "getPublicApiIndex",
@@ -589,6 +591,7 @@ export const programmablePublicOpenApi = {
       },
     },
     schemas: {
+      ...chainExploreSchemas,
       EthereumAddress: {
         type: "string",
         pattern: "^0x[0-9a-fA-F]{40}$",
@@ -1790,11 +1793,20 @@ export const programmablePublicOpenApi = {
   },
   "x-programmable-availability": {
     exploreIndexing: {
+      scope: "legacy-routes-only",
+      paths: ["/api/explore", "/api/explore/token", "/api/explore/token/analytics", "/api/explore/token/chart"],
       status: "reset",
       publicReadStatus: 503,
       providerCalls: false,
       fallbacks: false,
       backgroundWorkers: false,
+    },
+    chainExplore: {
+      authenticationRequired: false,
+      ethereum: { path: "/api/explore/ethereum", chainId: 1, statuses: ["ready", "partial", "stale", "unavailable"] },
+      robinhood: { path: "/api/explore/robinhood", chainId: 4663, statuses: ["ready", "syncing", "stale", "unavailable"] },
+      availability: "Read each response status and source evidence. Documentation does not establish current provider availability or public launch authorization.",
+      categoryBoundary: "mode filters published launch sources only; module source intake has no business-category allowlist.",
     },
     v1Reads: "live",
     v1Create: {
@@ -1931,13 +1943,13 @@ export const programmablePublicOpenApi = {
   },
   "x-programmable-boundary": {
     identity:
-      "The historical Explore admission boundary is retained for a future replacement indexer, but no token identity is served while Explore indexing is reset.",
+      "Chain-specific Explore feeds expose verified Ethereum Classic/Router identities and Robinhood Custom/Module release identities. They are presentation feeds, not complete archives. No token identity is served by the legacy reset routes.",
     excluded:
-      "All other Classic V1/V2, every Stock family, and Custom launches without a verified Registry record or finalized Router stamp.",
+      "Unverified launch identities and entries excluded by each chain's presentation policy. These filters are not an allowlist for module source intake.",
     marketData:
-      "No token market, ranking, search, analytics or chart data is read while Explore indexing is reset.",
+      "Ethereum Explore market values remain null. Robinhood Explore can include separate market observations; absent values stay null. The legacy reset routes read no market, ranking, search, analytics or chart data.",
     router:
-      "Finalized Router evidence is not read or published through Explore while indexing is reset. It remains independent from Custom Launch API lifecycle and finality evidence.",
+      "Chain-specific feeds retain exact Router and Module source evidence. Module sources are not assigned fabricated Router stamps. Feed visibility remains separate from review approval, catalog admission and tradability; legacy reset routes publish no Router evidence.",
     market:
       "Router verification requires pool initialization and fixed runtime and pool bindings, not active liquidity or tradability; the Custom graph owns liquidity behavior.",
     actions:

@@ -130,7 +130,7 @@ export default function ModuleModeDeveloperPage() {
         include that extension in their review.</p>
     </section>
     <section id="rewards">
-      <h2>Author rewards</h2>
+      <h2 id="contributor-rewards">Author rewards</h2>
       <p className={styles.bodyCopy}>Native V2 and the Engine V1 quote profile charge 0.10% without eligible families,
         or 0.30% with them: 0.10% for Programmable and 0.20% shared equally among distinct eligible families.
         The creator&apos;s selected fee is additional. Eligibility is explicitly bound during admission.</p>
