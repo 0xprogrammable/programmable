@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { ArrowLeftRight, ChevronLeft, ChevronRight, Coins, FlaskConical, Gift, Link2, Percent, Puzzle, RefreshCw, Shield, Waves } from "lucide-react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
+import { ArrowLeftRight, ArrowUpRight, ChevronLeft, ChevronRight, Coins, FlaskConical, Gift, Link2, Percent, Puzzle, RefreshCw, Shield, Waves } from "lucide-react";
 import { ModuleDetailDialog } from "@/components/module-detail-dialog";
+import { ProfileModuleSubmissions } from "@/components/profile-module-submissions";
 import { useLiveDataRefresh } from "@/components/use-live-data-refresh";
 import { MODULE_CATEGORIES } from "@/lib/module-mode/library";
 import type { ModulePublicDetails } from "@/lib/module-mode/public-details";
@@ -11,6 +12,7 @@ import { readModuleAuthorProfileResponse, type ModuleAuthorProfile } from "@/lib
 import styles from "./profile-modules.module.css";
 
 const categoryIcons = { rewards: Gift, trading: ArrowLeftRight, fees: Percent, liquidity: Waves, pairs: Link2, supply: Coins, access: Shield, experiments: FlaskConical };
+type ProfileModulesSection = "published" | "submissions";
 
 export function ProfileModuleCards({ items, onSelect }: { items: readonly ModulePublicDetails[]; onSelect: (item: ModulePublicDetails) => void }) {
   return <ul className={styles.list}>
@@ -19,11 +21,11 @@ export function ProfileModuleCards({ items, onSelect }: { items: readonly Module
       const Icon = category ? categoryIcons[category.id] : Puzzle;
       return <li key={`${item.sourceKind ?? "native"}:${item.packageId}:${item.manifestHash}`}>
         <button type="button" className={styles.card} onClick={() => onSelect(item)} aria-label={`View module ${item.title}, version ${item.version}`}>
-          <span className={styles.icon} aria-hidden="true"><Icon size={20} strokeWidth={1.7} /></span>
+          <span className={styles.icon} aria-hidden="true"><Icon size={22} strokeWidth={1.6} /></span>
           <span className={styles.copy}>
-            <strong>{item.title}</strong>
+            <span className={styles.titleRow}><strong>{item.title}</strong><span className={styles.version}>v{item.version}</span></span>
             <span className={styles.description}>{item.description}</span>
-            <span className={styles.meta}>{item.sourceKind === "module-engine-v1" ? "Template" : category?.label ?? "Experiments"}<span aria-hidden="true"> · </span>v{item.version}</span>
+            <span className={styles.meta}>{category?.label ?? "Module"}</span>
           </span>
           <ChevronRight className={styles.chevron} aria-hidden="true" size={18} strokeWidth={1.7} />
         </button>
@@ -32,7 +34,11 @@ export function ProfileModuleCards({ items, onSelect }: { items: readonly Module
   </ul>;
 }
 
-export function ProfileModules({ account, ownProfile = false }: { account: string; ownProfile?: boolean }) {
+export function ProfileModules({ account, ownProfile = false, initialSection = "published" }: { account: string; ownProfile?: boolean; initialSection?: ProfileModulesSection }) {
+  const [selectedSection, setSelectedSection] = useState<ProfileModulesSection>(initialSection);
+  const section = ownProfile ? selectedSection : "published";
+  const tabId = useId();
+  const tabsRef = useRef<HTMLDivElement>(null);
   const [page, setPage] = useState(1);
   const [data, setData] = useState<ModuleAuthorProfile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -45,6 +51,7 @@ export function ProfileModules({ account, ownProfile = false }: { account: strin
   const shownPage = scoped?.page.number ?? page;
 
   useEffect(() => {
+    if (section !== "published") return;
     let disposed = false;
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 12_000);
@@ -64,7 +71,15 @@ export function ProfileModules({ account, ownProfile = false }: { account: strin
       .catch(() => { if (!disposed) setFailed(true); })
       .finally(() => { window.clearTimeout(timeout); if (!disposed) setLoading(false); });
     return () => { disposed = true; window.clearTimeout(timeout); controller.abort(); };
-  }, [account, page, refresh, retry]);
+  }, [account, page, refresh, retry, section]);
+
+  function navigateTabs(event: KeyboardEvent<HTMLDivElement>) {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const next: ProfileModulesSection = event.key === "Home" ? "published" : event.key === "End" ? "submissions" : section === "published" ? "submissions" : "published";
+    setSelectedSection(next);
+    tabsRef.current?.querySelector<HTMLButtonElement>(`[data-section="${next}"]`)?.focus();
+  }
 
   const partial = scoped?.status === "partial";
   const notice = failed ? `Couldn’t ${scoped ? "refresh" : "load"} modules.`
@@ -73,22 +88,39 @@ export function ProfileModules({ account, ownProfile = false }: { account: strin
 
   return <section className={styles.section} aria-labelledby="profile-modules-title">
     <header className={styles.heading}>
-      <h2 id="profile-modules-title">Modules{scoped && (!partial || scoped.page.totalItems > 0) ? <span className={styles.count}> {scoped.page.totalItems}{partial ? "+" : ""}</span> : null}</h2>
-      <button type="button" className={styles.refresh} onClick={() => setRetry(value => value + 1)} disabled={loading} aria-label="Refresh modules" aria-busy={loading}>
-        <RefreshCw aria-hidden="true" size={15} strokeWidth={1.8} /><span>Refresh</span>
-      </button>
+      <div>
+        <h2 id="profile-modules-title">Modules{!ownProfile && scoped && (!partial || scoped.page.totalItems > 0) ? <span className={styles.count}> {scoped.page.totalItems}{partial ? "+" : ""}</span> : null}</h2>
+        <p className={styles.subtitle}>{ownProfile ? "Coin features you’ve made." : "Coin features by this creator."}</p>
+      </div>
+      {ownProfile ? <Link className={styles.buildLink} href="/developers/modules">Build a module<ArrowUpRight aria-hidden="true" size={16} strokeWidth={1.8} /></Link>
+        : <button type="button" className={styles.refresh} onClick={() => setRetry(value => value + 1)} disabled={loading} aria-label="Refresh modules" aria-busy={loading}>
+          <RefreshCw aria-hidden="true" size={16} strokeWidth={1.8} />
+        </button>}
     </header>
-    <p className={failed || partial ? styles.notice : styles.srOnly} role="status">{notice}</p>
-    <div aria-busy={loading}>
+    {ownProfile ? <div className={styles.toolbar}>
+      <div className={styles.tabs} ref={tabsRef} role="tablist" aria-label="Your modules" onKeyDown={navigateTabs}>
+        <button type="button" role="tab" id={`${tabId}-published`} aria-controls={`${tabId}-panel`} aria-selected={section === "published"} tabIndex={section === "published" ? 0 : -1} data-section="published" onClick={() => setSelectedSection("published")}>
+          Published{scoped && (!partial || scoped.page.totalItems > 0) ? <span className={styles.tabCount}>{scoped.page.totalItems}{partial ? "+" : ""}</span> : null}
+        </button>
+        <button type="button" role="tab" id={`${tabId}-submissions`} aria-controls={`${tabId}-panel`} aria-selected={section === "submissions"} tabIndex={section === "submissions" ? 0 : -1} data-section="submissions" onClick={() => setSelectedSection("submissions")}>Submissions</button>
+      </div>
+      {section === "published" ? <button type="button" className={styles.refresh} onClick={() => setRetry(value => value + 1)} disabled={loading} aria-label="Refresh modules" aria-busy={loading}><RefreshCw aria-hidden="true" size={16} strokeWidth={1.8} /></button> : null}
+    </div> : null}
+    <div className={styles.content} id={ownProfile ? `${tabId}-panel` : undefined} role={ownProfile ? "tabpanel" : undefined} aria-labelledby={ownProfile ? `${tabId}-${section}` : undefined} tabIndex={ownProfile ? 0 : undefined}>
+      {section === "submissions" ? <ProfileModuleSubmissions /> : <>
+      <p className={failed || partial ? styles.notice : styles.srOnly} role="status">{notice}</p>
+      <div aria-busy={loading}>
       {items.length ? <ProfileModuleCards items={items} onSelect={setSelected} />
-        : loading && !scoped ? <div className={styles.skeleton} aria-hidden="true"><span /><div><span /><span /></div></div>
-          : !failed && !partial ? <div className={styles.empty}><p>No published modules yet.</p>{ownProfile ? <Link href="/developer-reference/module-mode">Build a module</Link> : null}</div> : null}
-    </div>
+        : loading && !scoped ? <div className={styles.loading} aria-hidden="true">{[0, 1].map(row => <div className={styles.skeleton} key={row}><span /><div><span /><span /><span /></div></div>)}</div>
+          : !failed && !partial ? <div className={styles.empty}><span className={styles.emptyIcon} aria-hidden="true"><Puzzle size={28} strokeWidth={1.4} /></span><h3>No published modules yet.</h3><p>{ownProfile ? "Share a feature that others can add to their coins." : "This creator’s modules will appear here once published."}</p></div> : null}
+      </div>
     {(scoped?.page.totalPages ?? 1) > 1 ? <nav className={styles.pagination} aria-label="Module pages">
       <button type="button" aria-label="Previous module page" disabled={loading || shownPage === 1} onClick={() => setPage(Math.max(1, shownPage - 1))}><ChevronLeft aria-hidden="true" size={18} /></button>
       <span aria-live="polite" aria-atomic="true">{shownPage} / {scoped!.page.totalPages}</span>
       <button type="button" aria-label="Next module page" disabled={loading || shownPage === scoped!.page.totalPages} onClick={() => setPage(Math.min(scoped!.page.totalPages, shownPage + 1))}><ChevronRight aria-hidden="true" size={18} /></button>
     </nav> : null}
+      </>}
+    </div>
     {selected && selected.author === account.toLowerCase() ? <ModuleDetailDialog module={selected} onClose={() => setSelected(null)} /> : null}
   </section>;
 }

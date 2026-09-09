@@ -3870,7 +3870,7 @@ export function ProfileView({ onchainData, viewChainId = 4663, onChangeChain }: 
       />
       </> : <>
         <RobinhoodProfileLaunches key={account.toLowerCase()} account={account} />
-        <ProfileModules key={`modules:${account.toLowerCase()}`} account={account} ownProfile />
+        <ProfileModules key={`modules:${account.toLowerCase()}:${searchParams?.get("section") ?? "published"}`} account={account} ownProfile initialSection={searchParams?.get("section") === "submissions" ? "submissions" : "published"} />
         <RobinhoodProfileRewards />
       </>}
     </div>

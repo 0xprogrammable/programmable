@@ -1,0 +1,66 @@
+.state {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  min-height: 280px;
+  justify-content: center;
+  padding: 32px 16px;
+  text-align: center;
+}
+
+.icon {
+  color: var(--profile-module-muted, #aaa9a5);
+  display: flex;
+  margin-bottom: 16px;
+}
+
+.state h3 {
+  color: var(--profile-module-ink, #f5f3ef);
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  line-height: 28px;
+  margin: 0;
+  max-width: 360px;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+}
+
+.state p {
+  color: var(--profile-module-muted, #aaa9a5);
+  font-size: 14px;
+  line-height: 20px;
+  margin: 8px 0 16px;
+  max-width: 340px;
+  text-wrap: pretty;
+}
+
+.guide {
+  align-items: center;
+  border: 1px solid var(--profile-module-line, #30302e);
+  border-radius: 8px;
+  color: var(--profile-module-ink, #f5f3ef);
+  display: inline-flex;
+  font-size: 14px;
+  font-weight: 500;
+  gap: 8px;
+  justify-content: center;
+  max-width: 100%;
+  min-height: 44px;
+  min-width: 0;
+  padding: 8px 12px;
+  text-decoration: none;
+  transition: background-color 180ms cubic-bezier(0.22, 1, 0.36, 1), border-color 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.guide:focus-visible { outline: 2px solid var(--profile-module-accent, #e786b2); outline-offset: 4px; }
+.guide svg { flex: none; }
+.guide:active { background: #252525; }
+
+@media (hover: hover) and (pointer: fine) {
+  .guide:hover { background: #20201f; border-color: #555550; }
+}
+
+@media (prefers-reduced-motion: reduce) { .guide { transition: none; } }
+@media (max-width: 390px) { .state { padding-inline: 0; } }
+@media (forced-colors: active) { .guide:focus-visible { outline-color: Highlight; } }
