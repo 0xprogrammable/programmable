@@ -244,10 +244,10 @@
     "@phosphor-icons/react": "2.1.10",
     "@privy-io/node": "^0.27.0",
     "@privy-io/react-auth": "3.35.2",
-    "@tiptap/core": "^3.30.4",
-    "@tiptap/extension-image": "^3.30.2",
-    "@tiptap/react": "^3.30.2",
-    "@tiptap/starter-kit": "^3.30.4",
+    "@tiptap/core": "^3.30.5",
+    "@tiptap/extension-image": "^3.30.5",
+    "@tiptap/react": "^3.30.5",
+    "@tiptap/starter-kit": "^3.30.5",
     "@uniswap/liquidity-launcher-sdk": "1.0.1",
     "@uniswap/sdk-core": "7.19.0",
     "@uniswap/universal-router-sdk": "5.11.1",
@@ -255,13 +255,13 @@
     "@vercel/blob": "2.6.1",
     "@vercel/oidc": "3.8.1",
     "lucide-react": "1.26.0",
-    "next": "16.2.11",
+    "next": "16.3.4",
     "pg": "8.22.0",
     "postgres": "3.4.7",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "server-only": "0.0.1",
-    "sharp": "0.35.3",
+    "sharp": "0.35.4",
     "viem": "2.55.5"
   },
   "devDependencies": {
@@ -274,11 +274,15 @@
     "ajv-formats": "^3.0.1",
     "esbuild": "0.28.1",
     "eslint": "9.39.5",
-    "eslint-config-next": "16.2.11",
+    "eslint-config-next": "16.3.4",
     "typescript": "5.9.3",
     "vitest": "4.1.10"
   },
   "overrides": {
+    "@tiptap/react": {
+      "@tiptap/extension-bubble-menu": "3.30.5",
+      "@tiptap/extension-floating-menu": "3.30.5"
+    },
     "@uniswap/universal-router-sdk": {
       "@openzeppelin/contracts@4.7.0": "4.9.6"
     },
@@ -287,9 +291,10 @@
     "axios": "1.18.1",
     "cookie": "0.7.2",
     "diff": "8.0.3",
+    "hono": "4.13.5",
     "postcss": "8.5.23",
     "serialize-javascript": "7.0.7",
-    "sharp": "0.35.3",
+    "sharp": "0.35.4",
     "tmp": "0.2.7",
     "undici": "8.9.0",
     "uuid": "11.1.1",
