@@ -8,7 +8,7 @@ import { ExploreChainSelector } from "@/components/explore-chain-selector";
 import { ExploreFilters } from "@/components/explore-filters";
 import { AnimatedMarketCap } from "@/components/animated-market-cap";
 import { ETHEREUM_EXPLORE_FILTERS, ETHEREUM_EXPLORE_MODES } from "@/lib/ethereum-explore";
-import { useViewChain, type ViewChainId } from "@/components/view-chain";
+import { useRouteViewChain, type ViewChainId } from "@/components/view-chain";
 import { MODULE_TOKEN_FALLBACK_IMAGE, RobinhoodCoinArtwork } from "@/components/robinhood-coin-artwork";
 import { RobinhoodProjectLinks } from "@/components/robinhood-project-links";
 import { rememberRobinhoodTokenPresentations } from "@/components/robinhood-presentation-cache";
@@ -121,14 +121,7 @@ export function RobinhoodLaunchesView({
   embedded = false,
   chainId,
 }: Readonly<{ embedded?: boolean; chainId?: ViewChainId }>) {
-  const { hydrated, viewChainId, setViewChainId } = useViewChain();
-
-  useEffect(() => {
-    if (!hydrated || chainId === undefined) return;
-    // The explicit route wins after the shared preference is restored.
-    const timer = window.setTimeout(() => setViewChainId(chainId), 0);
-    return () => window.clearTimeout(timer);
-  }, [chainId, hydrated, setViewChainId]);
+  const { hydrated, viewChainId } = useRouteViewChain(chainId);
 
   const selectedChain = chainId ?? viewChainId;
   return <IndexedLaunchList key={selectedChain} chainId={selectedChain} embedded={embedded} enabled={hydrated} />;

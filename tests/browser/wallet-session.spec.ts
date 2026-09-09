@@ -255,6 +255,52 @@ test("an open module launch tab cannot undo another tab's browsing network choic
   }
 });
 
+for (const [path, routeChain] of [["/launch/modules", 4663], ["/token/ethereum", 1], ["/explore/robinhood", 4663]] as const) {
+  for (const selection of ["one newer choice", "a newer choice returning to the initial value", "no newer choice"] as const) {
+    test(`${path}: deferred route entry respects ${selection} before storage events arrive`, async ({ page }) => {
+      await open(page);
+      const otherChain = routeChain === 1 ? 4663 : 1;
+      const browse = (chain: number) => page.getByRole("button", { name: chain === 1 ? "Browse Ethereum" : "Browse Robinhood", exact: true }).click();
+      const initialChain = selection === "one newer choice" ? routeChain : otherChain;
+      await browse(initialChain);
+      const routeTab = await page.context().newPage();
+      const errors = browserErrors.get(page)!;
+      routeTab.on("pageerror", (error) => errors.push(error.message));
+      routeTab.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });
+      await routeTab.route("**/*", async (route) => {
+        const url = new URL(route.request().url());
+        if (url.origin === origin) return route.continue();
+        errors.push(`Unexpected external request from route fixture: ${url.origin}`);
+        await route.abort();
+      });
+      try {
+        await routeTab.goto(origin + path + "?holdRouteEntry=1");
+        await expect.poll(() => routeTab.evaluate(() => window.__viewChainScheduling.pendingEntries())).toBe(1);
+        await expect(routeTab.getByLabel("Selected browsing chain", { exact: true })).toHaveText(String(initialChain));
+        if (selection === "a newer choice returning to the initial value") await browse(routeChain);
+        if (selection !== "no newer choice") {
+          await browse(otherChain);
+          await expect.poll(() => routeTab.evaluate(() => window.__viewChainScheduling.pendingStorageEvents())).toBeGreaterThan(0);
+          // The shared cookie is current while the receiving tab has not handled
+          // any storage event. Returning to the same number must also cancel entry.
+          expect(await routeTab.evaluate(() => document.cookie)).toContain(`programmable-view-chain-v2=${otherChain}`);
+        }
+        await routeTab.evaluate(() => window.__viewChainScheduling.releaseEntries());
+        const expected = selection === "no newer choice" ? routeChain : otherChain;
+        expect(await routeTab.evaluate(() => localStorage.getItem("programmable:view-chain:v2"))).toBe(String(expected));
+        await routeTab.evaluate(() => window.__viewChainScheduling.releaseStorageEvents());
+        await expect(routeTab.getByLabel("Selected browsing chain", { exact: true })).toHaveText(String(expected));
+        await expect(page.getByLabel("Selected browsing chain", { exact: true })).toHaveText(String(expected));
+        await expectMethods(page, []);
+        await expectMethods(routeTab, []);
+        await expect(routeTab.getByLabel("Selected wallet network", { exact: true })).toHaveText("0x1237");
+      } finally {
+        await routeTab.close();
+      }
+    });
+  }
+}
+
 test("a denied clipboard offers the address for manual copy without asking to reconnect", async ({ page }, testInfo) => {
   await open(page);
   await page.getByRole("button", { name: "Disable clipboard", exact: true }).click();

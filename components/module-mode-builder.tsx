@@ -12,7 +12,7 @@ import { ModulePickerDialog } from "@/components/module-picker-dialog";
 import { moduleCategory } from "@/lib/module-mode/library";
 import { ModuleSchemaField } from "@/components/module-mode-fields";
 import { ModuleModeImagePicker, moduleModeImageSource, type ModuleModeImageResource } from "@/components/module-mode-image";
-import { useViewChain } from "@/components/view-chain";
+import { useRouteViewChain } from "@/components/view-chain";
 import styles from "@/components/module-mode-builder.module.css";
 import {
   createModuleModeState,
@@ -82,13 +82,7 @@ export interface ModuleModeBuilderProps {
 }
 
 export function ModuleModeBuilder({ catalog = PREVIEW_MODULE_CATALOG, engine = NATIVE_ENGINE_PROFILE, configurationContext = {}, launchAction, minimumInitialBuyWei, release, previewDescription, statusContent, reviewContent, resultContent, onEdit }: Readonly<ModuleModeBuilderProps>) {
-  const { hydrated, setViewChainId } = useViewChain();
-  useEffect(() => {
-    if (!hydrated) return;
-    // Set the route preference once after hydration; other tabs may change it later.
-    const timer = window.setTimeout(() => setViewChainId(4663), 0);
-    return () => window.clearTimeout(timer);
-  }, [hydrated, setViewChainId]);
+  const { hydrated } = useRouteViewChain(4663);
   const [state, setState] = useState(createModuleModeState);
   const { expanded: detailsOpen, setExpanded: setDetailsOpen, toggle: toggleDetails, panelProps: detailsPanel } = useDisclosureState();
   const { expanded: feesOpen, setExpanded: setFeesOpen, toggle: toggleFees, panelProps: feesPanel } = useDisclosureState();

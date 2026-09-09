@@ -7,7 +7,10 @@ import { ModuleSchemaField } from "@/components/module-mode-fields";
 import { bindActiveModuleModeRelease, computeModuleModeReleaseDigest, MODULE_MODE_ECONOMICS_POLICY_V2 } from "@/lib/module-mode/release";
 import { moduleEvidenceFixture, a } from "./fixtures/module-mode-evidence";
 
-vi.mock("@/components/view-chain", () => ({ useViewChain: () => ({ hydrated: true, viewChainId: 4663, setViewChainId: vi.fn() }) }));
+vi.mock("@/components/view-chain", () => {
+  const useViewChain = () => ({ hydrated: true, viewChainId: 4663, setViewChainId: vi.fn() });
+  return { useViewChain, useRouteViewChain: useViewChain };
+});
 vi.mock("@/components/wallet-provider", () => ({ useWallet: vi.fn() }));
 
 const token = `0x${"12".repeat(20)}` as const;

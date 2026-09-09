@@ -2,7 +2,10 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { activeExploreFilterCount, DEFAULT_EXPLORE_FILTERS, sameRobinhoodExploreRequest } from "@/lib/robinhood-explore-filters";
 
-vi.mock("@/components/view-chain", () => ({ useViewChain: () => ({ hydrated: true, viewChainId: 4663, setViewChainId: vi.fn() }) }));
+vi.mock("@/components/view-chain", () => {
+  const useViewChain = () => ({ hydrated: true, viewChainId: 4663, setViewChainId: vi.fn() });
+  return { useViewChain, useRouteViewChain: useViewChain };
+});
 vi.mock("next/navigation", () => ({ usePathname: () => "/explore/robinhood", useRouter: () => ({ push: vi.fn() }) }));
 import { RobinhoodLaunchesView } from "@/components/robinhood-launches-view";
 
