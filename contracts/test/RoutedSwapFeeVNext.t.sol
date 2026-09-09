@@ -1,39 +1,44 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {Test} from "forge-std/Test.sol";
-import {PoolManager} from "@uniswap/v4-core/src/PoolManager.sol";
-import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
-import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
-import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
-import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
-import {ModifyLiquidityParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
-import {PoolModifyLiquidityTest} from "@uniswap/v4-core/src/test/PoolModifyLiquidityTest.sol";
-import {TestERC20} from "@uniswap/v4-core/src/test/TestERC20.sol";
-import {V4Router} from "@uniswap/v4-periphery/src/V4Router.sol";
-import {IV4Router} from "@uniswap/v4-periphery/src/interfaces/IV4Router.sol";
-import {Actions} from "@uniswap/v4-periphery/src/libraries/Actions.sol";
+import { Test } from "forge-std/Test.sol";
+import { PoolManager } from "@uniswap/v4-core/src/PoolManager.sol";
+import { IPoolManager } from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
+import { IHooks } from "@uniswap/v4-core/src/interfaces/IHooks.sol";
+import { PoolKey } from "@uniswap/v4-core/src/types/PoolKey.sol";
+import { Currency } from "@uniswap/v4-core/src/types/Currency.sol";
+import { ModifyLiquidityParams } from "@uniswap/v4-core/src/types/PoolOperation.sol";
+import { PoolModifyLiquidityTest } from "@uniswap/v4-core/src/test/PoolModifyLiquidityTest.sol";
+import { TestERC20 } from "@uniswap/v4-core/src/test/TestERC20.sol";
+import { V4Router } from "@uniswap/v4-periphery/src/V4Router.sol";
+import { IV4Router } from "@uniswap/v4-periphery/src/interfaces/IV4Router.sol";
+import { Actions } from "@uniswap/v4-periphery/src/libraries/Actions.sol";
 
 /// @dev Test entrypoint only. All swap, settlement, TAKE_PORTION, TAKE_ALL and
 /// atomic revert behavior are the existing upstream V4Router/PoolManager code.
 contract RoutedFeeVNextHarness is V4Router {
     address private caller;
-    constructor(IPoolManager manager) V4Router(manager) {}
+    constructor(IPoolManager manager) V4Router(manager) { }
+
     function execute(bytes calldata unlockData) external payable {
         require(caller == address(0));
         caller = msg.sender;
         _executeActions(unlockData);
         caller = address(0);
         if (address(this).balance != 0) {
-            (bool sent,) = msg.sender.call{value: address(this).balance}("");
+            (bool sent,) = msg.sender.call{ value: address(this).balance }("");
             require(sent);
         }
     }
-    function msgSender() public view override returns (address) { return caller; }
+
+    function msgSender() public view override returns (address) {
+        return caller;
+    }
+
     function _pay(Currency currency, address payer, uint256 amount) internal override {
         require(TestERC20(Currency.unwrap(currency)).transferFrom(payer, address(poolManager), amount));
     }
-    receive() external payable {}
+    receive() external payable { }
 }
 
 contract RoutedSwapFeeVNextTest is Test {
@@ -55,10 +60,10 @@ contract RoutedSwapFeeVNextTest is Test {
         vm.deal(TRADER, 100 ether);
         vm.deal(RECIPIENT, 0);
         key = PoolKey(Currency.wrap(address(0)), Currency.wrap(TOKEN), 3000, 60, IHooks(address(0)));
-        manager.initialize(key, 79228162514264337593543950336);
+        manager.initialize(key, 79_228_162_514_264_337_593_543_950_336);
         PoolModifyLiquidityTest liquidity = new PoolModifyLiquidityTest(manager);
         TestERC20(TOKEN).approve(address(liquidity), type(uint256).max);
-        liquidity.modifyLiquidity{value: 10 ether}(key, ModifyLiquidityParams(-600, 600, 100 ether, bytes32(0)), "");
+        liquidity.modifyLiquidity{ value: 10 ether }(key, ModifyLiquidityParams(-600, 600, 100 ether, bytes32(0)), "");
         vm.prank(TRADER);
         TestERC20(TOKEN).approve(address(router), type(uint256).max);
     }
@@ -68,12 +73,12 @@ contract RoutedSwapFeeVNextTest is Test {
         bytes memory encoded = vm.parseJsonBytes(vector, ".buy.unlockData");
         uint256 beforeTrader = TestERC20(TOKEN).balanceOf(TRADER);
         vm.prank(TRADER);
-        router.execute{value: 100000}(encoded);
+        router.execute{ value: 100_000 }(encoded);
         uint256 fee = TestERC20(TOKEN).balanceOf(RECIPIENT);
         uint256 net = TestERC20(TOKEN).balanceOf(TRADER) - beforeTrader;
         assertGt(fee, 0);
-        assertEq(fee, (net + fee) * 20 / 10000);
-        assertGe(net, 49651);
+        assertEq(fee, (net + fee) * 20 / 10_000);
+        assertGe(net, 49_651);
         assertEq(address(router).balance, 0);
         assertEq(TestERC20(TOKEN).balanceOf(address(router)), 0);
     }
@@ -86,8 +91,8 @@ contract RoutedSwapFeeVNextTest is Test {
         uint256 fee = RECIPIENT.balance;
         uint256 net = TRADER.balance - beforeTrader;
         assertGt(fee, 0);
-        assertEq(fee, (net + fee) * 20 / 10000);
-        assertGe(net, 49651);
+        assertEq(fee, (net + fee) * 20 / 10_000);
+        assertGe(net, 49_651);
         assertEq(address(router).balance, 0);
     }
 
@@ -96,7 +101,7 @@ contract RoutedSwapFeeVNextTest is Test {
         uint256 oldTrader = TestERC20(TOKEN).balanceOf(TRADER);
         vm.prank(TRADER);
         vm.expectRevert();
-        router.execute{value: 100000}(_actions(true, 100000, type(uint128).max));
+        router.execute{ value: 100_000 }(_actions(true, 100_000, type(uint128).max));
         assertEq(TestERC20(TOKEN).balanceOf(RECIPIENT), 0);
         assertEq(TestERC20(TOKEN).balanceOf(address(manager)), oldManager);
         assertEq(TestERC20(TOKEN).balanceOf(TRADER), oldTrader);
@@ -106,10 +111,10 @@ contract RoutedSwapFeeVNextTest is Test {
         uint128 amountIn = uint128(bound(rawAmount, 1000, 1e14));
         uint256 beforeTrader = zeroForOne ? TestERC20(TOKEN).balanceOf(TRADER) : TRADER.balance;
         vm.prank(TRADER);
-        router.execute{value: zeroForOne ? amountIn : 0}(_actions(zeroForOne, amountIn, 1));
+        router.execute{ value: zeroForOne ? amountIn : 0 }(_actions(zeroForOne, amountIn, 1));
         uint256 fee = zeroForOne ? TestERC20(TOKEN).balanceOf(RECIPIENT) : RECIPIENT.balance;
         uint256 net = (zeroForOne ? TestERC20(TOKEN).balanceOf(TRADER) : TRADER.balance) - beforeTrader;
-        assertEq(fee, (net + fee) * 20 / 10000);
+        assertEq(fee, (net + fee) * 20 / 10_000);
     }
 
     function _actions(bool direction, uint128 amountIn, uint128 minimum) private view returns (bytes memory) {
@@ -118,8 +123,15 @@ contract RoutedSwapFeeVNextTest is Test {
         params[1] = abi.encode(direction ? key.currency0 : key.currency1, amountIn);
         params[2] = abi.encode(direction ? key.currency1 : key.currency0, RECIPIENT, uint256(20));
         params[3] = abi.encode(direction ? key.currency1 : key.currency0, minimum);
-        return abi.encode(abi.encodePacked(uint8(Actions.SWAP_EXACT_IN_SINGLE), uint8(Actions.SETTLE_ALL),
-            uint8(Actions.TAKE_PORTION), uint8(Actions.TAKE_ALL)), params);
+        return abi.encode(
+            abi.encodePacked(
+                uint8(Actions.SWAP_EXACT_IN_SINGLE),
+                uint8(Actions.SETTLE_ALL),
+                uint8(Actions.TAKE_PORTION),
+                uint8(Actions.TAKE_ALL)
+            ),
+            params
+        );
     }
-    receive() external payable {}
+    receive() external payable { }
 }
