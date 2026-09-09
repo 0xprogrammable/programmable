@@ -911,7 +911,7 @@ describe("developer launch history interface", () => {
   it("stays behind the compact view switch and keeps the signing boundary clear", () => {
     expect(historySource).toContain("Launch history");
     expect(historySource).toContain(
-      "A launch is onchain only after the\n        wallet sends its Router transaction.",
+      "Your wallet approves every launch transaction.",
     );
     expect(historySource).toContain("Check onchain status");
     expect(historySource).toContain("Review and send launch transaction");
@@ -927,7 +927,7 @@ describe("developer launch history interface", () => {
     expect(historySource).not.toContain("Your agent&apos;s first accepted request");
     expect(historyStyles).not.toContain("height: clamp(");
     expect(historyStyles).toContain("background: var(--webde-surface)");
-    expect(historyStyles).toContain("background: var(--webde-surface-raised)");
+    expect(historyStyles).toContain("background: var(--webde-control)");
     expect(historyStyles).not.toContain("liquid-glass");
     expect(historyStyles).not.toMatch(
       /\.launchList\s*\{[^}]*overflow-y:\s*auto;/su,
@@ -978,10 +978,10 @@ describe("developer launch history interface", () => {
       'reviewLaunch.failure\n                  && reviewLaunch.status !== "action_required"',
     );
     expect(historySource).toContain(
-      "When an API error includes a request ID and retrying does not",
+      "If retrying does not help, share the request ID with support.",
     );
-    expect(historySource).toContain("contact support with that ID");
-    expect(historySource).toContain("Never send your API key.");
+    expect(historySource).toContain("share the request ID with support");
+    expect(historySource).toContain("Never share your API key.");
     expect(historySource.indexOf("Open Programmable support")).toBeLessThan(
       historySource.indexOf('state === "ready" && launches.length === 0'),
     );

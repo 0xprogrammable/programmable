@@ -6,7 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { RefreshCw } from "lucide-react";
+import { Check, RefreshCw } from "lucide-react";
 import NextImage from "next/image";
 
 import styles from "@/components/developer-launch-history.module.css";
@@ -1880,9 +1880,12 @@ export function DeveloperRobinhoodFeePreview({ resource }: Readonly<{ resource: 
       <div><dt>Creator fee recipient</dt><dd><code>{fee.creatorFeeRecipient}</code></dd></div>
       <div><dt>Fee vault</dt><dd><code>{fee.vaultAddress}</code></dd></div>
     </dl>
+    <details className={styles.detailDisclosure}>
+      <summary>Fee calculation and verification</summary>
     <p>The platform fee is separate from creator and LP fees. It uses the gross native ETH side of each swap once, rounded up to whole wei.</p>
     <p>After launch, platform fees accrue as native ETH claims. Anyone can trigger collection to the fixed treasury. They are not transferred to the treasury immediately on each trade.</p>
     <p>These fee settings are bound to the server verified code. The child vault runtime still requires verification after deployment; this is not a safety audit.</p>
+    </details>
   </section>;
 }
 
@@ -1904,8 +1907,11 @@ export function DeveloperRobinhoodInitialBuyPreview({ resource }: Readonly<{ res
       <div><dt>Buyer and token recipient</dt><dd><code>{buy.buyer}</code></dd></div>
       <div><dt>Minimum token output</dt><dd>{buy.minimumTokensOut} raw token units</dd></div>
     </dl>
+    <details className={styles.detailDisclosure}>
+      <summary>Initial buy conditions</summary>
     <p>The launch includes this buy in the same transaction. It must spend the full initial buy amount and return at least the minimum token output, or the transaction reverts.</p>
     <p>The $1 minimum uses a verified Ethereum ETH / USD reference at permit authorization. The launch runs on Robinhood; the reference does not guarantee a future dollar value. The initial buy is already included in the launch transaction value. Gas is additional.</p>
+    </details>
   </section>;
 }
 
@@ -1928,19 +1934,6 @@ export function DeveloperRobinhoodFundingPreview({ resource, cost, now }: Readon
     <section className={styles.routerReview} aria-label="Robinhood launch funding">
       <div className={styles.stepHeading}><strong>Robinhood launch funding</strong></div>
       <dl className={styles.reviewGrid}>
-        {plan && planLabels ? <>
-          <div><dt>Declared capital source</dt><dd>{planLabels.capitalSource}</dd></div>
-          <div><dt>Declared pricing model</dt><dd>{planLabels.pricingModel}</dd></div>
-          <div><dt>Initial liquidity allocation</dt><dd>{formatRobinhoodWeiV1(plan.nativeAllocations.initialLiquidityWei)}</dd></div>
-          <div><dt>Initial buy allocation</dt><dd>{formatRobinhoodWeiV1(plan.nativeAllocations.initialBuyWei)}</dd></div>
-          <div><dt>Native reserve allocation</dt><dd>{formatRobinhoodWeiV1(plan.nativeAllocations.reserveWei)}</dd></div>
-          <div><dt>Other launch value</dt><dd>{formatRobinhoodWeiV1(plan.nativeAllocations.otherLaunchValueWei)}</dd></div>
-          <div><dt>Maximum launch value</dt><dd>{formatRobinhoodWeiV1(plan.maxLaunchValueWei)}</dd></div>
-          <div><dt>Gas budget</dt><dd>{formatRobinhoodWeiV1(plan.maxGasCostWei)}</dd></div>
-          <div><dt>Launch mode</dt><dd>{plan.launchMode === "build-only" ? "Build only" : "Fund and launch"}</dd></div>
-        </> : null}
-        <div><dt>Declared liquidity model</dt><dd>{funding.modelLabel}</dd></div>
-        <div><dt>Declared starting state</dt><dd>{funding.stateLabel}</dd></div>
         <div><dt>Launch transaction value</dt><dd>{formatRobinhoodWeiV1(funding.valueWei)}</dd></div>
         <div><dt>Estimated network cost</dt><dd>{currentCost
           ? formatRobinhoodWeiV1(currentCost.estimatedNetworkFeeWei) : "Estimate required"}</dd></div>
@@ -1949,6 +1942,25 @@ export function DeveloperRobinhoodFundingPreview({ resource, cost, now }: Readon
         <div><dt>Available ETH on Robinhood</dt><dd>{currentCost
           ? formatRobinhoodWeiV1(currentCost.balanceWei) : "Balance check required"}</dd></div>
       </dl>
+      {plan ? <dl className={styles.reviewGrid}>
+        <div><dt>Maximum launch value</dt><dd>{formatRobinhoodWeiV1(plan.maxLaunchValueWei)}</dd></div>
+        <div><dt>Gas budget</dt><dd>{formatRobinhoodWeiV1(plan.maxGasCostWei)}</dd></div>
+        <div><dt>Launch mode</dt><dd>{plan.launchMode === "build-only" ? "Build only" : "Fund and launch"}</dd></div>
+      </dl> : null}
+      <details className={styles.detailDisclosure}>
+        <summary>Funding plan details</summary>
+        <dl className={styles.reviewGrid}>
+        {plan && planLabels ? <>
+          <div><dt>Declared capital source</dt><dd>{planLabels.capitalSource}</dd></div>
+          <div><dt>Declared pricing model</dt><dd>{planLabels.pricingModel}</dd></div>
+          <div><dt>Initial liquidity allocation</dt><dd>{formatRobinhoodWeiV1(plan.nativeAllocations.initialLiquidityWei)}</dd></div>
+          <div><dt>Initial buy allocation</dt><dd>{formatRobinhoodWeiV1(plan.nativeAllocations.initialBuyWei)}</dd></div>
+          <div><dt>Native reserve allocation</dt><dd>{formatRobinhoodWeiV1(plan.nativeAllocations.reserveWei)}</dd></div>
+          <div><dt>Other launch value</dt><dd>{formatRobinhoodWeiV1(plan.nativeAllocations.otherLaunchValueWei)}</dd></div>
+        </> : null}
+        <div><dt>Declared liquidity model</dt><dd>{funding.modelLabel}</dd></div>
+        <div><dt>Declared starting state</dt><dd>{funding.stateLabel}</dd></div>
+        </dl>
       <p>
         Transaction value already includes any native deposit or first buy in this launch.
         Gas is additional, even when transaction value is zero. The declared model does
@@ -1957,6 +1969,7 @@ export function DeveloperRobinhoodFundingPreview({ resource, cost, now }: Readon
       {plan ? (
         <p>The financing plan and budgets are bound to this request. Allocation labels do not prove reserves, inventory or solvency. Changing a budget requires your agent to repack the launch.</p>
       ) : <p>Capital source and gas budget must be agreed with your agent. This request version records the declared model and exact transaction value; it does not record a separate financing plan.</p>}
+      </details>
       {plan?.launchMode === "build-only" ? <p className={styles.failure} role="alert">This plan is build only. Confirm a funded launch plan with your agent and repack before sending.</p> : null}
       {currentCost ? (
         <>
@@ -2019,6 +2032,43 @@ function ProjectMetadataReview({
           <strong>${token.symbol}</strong>
         </div>
       </div>
+      <p className={styles.projectNetwork}>{chain.name} · {chain.id}</p>
+      {presentation.description ? (
+        <div className={styles.projectDescription}>
+          <strong>Bio</strong>
+          <p>{presentation.description}</p>
+        </div>
+      ) : requiresCurrentProjectMetadata(launch) ? (
+        <p className={styles.projectMissing} role="alert">
+          Ask your agent to add a bio, then repack and submit a new request.
+        </p>
+      ) : null}
+      {presentation.image && imagePreview.state !== "verified" ? (
+        <p className={styles.projectAssetNote} role="status">
+          {imagePreview.state === "verifying"
+            ? "Verifying the bound image bytes before preview."
+            : imagePreview.state === "verified-gif"
+              ? "The bound GIF bytes and dimensions are verified. Animated previews are not shown in wallet review."
+              : "Image preview unavailable. Wallet review continues with the bound image reference."}
+        </p>
+      ) : null}
+      {presentation.links.length > 0 ? (
+        <nav className={styles.projectLinks} aria-label={`${token.name} links`}>
+          {presentation.links.map((link, index) => (
+            <a
+              href={link.uri}
+              key={`${link.kind}:${link.uri}`}
+              rel="noreferrer"
+              target="_blank"
+            >
+              {linkLabels[index]}
+              <span className={styles.visuallyHidden}>, opens in a new tab</span>
+            </a>
+          ))}
+        </nav>
+      ) : null}
+      <details className={styles.detailDisclosure} open={!completeForProfile}>
+        <summary>Launch details</summary>
       <div className={styles.projectRequirementHeading}>
         <h5>
           {requiresCurrentProjectMetadata(launch)
@@ -2073,53 +2123,24 @@ function ProjectMetadataReview({
           </dd>
         </div>
       </dl>
-      {presentation.description ? (
-        <div className={styles.projectDescription}>
-          <strong>Bio</strong>
-          <p>{presentation.description}</p>
-        </div>
-      ) : requiresCurrentProjectMetadata(launch) ? (
-        <p className={styles.projectMissing} role="alert">
-          Ask your agent to add a bio, then repack and submit a new request.
-        </p>
-      ) : null}
-      {presentation.image && imagePreview.state !== "verified" ? (
-        <p className={styles.projectAssetNote} role="status">
-          {imagePreview.state === "verifying"
-            ? "Verifying the bound image bytes before preview."
-            : imagePreview.state === "verified-gif"
-              ? "The bound GIF bytes and dimensions are verified. Animated previews are not shown in wallet review."
-              : "Image preview unavailable. Wallet review continues with the bound image reference."}
-          <span>
-            URI <code>{presentation.image.uri}</code>
-            {" · digest "}<code>{presentation.image.contentSha256}</code>
-          </span>
-        </p>
-      ) : null}
-      {presentation.links.length > 0 ? (
-        <nav className={styles.projectLinks} aria-label={`${token.name} links`}>
-          {presentation.links.map((link, index) => (
-            <a
-              href={link.uri}
-              key={`${link.kind}:${link.uri}`}
-              rel="noreferrer"
-              target="_blank"
-            >
-              {linkLabels[index]}
-              <span className={styles.visuallyHidden}>, opens in a new tab</span>
-            </a>
-          ))}
-        </nav>
-      ) : null}
-      {!presentation.links.some((link) => link.kind === "telegram")
-        || !presentation.links.some((link) => link.kind === "discord") ? (
-        <p className={styles.projectOptionalLinks}>
-          {!presentation.links.some((link) => link.kind === "telegram")
-            ? "Telegram: not supplied. " : ""}
-          {!presentation.links.some((link) => link.kind === "discord")
-            ? "Discord: not supplied." : ""}
-        </p>
-      ) : null}
+      </details>
+      <details className={styles.detailDisclosure}>
+        <summary>Verification details</summary>
+        {!presentation.links.some((link) => link.kind === "telegram")
+          || !presentation.links.some((link) => link.kind === "discord") ? (
+          <p>
+            {!presentation.links.some((link) => link.kind === "telegram")
+              ? "Telegram: not supplied. " : ""}
+            {!presentation.links.some((link) => link.kind === "discord")
+              ? "Discord: not supplied." : ""}
+          </p>
+        ) : null}
+        {presentation.image ? (
+          <dl className={styles.projectBinding}>
+            <div><dt>Image reference</dt><dd><code>{presentation.image.uri}</code></dd></div>
+            <div><dt>Image digest</dt><dd><code>{presentation.image.contentSha256}</code></dd></div>
+          </dl>
+        ) : null}
       <dl className={styles.projectBinding}>
         <div>
           <dt>Metadata digest</dt>
@@ -2145,6 +2166,7 @@ function ProjectMetadataReview({
           submit a new request before opening your wallet. This preview is read only.
         </p>
       )}
+      </details>
     </section>
   );
 }
@@ -2211,9 +2233,11 @@ function RemediationDetails({
           <span>{remediations.length} machine-readable {remediations.length === 1 ? "fix" : "fixes"}</span>
         </div>
         <button className={styles.copyFixButton} type="button" onClick={onCopy}>
-          {copyState === "copied" ? "Fix copied" : "Copy fix for agent"}
+          <Check aria-hidden="true" size={16} className={styles.copyIcon} data-copied={copyState === "copied"} />
+          Copy fix for agent
         </button>
       </div>
+      <span className={styles.visuallyHidden} role="status">{copyState === "copied" ? "Fix copied" : ""}</span>
       {copyState === "error" ? (
         <p className={styles.failure} role="alert">
           Fix instructions could not be copied. Try again.
@@ -3474,12 +3498,11 @@ export function DeveloperLaunchHistory({
         {statusMessage}
       </p>
       <div className={styles.heading}>
-        <div>
-          <p className={styles.kicker}>Custom Launch API</p>
-          <h2 id="launch-history-title">Launch history</h2>
-        </div>
+        <h2 id="launch-history-title" className={styles.visuallyHidden}>Launch history</h2>
+        <p className={styles.visuallyHidden}>Your wallet approves every launch transaction.</p>
         <button
           className={styles.textButton}
+          aria-busy={state === "loading" || refreshing}
           disabled={state === "loading" || loadingMore || refreshing}
           type="button"
           onClick={refresh}
@@ -3491,14 +3514,9 @@ export function DeveloperLaunchHistory({
             size={16}
             strokeWidth={1.9}
           />
-          {state === "loading" || refreshing ? "Refreshing" : "Refresh history"}
+          Refresh history
         </button>
       </div>
-      <p className={styles.intro}>
-        Requests prepared for this wallet. A launch is onchain only after the
-        wallet sends its Router transaction. Only EIP-3009 funding adds a
-        separate signature first; it never broadcasts by itself.
-      </p>
 
       {state === "loading" ? <HistorySkeleton /> : null}
 
@@ -3507,8 +3525,8 @@ export function DeveloperLaunchHistory({
           <h3>Launch history is unavailable</h3>
           <p>{error}</p>
           <p>
-            When an API error includes a request ID and retrying does not
-            resolve it, contact support with that ID. Never send your API key.
+            If retrying does not help, share the request ID with support.
+            Never share your API key.
           </p>
           <a
             href="https://discord.com/invite/programmable"
@@ -3600,15 +3618,22 @@ export function DeveloperLaunchHistory({
               >
                 <div className={styles.launchTopline}>
                   <div>
-                    <h3>Launch {shortId(resourceIdentity)}</h3>
+                    <h3>{projectMetadataSummary?.projectMetadata.token.name ?? `Launch ${shortId(resourceIdentity)}`}</h3>
                   </div>
                   <span className={styles.status} data-status={launch.status}>
                     {statusCopy(launch.status)}
                   </span>
                 </div>
+                <details
+                  className={styles.launchReview}
+                  open={highlightedLaunchId === resourceIdentity}
+                >
+                  <summary>Review launch</summary>
                 <p className={styles.statusDescription}>
                   {statusDescription(launch.status)}
                 </p>
+                <details className={styles.detailDisclosure}>
+                  <summary>Request details</summary>
                 <dl className={styles.metadata}>
                   <div>
                     <dt>Created</dt>
@@ -3639,6 +3664,7 @@ export function DeveloperLaunchHistory({
                     </div>
                   ) : null}
                 </dl>
+                </details>
                 <DeveloperLaunchMetadataPreview launch={reviewLaunch} />
                 {projectMetadataSummary
                   && projectMetadataRequirements
@@ -3690,22 +3716,19 @@ export function DeveloperLaunchHistory({
                   <div className={styles.admissionNotice} role="status">
                     <strong>Fix source or configuration</strong>
                     <p>
-                      Automatic admission found a blocking source or target-role
-                      condition. Apply every exact change below, then rebuild,
+                      Ask your builder to apply the fixes below, then rebuild,
                       repack and submit a new immutable request. Do not sign this
-                      request. This result is not an audit or safety verdict, and
-                      no manual or project allowlist can bypass it.
+                      request.
                     </p>
                     {remediations.length === 0 ? (
                       <button
                         className={styles.loadDetailsButton}
+                        aria-busy={hydratingId === key}
                         disabled={hydratingId !== null}
                         type="button"
                         onClick={() => void loadLaunchDetails(launch)}
                       >
-                        {hydratingId === key
-                          ? "Loading exact fixes"
-                          : "View exact fixes"}
+                        View exact fixes
                       </button>
                     ) : null}
                     <RemediationDetails
@@ -3716,6 +3739,9 @@ export function DeveloperLaunchHistory({
                         remediations,
                       )}
                     />
+                    <details className={styles.detailDisclosure}>
+                      <summary>Review details</summary>
+                      <p>Automatic admission found a blocking source or target-role condition. This result is not an audit or safety verdict, and no manual or project allowlist can bypass it.</p>
                     <a
                       href={PROGRAMMABLE_AGENT_SETUP_LINKS_V1.remediation}
                       rel="noreferrer"
@@ -3723,6 +3749,7 @@ export function DeveloperLaunchHistory({
                     >
                       Read the remediation catalog
                     </a>
+                    </details>
                   </div>
                 ) : null}
                 {reviewLaunch.status !== "action_required"
@@ -3937,6 +3964,7 @@ export function DeveloperLaunchHistory({
                           && walletTransaction(reviewLaunch) !== null ? (
                             <button
                               className={styles.walletButton}
+                            aria-busy={submittingId === key || hydratingId === key || fundingId === key}
                               disabled={
                                 submittingId !== null
                                 || hydratingId !== null
@@ -3950,20 +3978,17 @@ export function DeveloperLaunchHistory({
                               type="button"
                               onClick={() => void submitWalletTransaction(reviewLaunch, robinhoodSendReady ? "send" : "estimate")}
                             >
-                              {submittingId === key
-                                ? "Checking Robinhood launch costs"
-                                : robinhoodSendReady ? "Send transaction" : "Estimate launch cost"}
+                              {robinhoodSendReady ? "Send transaction" : "Estimate launch cost"}
                             </button>
                           ) : (
                             <button
                               className={styles.walletButton}
+                            aria-busy={submittingId === key || hydratingId === key || fundingId === key}
                               disabled={hydratingId !== null || submittingId !== null}
                               type="button"
                               onClick={() => void loadWalletReview(launch)}
                             >
-                              {hydratingId === key
-                                ? "Loading exact wallet review"
-                                : "Load exact wallet review"}
+                              Load exact wallet review
                             </button>
                           )
                       ) : null}
@@ -3972,6 +3997,7 @@ export function DeveloperLaunchHistory({
                         fundingReview && projectRequestBinding ? (
                           <button
                             className={styles.walletButton}
+                            aria-busy={submittingId === key || hydratingId === key || fundingId === key}
                             disabled={
                               fundingId !== null
                               || hydratingId !== null
@@ -3986,11 +4012,9 @@ export function DeveloperLaunchHistory({
                               reviewLaunch,
                             )}
                           >
-                            {fundingId === key
-                              ? "Authorizing USDC funding"
-                              : pendingFundingIds[key]
-                                ? "Retry funding submission"
-                                : "Review and sign USDC authorization"}
+                            {pendingFundingIds[key]
+                              ? "Retry funding submission"
+                              : "Review and sign USDC authorization"}
                           </button>
                         ) : (
                           projectMetadataReadyForProfile
@@ -3998,6 +4022,7 @@ export function DeveloperLaunchHistory({
                           === "legacy-exact-retry" ? (
                           <button
                             className={styles.walletButton}
+                            aria-busy={submittingId === key || hydratingId === key || fundingId === key}
                             disabled={
                               hydratingId !== null
                               || fundingId !== null
@@ -4009,11 +4034,9 @@ export function DeveloperLaunchHistory({
                             type="button"
                             onClick={() => void loadWalletReview(launch)}
                           >
-                            {hydratingId === key
-                              ? "Loading funding review"
-                              : reviewLaunch.output === null
-                                ? "Load funding review"
-                                : "Reload funding review"}
+                            {reviewLaunch.output === null
+                              ? "Load funding review"
+                              : "Reload funding review"}
                           </button>
                         ) : null
                       ) : null}
@@ -4023,6 +4046,7 @@ export function DeveloperLaunchHistory({
                         || (routerReview && projectRequestBinding) ? (
                           <button
                             className={styles.walletButton}
+                            aria-busy={submittingId === key || hydratingId === key || fundingId === key}
                             disabled={
                               submittingId !== null
                               || hydratingId !== null
@@ -4038,9 +4062,7 @@ export function DeveloperLaunchHistory({
                                 : launch,
                             )}
                           >
-                            {submittingId === key
-                              ? "Opening wallet transaction review"
-                              : "Review and send launch transaction"}
+                            Review and send launch transaction
                           </button>
                         ) : (
                           projectMetadataReadyForProfile
@@ -4048,6 +4070,7 @@ export function DeveloperLaunchHistory({
                           === "legacy-exact-retry" ? (
                           <button
                             className={styles.walletButton}
+                            aria-busy={submittingId === key || hydratingId === key || fundingId === key}
                             disabled={
                               hydratingId !== null
                               || submittingId !== null
@@ -4058,16 +4081,15 @@ export function DeveloperLaunchHistory({
                             type="button"
                             onClick={() => void loadWalletReview(launch)}
                           >
-                            {hydratingId === key
-                              ? "Loading Router review"
-                              : reviewLaunch.output === null
-                                ? "Load Router review"
-                                : "Reload Router review"}
+                            {reviewLaunch.output === null
+                              ? "Load Router review"
+                              : "Reload Router review"}
                           </button>
                         ) : null
                     ) : null}
                     <button
                       className={styles.checkButton}
+                      aria-busy={checkingId === key || Boolean(pollingIds[key])}
                       disabled={
                         checkingId !== null
                           || submittingId !== null
@@ -4078,14 +4100,11 @@ export function DeveloperLaunchHistory({
                       type="button"
                       onClick={() => void checkOnchainStatus(launch)}
                     >
-                      {pollingIds[key]
-                        ? "Tracking transaction"
-                        : checkingId === key
-                          ? "Checking status"
-                          : "Check onchain status"}
+                      Check onchain status
                     </button>
                   </div>
                 ) : null}
+                </details>
               </li>
             );
           })}
@@ -4096,10 +4115,11 @@ export function DeveloperLaunchHistory({
         <button
           className={styles.secondaryButton}
           disabled={loadingMore}
+          aria-busy={loadingMore}
           type="button"
           onClick={() => void load(nextCursor)}
         >
-          {loadingMore ? "Loading" : "Load more"}
+          Load more
         </button>
       ) : null}
       {state === "ready" && error ? (

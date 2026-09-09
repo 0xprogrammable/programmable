@@ -203,11 +203,14 @@ export function isRobinhoodIdempotencyKey(value: string) {
 
 export function RobinhoodFeePolicyDisclosure() {
   return (
-    <section
+    <details
       className={styles.policyDisclosure}
       aria-labelledby="robinhood-fee-policy-title"
     >
-      <h2 id="robinhood-fee-policy-title">Robinhood fee policy</h2>
+      <summary>
+        <span id="robinhood-fee-policy-title">Robinhood fee policy</span>
+        <span>0.20%</span>
+      </summary>
       <p>
         Programmable policy for new Robinhood V4 API Custom launch requests is
         0.20% (2,000 ppm), recipient{" "}
@@ -219,7 +222,7 @@ export function RobinhoodFeePolicyDisclosure() {
         enforcement, fee behavior, claiming, or guaranteed revenue. The
         Launch Stamp proves provenance only.
       </p>
-    </section>
+    </details>
   );
 }
 
@@ -525,33 +528,31 @@ export function DeveloperRobinhoodLaunch({
       aria-labelledby="robinhood-launch-title"
       aria-busy={busy}
     >
-      <div className={styles.launchHeader}>
-        <div>
-          <p className={sharedStyles.kicker}>Robinhood Chain · 4663</p>
-          <h2 id="robinhood-launch-title">Launch a Custom v4 hook</h2>
-          <p>
-            Send the exact packed <code>launch.json</code> directly to the
-            Programmable API. Preflight is side-effect free; creating a request
-            never signs or broadcasts a wallet transaction.
-          </p>
-        </div>
-        <span
-          className={styles.readinessBadge}
-          data-state={state}
-          role="status"
-          aria-live="polite"
-        >
-          {state === "ready" || state === "created" ? (
-            <Check aria-hidden="true" size={14} strokeWidth={2.2} />
-          ) : null}
-          {readinessLabel}
-        </span>
-      </div>
+      <h2 id="robinhood-launch-title" className={styles.visuallyHidden}>Launch file</h2>
 
       <form className={styles.launchForm} onSubmit={runPreflight}>
+        <label className={styles.fileField} htmlFor="robinhood-launch-file">
+          <span>Launch file</span>
+          <span className={styles.fileControl}>
+            <FileJson aria-hidden="true" size={20} strokeWidth={1.8} />
+            <input
+              ref={fileRef}
+              id="robinhood-launch-file"
+              accept=".json,application/json"
+              disabled={busy}
+              type="file"
+              aria-describedby="robinhood-launch-file-note"
+              onChange={(event) => void changeFile(event)}
+            />
+          </span>
+        </label>
+        <p className={styles.fieldNote} id="robinhood-launch-file-note">
+          Packed <code>launch.json</code> from your builder. Up to 16 MiB.
+          {packedLaunch ? ` Selected file: ${formatBytes(packedLaunch.bytes.byteLength)}.` : ""}
+        </p>
         <div className={styles.secretField}>
           <label className={sharedStyles.field} htmlFor="robinhood-api-key">
-            <span>Programmable API key</span>
+            <span>API key</span>
             <input
               ref={apiKeyRef}
               id="robinhood-api-key"
@@ -578,31 +579,11 @@ export function DeveloperRobinhoodLaunch({
           </button>
         </div>
         <p className={styles.fieldNote} id="robinhood-api-key-note">
-          This page does not store or log the key. Your browser sends it only
-          to <code>api.programmable.market</code> for these direct requests.
+          Sent only to <code>api.programmable.market</code>. Never stored or logged by this page.
         </p>
 
-        <label className={styles.fileField} htmlFor="robinhood-launch-file">
-          <span>Packed launch.json</span>
-          <span className={styles.fileControl}>
-            <FileJson aria-hidden="true" size={19} strokeWidth={1.8} />
-            <input
-              ref={fileRef}
-              id="robinhood-launch-file"
-              accept=".json,application/json"
-              disabled={busy}
-              type="file"
-              onChange={(event) => void changeFile(event)}
-            />
-          </span>
-        </label>
-        {packedLaunch ? (
-          <p className={styles.selectedFile}>
-            <strong>{packedLaunch.fileName}</strong>
-            <span>{formatBytes(packedLaunch.bytes.byteLength)}</span>
-          </p>
-        ) : null}
-
+        <details className={styles.requestDetails}>
+          <summary>Request settings</summary>
         <div className={styles.idempotencyField}>
           <label className={sharedStyles.field} htmlFor="robinhood-idempotency-key">
             <span>Idempotency-Key</span>
@@ -637,17 +618,20 @@ export function DeveloperRobinhoodLaunch({
         <p className={styles.fieldNote} id="robinhood-idempotency-note">
           Keep this value unchanged if a create request needs to be retried.
         </p>
+        </details>
 
         {proof ? (
           <div className={styles.preflightResult} data-deployable={proof.deployable}>
             <div>
               <strong>
                 {proof.deployable
-                  ? "Exact request bytes passed preflight"
-                  : "Exact request bytes are not deployable"}
+                  ? "Ready to create a request"
+                  : "This launch needs changes"}
               </strong>
               <span>{proof.disposition.replaceAll("_", " ")}</span>
             </div>
+            <details className={styles.requestDetails}>
+              <summary>Preflight details</summary>
             <dl>
               <div>
                 <dt>Raw request SHA-256</dt>
@@ -658,6 +642,7 @@ export function DeveloperRobinhoodLaunch({
                 <dd><code>{proof.requestHash}</code></dd>
               </div>
             </dl>
+            </details>
             {findingCodes.length > 0 ? (
               <p>Findings: {findingCodes.join(", ")}</p>
             ) : null}
@@ -680,7 +665,7 @@ export function DeveloperRobinhoodLaunch({
               type="button"
               onClick={() => onOpenLaunch(created.launchId)}
             >
-              Open launch history
+              View launch
             </button>
           </div>
         ) : (
@@ -688,26 +673,34 @@ export function DeveloperRobinhoodLaunch({
             <button
               className={sharedStyles.secondaryButton}
               disabled={busy || !packedLaunch || !isRobinhoodApiKey(apiKey)}
+              aria-busy={state === "checking"}
               type="submit"
             >
-              {state === "checking" ? "Running preflight" : "Run preflight"}
+              <RefreshCw aria-hidden="true" size={16} className={styles.actionIcon} data-spinning={state === "checking"} />
+              Run preflight
             </button>
             <button
               className={sharedStyles.primaryButton}
               disabled={!createEnabled}
+              aria-busy={state === "creating"}
               type="button"
               onClick={() => void submitLaunch()}
             >
-              {state === "creating" ? "Creating request" : "Create launch request"}
+              Create launch request
             </button>
           </div>
         )}
       </form>
 
-      <p className={styles.safetyNote}>
-        The API can prepare the launch, but your wallet remains the only signing
-        and broadcast authority.
-      </p>
+      <div className={styles.launchFooter}>
+        <span className={styles.readinessBadge} data-state={state} role="status" aria-live="polite">
+          {state === "ready" || state === "created" ? <Check aria-hidden="true" size={14} strokeWidth={2.2} /> : null}
+          {readinessLabel}
+        </span>
+        <p className={styles.safetyNote}>
+          Creating a request never signs or broadcasts a wallet transaction.
+        </p>
+      </div>
     </section>
   );
 }
