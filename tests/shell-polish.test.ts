@@ -9,10 +9,10 @@ describe("public shell polish", () => {
   it("keeps the 404 page concise and preserves both recovery actions", () => {
     const source = read("app/not-found.tsx");
 
-    expect(source).toContain("This page isn’t available.");
+    expect(source).toContain("Page not found.");
     expect(source).not.toContain("404 · Page not found");
     expect(source).toContain("Explore tokens");
-    expect(source).toContain("Open docs");
+    expect(source).toContain("Go home");
   });
 
   it("uses one aligned footer link set without duplicate social icons", () => {
@@ -27,7 +27,8 @@ describe("public shell polish", () => {
     expect(source).toContain('label: "X"');
     expect(source).toContain('href: "https://x.com/ProgrammableHQ"');
     expect(source).toContain('label: "DEX Screener"');
-    expect(source).toContain('label: "Dune analytics"');
+    expect(source).toContain('label: "Analytics"');
+    expect(source).toContain('href: "/analytics"');
     expect(source).not.toContain("XBrandIcon");
     expect(source).not.toContain("GitHubBrandIcon");
   });
