@@ -841,6 +841,1828 @@
         "summary": "Read the server-owned USD 1 initial-buy reference",
         "description": "Unauthenticated reference only; no transaction or budget change. The service rechecks fresh independent provider evidence before permit authorization. This does not guarantee the USD value at execution."
       }
+    },
+    "/v4/chains/{chainId}/multi-role-custom-launches": {
+      "post": {
+        "operationId": "createMultiRoleCustomLaunchV2",
+        "tags": [
+          "MultiRole V2 compatibility"
+        ],
+        "security": [
+          {
+            "CustomLaunchApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "chainId",
+            "required": true,
+            "schema": {
+              "const": "4663"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._:-]{16,128}$"
+            }
+          }
+        ],
+        "description": "Existing MultiRole route. Original request, resource, admission and replay meanings are unchanged. Documentation discovery does not activate this operation.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_MultiRoleApiCreateRequestV2_83ba0fd7ff"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Exact resource or replay",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_MultiRoleApiLifecycleResourceV2_87dcb4c44e"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Accepted; continue original resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_MultiRoleApiLifecycleResourceV2_87dcb4c44e"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid exact request or query"
+          },
+          "401": {
+            "description": "Credential unavailable"
+          },
+          "403": {
+            "description": "Scope or controller binding denied"
+          },
+          "409": {
+            "description": "Original context, permit, preparation or idempotency conflict"
+          },
+          "422": {
+            "description": "Source or model evidence needs correction"
+          },
+          "429": {
+            "description": "Shared budget exhausted; honor Retry-After"
+          },
+          "503": {
+            "description": "Runtime or provider pending; preserve original request bytes and retry identity"
+          }
+        }
+      },
+      "get": {
+        "operationId": "listMultiRoleCustomLaunchesV2",
+        "tags": [
+          "MultiRole V2 compatibility"
+        ],
+        "security": [
+          {
+            "CustomLaunchApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "chainId",
+            "required": true,
+            "schema": {
+              "const": "4663"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 25,
+              "default": 10
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string",
+              "minLength": 16,
+              "maxLength": 512
+            },
+            "description": "Preserve the exact cursor from the previous page"
+          }
+        ],
+        "description": "Existing MultiRole route. Original request, resource, admission and replay meanings are unchanged. Documentation discovery does not activate this operation.",
+        "responses": {
+          "200": {
+            "description": "Exact resource or replay",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "schemaVersion": {
+                      "const": "programmable.multi-role-custom-launch-list.v2"
+                    },
+                    "chainId": {
+                      "const": "4663"
+                    },
+                    "caip2": {
+                      "const": "eip155:4663"
+                    },
+                    "launches": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_MultiRoleApiLifecycleResourceV2_87dcb4c44e"
+                      }
+                    },
+                    "nextCursor": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "schemaVersion",
+                    "chainId",
+                    "caip2",
+                    "launches",
+                    "nextCursor"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid exact request or query"
+          },
+          "401": {
+            "description": "Credential unavailable"
+          },
+          "403": {
+            "description": "Scope or controller binding denied"
+          },
+          "409": {
+            "description": "Original context, permit, preparation or idempotency conflict"
+          },
+          "422": {
+            "description": "Source or model evidence needs correction"
+          },
+          "429": {
+            "description": "Shared budget exhausted; honor Retry-After"
+          },
+          "503": {
+            "description": "Runtime or provider pending; preserve original request bytes and retry identity"
+          }
+        }
+      }
+    },
+    "/v4/chains/{chainId}/multi-role-custom-launches/{launchId}": {
+      "get": {
+        "operationId": "readMultiRoleCustomLaunchV2",
+        "tags": [
+          "MultiRole V2 compatibility"
+        ],
+        "security": [
+          {
+            "CustomLaunchApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "chainId",
+            "required": true,
+            "schema": {
+              "const": "4663"
+            }
+          },
+          {
+            "in": "path",
+            "name": "launchId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "description": "Existing MultiRole route. Original request, resource, admission and replay meanings are unchanged. Documentation discovery does not activate this operation.",
+        "responses": {
+          "200": {
+            "description": "Exact resource or replay",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_MultiRoleApiLifecycleResourceV2_87dcb4c44e"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid exact request or query"
+          },
+          "401": {
+            "description": "Credential unavailable"
+          },
+          "403": {
+            "description": "Scope or controller binding denied"
+          },
+          "409": {
+            "description": "Original context, permit, preparation or idempotency conflict"
+          },
+          "422": {
+            "description": "Source or model evidence needs correction"
+          },
+          "429": {
+            "description": "Shared budget exhausted; honor Retry-After"
+          },
+          "503": {
+            "description": "Runtime or provider pending; preserve original request bytes and retry identity"
+          }
+        }
+      }
+    },
+    "/v4/chains/{chainId}/multi-role-custom-launches/preflight": {
+      "post": {
+        "operationId": "preflightMultiRoleCustomLaunchV2",
+        "tags": [
+          "MultiRole V2 compatibility"
+        ],
+        "security": [
+          {
+            "CustomLaunchApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "chainId",
+            "required": true,
+            "schema": {
+              "const": "4663"
+            }
+          }
+        ],
+        "description": "Existing MultiRole route. Original request, resource, admission and replay meanings are unchanged. Documentation discovery does not activate this operation.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_MultiRoleApiCreateRequestV2_83ba0fd7ff"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Exact resource or replay",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_5f4e9f75b6"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid exact request or query"
+          },
+          "401": {
+            "description": "Credential unavailable"
+          },
+          "403": {
+            "description": "Scope or controller binding denied"
+          },
+          "409": {
+            "description": "Original context, permit, preparation or idempotency conflict"
+          },
+          "422": {
+            "description": "Source or model evidence needs correction"
+          },
+          "429": {
+            "description": "Shared budget exhausted; honor Retry-After"
+          },
+          "503": {
+            "description": "Runtime or provider pending; preserve original request bytes and retry identity"
+          }
+        }
+      }
+    },
+    "/v4/chains/{chainId}/multi-role-custom-launches/capabilities": {
+      "get": {
+        "operationId": "getMultiRoleCapabilitiesV2",
+        "tags": [
+          "MultiRole V2 compatibility"
+        ],
+        "security": [],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "chainId",
+            "required": true,
+            "schema": {
+              "const": "4663"
+            }
+          }
+        ],
+        "description": "Existing MultiRole route. Original request, resource, admission and replay meanings are unchanged. Documentation discovery does not activate this operation.",
+        "responses": {
+          "200": {
+            "description": "Exact resource or replay",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_e4dbee84a9"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid exact request or query"
+          },
+          "401": {
+            "description": "Credential unavailable"
+          },
+          "403": {
+            "description": "Scope or controller binding denied"
+          },
+          "409": {
+            "description": "Original context, permit, preparation or idempotency conflict"
+          },
+          "422": {
+            "description": "Source or model evidence needs correction"
+          },
+          "429": {
+            "description": "Shared budget exhausted; honor Retry-After"
+          },
+          "503": {
+            "description": "Runtime or provider pending; preserve original request bytes and retry identity"
+          }
+        }
+      }
+    },
+    "/v4/chains/{chainId}/multi-role-custom-launches/{launchId}/transaction-hints": {
+      "post": {
+        "operationId": "submitMultiRoleTransactionHint_v2",
+        "tags": [
+          "MultiRole V2 compatibility"
+        ],
+        "security": [
+          {
+            "CustomLaunchApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "chainId",
+            "required": true,
+            "schema": {
+              "const": "4663"
+            }
+          },
+          {
+            "in": "path",
+            "name": "launchId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "description": "Existing MultiRole route. Original request, resource, admission and replay meanings are unchanged. Documentation discovery does not activate this operation.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "schemaVersion": {
+                    "const": "programmable.multi-role-transaction-hint.v2"
+                  },
+                  "transactionHash": {
+                    "type": "string",
+                    "pattern": "^0x[0-9a-f]{64}$"
+                  }
+                },
+                "required": [
+                  "schemaVersion",
+                  "transactionHash"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Exact resource or replay",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_MultiRoleFinalityProjectionV2_d3c7f2ded3"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Accepted; continue original resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_MultiRoleFinalityProjectionV2_d3c7f2ded3"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid exact request or query"
+          },
+          "401": {
+            "description": "Credential unavailable"
+          },
+          "403": {
+            "description": "Scope or controller binding denied"
+          },
+          "409": {
+            "description": "Original context, permit, preparation or idempotency conflict"
+          },
+          "422": {
+            "description": "Source or model evidence needs correction"
+          },
+          "429": {
+            "description": "Shared budget exhausted; honor Retry-After"
+          },
+          "503": {
+            "description": "Runtime or provider pending; preserve original request bytes and retry identity"
+          }
+        }
+      }
+    },
+    "/v4/chains/{chainId}/multi-role-custom-launches/{launchId}/finality": {
+      "get": {
+        "operationId": "readMultiRoleFinality_v2",
+        "tags": [
+          "MultiRole V2 compatibility"
+        ],
+        "security": [
+          {
+            "CustomLaunchApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "chainId",
+            "required": true,
+            "schema": {
+              "const": "4663"
+            }
+          },
+          {
+            "in": "path",
+            "name": "launchId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "description": "Existing MultiRole route. Original request, resource, admission and replay meanings are unchanged. Documentation discovery does not activate this operation.",
+        "responses": {
+          "200": {
+            "description": "Exact resource or replay",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_MultiRoleFinalityProjectionV2_d3c7f2ded3"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid exact request or query"
+          },
+          "401": {
+            "description": "Credential unavailable"
+          },
+          "403": {
+            "description": "Scope or controller binding denied"
+          },
+          "409": {
+            "description": "Original context, permit, preparation or idempotency conflict"
+          },
+          "422": {
+            "description": "Source or model evidence needs correction"
+          },
+          "429": {
+            "description": "Shared budget exhausted; honor Retry-After"
+          },
+          "503": {
+            "description": "Runtime or provider pending; preserve original request bytes and retry identity"
+          }
+        }
+      }
+    },
+    "/v4/chains/{chainId}/multi-role-custom-launches/finalized": {
+      "get": {
+        "operationId": "listMultiRoleFinalized_v2",
+        "tags": [
+          "MultiRole V2 compatibility"
+        ],
+        "security": [],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "chainId",
+            "required": true,
+            "schema": {
+              "const": "4663"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 25,
+              "default": 25
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string",
+              "minLength": 16,
+              "maxLength": 512
+            },
+            "description": "Preserve the exact cursor from the previous page"
+          }
+        ],
+        "description": "Existing MultiRole route. Original request, resource, admission and replay meanings are unchanged. Documentation discovery does not activate this operation.",
+        "responses": {
+          "200": {
+            "description": "Exact resource or replay",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "schemaVersion": {
+                      "const": "programmable.multi-role-finalized-metadata-list.v2"
+                    },
+                    "apiVersion": {
+                      "const": "v4"
+                    },
+                    "chainId": {
+                      "const": "4663"
+                    },
+                    "caip2": {
+                      "const": "eip155:4663"
+                    },
+                    "routerProtocol": {
+                      "const": "programmable.multi-role-launch-stamp-router.v2"
+                    },
+                    "generatedAt": {
+                      "type": "string"
+                    },
+                    "launches": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_MultiRoleFinalizedMetadataV2_922b41c657"
+                      }
+                    },
+                    "nextCursor": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "schemaVersion",
+                    "apiVersion",
+                    "chainId",
+                    "caip2",
+                    "routerProtocol",
+                    "generatedAt",
+                    "launches",
+                    "nextCursor"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid exact request or query"
+          },
+          "401": {
+            "description": "Credential unavailable"
+          },
+          "403": {
+            "description": "Scope or controller binding denied"
+          },
+          "409": {
+            "description": "Original context, permit, preparation or idempotency conflict"
+          },
+          "422": {
+            "description": "Source or model evidence needs correction"
+          },
+          "429": {
+            "description": "Shared budget exhausted; honor Retry-After"
+          },
+          "503": {
+            "description": "Runtime or provider pending; preserve original request bytes and retry identity"
+          }
+        }
+      }
+    },
+    "/v4/chains/{chainId}/multi-role-custom-launches/finalized/{onchainLaunchId}": {
+      "get": {
+        "operationId": "readMultiRoleFinalized_v2",
+        "tags": [
+          "MultiRole V2 compatibility"
+        ],
+        "security": [],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "chainId",
+            "required": true,
+            "schema": {
+              "const": "4663"
+            }
+          },
+          {
+            "in": "path",
+            "name": "onchainLaunchId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "description": "Existing MultiRole route. Original request, resource, admission and replay meanings are unchanged. Documentation discovery does not activate this operation.",
+        "responses": {
+          "200": {
+            "description": "Exact resource or replay",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_MultiRoleFinalizedMetadataV2_922b41c657"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid exact request or query"
+          },
+          "401": {
+            "description": "Credential unavailable"
+          },
+          "403": {
+            "description": "Scope or controller binding denied"
+          },
+          "409": {
+            "description": "Original context, permit, preparation or idempotency conflict"
+          },
+          "422": {
+            "description": "Source or model evidence needs correction"
+          },
+          "429": {
+            "description": "Shared budget exhausted; honor Retry-After"
+          },
+          "503": {
+            "description": "Runtime or provider pending; preserve original request bytes and retry identity"
+          }
+        }
+      }
+    },
+    "/v4/chains/{chainId}/multi-role-custom-launches/finalized/{onchainLaunchId}/image/{sha256hex}": {
+      "get": {
+        "operationId": "readMultiRoleFinalizedImage_v2",
+        "tags": [
+          "MultiRole V2 compatibility"
+        ],
+        "security": [],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "chainId",
+            "required": true,
+            "schema": {
+              "const": "4663"
+            }
+          },
+          {
+            "in": "path",
+            "name": "onchainLaunchId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "sha256hex",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "description": "Existing MultiRole route. Original request, resource, admission and replay meanings are unchanged. Documentation discovery does not activate this operation.",
+        "responses": {
+          "200": {
+            "description": "Exact resource or replay",
+            "content": {
+              "image/png": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "image/gif": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid exact request or query"
+          },
+          "401": {
+            "description": "Credential unavailable"
+          },
+          "403": {
+            "description": "Scope or controller binding denied"
+          },
+          "409": {
+            "description": "Original context, permit, preparation or idempotency conflict"
+          },
+          "422": {
+            "description": "Source or model evidence needs correction"
+          },
+          "429": {
+            "description": "Shared budget exhausted; honor Retry-After"
+          },
+          "503": {
+            "description": "Runtime or provider pending; preserve original request bytes and retry identity"
+          }
+        }
+      }
+    },
+    "/v4/chains/{chainId}/multi-role-custom-launches/{launchId}/transaction-hints-v3": {
+      "post": {
+        "operationId": "submitMultiRoleTransactionHint_v3",
+        "tags": [
+          "MultiRole V2 compatibility"
+        ],
+        "security": [
+          {
+            "CustomLaunchApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "chainId",
+            "required": true,
+            "schema": {
+              "const": "4663"
+            }
+          },
+          {
+            "in": "path",
+            "name": "launchId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "description": "Existing MultiRole route. Original request, resource, admission and replay meanings are unchanged. Documentation discovery does not activate this operation.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "schemaVersion": {
+                    "const": "programmable.multi-role-transaction-hint.v3"
+                  },
+                  "transactionHash": {
+                    "type": "string",
+                    "pattern": "^0x[0-9a-f]{64}$"
+                  }
+                },
+                "required": [
+                  "schemaVersion",
+                  "transactionHash"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Exact resource or replay",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_MultiRoleFinalityProjectionV3_b37603f426"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Accepted; continue original resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_MultiRoleFinalityProjectionV3_b37603f426"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid exact request or query"
+          },
+          "401": {
+            "description": "Credential unavailable"
+          },
+          "403": {
+            "description": "Scope or controller binding denied"
+          },
+          "409": {
+            "description": "Original context, permit, preparation or idempotency conflict"
+          },
+          "422": {
+            "description": "Source or model evidence needs correction"
+          },
+          "429": {
+            "description": "Shared budget exhausted; honor Retry-After"
+          },
+          "503": {
+            "description": "Runtime or provider pending; preserve original request bytes and retry identity"
+          }
+        }
+      }
+    },
+    "/v4/chains/{chainId}/multi-role-custom-launches/{launchId}/finality-v3": {
+      "get": {
+        "operationId": "readMultiRoleFinality_v3",
+        "tags": [
+          "MultiRole V2 compatibility"
+        ],
+        "security": [
+          {
+            "CustomLaunchApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "chainId",
+            "required": true,
+            "schema": {
+              "const": "4663"
+            }
+          },
+          {
+            "in": "path",
+            "name": "launchId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "description": "Existing MultiRole route. Original request, resource, admission and replay meanings are unchanged. Documentation discovery does not activate this operation.",
+        "responses": {
+          "200": {
+            "description": "Exact resource or replay",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_MultiRoleFinalityProjectionV3_b37603f426"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid exact request or query"
+          },
+          "401": {
+            "description": "Credential unavailable"
+          },
+          "403": {
+            "description": "Scope or controller binding denied"
+          },
+          "409": {
+            "description": "Original context, permit, preparation or idempotency conflict"
+          },
+          "422": {
+            "description": "Source or model evidence needs correction"
+          },
+          "429": {
+            "description": "Shared budget exhausted; honor Retry-After"
+          },
+          "503": {
+            "description": "Runtime or provider pending; preserve original request bytes and retry identity"
+          }
+        }
+      }
+    },
+    "/v4/chains/{chainId}/multi-role-custom-launches/finalized-v3": {
+      "get": {
+        "operationId": "listMultiRoleFinalized_v3",
+        "tags": [
+          "MultiRole V2 compatibility"
+        ],
+        "security": [],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "chainId",
+            "required": true,
+            "schema": {
+              "const": "4663"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 25,
+              "default": 25
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string",
+              "minLength": 16,
+              "maxLength": 512
+            },
+            "description": "Preserve the exact cursor from the previous page"
+          }
+        ],
+        "description": "Existing MultiRole route. Original request, resource, admission and replay meanings are unchanged. Documentation discovery does not activate this operation.",
+        "responses": {
+          "200": {
+            "description": "Exact resource or replay",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "schemaVersion": {
+                      "const": "programmable.multi-role-finalized-metadata-list.v3"
+                    },
+                    "apiVersion": {
+                      "const": "v4"
+                    },
+                    "chainId": {
+                      "const": "4663"
+                    },
+                    "caip2": {
+                      "const": "eip155:4663"
+                    },
+                    "routerProtocol": {
+                      "const": "programmable.multi-role-launch-stamp-router.v2"
+                    },
+                    "generatedAt": {
+                      "type": "string"
+                    },
+                    "launches": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_MultiRoleFinalizedMetadataV3_73ca4b8845"
+                      }
+                    },
+                    "nextCursor": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "schemaVersion",
+                    "apiVersion",
+                    "chainId",
+                    "caip2",
+                    "routerProtocol",
+                    "generatedAt",
+                    "launches",
+                    "nextCursor"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid exact request or query"
+          },
+          "401": {
+            "description": "Credential unavailable"
+          },
+          "403": {
+            "description": "Scope or controller binding denied"
+          },
+          "409": {
+            "description": "Original context, permit, preparation or idempotency conflict"
+          },
+          "422": {
+            "description": "Source or model evidence needs correction"
+          },
+          "429": {
+            "description": "Shared budget exhausted; honor Retry-After"
+          },
+          "503": {
+            "description": "Runtime or provider pending; preserve original request bytes and retry identity"
+          }
+        }
+      }
+    },
+    "/v4/chains/{chainId}/multi-role-custom-launches/finalized-v3/{onchainLaunchId}": {
+      "get": {
+        "operationId": "readMultiRoleFinalized_v3",
+        "tags": [
+          "MultiRole V2 compatibility"
+        ],
+        "security": [],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "chainId",
+            "required": true,
+            "schema": {
+              "const": "4663"
+            }
+          },
+          {
+            "in": "path",
+            "name": "onchainLaunchId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "description": "Existing MultiRole route. Original request, resource, admission and replay meanings are unchanged. Documentation discovery does not activate this operation.",
+        "responses": {
+          "200": {
+            "description": "Exact resource or replay",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_MultiRoleFinalizedMetadataV3_73ca4b8845"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid exact request or query"
+          },
+          "401": {
+            "description": "Credential unavailable"
+          },
+          "403": {
+            "description": "Scope or controller binding denied"
+          },
+          "409": {
+            "description": "Original context, permit, preparation or idempotency conflict"
+          },
+          "422": {
+            "description": "Source or model evidence needs correction"
+          },
+          "429": {
+            "description": "Shared budget exhausted; honor Retry-After"
+          },
+          "503": {
+            "description": "Runtime or provider pending; preserve original request bytes and retry identity"
+          }
+        }
+      }
+    },
+    "/v4/chains/{chainId}/multi-role-custom-launches/finalized-v3/{onchainLaunchId}/image/{sha256hex}": {
+      "get": {
+        "operationId": "readMultiRoleFinalizedImage_v3",
+        "tags": [
+          "MultiRole V2 compatibility"
+        ],
+        "security": [],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "chainId",
+            "required": true,
+            "schema": {
+              "const": "4663"
+            }
+          },
+          {
+            "in": "path",
+            "name": "onchainLaunchId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "sha256hex",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "description": "Existing MultiRole route. Original request, resource, admission and replay meanings are unchanged. Documentation discovery does not activate this operation.",
+        "responses": {
+          "200": {
+            "description": "Exact resource or replay",
+            "content": {
+              "image/png": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "image/gif": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid exact request or query"
+          },
+          "401": {
+            "description": "Credential unavailable"
+          },
+          "403": {
+            "description": "Scope or controller binding denied"
+          },
+          "409": {
+            "description": "Original context, permit, preparation or idempotency conflict"
+          },
+          "422": {
+            "description": "Source or model evidence needs correction"
+          },
+          "429": {
+            "description": "Shared budget exhausted; honor Retry-After"
+          },
+          "503": {
+            "description": "Runtime or provider pending; preserve original request bytes and retry identity"
+          }
+        }
+      }
+    },
+    "/v4/chains/{chainId}/multi-role-custom-launches/{launchId}/transaction-hints/{transactionHash}": {
+      "get": {
+        "operationId": "readMultiRoleTransactionHintV1",
+        "tags": [
+          "MultiRole V2 compatibility"
+        ],
+        "security": [
+          {
+            "CustomLaunchApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "chainId",
+            "required": true,
+            "schema": {
+              "const": "4663"
+            }
+          },
+          {
+            "in": "path",
+            "name": "launchId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "transactionHash",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "description": "Existing MultiRole route. Original request, resource, admission and replay meanings are unchanged. Documentation discovery does not activate this operation.",
+        "responses": {
+          "200": {
+            "description": "Exact resource or replay",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_MultiRoleTransactionHintReadV1_6573f113f0"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid exact request or query"
+          },
+          "401": {
+            "description": "Credential unavailable"
+          },
+          "403": {
+            "description": "Scope or controller binding denied"
+          },
+          "409": {
+            "description": "Original context, permit, preparation or idempotency conflict"
+          },
+          "422": {
+            "description": "Source or model evidence needs correction"
+          },
+          "429": {
+            "description": "Shared budget exhausted; honor Retry-After"
+          },
+          "503": {
+            "description": "Runtime or provider pending; preserve original request bytes and retry identity"
+          }
+        }
+      }
+    },
+    "/v4/chains/{chainId}/multi-role-custom-launches/guide.md": {
+      "get": {
+        "operationId": "getMultiRoleArtifact_guide_md",
+        "tags": [
+          "MultiRole V2 compatibility"
+        ],
+        "security": [],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "chainId",
+            "required": true,
+            "schema": {
+              "const": "4663"
+            }
+          }
+        ],
+        "description": "Existing MultiRole route. Original request, resource, admission and replay meanings are unchanged. Documentation discovery does not activate this operation.",
+        "responses": {
+          "200": {
+            "description": "Exact resource or replay",
+            "content": {
+              "text/markdown": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid exact request or query"
+          },
+          "401": {
+            "description": "Credential unavailable"
+          },
+          "403": {
+            "description": "Scope or controller binding denied"
+          },
+          "409": {
+            "description": "Original context, permit, preparation or idempotency conflict"
+          },
+          "422": {
+            "description": "Source or model evidence needs correction"
+          },
+          "429": {
+            "description": "Shared budget exhausted; honor Retry-After"
+          },
+          "503": {
+            "description": "Runtime or provider pending; preserve original request bytes and retry identity"
+          }
+        }
+      }
+    },
+    "/v4/chains/{chainId}/multi-role-custom-launches/client.mjs": {
+      "get": {
+        "operationId": "getMultiRoleArtifact_client_mjs",
+        "tags": [
+          "MultiRole V2 compatibility"
+        ],
+        "security": [],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "chainId",
+            "required": true,
+            "schema": {
+              "const": "4663"
+            }
+          }
+        ],
+        "description": "Existing MultiRole route. Original request, resource, admission and replay meanings are unchanged. Documentation discovery does not activate this operation.",
+        "responses": {
+          "200": {
+            "description": "Exact resource or replay",
+            "content": {
+              "text/javascript": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid exact request or query"
+          },
+          "401": {
+            "description": "Credential unavailable"
+          },
+          "403": {
+            "description": "Scope or controller binding denied"
+          },
+          "409": {
+            "description": "Original context, permit, preparation or idempotency conflict"
+          },
+          "422": {
+            "description": "Source or model evidence needs correction"
+          },
+          "429": {
+            "description": "Shared budget exhausted; honor Retry-After"
+          },
+          "503": {
+            "description": "Runtime or provider pending; preserve original request bytes and retry identity"
+          }
+        }
+      }
+    },
+    "/v4/chains/{chainId}/multi-role-custom-launches/request-packer.mjs": {
+      "get": {
+        "operationId": "getMultiRoleArtifact_request_packer_mjs",
+        "tags": [
+          "MultiRole V2 compatibility"
+        ],
+        "security": [],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "chainId",
+            "required": true,
+            "schema": {
+              "const": "4663"
+            }
+          }
+        ],
+        "description": "Existing MultiRole route. Original request, resource, admission and replay meanings are unchanged. Documentation discovery does not activate this operation.",
+        "responses": {
+          "200": {
+            "description": "Exact resource or replay",
+            "content": {
+              "text/javascript": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid exact request or query"
+          },
+          "401": {
+            "description": "Credential unavailable"
+          },
+          "403": {
+            "description": "Scope or controller binding denied"
+          },
+          "409": {
+            "description": "Original context, permit, preparation or idempotency conflict"
+          },
+          "422": {
+            "description": "Source or model evidence needs correction"
+          },
+          "429": {
+            "description": "Shared budget exhausted; honor Retry-After"
+          },
+          "503": {
+            "description": "Runtime or provider pending; preserve original request bytes and retry identity"
+          }
+        }
+      }
+    },
+    "/v4/chains/{chainId}/multi-role-custom-launches/request-packer-reference.json": {
+      "get": {
+        "operationId": "getMultiRoleArtifact_request_packer_reference_json",
+        "tags": [
+          "MultiRole V2 compatibility"
+        ],
+        "security": [],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "chainId",
+            "required": true,
+            "schema": {
+              "const": "4663"
+            }
+          }
+        ],
+        "description": "Existing MultiRole route. Original request, resource, admission and replay meanings are unchanged. Documentation discovery does not activate this operation.",
+        "responses": {
+          "200": {
+            "description": "Exact resource or replay",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid exact request or query"
+          },
+          "401": {
+            "description": "Credential unavailable"
+          },
+          "403": {
+            "description": "Scope or controller binding denied"
+          },
+          "409": {
+            "description": "Original context, permit, preparation or idempotency conflict"
+          },
+          "422": {
+            "description": "Source or model evidence needs correction"
+          },
+          "429": {
+            "description": "Shared budget exhausted; honor Retry-After"
+          },
+          "503": {
+            "description": "Runtime or provider pending; preserve original request bytes and retry identity"
+          }
+        }
+      }
+    },
+    "/v4/chains/{chainId}/multi-role-custom-launches/request-packer-build.json": {
+      "get": {
+        "operationId": "getMultiRoleArtifact_request_packer_build_json",
+        "tags": [
+          "MultiRole V2 compatibility"
+        ],
+        "security": [],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "chainId",
+            "required": true,
+            "schema": {
+              "const": "4663"
+            }
+          }
+        ],
+        "description": "Existing MultiRole route. Original request, resource, admission and replay meanings are unchanged. Documentation discovery does not activate this operation.",
+        "responses": {
+          "200": {
+            "description": "Exact resource or replay",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid exact request or query"
+          },
+          "401": {
+            "description": "Credential unavailable"
+          },
+          "403": {
+            "description": "Scope or controller binding denied"
+          },
+          "409": {
+            "description": "Original context, permit, preparation or idempotency conflict"
+          },
+          "422": {
+            "description": "Source or model evidence needs correction"
+          },
+          "429": {
+            "description": "Shared budget exhausted; honor Retry-After"
+          },
+          "503": {
+            "description": "Runtime or provider pending; preserve original request bytes and retry identity"
+          }
+        }
+      }
+    },
+    "/v4/chains/{chainId}/multi-role-custom-launches/inventory-builder.mjs": {
+      "get": {
+        "operationId": "getMultiRoleArtifact_inventory_builder_mjs",
+        "tags": [
+          "MultiRole V2 compatibility"
+        ],
+        "security": [],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "chainId",
+            "required": true,
+            "schema": {
+              "const": "4663"
+            }
+          }
+        ],
+        "description": "Existing MultiRole route. Original request, resource, admission and replay meanings are unchanged. Documentation discovery does not activate this operation.",
+        "responses": {
+          "200": {
+            "description": "Exact resource or replay",
+            "content": {
+              "text/javascript": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid exact request or query"
+          },
+          "401": {
+            "description": "Credential unavailable"
+          },
+          "403": {
+            "description": "Scope or controller binding denied"
+          },
+          "409": {
+            "description": "Original context, permit, preparation or idempotency conflict"
+          },
+          "422": {
+            "description": "Source or model evidence needs correction"
+          },
+          "429": {
+            "description": "Shared budget exhausted; honor Retry-After"
+          },
+          "503": {
+            "description": "Runtime or provider pending; preserve original request bytes and retry identity"
+          }
+        }
+      }
+    },
+    "/v4/chains/{chainId}/multi-role-custom-launches/inventory-projects.json": {
+      "get": {
+        "operationId": "getMultiRoleArtifact_inventory_projects_json",
+        "tags": [
+          "MultiRole V2 compatibility"
+        ],
+        "security": [],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "chainId",
+            "required": true,
+            "schema": {
+              "const": "4663"
+            }
+          }
+        ],
+        "description": "Existing MultiRole route. Original request, resource, admission and replay meanings are unchanged. Documentation discovery does not activate this operation.",
+        "responses": {
+          "200": {
+            "description": "Exact resource or replay",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid exact request or query"
+          },
+          "401": {
+            "description": "Credential unavailable"
+          },
+          "403": {
+            "description": "Scope or controller binding denied"
+          },
+          "409": {
+            "description": "Original context, permit, preparation or idempotency conflict"
+          },
+          "422": {
+            "description": "Source or model evidence needs correction"
+          },
+          "429": {
+            "description": "Shared budget exhausted; honor Retry-After"
+          },
+          "503": {
+            "description": "Runtime or provider pending; preserve original request bytes and retry identity"
+          }
+        }
+      }
+    },
+    "/v4/chains/{chainId}/multi-role-custom-launches/inventory-build.json": {
+      "get": {
+        "operationId": "getMultiRoleArtifact_inventory_build_json",
+        "tags": [
+          "MultiRole V2 compatibility"
+        ],
+        "security": [],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "chainId",
+            "required": true,
+            "schema": {
+              "const": "4663"
+            }
+          }
+        ],
+        "description": "Existing MultiRole route. Original request, resource, admission and replay meanings are unchanged. Documentation discovery does not activate this operation.",
+        "responses": {
+          "200": {
+            "description": "Exact resource or replay",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid exact request or query"
+          },
+          "401": {
+            "description": "Credential unavailable"
+          },
+          "403": {
+            "description": "Scope or controller binding denied"
+          },
+          "409": {
+            "description": "Original context, permit, preparation or idempotency conflict"
+          },
+          "422": {
+            "description": "Source or model evidence needs correction"
+          },
+          "429": {
+            "description": "Shared budget exhausted; honor Retry-After"
+          },
+          "503": {
+            "description": "Runtime or provider pending; preserve original request bytes and retry identity"
+          }
+        }
+      }
+    },
+    "/v4/chains/{chainId}/multi-role-custom-launches/derived-finality-v3/discovery": {
+      "get": {
+        "operationId": "getMultiRoleArtifact_derived_finality_v3_discovery",
+        "tags": [
+          "MultiRole V2 compatibility"
+        ],
+        "security": [],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "chainId",
+            "required": true,
+            "schema": {
+              "const": "4663"
+            }
+          }
+        ],
+        "description": "Existing MultiRole route. Original request, resource, admission and replay meanings are unchanged. Documentation discovery does not activate this operation.",
+        "responses": {
+          "200": {
+            "description": "Exact resource or replay",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid exact request or query"
+          },
+          "401": {
+            "description": "Credential unavailable"
+          },
+          "403": {
+            "description": "Scope or controller binding denied"
+          },
+          "409": {
+            "description": "Original context, permit, preparation or idempotency conflict"
+          },
+          "422": {
+            "description": "Source or model evidence needs correction"
+          },
+          "429": {
+            "description": "Shared budget exhausted; honor Retry-After"
+          },
+          "503": {
+            "description": "Runtime or provider pending; preserve original request bytes and retry identity"
+          }
+        }
+      }
+    },
+    "/v4/chains/{chainId}/multi-role-custom-launches/derived-finality-v3/readiness": {
+      "get": {
+        "operationId": "getMultiRoleArtifact_derived_finality_v3_readiness",
+        "tags": [
+          "MultiRole V2 compatibility"
+        ],
+        "security": [],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "chainId",
+            "required": true,
+            "schema": {
+              "const": "4663"
+            }
+          }
+        ],
+        "description": "Existing MultiRole route. Original request, resource, admission and replay meanings are unchanged. Documentation discovery does not activate this operation.",
+        "responses": {
+          "200": {
+            "description": "Exact resource or replay",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid exact request or query"
+          },
+          "401": {
+            "description": "Credential unavailable"
+          },
+          "403": {
+            "description": "Scope or controller binding denied"
+          },
+          "409": {
+            "description": "Original context, permit, preparation or idempotency conflict"
+          },
+          "422": {
+            "description": "Source or model evidence needs correction"
+          },
+          "429": {
+            "description": "Shared budget exhausted; honor Retry-After"
+          },
+          "503": {
+            "description": "Runtime or provider pending; preserve original request bytes and retry identity"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -78979,6 +80801,4392 @@
             "pattern": "^sha256:[0-9a-f]{64}$"
           }
         }
+      },
+      "MultiRoleV2_MultiRoleV2_CustomGraphChainDeploymentBindingV2_38bd420799": {
+        "type": "object",
+        "properties": {
+          "routerProtocol": {
+            "const": "programmable.multi-role-launch-stamp-router.v2"
+          },
+          "chainId": {
+            "type": "string"
+          },
+          "router": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "routerRuntimeCodeHash": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "permitAuthority": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "permitAuthorityRuntimeCodeHash": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "graphFactory": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "graphFactoryRuntimeCodeHash": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "poolManager": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "poolManagerRuntimeCodeHash": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          }
+        },
+        "required": [
+          "routerProtocol",
+          "chainId",
+          "router",
+          "routerRuntimeCodeHash",
+          "permitAuthority",
+          "permitAuthorityRuntimeCodeHash",
+          "graphFactory",
+          "graphFactoryRuntimeCodeHash",
+          "poolManager",
+          "poolManagerRuntimeCodeHash"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_MultiRoleApiExpectedContextV2_414793b9dd": {
+        "type": "object",
+        "properties": {
+          "chainId": {
+            "const": "4663"
+          },
+          "caip2": {
+            "const": "eip155:4663"
+          },
+          "chainDeploymentId": {
+            "type": "string"
+          },
+          "profile": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "chainDeployment": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "providerProfile": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "chainBindings": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_CustomGraphChainDeploymentBindingV2_38bd420799"
+          }
+        },
+        "required": [
+          "chainId",
+          "caip2",
+          "chainDeploymentId",
+          "profile",
+          "chainDeployment",
+          "providerProfile",
+          "chainBindings"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_MultiRoleApiContextCommitmentsV2_972736da14": {
+        "type": "object",
+        "properties": {
+          "profileHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "chainDeploymentHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "providerProfileHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "contextHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          }
+        },
+        "required": [
+          "profileHash",
+          "chainDeploymentHash",
+          "providerProfileHash",
+          "contextHash"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_CustomLaunchPermitWindowV4_37efa0c30e": {
+        "type": "object",
+        "properties": {
+          "validAfter": {
+            "type": "string"
+          },
+          "deadline": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "validAfter",
+          "deadline"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_DeterministicSourceDescriptorV2_b9897521c6": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": {
+            "const": "2.0.0"
+          },
+          "kind": {
+            "const": "deterministic-source-bundle"
+          },
+          "controllerWallet": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "sourceLineageNonce": {
+            "type": "string"
+          },
+          "sourceBundleDigest": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "bundleContentSha256": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "publicOriginCommitment": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "kind",
+          "controllerWallet",
+          "sourceLineageNonce",
+          "sourceBundleDigest",
+          "bundleContentSha256",
+          "publicOriginCommitment"
+        ],
+        "additionalProperties": {}
+      },
+      "MultiRoleV2_MultiRoleV2_SourceBundleEntryV2_05a3904cb5": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "const": "file"
+              },
+              {
+                "const": "symlink"
+              }
+            ]
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "const": "100644"
+              },
+              {
+                "const": "100755"
+              },
+              {
+                "const": "120000"
+              }
+            ]
+          },
+          "byteLength": {
+            "type": "string"
+          },
+          "contentSha256": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "symlinkTarget": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "required": [
+          "path",
+          "kind",
+          "mode",
+          "byteLength",
+          "contentSha256",
+          "symlinkTarget"
+        ],
+        "additionalProperties": {}
+      },
+      "MultiRoleV2_MultiRoleV2_SourceBundleManifestV2_8e46002fd5": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": {
+            "const": "2.0.0"
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_SourceBundleEntryV2_05a3904cb5"
+            }
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "entries"
+        ],
+        "additionalProperties": {}
+      },
+      "MultiRoleV2_MultiRoleV2_Shape_cec5e3634b": {
+        "type": "object",
+        "properties": {
+          "targetId": {
+            "type": "string"
+          },
+          "phase": {
+            "anyOf": [
+              {
+                "const": "constructor"
+              },
+              {
+                "const": "initializer"
+              }
+            ]
+          },
+          "byteOffset": {
+            "type": "number"
+          },
+          "encoding": {
+            "anyOf": [
+              {
+                "const": "abi-address-word"
+              },
+              {
+                "const": "packed-address-20"
+              }
+            ]
+          }
+        },
+        "required": [
+          "targetId",
+          "phase",
+          "byteOffset",
+          "encoding"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_Shape_ca5d378c70": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "runtimeCodeHash": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "sourceEvidenceDigest": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "startBlock": {
+            "type": "string"
+          },
+          "auditBlock": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "address",
+          "runtimeCodeHash",
+          "sourceEvidenceDigest",
+          "startBlock",
+          "auditBlock"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_Shape_9c4a8bcaaf": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "anyOf": [
+              {
+                "const": "immutable"
+              },
+              {
+                "const": "proxy"
+              }
+            ]
+          },
+          "proxyType": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "const": "eip1967-transparent"
+              },
+              {
+                "const": "eip1967-uups"
+              },
+              {
+                "const": "eip1967-beacon"
+              },
+              {
+                "const": "eip1167-minimal"
+              },
+              {
+                "const": "custom"
+              }
+            ]
+          },
+          "implementation": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_ca5d378c70"
+              }
+            ]
+          },
+          "adminAddress": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string",
+                "pattern": "^0x[0-9a-fA-F]*$"
+              }
+            ]
+          },
+          "beaconAddress": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string",
+                "pattern": "^0x[0-9a-fA-F]*$"
+              }
+            ]
+          },
+          "evidenceDigest": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          }
+        },
+        "required": [
+          "kind",
+          "proxyType",
+          "implementation",
+          "adminAddress",
+          "beaconAddress",
+          "evidenceDigest"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_CustomLaunchExternalContractV4_673703dde3": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": {
+            "const": "programmable.custom-launch-external-contract.v1"
+          },
+          "chainId": {
+            "const": "4663"
+          },
+          "caip2": {
+            "const": "eip155:4663"
+          },
+          "address": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "runtimeCodeHash": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "sourceEvidenceDigest": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "role": {
+            "type": "string"
+          },
+          "startBlock": {
+            "type": "string"
+          },
+          "auditBlock": {
+            "type": "string"
+          },
+          "locator": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_cec5e3634b"
+          },
+          "mutability": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_9c4a8bcaaf"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "chainId",
+          "caip2",
+          "address",
+          "runtimeCodeHash",
+          "sourceEvidenceDigest",
+          "role",
+          "startBlock",
+          "auditBlock",
+          "locator",
+          "mutability"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_GraphAddressLocatorV1_2ea30831c1": {
+        "type": "object",
+        "properties": {
+          "targetId": {
+            "type": "string"
+          },
+          "byteOffset": {
+            "type": "number"
+          },
+          "encoding": {
+            "anyOf": [
+              {
+                "const": "abi-address-word"
+              },
+              {
+                "const": "packed-address-20"
+              }
+            ]
+          }
+        },
+        "required": [
+          "targetId",
+          "byteOffset",
+          "encoding"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_CustomGraphTargetV2_7249c0220b": {
+        "type": "object",
+        "properties": {
+          "componentRoles": {
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "const": "token"
+                },
+                {
+                  "const": "hook"
+                }
+              ]
+            }
+          },
+          "targetId": {
+            "type": "string"
+          },
+          "applicantSalt": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "creationBytecode": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "constructorArguments": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "initializerCalldata": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "constructorAddressLocators": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_GraphAddressLocatorV1_2ea30831c1"
+            }
+          },
+          "initializerAddressLocators": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_GraphAddressLocatorV1_2ea30831c1"
+            }
+          },
+          "deploymentValueWei": {
+            "type": "string"
+          },
+          "initializerValueWei": {
+            "type": "string"
+          },
+          "expectedRuntimeCodeHash": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "declaredHookPermissions": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "anyOf": [
+                    {
+                      "const": "beforeInitialize"
+                    },
+                    {
+                      "const": "afterInitialize"
+                    },
+                    {
+                      "const": "beforeAddLiquidity"
+                    },
+                    {
+                      "const": "afterAddLiquidity"
+                    },
+                    {
+                      "const": "beforeRemoveLiquidity"
+                    },
+                    {
+                      "const": "afterRemoveLiquidity"
+                    },
+                    {
+                      "const": "beforeSwap"
+                    },
+                    {
+                      "const": "afterSwap"
+                    },
+                    {
+                      "const": "beforeDonate"
+                    },
+                    {
+                      "const": "afterDonate"
+                    },
+                    {
+                      "const": "beforeSwapReturnDelta"
+                    },
+                    {
+                      "const": "afterSwapReturnDelta"
+                    },
+                    {
+                      "const": "afterAddLiquidityReturnDelta"
+                    },
+                    {
+                      "const": "afterRemoveLiquidityReturnDelta"
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        "required": [
+          "componentRoles",
+          "targetId",
+          "applicantSalt",
+          "creationBytecode",
+          "constructorArguments",
+          "initializerCalldata",
+          "constructorAddressLocators",
+          "initializerAddressLocators",
+          "deploymentValueWei",
+          "initializerValueWei",
+          "expectedRuntimeCodeHash",
+          "declaredHookPermissions"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_CustomGraphPoolV1_a6a75594fc": {
+        "type": "object",
+        "properties": {
+          "tokenTargetId": {
+            "type": "string"
+          },
+          "hookTargetId": {
+            "type": "string"
+          },
+          "fee": {
+            "type": "number"
+          },
+          "tickSpacing": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "tokenTargetId",
+          "hookTargetId",
+          "fee",
+          "tickSpacing"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_CustomGraphBundleV2_996d8fa1cd": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": {
+            "const": "programmable.custom-graph-bundle.v2"
+          },
+          "sourceBundleSha256": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "targets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_CustomGraphTargetV2_7249c0220b"
+            }
+          },
+          "pool": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_CustomGraphPoolV1_a6a75594fc"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "sourceBundleSha256",
+          "targets",
+          "pool"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_Shape_402efa1292": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "symbol": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "symbol"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_Shape_aba07cf43e": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "boolean"
+          },
+          "symbol": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "symbol"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_ProjectTokenMetadataStaticFieldBindingV1_94f9b9d9e0": {
+        "type": "object",
+        "properties": {
+          "staticSource": {
+            "anyOf": [
+              {
+                "const": "constructor-argument"
+              },
+              {
+                "const": "initializer-argument"
+              },
+              {
+                "const": "not-deterministically-extractable"
+              }
+            ]
+          },
+          "argumentIndex": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          },
+          "argumentName": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "required": [
+          "staticSource",
+          "argumentIndex",
+          "argumentName"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_ProjectTokenMetadataBindingV1_55f741ea72": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": {
+            "const": "programmable.project-token-metadata-binding.v1"
+          },
+          "tokenTargetId": {
+            "type": "string"
+          },
+          "declarationBinding": {
+            "const": "request-and-launch-id"
+          },
+          "standardReadModel": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_aba07cf43e"
+          },
+          "name": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_ProjectTokenMetadataStaticFieldBindingV1_94f9b9d9e0"
+          },
+          "symbol": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_ProjectTokenMetadataStaticFieldBindingV1_94f9b9d9e0"
+          },
+          "postDeploymentReadback": {
+            "const": "required"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "tokenTargetId",
+          "declarationBinding",
+          "standardReadModel",
+          "name",
+          "symbol",
+          "postDeploymentReadback"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_Shape_4cb4bbea02": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "anyOf": [
+              {
+                "const": "website"
+              },
+              {
+                "const": "documentation"
+              },
+              {
+                "const": "x"
+              },
+              {
+                "const": "telegram"
+              },
+              {
+                "const": "discord"
+              },
+              {
+                "const": "github"
+              },
+              {
+                "const": "other"
+              }
+            ]
+          },
+          "uri": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "uri"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_ProjectMetadataImageV4_ffb508f831": {
+        "type": "object",
+        "properties": {
+          "uri": {
+            "type": "string"
+          },
+          "contentSha256": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "byteLength": {
+            "type": "number"
+          },
+          "width": {
+            "type": "number"
+          },
+          "height": {
+            "type": "number"
+          },
+          "mediaType": {
+            "anyOf": [
+              {
+                "const": "image/png"
+              },
+              {
+                "const": "image/gif"
+              }
+            ]
+          }
+        },
+        "required": [
+          "uri",
+          "contentSha256",
+          "byteLength",
+          "width",
+          "height",
+          "mediaType"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_Shape_17f021dc99": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": {
+            "const": "programmable.launch-presentation-draft.v1"
+          },
+          "description": {
+            "type": "string"
+          },
+          "links": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_4cb4bbea02"
+            }
+          },
+          "image": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_ProjectMetadataImageV4_ffb508f831"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "description",
+          "links",
+          "image"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_ProjectMetadataV4_6b9fd87523": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_402efa1292"
+          },
+          "schemaVersion": {
+            "const": "programmable.project-metadata.v1"
+          },
+          "tokenMetadataBinding": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_ProjectTokenMetadataBindingV1_55f741ea72"
+          },
+          "presentation": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_17f021dc99"
+          }
+        },
+        "required": [
+          "token",
+          "schemaVersion",
+          "tokenMetadataBinding",
+          "presentation"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_ProjectMetadataImageArtifactV4_8952584e0b": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": {
+            "const": "programmable.project-metadata-image-artifact.v1"
+          },
+          "mediaType": {
+            "anyOf": [
+              {
+                "const": "image/png"
+              },
+              {
+                "const": "image/gif"
+              }
+            ]
+          },
+          "byteLength": {
+            "type": "string"
+          },
+          "contentSha256": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "base64": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "mediaType",
+          "byteLength",
+          "contentSha256",
+          "base64"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_Shape_70c5b46354": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "const": "prepared-target"
+          },
+          "targetId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "targetId"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_Shape_bac00ec7a4": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "const": "chain-binding"
+          },
+          "binding": {
+            "const": "poolManager"
+          }
+        },
+        "required": [
+          "kind",
+          "binding"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_Shape_6cd3396dac": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "const": "runner-harness"
+          },
+          "harness": {
+            "const": "v4-actions-v1"
+          }
+        },
+        "required": [
+          "kind",
+          "harness"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_CustomLaunchBehaviorScenarioStepV3_f41be796f9": {
+        "type": "object",
+        "properties": {
+          "stepId": {
+            "type": "string"
+          },
+          "phase": {
+            "anyOf": [
+              {
+                "const": "seed"
+              },
+              {
+                "const": "swap"
+              },
+              {
+                "const": "liquidity"
+              },
+              {
+                "const": "claim"
+              },
+              {
+                "const": "custom-accounting"
+              }
+            ]
+          },
+          "actor": {
+            "anyOf": [
+              {
+                "const": "launch-wallet"
+              },
+              {
+                "const": "secondary-user"
+              },
+              {
+                "const": "unauthorized-claimer"
+              }
+            ]
+          },
+          "target": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_70c5b46354"
+              },
+              {
+                "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_bac00ec7a4"
+              },
+              {
+                "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_6cd3396dac"
+              }
+            ]
+          },
+          "valueWei": {
+            "type": "string"
+          },
+          "calldata": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "hookData": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          }
+        },
+        "required": [
+          "stepId",
+          "phase",
+          "actor",
+          "target",
+          "valueWei",
+          "calldata",
+          "hookData"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_CustomLaunchBehaviorScenarioInputsV3_ac78564a28": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": {
+            "const": "programmable.custom-launch-behavior-scenario-inputs.v1"
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_CustomLaunchBehaviorScenarioStepV3_f41be796f9"
+            }
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "steps"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_ExactSourceCompilationUnitV1_cfc0ccac76": {
+        "type": "object",
+        "properties": {
+          "compilationUnitId": {
+            "type": "string"
+          },
+          "compilerVersion": {
+            "type": "string"
+          },
+          "standardJsonInputBase64": {
+            "type": "string"
+          },
+          "standardJsonInputSha256": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          }
+        },
+        "required": [
+          "compilationUnitId",
+          "compilerVersion",
+          "standardJsonInputBase64",
+          "standardJsonInputSha256"
+        ],
+        "additionalProperties": {}
+      },
+      "MultiRoleV2_MultiRoleV2_RuntimeImmutableReferenceRangeV2_a27123d00d": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "number"
+          },
+          "length": {
+            "const": 32
+          }
+        },
+        "required": [
+          "start",
+          "length"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_RuntimeImmutableReferenceV2_114c045fed": {
+        "type": "object",
+        "properties": {
+          "immutableId": {
+            "type": "string"
+          },
+          "ranges": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_RuntimeImmutableReferenceRangeV2_a27123d00d"
+            }
+          }
+        },
+        "required": [
+          "immutableId",
+          "ranges"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_Shape_7e72be93cf": {
+        "type": "object",
+        "properties": {
+          "immutableId": {
+            "type": "string"
+          },
+          "abiType": {
+            "type": "string"
+          },
+          "literal": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "const": false
+              },
+              {
+                "const": true
+              }
+            ]
+          }
+        },
+        "required": [
+          "immutableId",
+          "abiType",
+          "literal"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_Shape_6164d2d6c9": {
+        "type": "object",
+        "properties": {
+          "immutableId": {
+            "type": "string"
+          },
+          "abiType": {
+            "const": "address"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "immutableId",
+          "abiType",
+          "target"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_ExactRuntimeMaterializationV2_e2383216ce": {
+        "type": "object",
+        "properties": {
+          "immutableReferences": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_RuntimeImmutableReferenceV2_114c045fed"
+            }
+          },
+          "runtimeImmutables": {
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_7e72be93cf"
+                },
+                {
+                  "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_6164d2d6c9"
+                }
+              ]
+            }
+          },
+          "deployedRuntimeCodeBase64": {
+            "type": "string"
+          },
+          "deployedRuntimeCodeHash": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          }
+        },
+        "required": [
+          "immutableReferences",
+          "runtimeImmutables",
+          "deployedRuntimeCodeBase64",
+          "deployedRuntimeCodeHash"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_ExactSourceVerificationComponentV2_3fd730bd83": {
+        "type": "object",
+        "properties": {
+          "targetId": {
+            "type": "string"
+          },
+          "compilationUnitId": {
+            "type": "string"
+          },
+          "sourcePath": {
+            "type": "string"
+          },
+          "contractName": {
+            "type": "string"
+          },
+          "constructorArguments": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "runtimeMaterialization": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_ExactRuntimeMaterializationV2_e2383216ce"
+          }
+        },
+        "required": [
+          "targetId",
+          "compilationUnitId",
+          "sourcePath",
+          "contractName",
+          "constructorArguments",
+          "runtimeMaterialization"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_ExactSourceVerificationBundleV2_58122e06c8": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": {
+            "const": "programmable.exact-source-verification-bundle.v2"
+          },
+          "compilationUnits": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_ExactSourceCompilationUnitV1_cfc0ccac76"
+            }
+          },
+          "components": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_ExactSourceVerificationComponentV2_3fd730bd83"
+            }
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "compilationUnits",
+          "components"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_CustomLaunchFundingIntentV4_e8a2ab38c3": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": {
+            "const": "programmable.custom-launch-funding-intent.v2"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "const": "none"
+              },
+              {
+                "const": "wallet-transaction-value"
+              }
+            ]
+          },
+          "valueWei": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "mode",
+          "valueWei"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_Shape_137381baae": {
+        "type": "object",
+        "properties": {
+          "initialLiquidityWei": {
+            "type": "string"
+          },
+          "initialBuyWei": {
+            "type": "string"
+          },
+          "reserveWei": {
+            "type": "string"
+          },
+          "otherLaunchValueWei": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "initialLiquidityWei",
+          "initialBuyWei",
+          "reserveWei",
+          "otherLaunchValueWei"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_RobinhoodFundingPlanV1_83a2335350": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": {
+            "const": "programmable.robinhood-funding-plan.v1"
+          },
+          "capitalSource": {
+            "anyOf": [
+              {
+                "const": "custom"
+              },
+              {
+                "const": "buyer-funded"
+              },
+              {
+                "const": "creator-funded"
+              },
+              {
+                "const": "hybrid"
+              }
+            ]
+          },
+          "pricingModel": {
+            "anyOf": [
+              {
+                "const": "custom"
+              },
+              {
+                "const": "concentrated-liquidity"
+              },
+              {
+                "const": "custom-curve"
+              },
+              {
+                "const": "auction"
+              }
+            ]
+          },
+          "nativeAllocations": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_137381baae"
+          },
+          "maxLaunchValueWei": {
+            "type": "string"
+          },
+          "maxGasCostWei": {
+            "type": "string"
+          },
+          "launchMode": {
+            "anyOf": [
+              {
+                "const": "fund-and-launch"
+              },
+              {
+                "const": "build-only"
+              }
+            ]
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "capitalSource",
+          "pricingModel",
+          "nativeAllocations",
+          "maxLaunchValueWei",
+          "maxGasCostWei",
+          "launchMode"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_RobinhoodFundingPlanV2_9be1432d4c": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": {
+            "const": "programmable.robinhood-funding-plan.v2"
+          },
+          "capitalSource": {
+            "anyOf": [
+              {
+                "const": "custom"
+              },
+              {
+                "const": "buyer-funded"
+              },
+              {
+                "const": "creator-funded"
+              },
+              {
+                "const": "hybrid"
+              }
+            ]
+          },
+          "pricingModel": {
+            "anyOf": [
+              {
+                "const": "custom"
+              },
+              {
+                "const": "concentrated-liquidity"
+              },
+              {
+                "const": "custom-curve"
+              },
+              {
+                "const": "auction"
+              }
+            ]
+          },
+          "nativeAllocations": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_137381baae"
+          },
+          "maxLaunchValueWei": {
+            "type": "string"
+          },
+          "maxGasCostWei": {
+            "type": "string"
+          },
+          "launchMode": {
+            "anyOf": [
+              {
+                "const": "build-only"
+              },
+              {
+                "const": "launch"
+              }
+            ]
+          },
+          "firstBuy": {
+            "anyOf": [
+              {
+                "const": "at-launch"
+              },
+              {
+                "const": "after-launch"
+              }
+            ]
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "capitalSource",
+          "pricingModel",
+          "nativeAllocations",
+          "maxLaunchValueWei",
+          "maxGasCostWei",
+          "launchMode",
+          "firstBuy"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_CustomLaunchLiquidityIntentV4_6e66a6a9b1": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": {
+            "const": "programmable.custom-launch-liquidity-model.v1"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "const": "none-empty-pool"
+              },
+              {
+                "const": "project-provided-liquidity"
+              },
+              {
+                "const": "hook-owned-liquidity"
+              },
+              {
+                "const": "externally-managed-position"
+              },
+              {
+                "const": "custom-bonding-or-curve"
+              }
+            ]
+          },
+          "declaredLaunchState": {
+            "anyOf": [
+              {
+                "const": "pool-not-initialized"
+              },
+              {
+                "const": "pool-initialized-empty"
+              },
+              {
+                "const": "liquidity-required"
+              },
+              {
+                "const": "liquidity-provided-by-launch"
+              },
+              {
+                "const": "custom-settlement"
+              }
+            ]
+          },
+          "targetIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "model",
+          "declaredLaunchState",
+          "targetIds"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_AgentAttestationCheck_146183a9a1": {
+        "type": "object",
+        "properties": {
+          "checkId": {
+            "type": "string"
+          },
+          "evidenceSha256": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          }
+        },
+        "required": [
+          "checkId",
+          "evidenceSha256"
+        ],
+        "additionalProperties": {}
+      },
+      "MultiRoleV2_MultiRoleV2_AgentLaunchAttestationV2_be3ecf78e5": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": {
+            "const": "programmable.agent-launch-attestation.v2"
+          },
+          "subjectLaunchIntentHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "agentId": {
+            "type": "string"
+          },
+          "checkedAt": {
+            "type": "string"
+          },
+          "checks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_AgentAttestationCheck_146183a9a1"
+            }
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "subjectLaunchIntentHash",
+          "agentId",
+          "checkedAt",
+          "checks"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_MultiRoleApiCreateRequestV2_83ba0fd7ff": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": {
+            "const": "programmable.multi-role-custom-launch-create-request.v2"
+          },
+          "context": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_MultiRoleApiExpectedContextV2_414793b9dd"
+          },
+          "contextCommitments": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_MultiRoleApiContextCommitmentsV2_972736da14"
+          },
+          "launchWallet": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "nonce": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "permitWindow": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_CustomLaunchPermitWindowV4_37efa0c30e"
+          },
+          "sourceDescriptor": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_DeterministicSourceDescriptorV2_b9897521c6"
+          },
+          "sourceBundleManifest": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_SourceBundleManifestV2_8e46002fd5"
+          },
+          "externalContracts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_CustomLaunchExternalContractV4_673703dde3"
+            }
+          },
+          "graphBundle": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_CustomGraphBundleV2_996d8fa1cd"
+          },
+          "projectMetadata": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_ProjectMetadataV4_6b9fd87523"
+          },
+          "projectMetadataHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "projectMetadataImageArtifact": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_ProjectMetadataImageArtifactV4_8952584e0b"
+          },
+          "behaviorScenarioInputs": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_CustomLaunchBehaviorScenarioInputsV3_ac78564a28"
+          },
+          "behaviorScenarioInputsHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "verificationBundle": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_ExactSourceVerificationBundleV2_58122e06c8"
+          },
+          "funding": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_CustomLaunchFundingIntentV4_e8a2ab38c3"
+          },
+          "fundingPlan": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_RobinhoodFundingPlanV1_83a2335350"
+              },
+              {
+                "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_RobinhoodFundingPlanV2_9be1432d4c"
+              }
+            ]
+          },
+          "liquidityModel": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_CustomLaunchLiquidityIntentV4_6e66a6a9b1"
+          },
+          "launchIntentHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "agentAttestation": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_AgentLaunchAttestationV2_be3ecf78e5"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "context",
+          "contextCommitments",
+          "launchWallet",
+          "nonce",
+          "permitWindow",
+          "sourceDescriptor",
+          "sourceBundleManifest",
+          "externalContracts",
+          "graphBundle",
+          "projectMetadata",
+          "projectMetadataHash",
+          "projectMetadataImageArtifact",
+          "verificationBundle",
+          "funding",
+          "fundingPlan",
+          "liquidityModel",
+          "launchIntentHash",
+          "agentAttestation"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_MultiRoleInclusionV2_da2dadb843": {
+        "type": "object",
+        "properties": {
+          "chainId": {
+            "type": "string"
+          },
+          "transactionHash": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "blockNumber": {
+            "type": "string"
+          },
+          "blockHash": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "transactionIndex": {
+            "type": "string"
+          },
+          "blockTimestamp": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "chainId",
+          "transactionHash",
+          "blockNumber",
+          "blockHash",
+          "transactionIndex",
+          "blockTimestamp"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_MultiRoleFinalityProjectionV2_d3c7f2ded3": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": {
+            "const": "programmable.multi-role-finality-status.v2"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "const": "pending"
+              },
+              {
+                "const": "included"
+              },
+              {
+                "const": "ethereum_finalized"
+              }
+            ]
+          },
+          "transactionHash": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string",
+                "pattern": "^0x[0-9a-fA-F]*$"
+              }
+            ]
+          },
+          "inclusion": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_MultiRoleInclusionV2_da2dadb843"
+              }
+            ]
+          },
+          "evidenceHash": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              }
+            ]
+          },
+          "finalizedAt": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "requestId",
+          "state",
+          "transactionHash",
+          "inclusion",
+          "evidenceHash",
+          "finalizedAt"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_MultiRoleSourceAssessmentV2_e0f4abb55f": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": {
+            "const": "programmable.multi-role-source-assessment.v2"
+          },
+          "disposition": {
+            "anyOf": [
+              {
+                "const": "source_supported"
+              },
+              {
+                "const": "evidence_required"
+              }
+            ]
+          },
+          "findingCodes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "receiptHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "remediation": {
+            "type": "string"
+          },
+          "productionAuthority": {
+            "const": false
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "disposition",
+          "findingCodes",
+          "receiptHash",
+          "remediation",
+          "productionAuthority"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_MultiRoleApiCommitmentsV2_91dd704878": {
+        "type": "object",
+        "properties": {
+          "sourceBuild": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "graph": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "metadata": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "verification": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "fundingPermit": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "launchIntent": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "profileHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "chainDeploymentHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "providerProfileHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "contextHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          }
+        },
+        "required": [
+          "sourceBuild",
+          "graph",
+          "metadata",
+          "verification",
+          "fundingPermit",
+          "launchIntent",
+          "profileHash",
+          "chainDeploymentHash",
+          "providerProfileHash",
+          "contextHash"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_LaunchPresentationImageV1_7e0c467230": {
+        "type": "object",
+        "properties": {
+          "uri": {
+            "type": "string"
+          },
+          "contentSha256": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "mediaType": {
+            "anyOf": [
+              {
+                "const": "image/png"
+              },
+              {
+                "const": "image/gif"
+              },
+              {
+                "const": "image/jpeg"
+              },
+              {
+                "const": "image/webp"
+              }
+            ]
+          },
+          "byteLength": {
+            "type": "number"
+          },
+          "width": {
+            "type": "number"
+          },
+          "height": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "uri",
+          "contentSha256",
+          "mediaType",
+          "byteLength",
+          "width",
+          "height"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_LaunchPresentationDraftV1_9bbdcf8edc": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": {
+            "const": "programmable.launch-presentation-draft.v1"
+          },
+          "description": {
+            "type": "string"
+          },
+          "image": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_LaunchPresentationImageV1_7e0c467230"
+              }
+            ]
+          },
+          "links": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_4cb4bbea02"
+            }
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "description",
+          "image",
+          "links"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_ProjectMetadataV1_a0417e149e": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": {
+            "const": "programmable.project-metadata.v1"
+          },
+          "token": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_402efa1292"
+          },
+          "presentation": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_LaunchPresentationDraftV1_9bbdcf8edc"
+          },
+          "tokenMetadataBinding": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_ProjectTokenMetadataBindingV1_55f741ea72"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "token",
+          "presentation",
+          "tokenMetadataBinding"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_Shape_4d4efa93e4": {
+        "type": "object",
+        "properties": {
+          "transactionSender": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "factoryAuthorizedLauncher": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "fixedRouterTarget": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "fixedFunctionSelector": {
+            "const": "0x3d9895de"
+          },
+          "arbitraryTargetAccepted": {
+            "const": false
+          },
+          "arbitraryCalldataAccepted": {
+            "const": false
+          }
+        },
+        "required": [
+          "transactionSender",
+          "factoryAuthorizedLauncher",
+          "fixedRouterTarget",
+          "fixedFunctionSelector",
+          "arbitraryTargetAccepted",
+          "arbitraryCalldataAccepted"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_Shape_fe6cb07801": {
+        "type": "object",
+        "properties": {
+          "validAfter": {
+            "type": "string"
+          },
+          "deadline": {
+            "type": "string"
+          },
+          "maximumLifetimeSeconds": {
+            "const": "3600"
+          }
+        },
+        "required": [
+          "validAfter",
+          "deadline",
+          "maximumLifetimeSeconds"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_PreparedGraphTargetV1_7999bd7884": {
+        "type": "object",
+        "properties": {
+          "targetIndex": {
+            "type": "number"
+          },
+          "targetId": {
+            "type": "string"
+          },
+          "targetIdHash": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "applicantSalt": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "effectiveSalt": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "deploymentValueWei": {
+            "type": "string"
+          },
+          "initializerValueWei": {
+            "type": "string"
+          },
+          "initCode": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "initializerCalldata": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "initCodeHash": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "initializerCalldataHash": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "targetCommitment": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "predictedAddress": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "expectedRuntimeCodeHash": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          }
+        },
+        "required": [
+          "targetIndex",
+          "targetId",
+          "targetIdHash",
+          "applicantSalt",
+          "effectiveSalt",
+          "deploymentValueWei",
+          "initializerValueWei",
+          "initCode",
+          "initializerCalldata",
+          "initCodeHash",
+          "initializerCalldataHash",
+          "targetCommitment",
+          "predictedAddress",
+          "expectedRuntimeCodeHash"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_Shape_68d06bca96": {
+        "type": "object",
+        "properties": {
+          "routeNamespace": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "routeNonce": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "topologyHash": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "graphCommitment": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "totalValueWei": {
+            "type": "string"
+          },
+          "routePayload": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "routePayloadHash": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "expectedGraphDeploymentHash": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "targets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_PreparedGraphTargetV1_7999bd7884"
+            }
+          }
+        },
+        "required": [
+          "routeNamespace",
+          "routeNonce",
+          "topologyHash",
+          "graphCommitment",
+          "totalValueWei",
+          "routePayload",
+          "routePayloadHash",
+          "expectedGraphDeploymentHash",
+          "targets"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_PredictedComponentV2_4f26e1a9af": {
+        "type": "object",
+        "properties": {
+          "targetIndex": {
+            "type": "number"
+          },
+          "targetId": {
+            "type": "string"
+          },
+          "account": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "expectedRuntimeCodeHash": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "componentRoles": {
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "const": "token"
+                },
+                {
+                  "const": "hook"
+                }
+              ]
+            }
+          },
+          "roleMask": {
+            "anyOf": [
+              {
+                "const": 0
+              },
+              {
+                "const": 1
+              },
+              {
+                "const": 2
+              },
+              {
+                "const": 3
+              }
+            ]
+          },
+          "effectiveSalt": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "initCodeHash": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "addressHookPermissionMask": {
+            "type": "number"
+          },
+          "declaredHookPermissionMask": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          }
+        },
+        "required": [
+          "targetIndex",
+          "targetId",
+          "account",
+          "expectedRuntimeCodeHash",
+          "componentRoles",
+          "roleMask",
+          "effectiveSalt",
+          "initCodeHash",
+          "addressHookPermissionMask",
+          "declaredHookPermissionMask"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_MultiRolePoolKeyV2_186c76520c": {
+        "type": "object",
+        "properties": {
+          "currency0": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "currency1": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "fee": {
+            "type": "number"
+          },
+          "tickSpacing": {
+            "type": "number"
+          },
+          "hooks": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          }
+        },
+        "required": [
+          "currency0",
+          "currency1",
+          "fee",
+          "tickSpacing",
+          "hooks"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_Shape_04ec455859": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "hook": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "poolKey": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_MultiRolePoolKeyV2_186c76520c"
+          },
+          "poolId": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "poolKeyHash": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          }
+        },
+        "required": [
+          "token",
+          "hook",
+          "poolKey",
+          "poolId",
+          "poolKeyHash"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_MultiRoleComponentV2_2f49e2cd69": {
+        "type": "object",
+        "properties": {
+          "resultIndex": {
+            "type": "number"
+          },
+          "account": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "runtimeCodeHash": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "roleMask": {
+            "anyOf": [
+              {
+                "const": 0
+              },
+              {
+                "const": 1
+              },
+              {
+                "const": 2
+              },
+              {
+                "const": 3
+              }
+            ]
+          },
+          "scope": {
+            "const": 1
+          }
+        },
+        "required": [
+          "resultIndex",
+          "account",
+          "runtimeCodeHash",
+          "roleMask",
+          "scope"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_MultiRoleStampRequestV2_3f8fbab35c": {
+        "type": "object",
+        "properties": {
+          "launchId": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "token": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "tokenRuntimeCodeHash": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "poolKey": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_MultiRolePoolKeyV2_186c76520c"
+          },
+          "hookRuntimeCodeHash": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "components": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_MultiRoleComponentV2_2f49e2cd69"
+            }
+          }
+        },
+        "required": [
+          "launchId",
+          "token",
+          "tokenRuntimeCodeHash",
+          "poolKey",
+          "hookRuntimeCodeHash",
+          "components"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_PreparedMultiRoleLaunchPermitV2_540a0f13ac": {
+        "type": "object",
+        "properties": {
+          "chainId": {
+            "type": "string"
+          },
+          "router": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "launchWallet": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "kind": {
+            "const": 1
+          },
+          "routePayloadHash": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "expectedResultHash": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "stampRequestHash": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "nonce": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "validAfter": {
+            "type": "string"
+          },
+          "deadline": {
+            "type": "string"
+          },
+          "valueWei": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "chainId",
+          "router",
+          "launchWallet",
+          "kind",
+          "routePayloadHash",
+          "expectedResultHash",
+          "stampRequestHash",
+          "nonce",
+          "validAfter",
+          "deadline",
+          "valueWei"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_Shape_db4d8bf97f": {
+        "type": "object",
+        "properties": {
+          "chainId": {
+            "type": "string"
+          },
+          "from": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "to": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "valueWei": {
+            "type": "string"
+          },
+          "functionName": {
+            "const": "launchAndStampV2"
+          },
+          "selector": {
+            "const": "0x3d9895de"
+          },
+          "calldataWithEmptySignature": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "signatureState": {
+            "const": "permit-authority-signature-required"
+          },
+          "preimageHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          }
+        },
+        "required": [
+          "chainId",
+          "from",
+          "to",
+          "valueWei",
+          "functionName",
+          "selector",
+          "calldataWithEmptySignature",
+          "signatureState",
+          "preimageHash"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_Shape_081bce0fa1": {
+        "type": "object",
+        "properties": {
+          "provenance": {
+            "const": "prepared-for-atomic-router-stamp"
+          },
+          "safety": {
+            "const": "not-asserted"
+          },
+          "approval": {
+            "const": "not-asserted"
+          }
+        },
+        "required": [
+          "provenance",
+          "safety",
+          "approval"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_PreparedLaunchArtifactV2_20512624d8": {
+        "type": "object",
+        "properties": {
+          "artifactHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "schemaVersion": {
+            "const": "programmable.prepared-custom-graph-launch.v2"
+          },
+          "graphSchemaVersion": {
+            "const": "programmable.custom-graph-bundle.v2"
+          },
+          "graphBundleHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "unboundGraphBundleHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "sourceBundleSha256": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "projectMetadata": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_ProjectMetadataV1_a0417e149e"
+          },
+          "projectMetadataHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "chainBindings": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_CustomGraphChainDeploymentBindingV2_38bd420799"
+          },
+          "callerConstraints": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_4d4efa93e4"
+          },
+          "timing": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_fe6cb07801"
+          },
+          "route": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_68d06bca96"
+          },
+          "predictedComponents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_PredictedComponentV2_4f26e1a9af"
+            }
+          },
+          "market": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_04ec455859"
+          },
+          "stampRequest": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_MultiRoleStampRequestV2_3f8fbab35c"
+          },
+          "stampRequestHash": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "permit": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_PreparedMultiRoleLaunchPermitV2_540a0f13ac"
+          },
+          "permitDigest": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "unsignedRouterTransaction": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_db4d8bf97f"
+          },
+          "claims": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_081bce0fa1"
+          }
+        },
+        "required": [
+          "artifactHash",
+          "schemaVersion",
+          "graphSchemaVersion",
+          "graphBundleHash",
+          "unboundGraphBundleHash",
+          "sourceBundleSha256",
+          "projectMetadata",
+          "projectMetadataHash",
+          "chainBindings",
+          "callerConstraints",
+          "timing",
+          "route",
+          "predictedComponents",
+          "market",
+          "stampRequest",
+          "stampRequestHash",
+          "permit",
+          "permitDigest",
+          "unsignedRouterTransaction",
+          "claims"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_Shape_c63cd25f59": {
+        "type": "object",
+        "properties": {
+          "graphBundleHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "sourceBundleSha256": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "projectMetadataHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "routePayloadHash": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "expectedResultHash": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "stampRequestHash": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          }
+        },
+        "required": [
+          "graphBundleHash",
+          "sourceBundleSha256",
+          "projectMetadataHash",
+          "routePayloadHash",
+          "expectedResultHash",
+          "stampRequestHash"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_ExactWalletTransactionMultiRoleV2_3065477514": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": {
+            "const": "programmable.exact-multi-role-wallet-transaction.v2"
+          },
+          "routerProtocol": {
+            "const": "programmable.multi-role-launch-stamp-router.v2"
+          },
+          "chainId": {
+            "type": "string"
+          },
+          "from": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "to": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "valueWei": {
+            "type": "string"
+          },
+          "selector": {
+            "const": "0x3d9895de"
+          },
+          "calldata": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "chainBindings": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_CustomGraphChainDeploymentBindingV2_38bd420799"
+          },
+          "validAfter": {
+            "type": "string"
+          },
+          "deadline": {
+            "type": "string"
+          },
+          "artifactHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "unsignedTransactionPreimageHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "signaturePatchHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "permitDigest": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "commitments": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_c63cd25f59"
+          },
+          "transactionPreimageHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "routerProtocol",
+          "chainId",
+          "from",
+          "to",
+          "valueWei",
+          "selector",
+          "calldata",
+          "chainBindings",
+          "validAfter",
+          "deadline",
+          "artifactHash",
+          "unsignedTransactionPreimageHash",
+          "signaturePatchHash",
+          "permitDigest",
+          "commitments",
+          "transactionPreimageHash"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_Shape_218dda6b72": {
+        "type": "object",
+        "properties": {
+          "controller": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "name": {
+            "type": "string"
+          },
+          "symbol": {
+            "type": "string"
+          },
+          "fundingMode": {
+            "anyOf": [
+              {
+                "const": "none"
+              },
+              {
+                "const": "wallet-transaction-value"
+              }
+            ]
+          },
+          "valueWei": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "controller",
+          "name",
+          "symbol",
+          "fundingMode",
+          "valueWei"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_MultiRoleApiWalletV2_4e23a13f84": {
+        "type": "object",
+        "properties": {
+          "apiWalletHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "schemaVersion": {
+            "const": "programmable.multi-role-custom-launch-api-wallet.v2"
+          },
+          "requestHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "rawRequestSha256": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "context": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_MultiRoleApiExpectedContextV2_414793b9dd"
+          },
+          "commitments": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_MultiRoleApiCommitmentsV2_91dd704878"
+          },
+          "walletTransaction": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_ExactWalletTransactionMultiRoleV2_3065477514"
+          },
+          "walletTransactionPreimageHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "artifactHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "expiresAt": {
+            "type": "string"
+          },
+          "launchSummary": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_218dda6b72"
+          }
+        },
+        "required": [
+          "apiWalletHash",
+          "schemaVersion",
+          "requestHash",
+          "rawRequestSha256",
+          "context",
+          "commitments",
+          "walletTransaction",
+          "walletTransactionPreimageHash",
+          "artifactHash",
+          "expiresAt",
+          "launchSummary"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_MultiRoleApiLifecycleResourceV2_87dcb4c44e": {
+        "type": "object",
+        "properties": {
+          "finality": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_MultiRoleFinalityProjectionV2_d3c7f2ded3"
+              }
+            ]
+          },
+          "sourceAssessment": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_MultiRoleSourceAssessmentV2_e0f4abb55f"
+              }
+            ]
+          },
+          "schemaVersion": {
+            "const": "programmable.multi-role-custom-launch-resource.v2"
+          },
+          "routeId": {
+            "const": "custom-launch:create:multi-role-v2"
+          },
+          "launchId": {
+            "type": "string"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "context": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_MultiRoleApiExpectedContextV2_414793b9dd"
+          },
+          "requestHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "rawRequestSha256": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "commitments": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_MultiRoleApiCommitmentsV2_91dd704878"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "const": "received"
+              },
+              {
+                "const": "validating"
+              },
+              {
+                "const": "action_required"
+              },
+              {
+                "const": "authorized"
+              },
+              {
+                "const": "awaiting_wallet_signature"
+              },
+              {
+                "const": "wallet_action_required"
+              },
+              {
+                "const": "submitted"
+              },
+              {
+                "const": "sequencer_soft_confirmed"
+              },
+              {
+                "const": "ethereum_posted"
+              },
+              {
+                "const": "finalized"
+              },
+              {
+                "const": "failed"
+              }
+            ]
+          },
+          "preparedArtifact": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_PreparedLaunchArtifactV2_20512624d8"
+              }
+            ]
+          },
+          "artifactHash": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              }
+            ]
+          },
+          "wallet": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_MultiRoleApiWalletV2_4e23a13f84"
+              }
+            ]
+          },
+          "walletTransactionPreimageHash": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              }
+            ]
+          },
+          "admissionReceiptHash": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "finality",
+          "sourceAssessment",
+          "schemaVersion",
+          "routeId",
+          "launchId",
+          "requestId",
+          "context",
+          "requestHash",
+          "rawRequestSha256",
+          "commitments",
+          "status",
+          "preparedArtifact",
+          "artifactHash",
+          "wallet",
+          "walletTransactionPreimageHash",
+          "admissionReceiptHash",
+          "createdAt",
+          "updatedAt"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_MultiRoleSourceEvaluationV2_3bb51880c0": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": {
+            "const": "programmable.multi-role-source-evaluation.v2"
+          },
+          "requestHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "rawRequestSha256": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "contextHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "artifactHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "disposition": {
+            "anyOf": [
+              {
+                "const": "source_supported"
+              },
+              {
+                "const": "evidence_required"
+              }
+            ]
+          },
+          "findingCodes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "sourceProof": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "additionalProperties": true
+              }
+            ]
+          },
+          "staticReportHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "productionAuthority": {
+            "const": false
+          },
+          "receiptHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "requestHash",
+          "rawRequestSha256",
+          "contextHash",
+          "artifactHash",
+          "disposition",
+          "findingCodes",
+          "sourceProof",
+          "staticReportHash",
+          "productionAuthority",
+          "receiptHash"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_Shape_5f4e9f75b6": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": {
+            "type": "string"
+          },
+          "routeId": {
+            "const": "custom-launch:create:multi-role-v2"
+          },
+          "source": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_MultiRoleSourceEvaluationV2_3bb51880c0"
+          },
+          "readiness": {
+            "type": "string"
+          },
+          "permitSigned": {
+            "type": "boolean"
+          },
+          "walletTransactionProduced": {
+            "type": "boolean"
+          },
+          "transactionBroadcast": {
+            "type": "boolean"
+          },
+          "remediation": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "routeId",
+          "source",
+          "readiness",
+          "permitSigned",
+          "walletTransactionProduced",
+          "transactionBroadcast",
+          "remediation"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_Shape_3dcdf2be75": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "const": "/v4/chains/4663/multi-role-custom-launches/guide.md"
+          },
+          "mediaType": {
+            "const": "text/markdown; charset=utf-8"
+          },
+          "contentSha256": {
+            "const": "sha256:d8f62c0600c5273ebc5e443528a2f6840b1fe01560f24f6849eda4fafb81407c"
+          },
+          "byteLength": {
+            "const": 45083
+          }
+        },
+        "required": [
+          "path",
+          "mediaType",
+          "contentSha256",
+          "byteLength"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_Shape_88c22132fd": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "const": "/v4/chains/4663/multi-role-custom-launches/client.mjs"
+          },
+          "mediaType": {
+            "const": "text/javascript; charset=utf-8"
+          },
+          "contentSha256": {
+            "const": "sha256:d03f8630b553a56632a5bbf73e67b300c36cd9019f97ab44f837cf6364ede825"
+          },
+          "byteLength": {
+            "const": 44069
+          },
+          "kind": {
+            "const": "transport-example"
+          },
+          "runtime": {
+            "const": "Node.js 24"
+          }
+        },
+        "required": [
+          "path",
+          "mediaType",
+          "contentSha256",
+          "byteLength",
+          "kind",
+          "runtime"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_Shape_75a28cb982": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "const": "/v4/chains/4663/multi-role-custom-launches/request-packer.mjs"
+          },
+          "mediaType": {
+            "const": "text/javascript; charset=utf-8"
+          },
+          "contentSha256": {
+            "const": "sha256:9ce4652336e2250ac8893e751e70b6100de6de59eb7c75670b546c3f39b51978"
+          },
+          "byteLength": {
+            "const": 287515
+          },
+          "kind": {
+            "const": "offline-request-packer"
+          },
+          "runtime": {
+            "const": "Node.js 24"
+          }
+        },
+        "required": [
+          "path",
+          "mediaType",
+          "contentSha256",
+          "byteLength",
+          "kind",
+          "runtime"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_Shape_305933b467": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "const": "/v4/chains/4663/multi-role-custom-launches/request-packer-reference.json"
+          },
+          "mediaType": {
+            "const": "application/json; charset=utf-8"
+          },
+          "contentSha256": {
+            "const": "sha256:d18ff2240bc72dd4c9435ed7e902f6477a48a97bc79ab463660ecd25bd98b0fa"
+          },
+          "byteLength": {
+            "const": 867737
+          },
+          "kind": {
+            "const": "inert-local-reference"
+          },
+          "productionAuthority": {
+            "const": false
+          }
+        },
+        "required": [
+          "path",
+          "mediaType",
+          "contentSha256",
+          "byteLength",
+          "kind",
+          "productionAuthority"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_Shape_aea7f919c6": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "const": "/v4/chains/4663/multi-role-custom-launches/request-packer-build.json"
+          },
+          "mediaType": {
+            "const": "application/json; charset=utf-8"
+          },
+          "contentSha256": {
+            "const": "sha256:4e73d59c31e01a3fc357aa64b1f06403357abd6449ec496e05fc6cf680c5fa1d"
+          },
+          "byteLength": {
+            "const": 18422
+          },
+          "kind": {
+            "const": "packer-build-provenance"
+          }
+        },
+        "required": [
+          "path",
+          "mediaType",
+          "contentSha256",
+          "byteLength",
+          "kind"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_Shape_3b4cfe6320": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "const": "published"
+          },
+          "configSchemaVersion": {
+            "const": "programmable.multi-role-request-pack-config.v2"
+          },
+          "requestSchemaVersion": {
+            "const": "programmable.multi-role-custom-launch-create-request.v2"
+          },
+          "offline": {
+            "const": true
+          },
+          "productionAuthority": {
+            "const": false
+          }
+        },
+        "required": [
+          "status",
+          "configSchemaVersion",
+          "requestSchemaVersion",
+          "offline",
+          "productionAuthority"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_Shape_9e6d01aeeb": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": {
+            "const": "programmable.multi-role-public-documentation.v2"
+          },
+          "guide": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_3dcdf2be75"
+          },
+          "client": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_88c22132fd"
+          },
+          "packer": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_75a28cb982"
+          },
+          "reference": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_305933b467"
+          },
+          "buildManifest": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_aea7f919c6"
+          },
+          "requestPackaging": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_3b4cfe6320"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "guide",
+          "client",
+          "packer",
+          "reference",
+          "buildManifest",
+          "requestPackaging"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_Shape_1b5da3fa97": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": {
+            "const": "programmable.multi-role-runtime-instruction-policy.v2"
+          },
+          "scope": {
+            "const": "all-physical-graph-targets"
+          },
+          "scan": {
+            "const": "complete-materialized-runtime"
+          },
+          "forbiddenInstructions": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "const": "SELFDESTRUCT"
+              },
+              {
+                "const": "CALLCODE"
+              },
+              {
+                "const": "DELEGATECALL"
+              }
+            ],
+            "minItems": 3,
+            "maxItems": 3
+          },
+          "pushImmediateBytes": {
+            "const": "skipped"
+          },
+          "metadataStripped": {
+            "const": false
+          },
+          "unreachableBytesExcluded": {
+            "const": false
+          },
+          "postTransactionLivenessProven": {
+            "const": false
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "scope",
+          "scan",
+          "forbiddenInstructions",
+          "pushImmediateBytes",
+          "metadataStripped",
+          "unreachableBytesExcluded",
+          "postTransactionLivenessProven"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_Shape_d947ad56c0": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": {
+            "const": "programmable.multi-role-runtime-instruction-policy.v3"
+          },
+          "policyId": {
+            "const": "programmable.runtime-instructions.reachable.v1"
+          },
+          "policyHash": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "scope": {
+            "const": "all-physical-graph-targets"
+          },
+          "scan": {
+            "const": "conservative-legacy-evm-control-flow"
+          },
+          "forbiddenInstructions": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "const": "SELFDESTRUCT"
+              },
+              {
+                "const": "CALLCODE"
+              },
+              {
+                "const": "DELEGATECALL"
+              }
+            ],
+            "minItems": 3,
+            "maxItems": 3
+          },
+          "entryPoints": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "const": "program-counter-zero"
+              },
+              {
+                "const": "every-valid-jumpdest"
+              }
+            ],
+            "minItems": 2,
+            "maxItems": 2
+          },
+          "fallthroughTerminators": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "const": "STOP"
+              },
+              {
+                "const": "JUMP"
+              },
+              {
+                "const": "RETURN"
+              },
+              {
+                "const": "REVERT"
+              },
+              {
+                "const": "INVALID"
+              }
+            ],
+            "minItems": 5,
+            "maxItems": 5
+          },
+          "pushImmediateBytes": {
+            "const": "skipped-over-entire-runtime"
+          },
+          "metadataStripped": {
+            "const": false
+          },
+          "unreachableBytesExcluded": {
+            "const": true
+          },
+          "unknownOpcodes": {
+            "const": "retain-fallthrough"
+          },
+          "unsupportedRuntimePrefixes": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "const": "0xef"
+              }
+            ],
+            "minItems": 1,
+            "maxItems": 1
+          },
+          "postTransactionLivenessProven": {
+            "const": false
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "policyId",
+          "policyHash",
+          "scope",
+          "scan",
+          "forbiddenInstructions",
+          "entryPoints",
+          "fallthroughTerminators",
+          "pushImmediateBytes",
+          "metadataStripped",
+          "unreachableBytesExcluded",
+          "unknownOpcodes",
+          "unsupportedRuntimePrefixes",
+          "postTransactionLivenessProven"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_Shape_0d8073f2f1": {
+        "type": "object",
+        "properties": {
+          "capabilities": {
+            "type": "string"
+          },
+          "guide": {
+            "const": "/v4/chains/4663/multi-role-custom-launches/guide.md"
+          },
+          "client": {
+            "const": "/v4/chains/4663/multi-role-custom-launches/client.mjs"
+          },
+          "requestPacker": {
+            "const": "/v4/chains/4663/multi-role-custom-launches/request-packer.mjs"
+          },
+          "requestPackerReference": {
+            "const": "/v4/chains/4663/multi-role-custom-launches/request-packer-reference.json"
+          },
+          "requestPackerBuild": {
+            "const": "/v4/chains/4663/multi-role-custom-launches/request-packer-build.json"
+          },
+          "create": {
+            "type": "string"
+          },
+          "preflight": {
+            "type": "string"
+          },
+          "list": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "transactionHint": {
+            "type": "string"
+          },
+          "finality": {
+            "type": "string"
+          },
+          "finalized": {
+            "type": "string"
+          },
+          "finalizedMetadata": {
+            "type": "string"
+          },
+          "finalizedImage": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "capabilities",
+          "guide",
+          "client",
+          "requestPacker",
+          "requestPackerReference",
+          "requestPackerBuild",
+          "create",
+          "preflight",
+          "list",
+          "status",
+          "transactionHint",
+          "finality",
+          "finalized",
+          "finalizedMetadata",
+          "finalizedImage"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_Shape_dbbf823d2b": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "reasonCodes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "status",
+          "reasonCodes"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_Shape_a8ec769358": {
+        "type": "object",
+        "properties": {
+          "sourceProofIsProductionAuthority": {
+            "type": "boolean"
+          },
+          "apiKeyIsWallet": {
+            "type": "boolean"
+          },
+          "controllerSignatureProduced": {
+            "type": "boolean"
+          },
+          "transactionBroadcast": {
+            "type": "boolean"
+          },
+          "finalityClaimed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "sourceProofIsProductionAuthority",
+          "apiKeyIsWallet",
+          "controllerSignatureProduced",
+          "transactionBroadcast",
+          "finalityClaimed"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_Shape_e4dbee84a9": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": {
+            "type": "string"
+          },
+          "routeId": {
+            "const": "custom-launch:create:multi-role-v2"
+          },
+          "chainId": {
+            "type": "string"
+          },
+          "caip2": {
+            "type": "string"
+          },
+          "context": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_MultiRoleApiExpectedContextV2_414793b9dd"
+              }
+            ]
+          },
+          "documentation": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_9e6d01aeeb"
+          },
+          "runtimeInstructionPolicy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_1b5da3fa97"
+              },
+              {
+                "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_d947ad56c0"
+              }
+            ]
+          },
+          "routes": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_0d8073f2f1"
+          },
+          "readiness": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_dbbf823d2b"
+          },
+          "safety": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_a8ec769358"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "routeId",
+          "chainId",
+          "caip2",
+          "context",
+          "documentation",
+          "runtimeInstructionPolicy",
+          "routes",
+          "readiness",
+          "safety"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_MultiRoleFinalizedImageV2_a8cf765dce": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "contentSha256": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "mediaType": {
+            "anyOf": [
+              {
+                "const": "image/png"
+              },
+              {
+                "const": "image/gif"
+              }
+            ]
+          },
+          "byteLength": {
+            "type": "number"
+          },
+          "width": {
+            "type": "number"
+          },
+          "height": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "path",
+          "contentSha256",
+          "mediaType",
+          "byteLength",
+          "width",
+          "height"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_Shape_fae586f656": {
+        "type": "object",
+        "properties": {
+          "resultIndex": {
+            "type": "number"
+          },
+          "account": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "runtimeCodeHash": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "roleMask": {
+            "anyOf": [
+              {
+                "const": 0
+              },
+              {
+                "const": 1
+              },
+              {
+                "const": 2
+              },
+              {
+                "const": 3
+              }
+            ]
+          },
+          "scope": {
+            "const": 1
+          }
+        },
+        "required": [
+          "resultIndex",
+          "account",
+          "runtimeCodeHash",
+          "roleMask",
+          "scope"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_Shape_8c74043708": {
+        "type": "object",
+        "properties": {
+          "contextHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "profileHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "chainDeploymentHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "providerProfileHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "requestHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "artifactHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "projectMetadataHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "releaseEvidenceHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          }
+        },
+        "required": [
+          "contextHash",
+          "profileHash",
+          "chainDeploymentHash",
+          "providerProfileHash",
+          "requestHash",
+          "artifactHash",
+          "projectMetadataHash",
+          "releaseEvidenceHash"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_Shape_90529fdf6f": {
+        "type": "object",
+        "properties": {
+          "sourcify": {
+            "const": "not_verified"
+          },
+          "blockscout": {
+            "const": "not_verified"
+          }
+        },
+        "required": [
+          "sourcify",
+          "blockscout"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_Shape_7a59ca1b4e": {
+        "type": "object",
+        "properties": {
+          "authority": {
+            "const": "protected-source-economic-admission"
+          },
+          "sourceProofHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "sourceArtifactHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "admissionReceiptHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "sourcePublication": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_90529fdf6f"
+          },
+          "indexerPublication": {
+            "const": "not_claimed"
+          }
+        },
+        "required": [
+          "authority",
+          "sourceProofHash",
+          "sourceArtifactHash",
+          "admissionReceiptHash",
+          "sourcePublication",
+          "indexerPublication"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_Shape_1a91fe0321": {
+        "type": "object",
+        "properties": {
+          "transactionHash": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "blockNumber": {
+            "type": "string"
+          },
+          "blockHash": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "logIndex": {
+            "type": "string"
+          },
+          "batchNumber": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "transactionHash",
+          "blockNumber",
+          "blockHash",
+          "logIndex",
+          "batchNumber"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_Shape_8fc3c6975f": {
+        "type": "object",
+        "properties": {
+          "blockNumber": {
+            "type": "string"
+          },
+          "blockHash": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "tag": {
+            "const": "finalized"
+          }
+        },
+        "required": [
+          "blockNumber",
+          "blockHash",
+          "tag"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_Shape_7953c669c1": {
+        "type": "object",
+        "properties": {
+          "checkpointType": {
+            "const": "ethereum_finalized"
+          },
+          "transactionHash": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "blockNumber": {
+            "type": "string"
+          },
+          "blockHash": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "blockTimestamp": {
+            "type": "string"
+          },
+          "transactionIndex": {
+            "type": "string"
+          },
+          "evidenceHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "observedAt": {
+            "type": "string"
+          },
+          "ethereumPosting": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_1a91fe0321"
+          },
+          "ethereumFinalizedCheckpoint": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_8fc3c6975f"
+          }
+        },
+        "required": [
+          "checkpointType",
+          "transactionHash",
+          "blockNumber",
+          "blockHash",
+          "blockTimestamp",
+          "transactionIndex",
+          "evidenceHash",
+          "observedAt",
+          "ethereumPosting",
+          "ethereumFinalizedCheckpoint"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_MultiRoleFinalizedMetadataV2_922b41c657": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": {
+            "const": "programmable.multi-role-finalized-metadata.v2"
+          },
+          "apiVersion": {
+            "const": "v4"
+          },
+          "routerProtocol": {
+            "const": "programmable.multi-role-launch-stamp-router.v2"
+          },
+          "platformId": {
+            "const": "programmable"
+          },
+          "category": {
+            "const": "custom"
+          },
+          "chainId": {
+            "const": "4663"
+          },
+          "caip2": {
+            "const": "eip155:4663"
+          },
+          "apiLaunchId": {
+            "type": "string"
+          },
+          "onchainLaunchId": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "chainDeploymentId": {
+            "type": "string"
+          },
+          "chainBindings": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_CustomGraphChainDeploymentBindingV2_38bd420799"
+          },
+          "projectMetadata": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_ProjectMetadataV4_6b9fd87523"
+          },
+          "image": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_MultiRoleFinalizedImageV2_a8cf765dce"
+          },
+          "market": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_04ec455859"
+          },
+          "components": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_fae586f656"
+            }
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_8c74043708"
+          },
+          "sourceVerification": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_7a59ca1b4e"
+          },
+          "onchain": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_7953c669c1"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "finalizedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "apiVersion",
+          "routerProtocol",
+          "platformId",
+          "category",
+          "chainId",
+          "caip2",
+          "apiLaunchId",
+          "onchainLaunchId",
+          "chainDeploymentId",
+          "chainBindings",
+          "projectMetadata",
+          "image",
+          "market",
+          "components",
+          "provenance",
+          "sourceVerification",
+          "onchain",
+          "createdAt",
+          "finalizedAt"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_MultiRoleFinalityProjectionV3_b37603f426": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": {
+            "const": "programmable.multi-role-finality-status.v3"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "const": "pending"
+              },
+              {
+                "const": "included"
+              },
+              {
+                "const": "ethereum_finalized"
+              }
+            ]
+          },
+          "transactionHash": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string",
+                "pattern": "^0x[0-9a-fA-F]*$"
+              }
+            ]
+          },
+          "inclusion": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_MultiRoleInclusionV2_da2dadb843"
+              }
+            ]
+          },
+          "evidenceHash": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              }
+            ]
+          },
+          "finalizedAt": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "requestId",
+          "state",
+          "transactionHash",
+          "inclusion",
+          "evidenceHash",
+          "finalizedAt"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_MultiRoleFinalizedImageV3_5e42ddbb37": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "contentSha256": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "mediaType": {
+            "anyOf": [
+              {
+                "const": "image/png"
+              },
+              {
+                "const": "image/gif"
+              }
+            ]
+          },
+          "byteLength": {
+            "type": "number"
+          },
+          "width": {
+            "type": "number"
+          },
+          "height": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "path",
+          "contentSha256",
+          "mediaType",
+          "byteLength",
+          "width",
+          "height"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_MultiRoleDerivedContractExpectationV1_d3917891fa": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "creatorAddress": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "creationNonce": {
+            "type": "string"
+          },
+          "address": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "runtimeCodeHash": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          }
+        },
+        "required": [
+          "id",
+          "creatorAddress",
+          "creationNonce",
+          "address",
+          "runtimeCodeHash"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_MultiRoleFinalizedMetadataV3_73ca4b8845": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": {
+            "const": "programmable.multi-role-finalized-metadata.v3"
+          },
+          "apiVersion": {
+            "const": "v4"
+          },
+          "routerProtocol": {
+            "const": "programmable.multi-role-launch-stamp-router.v2"
+          },
+          "platformId": {
+            "const": "programmable"
+          },
+          "category": {
+            "const": "custom"
+          },
+          "chainId": {
+            "const": "4663"
+          },
+          "caip2": {
+            "const": "eip155:4663"
+          },
+          "apiLaunchId": {
+            "type": "string"
+          },
+          "onchainLaunchId": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "chainDeploymentId": {
+            "type": "string"
+          },
+          "chainBindings": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_CustomGraphChainDeploymentBindingV2_38bd420799"
+          },
+          "projectMetadata": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_ProjectMetadataV4_6b9fd87523"
+          },
+          "image": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_MultiRoleFinalizedImageV3_5e42ddbb37"
+          },
+          "market": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_04ec455859"
+          },
+          "components": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_fae586f656"
+            }
+          },
+          "derivedContracts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_MultiRoleDerivedContractExpectationV1_d3917891fa"
+            }
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_8c74043708"
+          },
+          "sourceVerification": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_7a59ca1b4e"
+          },
+          "onchain": {
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_7953c669c1"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "finalizedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "apiVersion",
+          "routerProtocol",
+          "platformId",
+          "category",
+          "chainId",
+          "caip2",
+          "apiLaunchId",
+          "onchainLaunchId",
+          "chainDeploymentId",
+          "chainBindings",
+          "projectMetadata",
+          "image",
+          "market",
+          "components",
+          "derivedContracts",
+          "provenance",
+          "sourceVerification",
+          "onchain",
+          "createdAt",
+          "finalizedAt"
+        ],
+        "additionalProperties": false
+      },
+      "MultiRoleV2_MultiRoleV2_MultiRoleTransactionHintReadV1_6573f113f0": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": {
+            "const": "programmable.multi-role-transaction-hint-read.v1"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "launchId": {
+            "type": "string"
+          },
+          "transactionHash": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$"
+          },
+          "registered": {
+            "type": "boolean"
+          },
+          "rejectionReason": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "const": "invalid_operation"
+              },
+              {
+                "const": "invalid_durable_subject"
+              },
+              {
+                "const": "transaction_binding_mismatch"
+              },
+              {
+                "const": "transaction_reverted"
+              },
+              {
+                "const": "outside_original_permit_window"
+              }
+            ]
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "requestId",
+          "launchId",
+          "transactionHash",
+          "registered",
+          "rejectionReason"
+        ],
+        "additionalProperties": false
       }
     }
   },
@@ -83283,5 +89491,41 @@
         }
       ]
     }
+  },
+  "x-programmable-manifest-digest": "sha256:95f9e22e1cb6f3677ee921eecebcbaffbb24aa92836811892dfb4101772e611a",
+  "x-programmable-multi-role-compatibility": "additive_routes_from_existing_canonical_DTOs_preserving_original_component_semantics",
+  "x-programmable-multi-role-schema-source": {
+    "generator": "scripts/generate-multi-role-openapi-v2.mjs",
+    "sourceModules": [
+      {
+        "path": "src/domain/types-multi-role-api-v2.ts",
+        "contentSha256": "sha256:7d098d47f75ae84d65c0d75d36c0b94601814ff995dde56d49443c4f9c52ff27"
+      },
+      {
+        "path": "src/domain/types-multi-role-lifecycle-v2.ts",
+        "contentSha256": "sha256:239363e0c03eed3030bc38635d0699dba4b405664281e36b8acef1613c6c4a5a"
+      },
+      {
+        "path": "src/domain/types-multi-role-transaction-hint-read-v1.ts",
+        "contentSha256": "sha256:b4f9551e68ebbb4238d6501ee80af5e99b793b14dbc897a84190999640bf4a2c"
+      },
+      {
+        "path": "src/domain/types-finalized-feed-multi-role-v2.ts",
+        "contentSha256": "sha256:dae09fbb86171be3ab503cf346d5afa916ecf6a8c3aa63b2eedc512f0f847088"
+      },
+      {
+        "path": "src/domain/types-finalized-feed-multi-role-v3.ts",
+        "contentSha256": "sha256:f8871fc12d799c194539e73b2ec3cb030d0db2d999c0869b7910e427311f54ab"
+      },
+      {
+        "path": "src/postgres/v4/finality-multi-role-v3.ts",
+        "contentSha256": "sha256:a5f7175a91489cb1c0eb88cac7b92e78faf6bf1ea4afde969d2704f0ee5f2b86"
+      },
+      {
+        "path": "src/v4/service-multi-role-v2.ts",
+        "contentSha256": "sha256:8b945142bbbcd3b5c0fc934ef78c64fd129e0deeeaf5a8588287eeee2ba1d694"
+      }
+    ],
+    "semanticValidation": "Existing frozen parsers remain authoritative; generated DTO shapes do not replace cross-field and resource limits."
   }
 }
