@@ -51,12 +51,15 @@ describe("Robinhood profile account and chain boundaries", () => {
     mocks.presentation.mockResolvedValue([{ tokenAddress: row.tokenAddress }]);
     const result = await GET(new Request(`https://website.invalid/api/explore/robinhood/presentation?account=${account}&page=2`));
     expect(result.status).toBe(200);
-    expect(mocks.profile).toHaveBeenCalledWith(account, 2);
+    expect(mocks.profile).toHaveBeenCalledWith(account, 2, 50);
     expect(mocks.presentation).toHaveBeenCalledExactlyOnceWith([row]);
     expect(await result.json()).toEqual({ items: [{ tokenAddress: row.tokenAddress }] });
   });
 
-  it.each([`account=${account}&account=${other}`, `account=${account}&token=${row.tokenAddress}`, `account=${account}&q=V4`, `account=${account}&page=0`, "account=invalid"])("rejects an ambiguous presentation request: %s", async (query) => {
+  it.each([`account=${account}&account=${other}`, `account=${account}&token=${row.tokenAddress}`, `account=${account}&q=V4`, `account=${account}&page=0`, "account=invalid",
+    ...["", "0", "1", "10", "51", "05", "5.0", "-5", "5e0", "invalid"].map(size => `account=${account}&pageSize=${size}`),
+    `account=${account}&pageSize=5&pageSize=5`, `account=${account}&pageSize=5&pageSize=50`,
+  ])("rejects an ambiguous presentation request: %s", async (query) => {
     expect((await GET(new Request(`https://website.invalid/api/explore/robinhood/presentation?${query}`))).status).toBe(400);
     expect(mocks.profile).not.toHaveBeenCalled();
     expect(mocks.presentation).not.toHaveBeenCalled();

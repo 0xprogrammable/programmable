@@ -67,7 +67,8 @@ describe("Explore source filters and card pagination", () => {
   it("keeps the main token in an empty source and keeps Explore and profile page sizes separate", () => {
     const { saved, pinned } = catalog();
     expect(launchList(saved).page.size).toBe(50);
-    expect(profileLaunchList(saved, address(3)).page.size).toBe(5);
+    expect(profileLaunchList(saved, address(3)).page.size).toBe(50);
+    expect(profileLaunchList(saved, address(3), 1, now, 5).page.size).toBe(5);
     saved.moduleMode!.items = [];
     const result = launchList(saved, 9, "", now, { sort: "newest", mode: "module" }, undefined, 10);
     expect(result.items).toEqual([pinned]);

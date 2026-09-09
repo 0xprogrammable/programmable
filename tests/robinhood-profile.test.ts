@@ -13,6 +13,7 @@ vi.mock("@/lib/server/robinhood-presentation", () => ({
 }));
 
 import { GET } from "@/app/api/profile/robinhood/route";
+import { GET as GETPresentation } from "@/app/api/explore/robinhood/presentation/route";
 import type { RobinhoodLaunch } from "@/lib/robinhood-launches";
 import { profileLaunchList, type RobinhoodSnapshot } from "@/lib/server/robinhood-index/model";
 import { readRobinhoodProfileLaunches } from "@/lib/server/robinhood-index/read";
@@ -78,9 +79,9 @@ describe("Robinhood creator launch history", () => {
     const owned = Array.from({ length: 11 }, (_, index) => launch(index + 1));
     const others = Array.from({ length: 80 }, (_, index) => launch(index + 100, { creator: OTHER }));
     const saved = snapshot([...owned, ...others]);
-    const first = profileLaunchList(saved, OWNER);
-    const second = profileLaunchList(saved, OWNER, 2);
-    const third = profileLaunchList(saved, OWNER, 3);
+    const first = profileLaunchList(saved, OWNER, 1, NOW, 5);
+    const second = profileLaunchList(saved, OWNER, 2, NOW, 5);
+    const third = profileLaunchList(saved, OWNER, 3, NOW, 5);
     expect(first.page).toEqual({ number: 1, size: 5, totalItems: 11, totalPages: 3, hasMore: true });
     expect(second.page).toEqual({ number: 2, size: 5, totalItems: 11, totalPages: 3, hasMore: true });
     expect(third.page).toEqual({ number: 3, size: 5, totalItems: 11, totalPages: 3, hasMore: false });
@@ -88,7 +89,18 @@ describe("Robinhood creator launch history", () => {
     expect(second.items).toEqual(owned.slice(1, 6).toReversed());
     expect(third.items).toEqual([owned[0]]);
     expect([...first.items, ...second.items, ...third.items]).toEqual(owned.toReversed());
-    expect(profileLaunchList(saved, OWNER, 999_999)).toEqual(third);
+    expect(profileLaunchList(saved, OWNER, 999_999, NOW, 5)).toEqual(third);
+  });
+
+  it("keeps the legacy default at 50 rows across pages", () => {
+    const owned = Array.from({ length: 55 }, (_, index) => launch(index + 1));
+    const saved = snapshot([...owned, launch(90, { creator: OTHER })]);
+    const first = profileLaunchList(saved, OWNER);
+    const second = profileLaunchList(saved, OWNER, 2);
+    expect(first.page).toEqual({ number: 1, size: 50, totalItems: 55, totalPages: 2, hasMore: true });
+    expect(second.page).toEqual({ number: 2, size: 50, totalItems: 55, totalPages: 2, hasMore: false });
+    expect(first.items).toEqual(owned.slice(5).toReversed());
+    expect(second.items).toEqual(owned.slice(0, 5).toReversed());
   });
 
   it("orders by exact block and log position with a deterministic address tie-break", () => {
@@ -103,7 +115,7 @@ describe("Robinhood creator launch history", () => {
   it("distinguishes an empty ready profile from an unavailable index", () => {
     const ready = profileLaunchList(snapshot([launch(1, { creator: OTHER })]), OWNER, 9);
     expect(ready).toMatchObject({ status: "ready", items: [], updatedAt: new Date(NOW).toISOString() });
-    expect(ready.page).toEqual({ number: 1, size: 5, totalItems: 0, totalPages: 0, hasMore: false });
+    expect(ready.page).toEqual({ number: 1, size: 50, totalItems: 0, totalPages: 0, hasMore: false });
     expect(profileLaunchList(null, OWNER)).toMatchObject({
       chainId: 4663, account: OWNER, status: "unavailable", updatedAt: null, items: [],
     });
@@ -145,11 +157,12 @@ describe("Robinhood profile snapshot reader", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it("returns an account-scoped unavailable result without exposing storage errors", async () => {
+  it.each([5, 50] as const)("preserves requested size %s in an account-scoped unavailable result", async (pageSize) => {
     boundary.read.mockRejectedValue(new Error("private provider credentials"));
-    const result = await readRobinhoodProfileLaunches(getAddress(OWNER), 8);
+    const result = await readRobinhoodProfileLaunches(getAddress(OWNER), 8, pageSize);
     expect(result).toMatchObject({ account: OWNER, status: "unavailable", updatedAt: null, items: [] });
     expect(result.page.number).toBe(1);
+    expect(result.page.size).toBe(pageSize);
     expect(JSON.stringify(result)).not.toContain("private");
     expect(boundary.markets).not.toHaveBeenCalled();
     expect(boundary.write).not.toHaveBeenCalled();
@@ -170,7 +183,7 @@ describe("Robinhood public profile HTTP boundary", () => {
     boundary.read.mockResolvedValue({ snapshot: snapshot([owned]), etag: "saved" });
     const response = await GET(request(`account=${getAddress(OWNER)}`));
     expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ chainId: 4663, account: OWNER, status: "ready", items: [owned] });
+    expect(await response.json()).toMatchObject({ chainId: 4663, account: OWNER, status: "ready", items: [owned], page: { size: 50 } });
     expect(response.headers.get("cache-control")).toBe("public, max-age=0, s-maxage=15, stale-while-revalidate=30");
     expect(response.headers.get("x-content-type-options")).toBe("nosniff");
     expect(boundary.write).not.toHaveBeenCalled();
@@ -179,10 +192,27 @@ describe("Robinhood public profile HTTP boundary", () => {
   it("serves the requested creator page with no cross-account rows", async () => {
     const owned = Array.from({ length: 6 }, (_, index) => launch(index + 1));
     boundary.read.mockResolvedValue({ snapshot: snapshot([...owned, launch(90, { creator: OTHER })]), etag: "saved" });
-    const response = await GET(request(`account=${OWNER}&page=2`));
+    const response = await GET(request(`account=${OWNER}&page=2&pageSize=5`));
     expect(await response.json()).toMatchObject({
       items: [owned[0]], page: { number: 2, size: 5, totalItems: 6, totalPages: 2, hasMore: false },
     });
+  });
+
+  it.each([undefined, 50, 5] as const)("aligns page-two presentation with profile rows for pageSize=%s", async (pageSize) => {
+    const owned = Array.from({ length: 51 }, (_, index) => launch(index + 1));
+    boundary.read.mockResolvedValue({ snapshot: snapshot([...owned, launch(90, { creator: OTHER })]), etag: "saved" });
+    boundary.presentations.mockImplementation(async (items: RobinhoodLaunch[]) => items.map(row => ({ tokenAddress: row.tokenAddress })));
+    const query = `account=${OWNER}&page=2${pageSize === undefined ? "" : `&pageSize=${pageSize}`}`;
+    const size = pageSize ?? 50;
+    const profile = await (await GET(request(query))).json();
+    const expected = owned.toReversed().slice(size, size * 2);
+    expect(profile.items).toEqual(expected);
+    expect(profile.page.size).toBe(size);
+    const presentation = await GETPresentation(new Request(`https://website.invalid/api/explore/robinhood/presentation?${query}`));
+    expect(presentation.status).toBe(200);
+    expect(boundary.presentations).toHaveBeenCalledExactlyOnceWith(expected);
+    expect((await presentation.json()).items).toEqual(expected.map(row => ({ tokenAddress: row.tokenAddress })));
+    expect(boundary.write).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -191,6 +221,8 @@ describe("Robinhood public profile HTTP boundary", () => {
     `account=${OWNER}&chainId=1`, `account=${OWNER}&chainId=4663`, `account=${OWNER}&sort=newest`,
     `account=${OWNER}&page=`, `account=${OWNER}&page=0`, `account=${OWNER}&page=-1`,
     `account=${OWNER}&page=1.5`, `account=${OWNER}&page=01`, `account=${OWNER}&page=1000000`,
+    ...["", "0", "1", "10", "51", "05", "5.0", "-5", "5e0", "invalid"].map(size => `account=${OWNER}&pageSize=${size}`),
+    `account=${OWNER}&pageSize=5&pageSize=5`, `account=${OWNER}&pageSize=5&pageSize=50`,
   ])("rejects invalid query %s before any index read", async (query) => {
     const response = await GET(request(query));
     expect(response.status).toBe(400);

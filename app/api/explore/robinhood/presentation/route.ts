@@ -11,11 +11,13 @@ export async function GET(request: Request) {
   const account = query.get("account");
   if (account !== null) {
     const page = query.get("page") ?? "1";
+    const pageSize = query.get("pageSize") ?? "50";
     if (!isAddress(account) || !/^[1-9]\d{0,5}$/.test(page)
-      || [...query.keys()].some((key) => !["account", "page"].includes(key) || query.getAll(key).length !== 1)) {
+      || (pageSize !== "5" && pageSize !== "50")
+      || [...query.keys()].some((key) => !["account", "page", "pageSize"].includes(key) || query.getAll(key).length !== 1)) {
       return Response.json({ error: "invalid_query" }, { status: 400, headers: { "cache-control": "no-store" } });
     }
-    const profile = await readRobinhoodProfileLaunches(account.toLowerCase(), Number(page));
+    const profile = await readRobinhoodProfileLaunches(account.toLowerCase(), Number(page), pageSize === "5" ? 5 : 50);
     const items = await readRobinhoodPresentations(profile.items);
     return Response.json({ items }, { headers: {
       "cache-control": "public, max-age=0, s-maxage=60, stale-while-revalidate=60",

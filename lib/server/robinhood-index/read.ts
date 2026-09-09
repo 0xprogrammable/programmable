@@ -4,6 +4,7 @@ import { DEFAULT_EXPLORE_FILTERS, type RobinhoodExploreFilters } from "@/lib/rob
 import { isVisibleRobinhoodToken } from "@/lib/robinhood-explore-policy";
 import { readRobinhoodMarkets, readRobinhoodPresentations } from "@/lib/server/robinhood-presentation";
 import type { RobinhoodCoinMarket, RobinhoodCoinPresentation } from "@/lib/robinhood-presentation";
+import type { RobinhoodProfilePageSize } from "@/lib/robinhood-launches";
 import { launchList, moduleModeSnapshots, profileLaunchList, snapshotLaunches } from "./model";
 import { indexStore } from "./store";
 
@@ -41,8 +42,8 @@ export async function readRobinhoodToken(address: string) {
   } catch { return { status: "unavailable" as const, updatedAt: null, token: null }; }
 }
 
-export async function readRobinhoodProfileLaunches(account: string, page = 1) {
-  const unavailable = profileLaunchList(null, account, page);
-  try { return profileLaunchList(await readSnapshot(), unavailable.account, page); }
+export async function readRobinhoodProfileLaunches(account: string, page = 1, pageSize: RobinhoodProfilePageSize = 50) {
+  const unavailable = profileLaunchList(null, account, page, Date.now(), pageSize);
+  try { return profileLaunchList(await readSnapshot(), unavailable.account, page, Date.now(), pageSize); }
   catch { return unavailable; }
 }

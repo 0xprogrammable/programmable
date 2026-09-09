@@ -41,23 +41,26 @@ export async function createProfileLaunchPaginationServer() {
       if (!paths.includes(url.pathname)) return originalFetch(input,init);
       const account = url.searchParams.get('account') || control.account;
       const requested = Number(url.searchParams.get('page') || '1');
-      control.requests.push({path:url.pathname,account,page:requested});
+      const pageSize = url.searchParams.get('pageSize') ?? '50';
+      if(pageSize !== '5' && pageSize !== '50') return Response.json({error:'invalid_query'},{status:400});
+      const size = Number(pageSize);
+      control.requests.push({path:url.pathname,account,page:requested,pageSize:size});
       if(control.delay) await new Promise(resolve => setTimeout(resolve,control.delay));
       if(init?.signal?.aborted) throw new DOMException('Aborted','AbortError');
       if(control.fail || (url.pathname === '/api/profile/robinhood' && requested === control.failPage)) {
         return Response.json({error:'fixture_unavailable'},{status:503});
       }
       const totalItems = control.totalItems;
-      const totalPages = Math.ceil(totalItems/5);
+      const totalPages = Math.ceil(totalItems/size);
       const number = Math.max(1,Math.min(requested,totalPages));
-      const items = rows(account,totalItems).slice((number-1)*5,number*5);
+      const items = rows(account,totalItems).slice((number-1)*size,number*size);
       if(url.pathname === '/api/profile/projects') return Response.json({schemaVersion:'programmable.creator-project-list.v1',projects:projects(account,totalItems)});
       if(url.pathname === '/api/explore/robinhood/presentation') return Response.json({items:items.map(row => ({
         tokenAddress:row.tokenAddress, imageUrl:'/brand/loop/programmable-module-token-default-v1.png',
         description:null,links:[],market:null
       }))});
       return Response.json({chainId:4663,account,status:control.status,updatedAt:new Date().toISOString(),items,
-        page:{number,size:5,totalItems,totalPages,hasMore:number<totalPages}});
+        page:{number,size,totalItems,totalPages,hasMore:number<totalPages}});
     };
     export function FixtureProvider({children}) {
       const [value,setValue] = useState(initial);

@@ -62,11 +62,12 @@ export type RobinhoodLaunchList = Readonly<{
 }>;
 
 export const ROBINHOOD_PROFILE_PAGE_SIZE = 5;
+export type RobinhoodProfilePageSize = typeof ROBINHOOD_PROFILE_PAGE_SIZE | 50;
 
 export type RobinhoodProfileLaunchList = Omit<RobinhoodLaunchList, "page"> & Readonly<{
   account: string;
   page: Omit<RobinhoodLaunchList["page"], "size"> & Readonly<{
-    size: typeof ROBINHOOD_PROFILE_PAGE_SIZE;
+    size: RobinhoodProfilePageSize;
   }>;
 }>;
 

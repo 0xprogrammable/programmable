@@ -8,7 +8,7 @@ import { MODULE_TOKEN_FALLBACK_IMAGE, RobinhoodCoinArtwork } from "@/components/
 import { useLiveDataRefresh } from "@/components/use-live-data-refresh";
 import { useRobinhoodPresentation } from "@/components/use-robinhood-presentation";
 import { readRobinhoodProfileResponse } from "@/lib/profile/robinhood-profile";
-import { isRobinhoodModuleLaunch, type RobinhoodProfileLaunchList } from "@/lib/robinhood-launches";
+import { isRobinhoodModuleLaunch, ROBINHOOD_PROFILE_PAGE_SIZE, type RobinhoodProfileLaunchList } from "@/lib/robinhood-launches";
 import { coinAge, coinTicker } from "@/lib/robinhood-presentation";
 import styles from "./robinhood-profile-launches.module.css";
 
@@ -35,7 +35,7 @@ function RobinhoodAccountLaunches({ account }: { account: string }) {
   const scoped = data?.account === account.toLowerCase() ? data : null;
   const items = scoped?.items ?? [];
   const shownPage = scoped?.page.number ?? page;
-  const presentationQuery = new URLSearchParams({ account: account.toLowerCase(), page: String(shownPage) }).toString();
+  const presentationQuery = new URLSearchParams({ account: account.toLowerCase(), page: String(shownPage), pageSize: String(ROBINHOOD_PROFILE_PAGE_SIZE) }).toString();
   const presentation = useRobinhoodPresentation(presentationQuery, items.length > 0);
   const details = new Map(presentation.items.map((item) => [item.tokenAddress.toLowerCase(), item]));
   const notice = failed
@@ -57,7 +57,7 @@ function RobinhoodAccountLaunches({ account }: { account: string }) {
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 10_000);
     queueMicrotask(() => { if (!controller.signal.aborted) { setLoading(true); setFailed(false); } });
-    const query = new URLSearchParams({ account: account.toLowerCase(), page: String(page) });
+    const query = new URLSearchParams({ account: account.toLowerCase(), page: String(page), pageSize: String(ROBINHOOD_PROFILE_PAGE_SIZE) });
     void fetch(`/api/profile/robinhood?${query}`, { signal: controller.signal, headers: { accept: "application/json" } })
       .then(async (response) => {
         if (!response.ok) throw new Error("Profile unavailable");
