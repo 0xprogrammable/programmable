@@ -33,7 +33,7 @@
 .promptDetails { margin-top: 8px; }
 .promptDetails summary { align-items: center; border-radius: 8px; color: var(--module-muted); cursor: pointer; display: inline-flex; font-size: 14px; gap: 8px; line-height: 20px; list-style: none; min-height: 44px; }
 .promptDetails summary::-webkit-details-marker { display: none; }
-.promptDetails[open] summary svg { transform: rotate(180deg); }
+.promptDetails[open]:not([data-disclosure-closing]) summary svg { transform: rotate(180deg); }
 .promptDetails pre { background: #000; border: 1px solid var(--module-line); border-radius: 12px; color: var(--module-muted); font-family: var(--font-instrument), sans-serif; font-size: 14px; line-height: 24px; margin: 8px 0 16px; overflow-wrap: anywhere; padding: 16px; white-space: pre-wrap; }
 .reviewNote { color: var(--module-muted); font-size: 14px; line-height: 20px; margin: 16px 0 0; text-wrap: pretty; }
 .resources { display: flex; flex-wrap: wrap; gap: 24px; margin-top: 16px; }

@@ -55,7 +55,7 @@
 .optionalDetails > summary, .moduleAbout > summary, .moduleSettings > summary { align-items: center; color: var(--engine-ink); cursor: pointer; display: flex; font-size: 14px; gap: 8px; line-height: 20px; list-style: none; min-height: 44px; padding-block: 8px; }
 .optionalDetails > summary::-webkit-details-marker, .moduleAbout > summary::-webkit-details-marker, .moduleSettings > summary::-webkit-details-marker { display: none; }
 .optionalDetails > summary > svg, .moduleAbout > summary > svg, .moduleSettings > summary > svg { color: var(--engine-muted); flex: 0 0 auto; margin-left: auto; }
-.optionalDetails[open] > summary > svg, .moduleAbout[open] > summary > svg, .moduleSettings[open] > summary > svg { transform: rotate(180deg); }
+.optionalDetails[open]:not([data-disclosure-closing]) > summary > svg, .moduleAbout[open]:not([data-disclosure-closing]) > summary > svg, .moduleSettings[open]:not([data-disclosure-closing]) > summary > svg { transform: rotate(180deg); }
 .optionalLabel { color: var(--engine-muted); font-size: 12px; margin-left: auto; }
 .optionalDetails > summary > .optionalLabel + svg { margin-left: 0; }
 .detailsBody { min-width: 0; padding-block: 12px 16px; }

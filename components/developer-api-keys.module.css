@@ -69,7 +69,7 @@
 .connectionOptions > summary > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .connectionOptions > summary small { color: var(--webde-muted); flex: none; font-size: 14px; line-height: 20px; }
 .connectionOptions > summary svg { color: var(--webde-muted); flex: none; }
-.connectionOptions[open] > summary svg { transform: rotate(180deg); }
+.connectionOptions[open]:not([data-disclosure-closing]) > summary svg { transform: rotate(180deg); }
 .connectionOptionsBody { display: grid; gap: 16px; padding: 8px 16px 16px; }
 
 .expirySelect { min-width: 0; position: relative; }
@@ -116,7 +116,7 @@
 .keyActions .iconButton { min-width: 44px; padding: 0; width: 44px; }
 .keyDetails { grid-column: 1 / -1; min-width: 0; }
 .keyDetails > summary { align-items: center; border-radius: 8px; color: var(--webde-muted); cursor: pointer; display: inline-flex; font-size: 14px; gap: 8px; line-height: 20px; list-style: none; min-height: 44px; }
-.keyDetails[open] > summary > svg { transform: rotate(180deg); }
+.keyDetails[open]:not([data-disclosure-closing]) > summary > svg { transform: rotate(180deg); }
 .keyDetailBody { display: grid; gap: 8px; padding: 0 0 16px; }
 .keyDetailBody > code { color: var(--webde-muted); font-family: var(--font-plex-mono), monospace; font-size: 12px; line-height: 20px; overflow-wrap: anywhere; }
 .keyMetadata { display: grid; gap: 16px; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 8px 0; }
@@ -226,8 +226,9 @@
 
 @media (max-width: 600px) { .hero h1 { font-size: 28px; line-height: 36px; } .intro { min-height: 40px; } }
 .workspace:is(details) { display: block; }
+.workspace:is(details) > section + section { margin-top: 32px; }
 .keySettingsSummary { align-items: center; border: 1px solid var(--api-line); border-radius: 12px; cursor: pointer; display: flex; font-size: 14px; gap: 16px; justify-content: space-between; list-style: none; min-height: 48px; padding: 12px 16px; }
 .keySettingsSummary::-webkit-details-marker { display: none; }
 .keySettingsSummary:focus-visible { outline: 2px solid #e786b2; outline-offset: 3px; }
 .workspace[open] > .keySettingsSummary { margin-bottom: 16px; }
-.workspace[open] > .keySettingsSummary svg { transform: rotate(180deg); }
+.workspace[open]:not([data-disclosure-closing]) > .keySettingsSummary svg { transform: rotate(180deg); }
