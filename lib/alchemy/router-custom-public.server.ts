@@ -765,26 +765,15 @@ export async function readFinalizedRouterCustomIdentitySnapshotCoreV1(
   return await readProductionRouterCustomIdentitySnapshotV1(options);
 }
 
-/** Reuse fresh saved bytes; the shared refresher owns deduplication and persistence. */
+/** The core owns freshness, its shared cache, and the saved-identity fallback. */
 export async function readWebsiteRouterCustomIdentitySnapshotV1(
   dependencies: Readonly<{
-    now?: () => number;
-    readSaved?: () => Promise<RouterCustomIdentitySnapshotV1>;
     refresh?: () => Promise<RouterCustomIdentitySnapshotV1>;
   }> = {},
 ) {
   const refresh = dependencies.refresh ?? readFinalizedRouterCustomIdentitySnapshotCoreV1;
-  let saved: RouterCustomIdentitySnapshotV1;
-  try {
-    saved = await (dependencies.readSaved ?? readSavedRouterCustomIdentitySnapshotV1)();
-  } catch {
-    return refresh();
-  }
-  const age = (dependencies.now ?? Date.now)() - Date.parse(saved.generatedAt);
-  if (age >= -ROUTER_CUSTOM_SNAPSHOT_MAXIMUM_FUTURE_SKEW_MS && age <= ROUTER_CUSTOM_SNAPSHOT_CACHE_TTL_MS) {
-    return saved;
-  }
-  // The core preserves saved identities on provider failure and rejects conflicts.
+  // Saved bytes are deliberately parsed as last-known-good, even when recently
+  // written. Reading them first would bypass a successful current observation.
   return refresh();
 }
 
