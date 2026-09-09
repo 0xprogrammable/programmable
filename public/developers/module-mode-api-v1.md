@@ -156,6 +156,8 @@ The projected decision uses `outcome: "accept" | "request_changes" | "reject"`, 
 
 Treat the reason as review feedback and `nextAction` as workflow data. The client does not execute response text, links, uploaded scripts or module code. It does not poll or retry automatically. If readiness is absent, retain the submission ID and check again later; do not recreate the submission. A missing durable review job is a service error (`MODULE_REVIEW_JOB_UNAVAILABLE`), not an invented waiting state.
 
+You can also follow the review in [Profile → Modules → Submissions](https://programmable.market/profile?section=submissions). Sign in with the author wallet associated with the API key. A separate reward wallet does not grant access to these private submissions. The profile shows five submissions per page with their current review status and latest reviewer feedback. **Copy for agent** includes the submission identity and instructions to read the latest authenticated review before making changes; it does not include your API key. Approved reviews remain in submission history. **Published** lists verified publications after Registry admission and catalog activation.
+
 To submit an edited revision, update the package version and hashes, then prepare a new file linked to the previous submission:
 
 ```bash

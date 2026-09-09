@@ -84,6 +84,8 @@ Prepare and test the package locally, save the exact request and submit it with 
 
 The intake receipt records that the package was received. Read the separate review resource for current progress and `nextAction`. `awaiting_plan` means the platform must select the build plan or establish missing review coverage. Keep the original submission while it waits for a plan. If the source changes, prepare a linked new version. Review acceptance is followed by registry admission, deployed-code verification and catalog activation. Availability is determined by the active release and catalog.
 
+Sign in with the API key's author wallet to see [Profile → Modules → Submissions](https://programmable.market/profile?section=submissions). A different reward wallet does not own the private history. Each entry shows its current review status and feedback. Use **Copy for agent** to continue that submission with your agent's existing key. The prompt asks it to read the latest review before acting and contains no API key. **Published** shows verified publications; review approval alone keeps the entry in submission history.
+
 After acceptance, the author's `modules:read` key can download the exact plan, artifact and decision through the [HTTP build export](https://programmable.market/developers/module-mode-api-v1.md#export-an-accepted-build-over-http). The response is bounded to 3 MiB. The existing CLI has no export command and keeps its 1 MiB response limit. The export grants no publication authority: the existing authorized operator still performs the protected publication steps, and launch or management transactions require their existing wallet authority.
 
 ## Existing coins and indexing
