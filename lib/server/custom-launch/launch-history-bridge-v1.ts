@@ -263,6 +263,7 @@ type DeveloperCustomLaunch = DeveloperCustomLaunchV1
 type BackendHistoryVersion = "v1" | "v2" | "v3" | "v4";
 
 export interface DeveloperLaunchHistoryBridgeV1 {
+  universal(request: Request, launchId?: string, stepId?: string, transactionHint?: boolean): Promise<Response>;
   list(request: Request): Promise<Response>;
   get(request: Request, launchId: string): Promise<Response>;
   submitFundingAuthorization(
@@ -341,6 +342,70 @@ export function createDeveloperLaunchHistoryBridgeV1(input: Readonly<{
   };
 
   return Object.freeze({
+    async universal(request: Request, launchId?: string, stepId?: string, transactionHint?: boolean) {
+      try {
+        requireJsonResponse(request);
+        const write = Boolean(stepId || transactionHint);
+        if (request.method !== (write ? "POST" : "GET")) return errorResponse(405, "method_not_allowed", write ? "POST" : "GET");
+        const search = new URL(request.url).searchParams;
+        if ([...search.keys()].some(key => !["walletAddress", "source", "cursor"].includes(key) || search.getAll(key).length !== 1)) throw new BrowserRequestErrorV1(400, "request_schema_invalid");
+        const source = search.get("source");
+        if (source !== "custom_launch_plan_v1" && source !== "multi_role_v2") throw new BrowserRequestErrorV1(400, "request_schema_invalid");
+        if (launchId && !UUID.test(launchId) || stepId && !/^[A-Za-z0-9._:-]{1,128}$/.test(stepId)) throw new BrowserRequestErrorV1(404, "launch_not_found");
+        if (stepId && source !== "custom_launch_plan_v1" || transactionHint && (source !== "multi_role_v2" || !launchId || stepId) || launchId && search.has("cursor")) throw new BrowserRequestErrorV1(400, "request_schema_invalid");
+        const principal = await input.authenticator.authenticate(request);
+        const controller = requireLinkedWallet(principal, search.get("walletAddress") ?? "");
+        const lane = source === "custom_launch_plan_v1" ? "custom-launch-plans" : "custom-launches-multi-role";
+        const suffix = launchId ? `/${encodeURIComponent(launchId)}${stepId ? `/steps/${encodeURIComponent(stepId)}/proofs` : transactionHint ? "/transaction-hints" : ""}` : "";
+        const url = new URL(`/v4/chains/4663/wallet-admin/${lane}${suffix}`, backendBaseUrl);
+        if (!launchId) {
+          // Plans contain the exact source bundle and owner evidence. Page one complete resource at a time.
+          url.searchParams.set("limit", source === "custom_launch_plan_v1" ? "1" : "5");
+          const cursor = search.get("cursor");
+          if (cursor) {
+            if (cursor.length > 4096 || /[\u0000-\u001f]/.test(cursor)) throw new BrowserRequestErrorV1(400, "pagination_invalid");
+            url.searchParams.set("cursor", cursor);
+          }
+        }
+        let body = Buffer.alloc(0);
+        if (write) {
+          requireJsonRequest(request);
+          const value = jsonRecord(await readBoundedBrowserJson(request));
+          if (Object.keys(value).length !== 2 || value.schemaVersion !== (transactionHint ? "programmable.multi-role-transaction-hint.v2" : "programmable.custom-launch-plan-step-proof.v1")
+            || typeof value.transactionHash !== "string" || !LOWER_BYTES32.test(value.transactionHash)) throw new BrowserRequestErrorV1(400, "request_schema_invalid");
+          body = Buffer.from(JSON.stringify(value));
+        }
+        const method = write ? "POST" as const : "GET" as const;
+        const backend = await input.fetchBackend(url, { method,
+          headers: walletAdminHeaders(principal, controller, method, url, body),
+          ...(write ? { body } : {}), cache: "no-store", redirect: "error",
+          signal: AbortSignal.any([request.signal, AbortSignal.timeout(timeoutMs)]) });
+        if (!backend.ok) return mappedBackendError(backend).then(mappedError);
+        const resource = jsonRecord(await readBoundedBackendJson(backend, source === "custom_launch_plan_v1" ? 2 * MAXIMUM_BACKEND_V4_BODY_BYTES : MAXIMUM_BACKEND_V4_BODY_BYTES));
+        if (write) return jsonResponse(backend.status, resource);
+        const resources = launchId ? [resource] : source === "custom_launch_plan_v1" ? resource.plans : resource.launches;
+        if (!Array.isArray(resources) || resources.length > (launchId ? 1 : 5)) throw new BackendContractErrorV1();
+        const entries = resources.map(candidate => {
+          const item = jsonRecord(candidate);
+          const id = source === "custom_launch_plan_v1" ? item.planId : item.launchId;
+          if (typeof id !== "string" || !UUID.test(id) || launchId && id !== launchId
+            || item.schemaVersion !== (source === "custom_launch_plan_v1" ? "programmable.custom-launch-plan-resource.v1" : "programmable.multi-role-custom-launch-resource.v2")) throw new BackendContractErrorV1();
+          if (source === "custom_launch_plan_v1") {
+            const plan = jsonRecord(item.plan);
+            const owner = jsonRecord(plan.controller);
+            if (plan.chainId !== "4663" || typeof owner.address !== "string" || owner.address.toLowerCase() !== controller.toLowerCase()) throw new BackendContractErrorV1();
+          } else {
+            const context = jsonRecord(item.context);
+            if (context.chainId !== "4663") throw new BackendContractErrorV1();
+          }
+          // The signed wallet-admin route authenticated the original controller even before preparation.
+          return { sourceVersion: source, controller, resource: item };
+        });
+        if (!launchId && !(resource.nextCursor === null || typeof resource.nextCursor === "string" && resource.nextCursor.length <= 4096)) throw new BackendContractErrorV1();
+        return jsonResponse(200, { schemaVersion: "programmable.website-launch-history.v1", launches: entries,
+          nextCursor: launchId ? null : resource.nextCursor });
+      } catch (error) { return mappedError(error); }
+    },
     async list(request: Request) {
       if (request.method !== "GET") {
         return errorResponse(405, "method_not_allowed", "GET");

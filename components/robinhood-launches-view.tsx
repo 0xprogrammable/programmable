@@ -15,10 +15,12 @@ import { rememberRobinhoodTokenPresentations } from "@/components/robinhood-pres
 import { coinAge, coinTicker, mergeRobinhoodPresentations, type RobinhoodCoinPresentation } from "@/lib/robinhood-presentation";
 import { activeExploreFilterCount, DEFAULT_EXPLORE_FILTERS, ROBINHOOD_EXPLORE_PAGE_SIZE, sameRobinhoodExploreRequest, type RobinhoodExploreFilters, type RobinhoodExploreRequest } from "@/lib/robinhood-explore-filters";
 import { isRobinhoodModuleLaunch } from "@/lib/robinhood-launches";
+import { isRobinhoodProjectedLaunch } from "@/lib/custom-launch/launch-projection-v1";
 import { isPinnedRobinhoodToken } from "@/lib/robinhood-explore-policy";
 import styles from "@/components/robinhood-launches-view.module.css";
 
 type Launch = {
+  launchProjection?: import("@/lib/custom-launch/launch-plan-v1").LaunchProjectionV1;
   launchId: string;
   tokenAddress: string;
   hookAddress: string | null;
@@ -85,6 +87,7 @@ function isText(value: unknown): value is string | null {
 
 function isLaunch(value: unknown, chainId: ViewChainId): value is Launch {
   if (!isObject(value)) return false;
+  if (chainId === 4663 && isRobinhoodProjectedLaunch(value)) return true;
   return typeof value.launchId === "string" && (chainId === 4663 ? HASH.test(value.launchId) : value.launchId.length > 0 && value.launchId.length <= 256)
     && (chainId !== 1 || value.category === "classic" || value.category === "custom")
     && (value.sourceKind === undefined || isRobinhoodModuleLaunch(value))
@@ -360,7 +363,7 @@ function IndexedLaunchList({ embedded, enabled, chainId }: { embedded: boolean; 
                   />
                   <div className={styles.identity}>
                     <div className={styles.nameRow}>
-                      <strong className={styles.name} title={launch.name?.trim() || "Unnamed token"}>{launch.name?.trim() || "Unnamed token"}</strong>
+                      <strong className={styles.name} title={launch.name?.trim() || (launch.launchProjection ? "Unnamed contract" : "Unnamed token")}>{launch.name?.trim() || (launch.launchProjection ? "Unnamed contract" : "Unnamed token")}</strong>
                     </div>
                     <span className={styles.symbol} title={launch.symbol || undefined}>{coinTicker(launch.symbol)}</span>
                     <span className={styles.mode}>{launch.category === "classic" ? "Classic" : isRobinhoodModuleLaunch(launch) ? "Module" : "Custom"}</span>

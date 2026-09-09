@@ -1,4 +1,5 @@
 import { MODULE_MODE_ECONOMICS_POLICY_V2 } from "./module-mode/release";
+import type { LaunchProjectionV1 } from "./custom-launch/launch-plan-v1";
 
 export type RobinhoodLaunch = Readonly<{
   routerAddress: string | null;
@@ -9,7 +10,10 @@ export type RobinhoodLaunch = Readonly<{
   poolManager: string | null;
   poolId: string | null;
   stampHash: string | null;
-  sourceKind?: "module-native-v1" | "module-native-v2" | "module-engine-v1";
+  sourceKind?: "module-native-v1" | "module-native-v2" | "module-engine-v1" | "multi-role-v2" | "custom-launch-plan-v1";
+  /** Additive normalized provenance; absent on historical rows. */
+  launchProjection?: LaunchProjectionV1;
+  primaryAssetAddress?: string | null;
   sourceAddress?: string;
   sourceReleaseDigest?: string;
   recipeHash?: string;
@@ -87,7 +91,7 @@ export type RobinhoodNativeModuleLaunch = RobinhoodLaunch & Readonly<{
   moduleFamilyIds: readonly string[];
 }>;
 
-export function isRobinhoodModuleSourceKind(value: unknown): value is NonNullable<RobinhoodLaunch["sourceKind"]> {
+export function isRobinhoodModuleSourceKind(value: unknown): value is "module-native-v1" | "module-native-v2" | "module-engine-v1" {
   return value === "module-native-v1" || value === "module-native-v2" || value === "module-engine-v1";
 }
 

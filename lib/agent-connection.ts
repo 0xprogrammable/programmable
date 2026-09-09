@@ -24,6 +24,15 @@ export const PROGRAMMABLE_AGENT_ENTRY = Object.freeze({
     manageModuleCoin: "https://programmable.market/launch/modules/manage/{tokenAddress}",
   },
   workflows: {
+    customLaunchPlan: {
+      chainId: 4663,
+      scopes: ["custom-launch:create", "custom-launch:read"],
+      manifest: "https://api.programmable.market/v4/chains/4663/custom-launch-contract/manifest.json",
+      setup: "https://api.programmable.market/v4/chains/4663/custom-launch-contract/agent-setup.json",
+      openApi: "https://programmable.market/openapi/custom-launch-v4.2.json",
+      capabilities: "https://api.programmable.market/v4/chains/4663/custom-launch-capabilities",
+      availability: "Read the live operation status and bind the manifest digest before packing. Static artifacts do not activate writes.",
+    },
     customLaunch: {
       scopes: ["custom-launch:create", "custom-launch:read"],
       guide: "https://programmable.market/developer-reference/custom-launch",
@@ -38,7 +47,7 @@ export const PROGRAMMABLE_AGENT_ENTRY = Object.freeze({
       guide: "https://api.programmable.market/v4/chains/4663/multi-role-custom-launches/guide.md",
       client: "https://api.programmable.market/v4/chains/4663/multi-role-custom-launches/client.mjs",
       availability: "Check current capabilities readiness and context before packing or authenticated preflight/create. Published documentation does not imply enabled admission; capabilities may report unavailable.",
-      economicAdmission: "The automatic economic verifier accepts the exact Native20 recipe and supported constructor configuration. Different source code or unknown economics return evidence_required; this is not a generic hook audit. The Native20 platform fee is 20 bps (0.20%) of gross native ETH per successful buy or sell, rounded up per trade, additional to creator and pool fees.",
+      economicAdmission: "Read this historical version's current capabilities and exact source claims. New open plans use the separate Custom Launch Plan contract; optional claim adapters never define that plan's launch eligibility.",
     },
     moduleContribution: {
       scopes: ["modules:submit", "modules:read"],
@@ -100,7 +109,7 @@ export function buildAgentInstructions(input?: { scopes?: readonly string[]; wal
 }
 
 /** Created only in the browser's one-time reveal; never logged, persisted or sent to a server. */
-export function buildAgentConnection(secret: string, input: { scopes: readonly string[]; wallet?: string }) {
+export function buildAgentConnection(secret: string, input: { scopes: readonly string[]; wallet?: string; launchContract?: { manifestDigest: string; text: string } }) {
   if (!/^pm_live_[A-Za-z0-9_-]{22}_[A-Za-z0-9_-]{43}$/.test(secret)) throw new Error("The API key is invalid.");
   return JSON.stringify({
     schemaVersion: "programmable.agent-connection.v1",
@@ -110,6 +119,8 @@ export function buildAgentConnection(secret: string, input: { scopes: readonly s
     guideUrl: PROGRAMMABLE_AGENT_GUIDE_URL,
     discoveryUrl: PROGRAMMABLE_AGENT_DISCOVERY_URL,
     credential: { environmentVariable: "PROGRAMMABLE_API_KEY", value: secret, scopes: input.scopes, ...(input.wallet ? { wallet: input.wallet } : {}) },
-    instructions: buildAgentInstructions(input),
+    instructions: [buildAgentInstructions(input), input.launchContract?.text].filter(Boolean).join("\n\n"),
+    ...(input.launchContract ? { launchContract: { manifestDigest: input.launchContract.manifestDigest,
+      manifestUrl: PROGRAMMABLE_AGENT_ENTRY.workflows.customLaunchPlan.manifest } } : {}),
   }, null, 2);
 }
