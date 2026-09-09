@@ -6,6 +6,7 @@ import { CUSTOM_LAUNCH_PLAN_STAMP_ABI_V1, customLaunchPlanDigestBytesV1, customL
   customLaunchPlanOccurrenceIdV1, customLaunchPlanStampComponentsHashV1, customLaunchPlanStampMarketsHashV1,
   customLaunchPlanStampPermitDigestV1, customLaunchPlanStampHashV1 } from "./stamp-plan-codec-v1";
 import type { LaunchWalletProviderV1 } from "./wallet-handoff-plan-v1";
+import type { LaunchPlanStampBindingV1 } from "./launch-plan-release-authority-v1";
 
 const same = (a: unknown, b: unknown) => canonicalBrowserJsonV2(a) === canonicalBrowserJsonV2(b);
 const wire = (value: unknown): unknown => typeof value === "string" && /^0x[0-9a-f]{40}$/i.test(value) ? value.toLowerCase()
@@ -18,7 +19,7 @@ const zero = `0x${"00".repeat(32)}`;
 /** Decode every semantic root. The owner resource supplies protected source evidence,
  * while current RPC simulation verifies the released contract's permit and authority checks. */
 export async function verifyStampWalletReviewV1(provider: LaunchWalletProviderV1, resource: LaunchPlanRecordV1,
-  step: LaunchWalletStepV1, binding: Record<string, unknown>, now: bigint) {
+  step: LaunchWalletStepV1, binding: LaunchPlanStampBindingV1, now: bigint) {
   const decoded = decodeFunctionData({ abi: CUSTOM_LAUNCH_PLAN_STAMP_ABI_V1, data: step.transaction.data });
   if (decoded.functionName !== "stampPlanV1" || encodeFunctionData({ abi: CUSTOM_LAUNCH_PLAN_STAMP_ABI_V1,
     functionName: "stampPlanV1", args: decoded.args }) !== step.transaction.data || step.transaction.value !== "0") fail();
@@ -67,8 +68,7 @@ export async function verifyStampWalletReviewV1(provider: LaunchWalletProviderV1
     || !sameWire(wirePermit, preparation.permit) || !sameWire(components, preparation.components) || !sameWire(markets, preparation.markets)
     || customLaunchPlanStampPermitDigestV1(wirePermit) !== preparation.permitDigest
     || customLaunchPlanStampHashV1(preparation.permitDigest as Hex) !== preparation.stampHash
-    || String(preparationBinding.address).toLowerCase() !== String(binding.address).toLowerCase()
-    || preparationBinding.runtimeCodeHash !== binding.runtimeCodeHash || preparationBinding.manifestDigest !== resource.manifestDigest
-    || preparationBinding.policyBindingHash !== prefix.policyBindingHash) fail();
+    || !sameWire(preparationBinding, binding) || binding.manifestDigest !== resource.manifestDigest
+    || binding.policyBindingHash !== prefix.policyBindingHash) fail();
   return { functionName: decoded.functionName, permit: wirePermit, components, markets, permitDigest: preparation.permitDigest, stampHash: preparation.stampHash };
 }

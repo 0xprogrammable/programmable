@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { formatEther, type Hex } from "viem";
 import { projectionObject } from "@/lib/custom-launch/launch-projection-v1";
+import { multiRoleOriginalTransactionHintV3 } from "@/lib/custom-launch/multi-role-finality-version-v3";
 import { readLaunchPlanResourceV1, type UniversalLaunchSource, type UniversalLaunchWalletInputV1, type UniversalLaunchWalletReviewV1 } from "@/lib/custom-launch/wallet-handoff-plan-v1";
 import shared from "./developer-api-keys.module.css";
 import styles from "./developer-launch-history.module.css";
@@ -89,9 +90,12 @@ export function DeveloperUniversalLaunchHistory(props: Props) {
         if (entry.sourceVersion === "custom_launch_plan_v1") await request(entry.sourceVersion, String(entry.resource.planId), {
           method: "POST", body: JSON.stringify({ schemaVersion: "programmable.custom-launch-plan-step-proof.v1", transactionHash: hash.toLowerCase() }),
         }, `/steps/${encodeURIComponent(stepId)}/proofs`);
-        else await request(entry.sourceVersion, String(entry.resource.launchId), { method: "POST",
-          body: JSON.stringify({ schemaVersion: "programmable.multi-role-transaction-hint.v2", transactionHash: hash.toLowerCase() }),
-        }, "/transaction-hints");
+        else {
+          const hint = multiRoleOriginalTransactionHintV3(entry.resource);
+          await request(entry.sourceVersion, String(entry.resource.launchId), { method: "POST",
+            body: JSON.stringify({ schemaVersion: hint.schemaVersion, transactionHash: hash.toLowerCase() }),
+          }, hint.path);
+        }
         setRefresh(value => value + 1);
       }} />)}</ul>
     {sources.map(source => cursors[source] ? <button key={source} type="button" className={shared.secondaryButton} disabled={loading} onClick={() => void more(source)}>Load more {source === "multi_role_v2" ? "MultiRole" : "Custom Launch Plan"} requests</button> : null)}

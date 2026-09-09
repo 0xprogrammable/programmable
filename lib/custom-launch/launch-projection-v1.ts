@@ -31,7 +31,7 @@ export function parseLaunchProjectionV1(value: unknown): LaunchProjectionV1 {
     || !member(value.sourceVersion, ["router_v1", "multi_role_v2", "custom_launch_plan_v1"])
     || !text(value.launchId) || !projectionUint(value.chainId) || !projectionAddress(value.controller)
     || !(value.manifestDigest === null || digest(value.manifestDigest)) || !(value.planHash === null || digest(value.planHash))
-    || !list(value.components) || !list(value.markets) || !list(value.assuranceClaims, 1024) || !list(value.claimDescriptors)
+    || !list(value.components) || !list(value.markets) || !Array.isArray(value.assuranceClaims) || !list(value.claimDescriptors)
     || !value.claimDescriptors.every(isBoundLaunchClaimDescriptorV1)
     || !projectionObject(value.distribution) || !projectionObject(value.finality)
     || !member(value.sourceVerification, ["pending", "verified", "partial", "failed"])) throw new Error("Invalid launch projection");

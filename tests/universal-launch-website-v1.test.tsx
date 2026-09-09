@@ -10,12 +10,12 @@ import { prepareUniversalLaunchWalletV1, readLaunchPlanResourceV1, type LaunchWa
 import { prepareLaunchClaimWalletV1, type LaunchClaimReadV1 } from "@/lib/custom-launch/claim-handoff-v1";
 import { readLaunchContractSetupV1 } from "@/lib/server/custom-launch/launch-contract-setup-v1";
 import { canonicalBrowserSha256V2 as digest } from "@/lib/custom-launch/browser-authority-v2";
-import type { LaunchPlanRecordV1 } from "@/lib/custom-launch/launch-plan-v1";
 import { LaunchProjectionDetails } from "@/components/launch-projection-details";
 import { CUSTOM_LAUNCH_PLAN_STAMP_ABI_V1, customLaunchPlanStampComponentsHashV1, customLaunchPlanStampMarketsHashV1,
-  customLaunchPlanStampPermitDigestV1, customLaunchPlanStampHashV1, customLaunchPlanDigestBytesV1, customLaunchPlanLaunchIdV1, customLaunchPlanOccurrenceIdV1, type CustomLaunchPlanStampPermitV1,
+  customLaunchPlanStampPermitDigestV1, customLaunchPlanStampHashV1, type CustomLaunchPlanStampPermitV1,
   type CustomLaunchPlanStampComponentV1, type CustomLaunchPlanStampMarketV1 } from "@/lib/custom-launch/stamp-plan-codec-v1";
 import { controller, component, stamp, hash, runtime, runtimeHash, now, nowIso, projectionFixture, recordFixture, bindStep } from "./fixtures/universal-launch-v1";
+import { authorizeRecordFixture, capabilitiesFixture, stampRecordFixture } from "./fixtures/launch-plan-admission-v1";
 
 function provider(overrides: Record<string, unknown> = {}): LaunchWalletProviderV1 {
   return { request: vi.fn(async ({ method, params }) => {
@@ -37,32 +37,6 @@ const claim = (): LaunchClaimReadV1 => ({ launchId: "external-accrual", name: nu
     immutableRecipient: controller, runtimeCodeHash: runtimeHash, read: { data: "0xabcdef01", resultType: "uint256" },
     claim: { data: "0xabcdef02", value: "0" }, proof: { kind: "chain_read", ref: "fixture:bound", details: { fixture: true } } } });
 
-
-function stampFixture() {
-  const base = recordFixture();
-  const first = { ...base.steps[0], status: "final" as const, transactionHash: hash };
-  const controllerPrefix = { chainId: "4663", controller, planHash: base.planHash, compilationDigest: base.planHash, policyBindingHash: base.planHash,
-    steps: [{ stepId: first.stepId, transactionDigest: first.transactionDigest, transactionHash: first.transactionHash }], finality: [{ fixture: true }] };
-  const components = [{ componentId: customLaunchPlanOccurrenceIdV1(base.planHash, "component", "settlement"), account: component, runtimeCodeHash: runtimeHash }];
-  const permit: CustomLaunchPlanStampPermitV1 = { chainId: "4663", stamp, controller, controllerRuntimeCodeHash: `0x${"00".repeat(32)}`,
-    launchId: customLaunchPlanLaunchIdV1(base.plan), planHash: customLaunchPlanDigestBytesV1(base.planHash), manifestDigest: customLaunchPlanDigestBytesV1(base.manifestDigest),
-    componentsHash: customLaunchPlanStampComponentsHashV1(components), marketsHash: customLaunchPlanStampMarketsHashV1([]),
-    effectsHash: customLaunchPlanDigestBytesV1(digest("programmable.custom-launch-plan-effects.v1", base.plan.expectedEffects)),
-    feeObligationsHash: customLaunchPlanDigestBytesV1(digest("programmable.custom-launch-plan-fee-obligations.v1", base.plan.feeObligations)),
-    executionEvidenceHash: customLaunchPlanDigestBytesV1(digest("programmable.custom-launch-plan-controller-prefix.v1", controllerPrefix)),
-    nonce: hash, validAfter: now.toString(), deadline: base.plan.budgets.deadline };
-  const permitDigest = customLaunchPlanStampPermitDigestV1(permit);
-  const binding = { address: stamp, runtimeCodeHash: runtimeHash, manifestDigest: base.manifestDigest, policyBindingHash: base.planHash };
-  const stampPreparation = { permit, components, markets: [], permitDigest, stampHash: customLaunchPlanStampHashV1(permitDigest),
-    executionEvidenceHash: permit.executionEvidenceHash, sourceEvidenceDigest: base.planHash, binding };
-  const walletAuthorization = { stampPreparation, controllerPrefix };
-  const admissionEvidence = { walletAuthorization };
-  const data = encodeFunctionData({ abi: CUSTOM_LAUNCH_PLAN_STAMP_ABI_V1, functionName: "stampPlanV1",
-    args: [{ ...permit, chainId: 4663n, validAfter: now, deadline: BigInt(permit.deadline) }, components, [], "0x11"] });
-  const last = bindStep({ ...base.steps[0], stepId: "stamp", actionIds: ["platform:stampPlanV1"], postconditions: [], transaction: { ...base.steps[0].transaction, to: stamp, data } });
-  return { ...base, steps: [first, last], walletAuthorization, admissionEvidence,
-    admission: { ...base.admission!, evidenceDigest: digest("programmable.custom-launch-plan-evidence.v1", admissionEvidence) } } as unknown as LaunchPlanRecordV1;
-}
 
 describe("additive universal launch projection", () => {
   it("retains no-market, neutral metadata and independent provider states", () => {
@@ -102,8 +76,8 @@ describe("additive universal launch projection", () => {
 });
 
 describe("exact wallet transaction review", () => {
-  const input = () => { const record = recordFixture(); return { sourceVersion: "custom_launch_plan_v1" as const, reviewedResource: record, stepId: "configure", action: "review" as const,
-    loadFreshResource: async () => record, loadFreshCapabilities: async () => ({ manifestDigest: record.manifestDigest }) }; };
+  const input = () => { const record = authorizeRecordFixture(recordFixture()); return { sourceVersion: "custom_launch_plan_v1" as const, reviewedResource: record, stepId: "configure", action: "review" as const,
+    loadFreshResource: async () => record, loadFreshCapabilities: async () => capabilitiesFixture(record) }; };
   it("reviews unfamiliar exact calls and preserves the effects and maximum cost", async () => {
     const review = await prepareUniversalLaunchWalletV1(provider(), controller, input(), now);
     expect(review.transaction).toMatchObject({ from: controller, to: component, chainId: "0x1237", data: "0x12345678", value: "0x0", nonce: "0x7" });
@@ -121,21 +95,20 @@ describe("exact wallet transaction review", () => {
   it("refuses a selector-only stamp without source-bound preparation", async () => {
     const base = recordFixture(); const step = bindStep({ ...base.steps[0], stepId: "stamp", actionIds: ["platform:stampPlanV1"],
       transaction: { ...base.steps[0].transaction, to: stamp, data: "0xbda52856" }, postconditions: [] });
-    const record = { ...base, steps: [step] };
+    const record = authorizeRecordFixture({ ...base, steps: [step] });
     await expect(prepareUniversalLaunchWalletV1(provider(), controller, { ...input(), reviewedResource: record, stepId: "stamp", loadFreshResource: async () => record,
-      loadFreshCapabilities: async () => ({ manifestDigest: record.manifestDigest, execution: { stamp: { address: stamp, runtimeCodeHash: runtimeHash, selector: "0xbda52856" } } }) }, now)).rejects.toThrow();
+      loadFreshCapabilities: async () => capabilitiesFixture(record) }, now)).rejects.toThrow();
   });
   it("binds a complete stamp to every plan and controller-prefix root", async () => {
-    const record = stampFixture();
+    const record = stampRecordFixture();
     const request = { sourceVersion: "custom_launch_plan_v1" as const, reviewedResource: record, stepId: "stamp", action: "review" as const,
-      loadFreshResource: async () => record, loadFreshCapabilities: async () => ({ manifestDigest: record.manifestDigest,
-        execution: { stamp: { address: stamp, runtimeCodeHash: runtimeHash, selector: "0xbda52856" } } }) };
+      loadFreshResource: async () => record, loadFreshCapabilities: async () => capabilitiesFixture(record) };
     expect((await prepareUniversalLaunchWalletV1(provider(), controller, request, now)).decodedOperation).toMatchObject({ functionName: "stampPlanV1" });
     const last = record.steps[1];
     const decoded = decodeFunctionData({ abi: CUSTOM_LAUNCH_PLAN_STAMP_ABI_V1, data: last.transaction.data });
     const data = encodeFunctionData({ abi: CUSTOM_LAUNCH_PLAN_STAMP_ABI_V1, functionName: "stampPlanV1",
       args: [{ ...decoded.args[0], effectsHash: hash }, decoded.args[1], decoded.args[2], decoded.args[3]] });
-    const changed = { ...record, steps: [record.steps[0], bindStep({ ...last, transaction: { ...last.transaction, data } })] };
+    const changed = authorizeRecordFixture({ ...record, steps: [record.steps[0], bindStep({ ...last, transaction: { ...last.transaction, data } })] });
     await expect(prepareUniversalLaunchWalletV1(provider(), controller, { ...request, reviewedResource: changed, loadFreshResource: async () => changed }, now)).rejects.toThrow(/stamp/);
     await expect(prepareUniversalLaunchWalletV1(provider(), controller, { ...request, loadFreshResource: async () => ({ ...record, admissionEvidence: { forged: true } }) }, now)).rejects.toThrow();
   });

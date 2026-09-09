@@ -1,6 +1,7 @@
 import { decodeFunctionData, encodeFunctionResult, hashTypedData, parseAbi, type Hex } from "viem";
 import { describe, expect, it, vi } from "vitest";
 import { prepareUniversalLaunchWalletV1, type LaunchWalletProviderV1 } from "@/lib/custom-launch/wallet-handoff-plan-v1";
+import { authorizeRecordFixture, capabilitiesFixture } from "./fixtures/launch-plan-admission-v1";
 import type { LaunchPlanRecordV1 } from "@/lib/custom-launch/launch-plan-v1";
 import { canonicalBrowserSha256V2 as digest } from "@/lib/custom-launch/browser-authority-v2";
 import { bindStep, controller, hash, now, recordFixture, runtime, runtimeHash, stamp } from "./fixtures/universal-launch-v1";
@@ -26,8 +27,7 @@ function fixture(): LaunchPlanRecordV1 {
     execution: { to: controller, value: "0", function: "execTransaction", gasLimit: "100000" }, actualSignaturesVerified: false };
   const admissionEvidence = { simulation: { steps: [{ stepId: step.stepId, transactionDigest: step.transactionDigest,
     witness: { kind: "runtime_trace", ref: "fixture:safe", details: { walletAuthorization } } }] } };
-  return { ...base, plan, planHash, steps: [step], admissionEvidence, admission: { ...base.admission!, planHash,
-    evidenceDigest: digest("programmable.custom-launch-plan-evidence.v1", admissionEvidence) } } as unknown as LaunchPlanRecordV1;
+  return authorizeRecordFixture({ ...base, plan, planHash, steps: [step], admissionEvidence } as unknown as LaunchPlanRecordV1);
 }
 function provider(changedThreshold = false, ownerConnection = false): LaunchWalletProviderV1 {
   return { request: vi.fn(async ({ method, params }) => {
@@ -53,7 +53,7 @@ function provider(changedThreshold = false, ownerConnection = false): LaunchWall
 }
 describe("source-bound Safe controller wallet", () => {
   const input = () => { const record = fixture(); return { sourceVersion: "custom_launch_plan_v1" as const, reviewedResource: record, stepId: "configure", action: "review" as const,
-    loadFreshResource: async () => record, loadFreshCapabilities: async () => ({ manifestDigest: record.manifestDigest }) }; };
+    loadFreshResource: async () => record, loadFreshCapabilities: async () => capabilitiesFixture(record) }; };
   it("reviews actual connected Safe authority and preserves its logical call without an EOA nonce", async () => {
     const rpc = provider(); const review = await prepareUniversalLaunchWalletV1(rpc, controller, input(), now);
     expect(review.transaction.nonce).toBeUndefined();

@@ -65,13 +65,13 @@ export function launchProjectionSourceV1(signal: AbortSignal = AbortSignal.timeo
       if (cursor) url.searchParams.set("cursor", cursor);
       const response = await fetch(url, { signal, redirect: "error", cache: "no-store", headers: { accept: "application/json" } });
       if (!response.ok || response.redirected || response.headers.get("content-type")?.split(";", 1)[0] !== "application/json"
-        || !response.body || Number(response.headers.get("content-length")) > 4_194_304) throw new Error("Launch projection feed unavailable");
+        || !response.body || Number(response.headers.get("content-length")) > 16_777_216) throw new Error("Launch projection feed unavailable");
       const reader = response.body.getReader();
       const chunks: Uint8Array[] = [];
       let size = 0;
       try {
         for (;;) { const { done, value } = await reader.read(); if (done) break; size += value.byteLength;
-          if (size > 4_194_304) throw new Error("Projection page exceeded its byte budget"); chunks.push(value); }
+          if (size > 16_777_216) throw new Error("Projection page exceeded its byte budget"); chunks.push(value); }
       } finally { await reader.cancel().catch(() => undefined); reader.releaseLock(); }
       const value: unknown = JSON.parse(Buffer.concat(chunks).toString("utf8"));
       if (!projectionObject(value) || value.schemaVersion !== "programmable.launch-projection-page.v1"

@@ -46,16 +46,24 @@ describe("additive controller history bridge", () => {
     expect((await bridge.universal(request("custom_launch_plan_v1", undefined, component))).status).toBe(403);
     expect(fetchBackend).not.toHaveBeenCalled();
   });
-  it.each([false, true])("signs only the exact transaction tracking body for MultiRole=%s", async (multiRole) => {
-    const record = recordFixture(); const body = { schemaVersion: multiRole ? "programmable.multi-role-transaction-hint.v2" : "programmable.custom-launch-plan-step-proof.v1", transactionHash: hash };
+  it.each([undefined, "v2", "v3"] as const)("signs only the exact transaction tracking body for MultiRole=%s", async (multiRole) => {
+    const record = recordFixture(); const body = { schemaVersion: multiRole ? `programmable.multi-role-transaction-hint.${multiRole}` : "programmable.custom-launch-plan-step-proof.v1", transactionHash: hash };
     const { bridge, fetchBackend } = context({ ...body, authoritative: false, accepted: true });
     expect((await bridge.universal(request(multiRole ? "multi_role_v2" : "custom_launch_plan_v1", body), record.planId, multiRole ? undefined : "configure", multiRole)).status).toBe(200);
     const [url, init] = fetchBackend.mock.calls[0] as unknown as [URL, RequestInit];
-    expect(url.pathname).toContain(multiRole ? "/transaction-hints" : "/steps/configure/proofs");
+    expect(url.pathname).toBe(`/v4/chains/4663/wallet-admin/${multiRole ? "custom-launches-multi-role" : "custom-launch-plans"}/${record.planId}${multiRole === "v3" ? "/transaction-hints-v3" : multiRole ? "/transaction-hints" : "/steps/configure/proofs"}`);
     expect(Buffer.from(init.body as Uint8Array).toString()).toBe(JSON.stringify(body));
     expect(new Headers(init.headers).get("x-programmable-bff-assertion-body-sha256")).toBe(`sha256:${createHash("sha256").update(JSON.stringify(body)).digest("hex")}`);
     fetchBackend.mockClear();
     expect((await bridge.universal(request(multiRole ? "multi_role_v2" : "custom_launch_plan_v1", { ...body, target: component }), record.planId, multiRole ? undefined : "configure", multiRole)).status).toBe(400);
+    expect(fetchBackend).not.toHaveBeenCalled();
+  });
+  it.each(["v2", "v3"] as const)("rejects a hint body from a different original contract on the %s route", async (version) => {
+    const { bridge, fetchBackend } = context({ accepted: true });
+    const body = { schemaVersion: `programmable.multi-role-transaction-hint.${version === "v2" ? "v3" : "v2"}`, transactionHash: hash };
+    expect((await bridge.universal(request("multi_role_v2", body), recordFixture().planId, undefined, version)).status).toBe(400);
+    expect(fetchBackend).not.toHaveBeenCalled();
+    expect((await bridge.universal(request("multi_role_v2", { ...body, schemaVersion: `programmable.multi-role-transaction-hint.${version}` }, component), recordFixture().planId, undefined, version)).status).toBe(403);
     expect(fetchBackend).not.toHaveBeenCalled();
   });
 });

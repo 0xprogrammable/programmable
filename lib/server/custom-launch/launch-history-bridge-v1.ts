@@ -266,7 +266,7 @@ type DeveloperCustomLaunch = DeveloperCustomLaunchV1
 type BackendHistoryVersion = "v1" | "v2" | "v3" | "v4";
 
 export interface DeveloperLaunchHistoryBridgeV1 {
-  universal(request: Request, launchId?: string, stepId?: string, transactionHint?: boolean): Promise<Response>;
+  universal(request: Request, launchId?: string, stepId?: string, transactionHint?: "v2" | "v3"): Promise<Response>;
   list(request: Request): Promise<Response>;
   get(request: Request, launchId: string): Promise<Response>;
   submitFundingAuthorization(
@@ -345,9 +345,10 @@ export function createDeveloperLaunchHistoryBridgeV1(input: Readonly<{
   };
 
   return Object.freeze({
-    async universal(request: Request, launchId?: string, stepId?: string, transactionHint?: boolean) {
+    async universal(request: Request, launchId?: string, stepId?: string, transactionHint?: "v2" | "v3") {
       try {
         requireJsonResponse(request);
+        if (transactionHint !== undefined && transactionHint !== "v2" && transactionHint !== "v3") throw new BrowserRequestErrorV1(400, "request_schema_invalid");
         const write = Boolean(stepId || transactionHint);
         if (request.method !== (write ? "POST" : "GET")) return errorResponse(405, "method_not_allowed", write ? "POST" : "GET");
         const search = new URL(request.url).searchParams;
@@ -359,7 +360,8 @@ export function createDeveloperLaunchHistoryBridgeV1(input: Readonly<{
         const principal = await input.authenticator.authenticate(request);
         const controller = requireLinkedWallet(principal, search.get("walletAddress") ?? "");
         const lane = source === "custom_launch_plan_v1" ? "custom-launch-plans" : "custom-launches-multi-role";
-        const suffix = launchId ? `/${encodeURIComponent(launchId)}${stepId ? `/steps/${encodeURIComponent(stepId)}/proofs` : transactionHint ? "/transaction-hints" : ""}` : "";
+        const hintPath = transactionHint === "v3" ? "/transaction-hints-v3" : "/transaction-hints";
+        const suffix = launchId ? `/${encodeURIComponent(launchId)}${stepId ? `/steps/${encodeURIComponent(stepId)}/proofs` : transactionHint ? hintPath : ""}` : "";
         const url = new URL(`/v4/chains/4663/wallet-admin/${lane}${suffix}`, backendBaseUrl);
         if (!launchId) {
           // Plans contain the exact source bundle and owner evidence. Page one complete resource at a time.
@@ -374,7 +376,7 @@ export function createDeveloperLaunchHistoryBridgeV1(input: Readonly<{
         if (write) {
           requireJsonRequest(request);
           const value = jsonRecord(await readBoundedBrowserJson(request));
-          if (Object.keys(value).length !== 2 || value.schemaVersion !== (transactionHint ? "programmable.multi-role-transaction-hint.v2" : "programmable.custom-launch-plan-step-proof.v1")
+          if (Object.keys(value).length !== 2 || value.schemaVersion !== (transactionHint ? `programmable.multi-role-transaction-hint.${transactionHint}` : "programmable.custom-launch-plan-step-proof.v1")
             || typeof value.transactionHash !== "string" || !LOWER_BYTES32.test(value.transactionHash)) throw new BrowserRequestErrorV1(400, "request_schema_invalid");
           body = Buffer.from(JSON.stringify(value));
         }

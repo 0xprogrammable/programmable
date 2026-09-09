@@ -3,6 +3,8 @@ import { canonicalBrowserJsonV2, canonicalBrowserSha256V2 } from "./browser-auth
 import { computeExpectedGraphResultHashV2, computeStampRequestHashV2, decodeCustomGraphRouteV2, decodeLaunchAndStampV2, encodeLaunchAndStampV2, permitDigestV2 } from "./multi-role-router-codec-v2";
 import { verifySafeWalletReviewV1 } from "./safe-wallet-review-v1";
 import { verifyStampWalletReviewV1 } from "./stamp-wallet-review-v1";
+import { verifyLaunchPlanReleaseAuthorityV1 } from "./launch-plan-release-authority-v1";
+import { multiRoleOriginalTransactionHintV3 } from "./multi-role-finality-version-v3";
 import { projectionAddress, projectionHash, projectionObject, projectionUint } from "./launch-projection-v1";
 import type { LaunchPlanRecordV1, LaunchEffectV1 } from "./launch-plan-v1";
 
@@ -20,6 +22,7 @@ export type UniversalLaunchWalletReviewV1 = {
   controllerKind: "eoa" | "erc1271" | "smart_account";
   decodedOperation?: unknown;
   controllerAuthorization?: unknown;
+  admissionAuthority?: { releaseId: string; receiptHash: string; policyBindingHash: string };
   preconditions: readonly unknown[]; postconditions: readonly unknown[];
 };
 const fail = (message = "The launch transaction changed. Refresh its exact wallet review."): never => { throw new Error(message); };
@@ -99,21 +102,24 @@ async function verifyPrecondition(provider: LaunchWalletProviderV1, effect: Laun
 }
 
 export async function prepareUniversalLaunchWalletV1(provider: LaunchWalletProviderV1, account: string, input: UniversalLaunchWalletInputV1,
-  nowSeconds = BigInt(Math.floor(Date.now() / 1000))): Promise<UniversalLaunchWalletReviewV1> {
+  atSeconds?: bigint): Promise<UniversalLaunchWalletReviewV1> {
   const controller = address(account);
   const [fresh, capabilities] = await Promise.all([input.loadFreshResource(), input.loadFreshCapabilities()]);
+  const nowMilliseconds = atSeconds === undefined ? Date.now() : Number(atSeconds) * 1000;
+  const nowSeconds = atSeconds ?? BigInt(Math.floor(nowMilliseconds / 1000));
   const cap = record(capabilities);
   let review: Omit<UniversalLaunchWalletReviewV1, "maxGasCostWei">;
+  let admissionExpiresAt: number | undefined;
   if (input.sourceVersion === "custom_launch_plan_v1") {
     const original = readLaunchPlanResourceV1(input.reviewedResource);
     const current = readLaunchPlanResourceV1(fresh);
     if (original.planId !== current.planId || original.planHash !== current.planHash || current.plan.controller.address.toLowerCase() !== controller.toLowerCase()
-      || cap.manifestDigest !== current.manifestDigest || !["wallet_action_ready", "broadcast", "mined"].includes(current.status)
-      || !current.admission || current.admission.planHash !== current.planHash || current.admission.manifestDigest !== current.manifestDigest
-      || current.admission.chainId !== current.plan.chainId || address(current.admission.controller) !== controller
-      || !Number.isFinite(Date.parse(current.admission.expiresAt)) || BigInt(Math.floor(Date.parse(current.admission.expiresAt) / 1000)) <= nowSeconds
-      || !current.admissionEvidence || current.admission.evidenceDigest !== canonicalBrowserSha256V2("programmable.custom-launch-plan-evidence.v1", current.admissionEvidence)
-      || !equal(current.walletAuthorization ?? null, current.admissionEvidence.walletAuthorization ?? null)) return fail();
+      || !["wallet_action_ready", "broadcast", "mined"].includes(current.status)) return fail();
+    const release = await verifyLaunchPlanReleaseAuthorityV1(current, cap, nowMilliseconds);
+    admissionExpiresAt = Date.parse(current.admission!.expiresAt);
+    const admissionAuthority = { releaseId: release.releaseId, receiptHash: current.admission!.receiptHash,
+      policyBindingHash: release.binding.policyBindingHash };
+    if (input.action === "send" && !equal(input.reviewed?.admissionAuthority ?? null, admissionAuthority)) return fail("The original admission authority changed. Review this launch again before sending.");
     const step = current.steps.find(item => item.stepId === input.stepId) ?? current.steps.find(item => item.status === "wallet_action_ready") ?? fail();
     const oldStep = original.steps.find(item => item.stepId === step.stepId) ?? fail();
     if (step.status !== "wallet_action_ready" || oldStep.transactionDigest !== step.transactionDigest
@@ -139,10 +145,11 @@ export async function prepareUniversalLaunchWalletV1(provider: LaunchWalletProvi
     const runtime = current.plan.components.find(item => address(item.expectedAddress) === target)?.runtimeCodeHash
       ?? current.plan.dependencies.find(item => address(item.address) === target)?.runtimeCodeHash;
     if (platform) {
-      const stamp = record(record(cap.execution).stamp);
+      const stamp = release.execution.stamp;
       if (step.actionIds.length !== 1 || current.steps.at(-1) !== step || address(stamp.address) !== target || typeof stamp.selector !== "string" || tx.data.slice(0, 10) !== stamp.selector) return fail("The stamp is not bound to the published platform operation.");
-      decodedOperation = await verifyStampWalletReviewV1(provider, current, step, stamp, nowSeconds);
-      await assertRuntime(provider, target, stamp.runtimeCodeHash);
+      decodedOperation = await verifyStampWalletReviewV1(provider, current, step, release.binding, nowSeconds);
+      await Promise.all([assertRuntime(provider, target, stamp.runtimeCodeHash),
+        assertRuntime(provider, release.binding.permitAuthority, release.binding.permitAuthorityRuntimeCodeHash)]);
     } else await assertRuntime(provider, target, runtime);
     if (current.steps.reduce((sum, item) => sum + uint(item.transaction.value), 0n) > uint(current.plan.budgets.maxTotalValue)
       || current.steps.reduce((sum, item) => sum + uint(item.transaction.gasLimit), 0n) > uint(current.plan.budgets.maxTotalGas)) return fail("The total launch budget changed.");
@@ -153,14 +160,16 @@ export async function prepareUniversalLaunchWalletV1(provider: LaunchWalletProvi
     if (nonce !== uint(tx.nonce)) return fail("The controller nonce changed. Reconcile the existing plan before sending.");
     review = { sourceVersion: input.sourceVersion, launchId: current.planId, stepId: step.stepId,
       transaction: { chainId: "0x1237", from: controller, to: target, data: data(tx.data), value: toHex(uint(tx.value)), gas: toHex(uint(tx.gasLimit)), ...(controllerAuthorization ? {} : { nonce: toHex(nonce) }) },
-      ...(decodedOperation ? { decodedOperation } : {}), ...(controllerAuthorization ? { controllerAuthorization } : {}), binding: step.transactionDigest, valueWei: tx.value, deadline: tx.deadline, controllerKind: current.plan.controller.kind,
+      ...(decodedOperation ? { decodedOperation } : {}), ...(controllerAuthorization ? { controllerAuthorization } : {}), admissionAuthority,
+      binding: step.transactionDigest, valueWei: tx.value, deadline: tx.deadline, controllerKind: current.plan.controller.kind,
       preconditions: step.preconditions.map(id => current.plan.expectedEffects.find(effect => effect.effectId === id) ?? fail()),
       postconditions: step.postconditions.map(id => current.plan.expectedEffects.find(effect => effect.effectId === id) ?? fail()) };
   } else {
     const original = record(input.reviewedResource); const current = record(fresh);
+    if (multiRoleOriginalTransactionHintV3(original).version !== multiRoleOriginalTransactionHintV3(current).version) return fail();
     if (current.schemaVersion !== "programmable.multi-role-custom-launch-resource.v2" || current.launchId !== original.launchId
       || current.requestHash !== original.requestHash || current.artifactHash !== original.artifactHash
-      || !equal(current.commitments, original.commitments) || !equal(cap.context, current.context)
+      || !equal(current.commitments, original.commitments) || !equal(current.context, original.context) || !equal(cap.context, current.context)
       || record(cap.readiness).status !== "ready" || !["authorized", "awaiting_wallet_signature", "wallet_action_required"].includes(String(current.status))) return fail();
     const artifact = record(current.preparedArtifact); const wallet = record(current.wallet); const tx = record(wallet.walletTransaction);
     if (plainHash(without(artifact, "artifactHash")) !== current.artifactHash || plainHash(without(tx, "transactionPreimageHash")) !== tx.transactionPreimageHash
@@ -191,5 +200,8 @@ export async function prepareUniversalLaunchWalletV1(provider: LaunchWalletProvi
   const estimateGas = quantity(estimate);
   const gas = input.sourceVersion === "multi_role_v2" ? (estimateGas * 120n + 99n) / 100n : BigInt(declaredGas);
   if (estimateGas > gas) return fail("The exact transaction exceeds its gas budget.");
+  const completedAt = atSeconds === undefined ? Date.now() : nowMilliseconds;
+  if (admissionExpiresAt !== undefined && completedAt >= admissionExpiresAt
+    || BigInt(Math.floor(completedAt / 1000)) >= uint(review.deadline)) return fail("The wallet review expired while its current bindings were checked. Refresh before continuing.");
   return { ...review, transaction: { ...review.transaction, gas: toHex(gas) }, maxGasCostWei: (gas * quantity(gasPrice)).toString() };
 }

@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { Address, Hex } from "viem";
 import { prepareUniversalLaunchWalletV1, type LaunchWalletProviderV1 } from "@/lib/custom-launch/wallet-handoff-plan-v1";
+import { multiRoleOriginalTransactionHintV3, MULTI_ROLE_DERIVED_FINALITY_POLICY_V3 } from "@/lib/custom-launch/multi-role-finality-version-v3";
 import { computePoolKeyHashV2 } from "@/lib/custom-launch/multi-role-router-codec-v2";
 
 const capture = JSON.parse(readFileSync(new URL("./fixtures/multi-role-wallet-v2.json", import.meta.url), "utf8"));
@@ -23,8 +24,8 @@ const golden = capture as {
   artifact: Record<string, unknown> & { artifactHash: string; chainBindings: Record<string, unknown> };
   walletTransaction: { from: Address; to: Address; transactionPreimageHash: string; calldata: Hex; valueWei: string };
   nowUnixSeconds: string; codes: Record<string, Hex> };
-function fixture() {
-  const context = { chainId: "4663", chainBindings: golden.artifact.chainBindings };
+function fixture(profile: Record<string, unknown> = {}) {
+  const context = { chainId: "4663", chainBindings: golden.artifact.chainBindings, profile };
   return { schemaVersion: "programmable.multi-role-custom-launch-resource.v2", launchId: "10000000-0000-4000-8000-000000000001",
     requestHash: `sha256:${"aa".repeat(32)}`, status: "wallet_action_required", context, commitments: {}, preparedArtifact: golden.artifact,
     artifactHash: golden.artifact.artifactHash, walletTransactionPreimageHash: golden.walletTransaction.transactionPreimageHash,
@@ -57,5 +58,24 @@ describe("unchanged MultiRole V2 wallet codec", () => {
       loadFreshResource: async () => ({ ...resource, artifactHash: `sha256:${"bb".repeat(32)}` }),
       loadFreshCapabilities: async () => ({ context: resource.context, readiness: { status: "ready" } }),
     }, BigInt(golden.nowUnixSeconds))).rejects.toThrow();
+  });
+  it("retains V2 wallet bytes for a V3 original context and selects its exact tracking contract", async () => {
+    const resource = fixture({ derivedContractFinality: MULTI_ROLE_DERIVED_FINALITY_POLICY_V3 });
+    const review = await prepareUniversalLaunchWalletV1(provider, golden.walletTransaction.from, {
+      sourceVersion: "multi_role_v2", action: "review", reviewedResource: resource, loadFreshResource: async () => resource,
+      loadFreshCapabilities: async () => ({ context: resource.context, readiness: { status: "ready" } }),
+    }, BigInt(golden.nowUnixSeconds));
+    expect(review.transaction.data).toBe(golden.walletTransaction.calldata);
+    expect(review.binding).toBe(golden.walletTransaction.transactionPreimageHash);
+    expect(multiRoleOriginalTransactionHintV3(resource)).toEqual({ version: "v3", schemaVersion: "programmable.multi-role-transaction-hint.v3", path: "/transaction-hints-v3" });
+    expect(multiRoleOriginalTransactionHintV3(fixture())).toEqual({ version: "v2", schemaVersion: "programmable.multi-role-transaction-hint.v2", path: "/transaction-hints" });
+    await expect(prepareUniversalLaunchWalletV1(provider, golden.walletTransaction.from, {
+      sourceVersion: "multi_role_v2", action: "review", reviewedResource: fixture(), loadFreshResource: async () => resource,
+      loadFreshCapabilities: async () => ({ context: resource.context, readiness: { status: "ready" } }),
+    }, BigInt(golden.nowUnixSeconds))).rejects.toThrow();
+  });
+  it.each([null, {}, { ...MULTI_ROLE_DERIVED_FINALITY_POLICY_V3, maximumDerivedContracts: 17 },
+    { ...MULTI_ROLE_DERIVED_FINALITY_POLICY_V3, schemaVersion: "programmable.multi-role-derived-finality-policy.v4" }])("never silently downgrades an unknown original finality policy", policy => {
+    expect(() => multiRoleOriginalTransactionHintV3(fixture({ derivedContractFinality: policy }))).toThrow(/unsupported/);
   });
 });
