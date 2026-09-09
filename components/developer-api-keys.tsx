@@ -6,6 +6,7 @@ import {
   useEffect,
   useRef,
   useState,
+  useSyncExternalStore,
   type FormEvent,
   type KeyboardEvent,
 } from "react";
@@ -102,6 +103,9 @@ type ApiKeyMutationState =
 
 type ListState = "idle" | "loading" | "ready" | "error";
 type ActiveSection = "keys" | "launch" | "history";
+const subscribeToHydration = () => () => {};
+const readHydrated = () => true;
+const readServerHydrated = () => false;
 type ApiKeyLoadMode = "initial" | "refresh" | "mutation";
 type DeveloperApiKeysProps = Readonly<{
   initialSection?: ActiveSection;
@@ -886,6 +890,7 @@ export function DeveloperApiKeysView({
   sendCustomLaunchWalletActionV4,
   signCustomLaunchFundingAuthorization,
 }: DeveloperApiKeysViewProps) {
+  const hydrated = useSyncExternalStore(subscribeToHydration, readHydrated, readServerHydrated);
   const [apiKeys, setApiKeys] = useState<ApiKeySummary[]>([]);
   const [listState, setListState] = useState<ListState>(() =>
     account ? "loading" : "idle",
@@ -1314,6 +1319,8 @@ export function DeveloperApiKeysView({
   const showSection = (section: ActiveSection) => {
     setActiveSection(section);
     const url = new URL(window.location.href);
+    if (section === "history") url.searchParams.set("view", "history");
+    else url.searchParams.delete("view");
     if (section === "launch") {
       url.searchParams.set("start", "custom");
       url.searchParams.set("chainId", "4663");
@@ -1571,6 +1578,7 @@ export function DeveloperApiKeysView({
       >
         <button
           aria-pressed={activeSection === "keys"}
+          disabled={!hydrated}
           type="button"
           onClick={() => showSection("keys")}
         >
@@ -1578,6 +1586,7 @@ export function DeveloperApiKeysView({
         </button>
         <button
           aria-pressed={activeSection === "launch"}
+          disabled={!hydrated}
           type="button"
           onClick={() => showSection("launch")}
         >
@@ -1585,6 +1594,7 @@ export function DeveloperApiKeysView({
         </button>
         <button
           aria-pressed={activeSection === "history"}
+          disabled={!hydrated}
           type="button"
           onClick={() => showSection("history")}
         >
