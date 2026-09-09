@@ -143,14 +143,6 @@
   opacity: 0.58;
 }
 
-.flowRailNote {
-  color: var(--muted);
-  font-size: 11px;
-  line-height: 1.55;
-  margin: 22px 0 0;
-  max-width: 24ch;
-}
-
 .approvalAnchor {
   align-items: center;
   background: color-mix(in srgb, var(--liquid-glass-inner-background) 82%, #010103);
@@ -259,12 +251,12 @@
 }
 
 .introPrimary h2 {
-  font-size: clamp(36px, 4.1vw, 54px);
-  font-weight: 580;
-  letter-spacing: -0.047em;
-  line-height: 1.02;
-  margin: 14px 0 16px;
-  max-width: 12ch;
+  font-size: 28px;
+  font-weight: 500;
+  letter-spacing: -0.025em;
+  line-height: 1.25;
+  margin: 0 0 16px;
+  max-width: 20ch;
 }
 
 .introCopy {
@@ -1289,7 +1281,7 @@
   }
 
   .introPrimary h2 {
-    font-size: 40px;
+    font-size: 28px;
   }
 
   .actions,

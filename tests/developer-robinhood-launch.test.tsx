@@ -254,7 +254,7 @@ describe("Robinhood Custom launch website flow", () => {
 
   it("shares key management while retaining explicit Robinhood launch deep links", () => {
     expect(launchEntrySource).toContain(
-      'href="/developers/api-keys"',
+      'href="/developers/hooks"',
     );
     expect(launchEntrySource).toContain('data-launch-model-launchable="false"');
     expect(launchEntrySource).not.toContain("Live API");

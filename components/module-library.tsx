@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useDeferredValue, useMemo, useState } from "react";
+import { useDeferredValue, useId, useMemo, useState } from "react";
 import { ArrowsLeftRightIcon } from "@phosphor-icons/react/dist/ssr/ArrowsLeftRight";
 import { CoinsIcon } from "@phosphor-icons/react/dist/ssr/Coins";
 import { FlaskIcon } from "@phosphor-icons/react/dist/ssr/Flask";
@@ -10,8 +10,8 @@ import { LinkIcon } from "@phosphor-icons/react/dist/ssr/Link";
 import { ShieldCheckIcon } from "@phosphor-icons/react/dist/ssr/ShieldCheck";
 import { SlidersHorizontalIcon } from "@phosphor-icons/react/dist/ssr/SlidersHorizontal";
 import { WavesIcon } from "@phosphor-icons/react/dist/ssr/Waves";
-import { ArrowRight, Check, ChevronLeft, ChevronRight, Plus, Search, X } from "lucide-react";
-import type { ModuleModeCatalogEntry } from "@/lib/module-mode/builder";
+import { ArrowRight, ChevronLeft, ChevronRight, Plus, Search, X } from "lucide-react";
+import { feeBreakdown, type ModuleModeCatalogEntry, type ModuleModeFeePolicy } from "@/lib/module-mode/builder";
 import { MODULE_CATEGORIES, MODULE_LIBRARY_PAGE_SIZE, moduleAuthorLabel, moduleCategory, moduleDiscovery, searchModuleLibrary, type ModuleCategoryId } from "@/lib/module-mode/library";
 import styles from "@/components/module-library.module.css";
 
@@ -28,10 +28,12 @@ export function ModuleAuthor({ entry }: { entry: ModuleModeCatalogEntry }) {
   return author ? <Link href={`/profile?account=${author}&chain=4663`} className={styles.author} title={`Module author ${author}`}>By {moduleAuthorLabel(entry)}</Link> : null;
 }
 
-export function ModuleLibrary({ catalog, selectedIds, onAdd, onRemove }: {
+export function ModuleLibrary({ catalog, selectedIds, onAdd, onRemove, feePolicyFor }: {
   catalog: readonly ModuleModeCatalogEntry[]; selectedIds: readonly string[];
   onAdd: (entry: ModuleModeCatalogEntry) => void; onRemove: (entry: ModuleModeCatalogEntry) => void;
+  feePolicyFor?: (entry: ModuleModeCatalogEntry) => ModuleModeFeePolicy | null;
 }) {
+  const id = useId();
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("all");
   const [page, setPage] = useState(1);
@@ -43,13 +45,14 @@ export function ModuleLibrary({ catalog, selectedIds, onAdd, onRemove }: {
   const currentPage = Math.min(page, pages);
   const visible = results.slice((currentPage - 1) * MODULE_LIBRARY_PAGE_SIZE, currentPage * MODULE_LIBRARY_PAGE_SIZE);
   const selected = new Set(selectedIds);
+  const hasFilters = Boolean(query.trim() || category !== "all");
   const reset = () => { setQuery(""); setCategory("all"); setPage(1); };
   return <div className={styles.library}>
     <div className={styles.toolbar} hidden={catalog.length < 5 && !query && category === "all"}>
       <div className={styles.search}>
-        <label className={styles.srOnly} htmlFor="module-search">Search modules</label>
+        <label className={styles.srOnly} htmlFor={`${id}-search`}>Search modules</label>
         <Search size={18} aria-hidden="true" />
-        <input id="module-search" type="search" placeholder="Find a module" value={query}
+        <input id={`${id}-search`} type="search" placeholder="Find a module" value={query}
           onChange={event => { setQuery(event.target.value); setPage(1); }} autoComplete="off" />
       </div>
 
@@ -63,19 +66,20 @@ export function ModuleLibrary({ catalog, selectedIds, onAdd, onRemove }: {
     </div>
     <div className={styles.resultCount} hidden={!query.trim() && category === "all"} role="status" aria-live="polite">{results.length} {results.length === 1 ? "module" : "modules"}{query.trim() ? ` for “${query.trim()}”` : ""}</div>
     <div className={styles.results} aria-label="Module library">
-      {visible.map(entry => { const added = selected.has(entry.id); const group = moduleCategory(entry); return <article key={entry.id} className={styles.module} data-selected={added}>
+      {visible.map(entry => { const added = selected.has(entry.id); const group = moduleCategory(entry); const selectionPolicy = feePolicyFor?.(entry); return <article key={entry.id} className={styles.module} data-selected={added}>
         <div className={styles.moduleTop}><ModuleCategoryIcon category={group.id} />{entry.status === "preview" ? <span className={styles.preview}>Draft only</span> : null}</div>
         <h3 id={`module-${entry.id}-title`} tabIndex={-1}>{entry.title}</h3>
         <p>{entry.summary}</p>
+        {feePolicyFor ? <div className={styles.selectionFee} id={`${id}-${entry.id}-fee`}>{selectionPolicy ? `Estimated platform fee: ${feeBreakdown("0", "0", selectionPolicy).programmable} per trade.` : "Platform fee unavailable."}</div> : null}
         <div className={styles.moduleBottom}><ModuleAuthor entry={entry} />
-          <button type="button" className={styles.add} aria-label={`${added ? "Remove" : "Add"} ${entry.title}`} aria-pressed={added}
-            onClick={() => added ? onRemove(entry) : onAdd(entry)}>{added ? <Check size={16} aria-hidden="true" /> : <Plus size={16} aria-hidden="true" />}{added ? "Added" : "Add"}</button>
+          <button type="button" className={styles.add} aria-label={`${added ? "Remove" : "Add"} ${entry.title}`} aria-pressed={added} aria-describedby={feePolicyFor ? `${id}-${entry.id}-fee` : undefined}
+            onClick={() => added ? onRemove(entry) : onAdd(entry)}>{added ? <X size={16} aria-hidden="true" /> : <Plus size={16} aria-hidden="true" />}{added ? "Remove" : "Add"}</button>
         </div>
       </article>; })}
     </div>
     {results.length === 0 ? <div className={styles.empty}>
-      <strong>{query.trim() ? "No matching modules" : "No modules here yet"}</strong>
-      <div><button type="button" onClick={reset}><X size={16} aria-hidden="true" />Clear filters</button><Link href="/developers/modules">Build a module<ArrowRight size={16} aria-hidden="true" /></Link></div>
+      <strong>{hasFilters ? "No matching modules" : "No modules available yet"}</strong>
+      <div>{hasFilters ? <button type="button" onClick={reset}><X size={16} aria-hidden="true" />Clear filters</button> : null}<Link href="/developers/modules">Build a module<ArrowRight size={16} aria-hidden="true" /></Link></div>
     </div> : null}
     {pages > 1 ? <nav className={styles.pagination} aria-label="Module library pages">
       <button type="button" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)} aria-label="Previous modules"><ChevronLeft size={18} /></button>

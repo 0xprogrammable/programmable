@@ -182,7 +182,7 @@ describe("Docs information architecture", () => {
           "/docs/launch-stamps",
           "/docs/models/classic",
           "/docs/models/custom",
-          "/docs/models/stock-paired",
+          "/developer-reference/stock-paired",
         ].map((route) => `https://programmable.market${route}`),
       ),
     );

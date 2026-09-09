@@ -66,7 +66,7 @@ describe("launch model artwork", () => {
     expect(source).toContain('data-launch-model-available="true"');
     expect(source).toContain('data-launch-model-entry="api-key-launch"');
     expect(source).toContain(
-      'href="/developers/api-keys"',
+      'href="/developers/hooks"',
     );
     expect(source).not.toContain('onChoose("custom")');
     expect(source).not.toContain("customLaunchPublicEnabled");

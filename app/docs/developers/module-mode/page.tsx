@@ -116,6 +116,10 @@ export default function ModuleModeDeveloperPage() {
       <p className={styles.bodyCopy}><code>status-module</code> keeps the historical intake receipt.
         <code> review-status-module</code> reads current progress with your existing Module contributions key.
         An <code>accepted</code> review is followed by registry admission and catalog activation.</p>
+      <p className={styles.bodyCopy}>Sign in with the key&apos;s author wallet to see your status and feedback in
+        {" "}<a href="/profile?section=submissions">Profile → Modules → Submissions</a>. A different reward wallet does not own this history.
+        Use <strong>Copy for agent</strong> to continue the submission. The prompt includes its identity and asks your agent to read the latest review with its existing key.
+        Your API key is not included. <strong>Published</strong> shows verified publications after admission and catalog activation.</p>
       <p className={styles.bodyCopy}>The Native and Engine Solidity build profiles each accept up to 4 MiB of packaged
         source, dependencies and documentation, and 16 KiB of encoded configuration. Engine review bounds execution to
         3,000,000 gas and initialization/operation data to 16 KiB each. Intake can store larger packages; a successful upload
@@ -126,7 +130,7 @@ export default function ModuleModeDeveloperPage() {
         include that extension in their review.</p>
     </section>
     <section id="rewards">
-      <h2>Author rewards</h2>
+      <h2 id="contributor-rewards">Author rewards</h2>
       <p className={styles.bodyCopy}>Native V2 and the Engine V1 quote profile charge 0.10% without eligible families,
         or 0.30% with them: 0.10% for Programmable and 0.20% shared equally among distinct eligible families.
         The creator&apos;s selected fee is additional. Eligibility is explicitly bound during admission.</p>

@@ -46,6 +46,17 @@ describe("programmable.market website origin", () => {
     ]);
   });
 
+  it("keeps historical Stock-Paired documentation reachable outside the GitBook proxy", async () => {
+    expect(await nextConfig.redirects?.()).toContainEqual({
+      source: "/docs/models/stock-paired",
+      destination: "/developer-reference/stock-paired",
+      permanent: true,
+    });
+    const routes = sitemap().map(({ url }) => url);
+    expect(routes).toContain("https://programmable.market/developer-reference/stock-paired");
+    expect(routes).not.toContain("https://programmable.market/docs/models/stock-paired");
+  });
+
   it("binds release workflows and read-model defaults to the canonical origin", async () => {
     const sources = await Promise.all(
       [

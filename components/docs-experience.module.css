@@ -1379,7 +1379,7 @@
   .page {
     display: block;
     font-family: var(--font-instrument), Arial, sans-serif;
-    padding-block: 104px 104px;
+    padding-block: 6px 104px;
   }
 
   .mainColumn {
@@ -1393,9 +1393,10 @@
   .sidebar {
     display: block;
     inline-size: auto;
-    inset-inline: 24px;
+    inset-inline: auto;
     isolation: isolate;
-    position: fixed;
+    margin-block-end: 52px;
+    position: sticky;
     top: calc(var(--header-height) + 6px);
     z-index: 44;
   }
@@ -1705,11 +1706,11 @@
 
 @media (max-width: 700px) {
   .page {
-    padding-block: 92px 96px;
+    padding-block: 6px 96px;
   }
 
   .sidebar {
-    inset-inline: 14px;
+    margin-block-end: 40px;
   }
 
   .search {

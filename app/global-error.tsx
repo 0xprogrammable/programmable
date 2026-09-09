@@ -24,17 +24,15 @@ export default function GlobalError({
               role="alert"
               aria-describedby="global-error-description"
             >
-              <p className={styles.eyebrow}>Site unavailable</p>
               <h1 id="global-error-title">Programmable could not load.</h1>
               <p className={styles.description} id="global-error-description">
-                Try again. If the problem continues, reload the site to start a
-                new session.
+                Try again or reload the page.
               </p>
             </div>
 
             <p className={styles.guidance}>
-              If you were reviewing a wallet action, check your wallet before
-              retrying so you do not repeat an action.
+              If you just sent a transaction, check your wallet before
+              repeating it.
             </p>
 
             <div className={styles.actions}>
@@ -52,6 +50,8 @@ export default function GlobalError({
               >
                 Reload site
               </button>
+              {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- The failed root layout may not provide a functioning client router. */}
+              <a className={styles.textAction} href="/">Go home</a>
             </div>
 
             {error.digest ? (

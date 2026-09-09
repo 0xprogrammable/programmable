@@ -6,12 +6,15 @@ import styles from "@/components/site-footer.module.css";
 const productLinks = [
   { href: "/explore", label: "Explore" },
   { href: "/launch", label: "Launch" },
+  { href: "/launch/modules", label: "Modules" },
   { href: "/developers/api-keys", label: "API keys" },
   { href: "/profile", label: "Profile" },
   { href: "/docs", label: "Docs" },
 ];
 
 const resourceLinks = [
+  { href: "/developers/modules", label: "Build a module" },
+  { href: "/developers/hooks", label: "Build a custom hook" },
   {
     href: "/analytics",
     label: "Analytics",
@@ -27,11 +30,6 @@ const resourceLinks = [
     external: true,
   },
   {
-    href: "https://dune.com/programmablehq/analytics",
-    label: "Dune analytics",
-    external: true,
-  },
-  {
     href: "https://discord.com/invite/programmable",
     label: "Discord",
     external: true,
@@ -41,11 +39,11 @@ const resourceLinks = [
     label: "X",
     external: true,
   },
-  {
-    href: "https://docs.uniswap.org/contracts/v4/overview",
-    label: "Uniswap v4 docs",
-    external: true,
-  },
+];
+
+const informationLinks = [
+  { href: "/privacy", label: "Privacy & settings" },
+  { href: "/agents.md", label: "Agent guide" },
 ];
 
 export function SiteFooter() {
@@ -119,6 +117,13 @@ export function SiteFooter() {
             Transactions are irreversible. Tokens may lose all value or be
             difficult to sell. No financial advice or guarantees.
           </p>
+          <nav className={styles.informationLinks} aria-label="Site information">
+            {informationLinks.map((link) => (
+              <Link key={link.href} href={link.href} prefetch={false}>
+                {link.label}
+              </Link>
+            ))}
+          </nav>
         </section>
       </div>
     </footer>

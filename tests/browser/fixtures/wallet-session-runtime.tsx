@@ -1,4 +1,4 @@
-import { useSyncExternalStore, type ReactNode } from "react";
+import { useState, useSyncExternalStore, type ReactNode } from "react";
 import { WEBSITE_ADMIN_WALLET } from "../../../lib/admin-access";
 
 // Only the SDK boundary is substituted. Wallet ownership, selection, login
@@ -39,6 +39,8 @@ type FixtureState = {
   providerAccountOverride: string | null;
   providerChainOverride: string | null;
   delayedLogoutReadback: boolean;
+  clipboardMode: "native" | "denied" | "delayed";
+  waitingClipboardWrites: number;
 };
 
 function user(id: string, primary: string | null, addresses: string[]): FixtureUser {
@@ -106,6 +108,7 @@ let state: FixtureState = {
   delayedNetworkSwitch: false, waitingNetworkSwitches: 0,
   providerAccountOverride: null, providerChainOverride: null,
   delayedLogoutReadback: false,
+  clipboardMode: "native", waitingClipboardWrites: 0,
 };
 
 function update(patch: Partial<FixtureState>) {
@@ -124,6 +127,38 @@ function subscribe(listener: () => void) {
 
 function snapshot() { return state; }
 function useFixtureState() { return useSyncExternalStore(subscribe, snapshot, snapshot); }
+
+// A storage event may reach another browser process before the publishing
+// function returns. Record the cookie that a reader can see at that boundary,
+// without making the production provider rerender or delaying either write.
+const browsingPublications: { announced: string; readableCookie: string | null }[] = [];
+const nativeStorageSetItem = Storage.prototype.setItem;
+Storage.prototype.setItem = function (key: string, value: string) {
+  nativeStorageSetItem.call(this, key, value);
+  if (this !== window.localStorage || key !== "programmable:view-chain:v2") return;
+  const cookie = document.cookie.split(";").map((part) => part.trim())
+    .find((part) => part.startsWith("programmable-view-chain-v2="));
+  browsingPublications.push({ announced: value, readableCookie: cookie?.split("=")[1] ?? null });
+};
+
+const nativeClipboard = navigator.clipboard;
+const waitingClipboardWrites: (() => void)[] = [];
+Object.defineProperty(navigator, "clipboard", {
+  configurable: true,
+  value: {
+    readText: () => nativeClipboard.readText(),
+    writeText: async (text: string) => {
+      if (state.clipboardMode === "denied") throw new DOMException("Clipboard access denied", "NotAllowedError");
+      if (state.clipboardMode === "delayed") {
+        await new Promise<void>((resolve) => {
+          waitingClipboardWrites.push(resolve);
+          update({ waitingClipboardWrites: waitingClipboardWrites.length });
+        });
+      }
+      await nativeClipboard.writeText(text);
+    },
+  },
+});
 
 // The real Web Locks implementation still owns and releases the lock. A
 // fixture-only barrier delays acquisition so account changes can occur while
@@ -250,7 +285,10 @@ function completeLogin() {
 
 export function FixtureControls() {
   const current = useFixtureState();
+  const [publications, setPublications] = useState<typeof browsingPublications>([]);
   return <section aria-label="SDK fixture controls">
+    <button onClick={() => setPublications([...browsingPublications])}>Read browsing publications</button>
+    <output aria-label="Browsing preference publications">{JSON.stringify(publications)}</output>
     <label>SDK scenario <select aria-label="SDK scenario" onChange={(event) => chooseScenario(event.target.value)} defaultValue="primary">
       <option value="primary">Primary wallet with unlinked recent wallet</option>
       <option value="website-admin">Website admin wallet</option>
@@ -271,6 +309,15 @@ export function FixtureControls() {
     <button onClick={() => update({ authenticated: true, user: betaBoth })}>Change SDK user, same linked addresses</button>
     <button onClick={() => update({ authenticated: true, user: alpha, wallets: [wallet(accountA)] })}>Restore SDK session</button>
     <button onClick={() => update({ authenticated: true, user: alpha, wallets: [wallet(accountA)], isOpen: false })}>Restore session without login callback</button>
+    <button onClick={() => loginCallbacks.onError("unknown_auth_error")}>Report prior login failure</button>
+    <button onClick={() => update({ clipboardMode: "denied" })}>Disable clipboard</button>
+    <button onClick={() => update({ clipboardMode: "delayed" })}>Delay clipboard</button>
+    <button onClick={() => {
+      const pending = waitingClipboardWrites.splice(0);
+      update({ waitingClipboardWrites: 0, clipboardMode: "native" });
+      pending.forEach((resolve) => resolve());
+    }}>Resolve clipboard</button>
+    <output aria-label="Pending clipboard writes">{current.waitingClipboardWrites}</output>
     <button onClick={() => update({ delayedLogoutReadback: true })}>Delay logout readback</button>
     <button onClick={() => update({ authenticated: false, user: null, delayedLogoutReadback: false })}>Finish logout readback</button>
     <button onClick={() => update({ wallets: state.wallets.map((candidate) => wallet(

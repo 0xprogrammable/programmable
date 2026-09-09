@@ -1,60 +1,40 @@
-.page {
-  --module-ink: #f5f3ef;
-  --module-muted: #aaa9a5;
-  --module-line: #30302e;
-  --module-surface: #151515;
-  --module-accent: #e786b2;
-  color: var(--module-ink);
-  margin: 0 auto;
-  max-width: 880px;
-  min-width: 0;
-  padding: 24px 0 64px;
-  width: calc(100% - 48px);
-}
-
-.navigation { align-items: center; display: flex; gap: 16px; justify-content: space-between; margin-bottom: 16px; }
-.back, .textLink, .resources a { align-items: center; border-radius: 8px; color: var(--module-muted); display: inline-flex; font-size: 14px; gap: 8px; line-height: 20px; min-height: 44px; text-decoration: none; }
-.workspace { background: var(--module-surface); border: 1px solid var(--module-line); border-radius: 16px; padding: 32px; }
-.header h1 { color: var(--module-ink); font-size: 32px; font-weight: 500; letter-spacing: -0.035em; line-height: 40px; margin: 0; text-wrap: balance; }
-.header h2 { color: var(--module-ink); font-size: 24px; font-weight: 500; letter-spacing: -0.025em; line-height: 32px; margin: 0; }
-.promptWorkspace { --module-ink: #f5f3ef; --module-muted: #aaa9a5; --module-line: #30302e; --module-surface: #151515; --module-accent: #e786b2; margin-block: 24px; }
-.header p { color: var(--module-muted); font-size: 14px; line-height: 20px; margin: 8px 0 24px; max-width: 580px; text-wrap: pretty; }
+.setupSteps { display: flex; flex-wrap: wrap; gap: 12px 32px; list-style: none; margin: 0 0 24px; padding: 0; }
+.setupSteps li { align-items: center; color: #aaa9a5; display: flex; font-size: 14px; gap: 8px; line-height: 20px; }
+.setupSteps li > span { align-items: center; border: 1px solid #484846; border-radius: 50%; display: inline-flex; font-size: 12px; height: 28px; justify-content: center; width: 28px; }
+.setupSteps li[aria-current="step"] { color: #f5f3ef; }
+.setupSteps li[aria-current="step"] > span { border-color: #e786b2; color: #e786b2; }
+.setupSteps li[data-complete="true"] > span { border-color: #91b894; color: #91b894; }
+.promptWorkspace { --module-ink: #f5f3ef; --module-muted: #aaa9a5; --module-line: #30302e; --module-accent: #e786b2; background: #151515; border: 1px solid var(--module-line); border-radius: 16px; margin-bottom: 24px; min-width: 0; padding: 24px; }
+.header h2 { color: var(--module-ink); font-size: 20px; font-weight: 500; letter-spacing: -0.02em; line-height: 28px; margin: 0; }
+.header p { color: var(--module-muted); font-size: 14px; line-height: 20px; margin: 8px 0 24px; max-width: 580px; overflow-wrap: anywhere; text-wrap: pretty; }
+.header strong { color: var(--module-ink); font-weight: 500; }
 .ideaField { display: grid; gap: 8px; }
-.ideaField > span { color: var(--module-muted); font-size: 14px; line-height: 20px; }
-.ideaField textarea { background: #181818; border: 1px solid #76716b; border-radius: 12px; color: var(--module-ink); font: inherit; font-size: 14px; line-height: 24px; min-height: 136px; padding: 12px 16px; resize: vertical; width: 100%; }
+.ideaField > span { color: var(--module-ink); font-size: 14px; line-height: 20px; }
+.ideaField textarea { background: #181818; border: 1px solid #76716b; border-radius: 12px; color: var(--module-ink); font: inherit; font-size: 16px; line-height: 24px; min-height: 144px; padding: 12px 16px; resize: vertical; width: 100%; }
 .ideaField textarea::placeholder { color: #888884; }
-.actions { display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr); margin-top: 16px; max-width: 200px; }
-.primaryAction, .secondaryAction { align-items: center; border: 1px solid var(--module-line); border-radius: 12px; display: inline-flex; font: inherit; font-size: 14px; font-weight: 500; gap: 8px; justify-content: center; line-height: 20px; min-height: 48px; padding: 12px 16px; text-decoration: none; white-space: nowrap; }
-.primaryAction { background: var(--module-accent); border-color: var(--module-accent); color: #1c1217; }
-.secondaryAction { background: transparent; border-color: #76716b; color: var(--module-ink); }
-.primaryAction svg, .secondaryAction svg { flex: 0 0 16px; }
+.actions { display: grid; grid-template-columns: minmax(0, 1fr); margin-top: 16px; max-width: 200px; }
+.primaryAction { align-items: center; background: var(--module-accent); border: 1px solid var(--module-accent); border-radius: 12px; color: #1c1217; display: inline-flex; font: inherit; font-size: 14px; font-weight: 500; gap: 8px; justify-content: center; line-height: 20px; min-height: 48px; padding: 12px 16px; }
+.primaryAction svg { flex: 0 0 16px; }
 .copyStatus { color: var(--module-muted); font-size: 14px; line-height: 20px; margin: 12px 0 0; min-height: 40px; max-width: 600px; text-wrap: pretty; }
 .copyStatus[role="alert"] { color: #f3a4a4; }
 .promptDetails { margin-top: 8px; }
 .promptDetails summary { align-items: center; border-radius: 8px; color: var(--module-muted); cursor: pointer; display: inline-flex; font-size: 14px; gap: 8px; line-height: 20px; list-style: none; min-height: 44px; }
 .promptDetails summary::-webkit-details-marker { display: none; }
 .promptDetails[open]:not([data-disclosure-closing]) summary svg { transform: rotate(180deg); }
-.promptDetails pre { background: #000; border: 1px solid var(--module-line); border-radius: 12px; color: var(--module-muted); font-family: var(--font-instrument), sans-serif; font-size: 14px; line-height: 24px; margin: 8px 0 16px; overflow-wrap: anywhere; padding: 16px; white-space: pre-wrap; }
-.reviewNote { color: var(--module-muted); font-size: 14px; line-height: 20px; margin: 16px 0 0; text-wrap: pretty; }
-.resources { display: flex; flex-wrap: wrap; gap: 24px; margin-top: 16px; }
-:is(.page, .promptWorkspace) :is(a, button, summary) { cursor: pointer; touch-action: manipulation; transition: color 120ms ease, background-color 120ms ease, border-color 120ms ease; }
-:is(.page, .promptWorkspace) :is(a, button, summary, textarea):focus-visible { outline: 2px solid var(--module-accent); outline-offset: 3px; }
+.promptDetails pre { background: #000; border: 1px solid var(--module-line); border-radius: 12px; color: var(--module-muted); font: inherit; font-size: 14px; line-height: 24px; margin: 8px 0 16px; overflow-wrap: anywhere; padding: 16px; white-space: pre-wrap; }
+.nextStep { border-top: 1px solid var(--module-line); margin-top: 20px; padding-top: 16px; }
+.nextStep p { color: var(--module-muted); font-size: 14px; line-height: 20px; margin: 0; max-width: 640px; text-wrap: pretty; }
+.nextStep a { align-items: center; border-radius: 8px; color: var(--module-ink); display: inline-flex; font-size: 14px; gap: 8px; line-height: 20px; margin-top: 4px; min-height: 44px; text-decoration: none; }
+.promptWorkspace :is(a, button, summary) { cursor: pointer; touch-action: manipulation; transition: color 120ms ease, background-color 120ms ease, border-color 120ms ease; }
+.promptWorkspace :is(a, button, summary, textarea):focus-visible { outline: 2px solid var(--module-accent); outline-offset: 3px; }
 @media (hover: hover) and (pointer: fine) {
-.page :is(.back, .textLink, .resources a, .promptDetails summary):hover { color: var(--module-ink); }
-.primaryAction:hover { background: #ee9fc2; border-color: #ee9fc2; }
-.secondaryAction:hover { background: #202020; border-color: #484846; }
+  .primaryAction:hover { background: #ee9fc2; border-color: #ee9fc2; }
+  .promptDetails summary:hover, .nextStep a:hover { color: var(--module-accent); }
 }
-.page :is(a, button):active { filter: brightness(0.94); }
-
 @media (max-width: 600px) {
-  .page { padding-block: 16px 48px; width: calc(100% - 32px); }
-  .workspace { padding: 24px 16px; }
-  .header h1 { font-size: 28px; line-height: 36px; }
-  .ideaField textarea { font-size: 16px; min-height: 160px; }
-  .actions { gap: 8px; max-width: none; }
-  .primaryAction, .secondaryAction { padding-inline: 8px; }
+  .promptWorkspace { padding: 20px 16px; }
+  .actions { max-width: none; }
   .copyStatus { min-height: 60px; }
 }
-
-@media (prefers-reduced-motion: reduce) { :is(.page, .promptWorkspace) *, :is(.page, .promptWorkspace) *::before, :is(.page, .promptWorkspace) *::after { transition: none; } }
-@media (forced-colors: active) { .workspace, .primaryAction, .secondaryAction, .ideaField textarea, .promptDetails pre { border: 1px solid CanvasText; } }
+@media (prefers-reduced-motion: reduce) { .promptWorkspace *, .promptWorkspace *::before, .promptWorkspace *::after { transition: none; } }
+@media (forced-colors: active) { .promptWorkspace, .primaryAction, .ideaField textarea, .promptDetails pre, .setupSteps li > span { border: 1px solid CanvasText; } }
