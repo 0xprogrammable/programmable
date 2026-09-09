@@ -8,7 +8,7 @@ import {
   createTokenImageUploadHandlerV1,
   readProductionTokenImageBlobV1,
   type TokenImageUploadHandlerDependenciesV1,
-} from "../app/api/token-image/route";
+} from "../app/api/token-image/handler";
 import type {
   SignedTokenImageUploadReceiptV1,
 } from "../lib/custom-launch/token-image-upload-receipt-v1";

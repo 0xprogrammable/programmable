@@ -8,8 +8,8 @@
 
 .subheading,
 .minorHeading,
-:global([data-launch-stamp-docs]),
-:global([data-docs-content] #abi) {
+:global([data-launch-stamp-docs]):has(.sectionLead),
+:global([data-docs-content]) .subheading:global(#abi) {
   scroll-margin-top: 132px;
 }
 
@@ -432,8 +432,8 @@
 }
 
 @media (max-width: 700px) {
-  :global(html:has([data-launch-stamp-docs])),
-  :global(body:has([data-launch-stamp-docs])) {
+  :global(html):has(:global([data-launch-stamp-docs]) .sectionLead),
+  :global(body):has(:global([data-launch-stamp-docs]) .sectionLead) {
     overflow-x: clip;
   }
 
