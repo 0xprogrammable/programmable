@@ -87,8 +87,9 @@ describe("view chain", () => {
 
     expect(provider).toContain("window.localStorage.getItem");
     expect(provider).toContain(
-      "readViewChainCookie() ?? readStoredViewChain() ?? initialViewChainId",
+      "readStoredViewChain() ?? readViewChainCookie()",
     );
+    expect(provider).toContain("readBrowserViewChain() ?? initialViewChainId");
     expect(provider).toContain('window.addEventListener("storage"');
     expect(provider).toContain("document.cookie = serializeViewChainCookie");
     expect(provider).not.toContain("useWallet");
@@ -104,7 +105,8 @@ describe("view chain", () => {
       "const getServerSnapshot = useCallback((): ViewChainId | null => null",
     );
     expect(provider).toContain("const hydrated = resolvedViewChainId !== null");
-    expect(provider).toContain("persistViewChain(viewChainId)");
+    expect(provider).toContain("const currentViewChainId = getViewChainSnapshot()");
+    expect(provider).toContain("persistViewChain(currentViewChainId)");
     expect(layout).not.toContain('from "next/headers"');
     expect(layout).not.toContain("cookies()");
     expect(resolvedLayout).toContain('import { cookies } from "next/headers"');

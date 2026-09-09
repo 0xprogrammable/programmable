@@ -164,8 +164,17 @@ export function engineResourceCommitment(identity, state) {
   need(p.launchData === '0x', 'Unsupported engine initialization resource data');
   let hash;
   if (manifest.catalogDefinition.interface === 'settlement-v1') {
-    const abi = parseAbiParameters('uint256,uint256'), [minimum, maximum] = decodeAbiParameters(abi, p.configuration);
-    need(same(encodeAbiParameters(abi, [minimum, maximum]), p.configuration) && minimum > 0n && maximum >= minimum
+    const definition = manifest.catalogDefinition;
+    // The protected publication binds these source bytes. A presentation interface alone does not select a new codec.
+    const quoteBound = definition.source.path === 'src/QuoteBoundSettlementV1.sol'
+      && definition.source.sha256 === 'bbf3d19c6244d1a9ad37ee33b2c147f11662475f72904f24c4d13be208797bcf';
+    if (quoteBound) equal(definition.configurationAbi, [
+      { path: ['quoteAsset'], type: 'address' }, { path: ['minimumWindow'], type: 'uint256' }, { path: ['maximumWindow'], type: 'uint256' },
+    ], 'Settlement configuration ABI differs from the reviewed source profile');
+    const abi = parseAbiParameters(quoteBound ? 'address,uint256,uint256' : 'uint256,uint256');
+    const values = decodeAbiParameters(abi, p.configuration), [minimum, maximum] = quoteBound ? values.slice(1) : values;
+    if (quoteBound) need(same(values[0], a.quoteAsset) && minimum === 60n && maximum === 30n * 86400n, 'Settlement quote/fixed windows differ');
+    need(same(encodeAbiParameters(abi, values), p.configuration) && minimum > 0n && maximum >= minimum
       && maximum <= 365n * 86400n && state.minimumWindow === minimum && state.maximumWindow === maximum, 'Settlement resources differ');
     hash = keccak256(encodeAbiParameters(parseAbiParameters('address,address,uint256,uint256'), [a.quoteAsset, a.creator, minimum, maximum]));
   } else if (manifest.catalogDefinition.interface === 'escrow-v1') {

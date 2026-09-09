@@ -90,6 +90,31 @@
 
 .account strong span { display: block; }
 
+.copyFallback {
+  display: grid;
+  gap: 8px;
+}
+
+.addressInput {
+  background: transparent;
+  border: 1px solid var(--webde-line, #323232);
+  border-radius: 8px;
+  box-sizing: border-box;
+  color: inherit;
+  font: inherit;
+  font-size: 16px;
+  line-height: 24px;
+  min-height: 44px;
+  min-width: 0;
+  padding: 8px 12px;
+  width: 100%;
+}
+
+.addressInput:focus-visible {
+  outline: 2px solid var(--wallet-pink, #e786b2);
+  outline-offset: 3px;
+}
+
 .label,
 .network,
 .copy,

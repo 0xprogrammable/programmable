@@ -45,7 +45,7 @@ export const metadata: Metadata = {
       {
         url: "/favicon-warm-ivory-v1-16x16.png",
         sizes: "16x16",
-        type: "image/jpeg",
+        type: "image/png",
       },
       {
         url: "/favicon-warm-ivory-v1-32x32.png",
@@ -118,6 +118,7 @@ export default function RootLayout({
           rel="service-desc"
           type="application/vnd.oai.openapi+json"
         />
+        <link href="/agents.md" rel="help" type="text/markdown" title="Agent guide" />
         <script
           dangerouslySetInnerHTML={{
             __html: serializeStructuredData(programmableSiteStructuredData),

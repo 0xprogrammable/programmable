@@ -1,5 +1,6 @@
 .library { color: #f5f3ef; min-width: 0; }
 .toolbar { align-items: center; display: flex; gap: 8px; }
+.toolbar[hidden], .categorySelect[hidden], .resultCount[hidden] { display: none; }
 .search { align-items: center; background: #151515; border: 1px solid #70706c; border-radius: 8px; display: flex; flex: 1; gap: 8px; min-width: 0; padding-inline: 12px; }
 .search > svg { color: #aaa9a5; flex: 0 0 auto; }
 .search input { background: none; border: 0; color: #f5f3ef; font: inherit; font-size: 14px; line-height: 20px; min-height: 44px; min-width: 0; outline: 0; padding-block: 8px; width: 100%; }

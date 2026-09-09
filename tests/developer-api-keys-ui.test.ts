@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   DeveloperApiKeysView,
+  apiKeyForBuilder,
   ApiKeyPermissions,
   ApiKeyChainPolicy,
   ApiKeyAccessChoice,
@@ -30,6 +31,7 @@ import {
   shouldRetainApiKeyMutationAttempt,
   type ApiKeySummary,
 } from "../components/developer-api-keys";
+import { BuilderIdeaPrompt, BuilderSetupSteps } from "../components/module-contribution-entry";
 import {
   launchPollingRetryAfterMs,
   fetchVerifiedProjectImageV1,
@@ -335,7 +337,7 @@ describe("developer API key interface", () => {
   });
 
   it("keeps the first view compact and focused on key management", () => {
-    expect(apiKeysSource).toContain('activeSection === "keys" ? moduleBuilder ? "Build a module" : "API keys"');
+    expect(apiKeysSource).toContain('activeSection === "keys" ? moduleBuilder ? "Build a module" : hookBuilder ? "Build a custom hook" : "API keys"');
     expect(apiKeysSource).toContain('aria-label="Developer access view"');
     expect(apiKeysSource).toContain('aria-pressed={activeSection === "keys"}');
     expect(apiKeysSource).toContain('aria-pressed={activeSection === "history"}');
@@ -407,7 +409,7 @@ describe("developer API key interface", () => {
       account: "0x0000000000000000000000000000000000000001" as const },
     { state: "disconnected wallet", authReady: true, account: null },
     { state: "loading wallet session", authReady: false, account: null },
-  ])("offers setup without exposing a key for $state", ({ authReady, account }) => {
+  ])("keeps guides accessible without offering key setup prematurely for $state", ({ authReady, account }) => {
     const getToken = vi.fn(async () => null);
     const walletAction = vi.fn(async (): Promise<`0x${string}`> => {
       throw new Error("Setup must not request a wallet action");
@@ -425,7 +427,7 @@ describe("developer API key interface", () => {
       signCustomLaunchFundingAuthorization: walletAction,
     }));
 
-    expect(html).toContain("Copy instructions");
+    expect(html).not.toContain("Copy instructions");
     expect(html).toContain('href="/agents.md"');
     expect(html).not.toContain("Set up your agent");
     expect(html).not.toContain("Manage access for");
@@ -450,6 +452,84 @@ describe("developer API key interface", () => {
     expect(copySetup).toContain("buildAgentInstructions({ scopes, wallet:");
     expect(copySetup).not.toContain("mutationResult");
     expect(copySetup).not.toContain("apiKeySecret");
+  });
+
+  it("continues with an active key that has the required builder scopes", () => {
+    const scopes = ["modules:submit", "modules:read"];
+    const keys = [
+      apiKey("launch", { expiresAt: null }),
+      apiKey("read", { scopes: ["modules:read"], expiresAt: null }),
+      apiKey("expired", { scopes, expiresAt: "2020-01-01T00:00:00Z" }),
+      apiKey("revoked", { scopes, revokedAt: "2020-01-01T00:00:00Z", expiresAt: null }),
+      apiKey("saved-module", { scopes, expiresAt: null }),
+    ];
+    expect(apiKeyForBuilder(keys, "module")).toBe(keys[4]);
+    expect(apiKeyForBuilder(keys.slice(0, 4), "module")).toBeUndefined();
+    expect(apiKeyForBuilder(keys, "hook")).toBe(keys[0]);
+    expect(apiKeyForBuilder([keys[1]], "hook")).toBeUndefined();
+    const unified = apiKey("both", { scopes: [...scopes, "custom-launch:create", "custom-launch:read"], expiresAt: null });
+    expect(apiKeyForBuilder([unified], "module")).toBe(unified);
+    expect(apiKeyForBuilder([unified], "hook")).toBe(unified);
+  });
+
+  it.each(["module", "hook"] as const)("explains the %s builder before asking for a key", (kind) => {
+    const getToken = vi.fn(async () => null);
+    const walletAction = vi.fn(async (): Promise<`0x${string}`> => {
+      throw new Error("Onboarding must not perform wallet actions");
+    });
+    const props = {
+      account: null,
+      authReady: true,
+      connecting: false,
+      getAccessToken: getToken,
+      getIdentityToken: getToken,
+      initialSection: "keys" as const,
+      moduleBuilder: kind === "module",
+      hookBuilder: kind === "hook",
+      openWallet: vi.fn(),
+      sendCustomLaunchWalletAction: walletAction,
+      sendCustomLaunchWalletActionV4: walletAction,
+      signCustomLaunchFundingAuthorization: walletAction,
+    };
+    const html = renderToStaticMarkup(createElement(DeveloperApiKeysView, props));
+    expect(html).toContain(kind === "module" ? "Build a module" : "Build a custom hook");
+    expect(html).toContain(kind === "module" ? "an attachment" : "trading rules");
+    expect(html.indexOf("Builder setup")).toBeLessThan(html.indexOf("Connect your wallet"));
+    expect(html).toContain("continue with one you already saved");
+    expect(html).not.toContain("Developer access view");
+    expect(html).not.toContain("Copy prompt");
+    expect(html).not.toContain("<textarea");
+    const loading = renderToStaticMarkup(createElement(DeveloperApiKeysView, {
+      ...props,
+      account: "0x0000000000000000000000000000000000000001",
+    }));
+    expect(loading).toContain("Loading your API keys");
+    expect(loading).not.toContain("Create your API key");
+    expect(getToken).not.toHaveBeenCalled();
+    expect(walletAction).not.toHaveBeenCalled();
+  });
+
+  it.each(["module", "hook"] as const)("lets a returning %s builder describe an idea without disclosing or re-entering a saved key", (kind) => {
+    const key = apiKey("saved", { label: "My saved builder", expiresAt: null });
+    const html = renderToStaticMarkup(createElement(BuilderIdeaPrompt, {
+      kind, keyLabel: key.label, scopes: key.scopes,
+      wallet: "0x0000000000000000000000000000000000000001",
+    }));
+    expect(html).toContain("My saved builder");
+    expect(html).toMatch(/<textarea[^>]*required=""/u);
+    expect(html).toContain("Copy prompt");
+    expect(html).not.toContain(key.keyPrefix);
+    expect(html).not.toContain("<input");
+    expect(html).not.toContain("0x0000000000000000000000000000000000000001");
+    expect(html).toContain(kind === "module"
+      ? 'href="/profile?section=submissions#profile-modules-title"'
+      : 'href="/developers/api-keys?view=history"');
+    expect(html).toContain(kind === "module"
+      ? "reviewed before they can be published"
+      : "wallet confirmations remain separate");
+    const steps = renderToStaticMarkup(createElement(BuilderSetupSteps, { keyReady: true }));
+    expect(steps).toContain('data-complete="true"');
+    expect(steps).toMatch(/aria-current="step"[^>]*>.*Your idea/su);
   });
 
   it("reads narrowed and future metadata alongside historical launch and module keys", () => {
@@ -702,7 +782,7 @@ describe("developer API key interface", () => {
     expect(apiKeysSource).toContain('event.key === "Escape"');
     expect(apiKeysSource).toContain("revealRef.current?.focus()");
     expect(apiKeysSource).toContain("confirmRevokeRef.current?.focus()");
-    expect(apiKeysSource).toContain("Copy connection");
+    expect(apiKeysSource).toContain("Copy key + setup");
     expect(apiKeysSource).toContain("Copy instructions");
     expect(PROGRAMMABLE_AGENT_SETUP_TEXT_V1).toContain("$PROGRAMMABLE_API_KEY");
     expect(PROGRAMMABLE_AGENT_SETUP_TEXT_V1).toContain(

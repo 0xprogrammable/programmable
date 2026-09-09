@@ -2975,18 +2975,16 @@ function CustomLaunchRuntime({
       >
         <div className={styles.introGrid}>
           <section className={styles.introPrimary}>
-            <span className={styles.instrumentLabel}>Exact source in, public record out</span>
-            <h2>Move one approved revision to Ethereum.</h2>
+            <h2>Bring your project onchain.</h2>
             <p className={styles.introCopy}>
-              Programmable binds the repository, approval, launch action, and final Registry record.
-              Your project remains independent and your browser wallet submits the transaction.
+              Launch an approved version of your project. Connect GitHub and your wallet to find your submission and prepare the wallet steps.
             </p>
             <div className={styles.actions}>
               <a className={styles.secondaryButton} href={SUBMISSION_REQUIREMENTS_URL} target="_blank" rel="noreferrer">
                 Read the application guide <ExternalLink aria-hidden="true" size={15} />
               </a>
               <a className={styles.textLink} href={BUILDER_SKILL_URL} target="_blank" rel="noreferrer">
-                Prepare a project with the builder
+                Prepare a project with your builder
               </a>
             </div>
           </section>
@@ -3111,7 +3109,7 @@ function CustomLaunchRuntime({
         <section className={styles.loadingPanel}>
           <CircleAlert aria-hidden="true" size={20} />
           <div className={styles.recoveryCopy}>
-            <h2>{durableApproval ? "Approved — launch anytime" : "Launch setup could not load"}</h2>
+            <h2>{durableApproval ? "Approved for launch" : "Launch setup could not load"}</h2>
             <p>{error || "The approved launch details are temporarily unavailable. Nothing was submitted."}</p>
             <button className={styles.secondaryButton} type="button" disabled={applicantReauthorizing} onClick={() => void recoverApplicantAccess()}>{applicantRecoveryAction}</button>
           </div>
@@ -3218,7 +3216,7 @@ function CustomLaunchRuntime({
           <div className={styles.launchFooter}>
             <div className={styles.progressCopy} aria-live="polite">
               {launchProgress === "complete" ? <CircleCheck aria-hidden="true" size={18} /> : launchProgress !== "idle" ? <LoaderCircle aria-hidden="true" className={styles.spin} size={18} /> : <Check aria-hidden="true" size={18} />}
-              <span>{statusMessage || (durableApproval ? "Approved — launch anytime" : "Launch details verified")}</span>
+              <span>{statusMessage || (durableApproval ? "Approved for launch" : "Launch details verified")}</span>
             </div>
             {launchProgress === "complete" ? (
               <div className={styles.completionActions}>
@@ -3286,8 +3284,7 @@ function LaunchFlowRail({
   return (
     <aside className={styles.flowRail} aria-labelledby="custom-launch-path-title">
       <div className={styles.flowRailHeading}>
-        <span className={styles.instrumentLabel}>Verified path</span>
-        <h2 id="custom-launch-path-title">Repository to Registry</h2>
+        <h2 id="custom-launch-path-title">Launch steps</h2>
       </div>
       <ol className={styles.flowSteps}>
         {CUSTOM_LAUNCH_STAGES_V1.map((item, index) => {
@@ -3315,9 +3312,6 @@ function LaunchFlowRail({
           );
         })}
       </ol>
-      <p className={styles.flowRailNote}>
-        A later step never unlocks from an earlier visual state. Every transition is rechecked.
-      </p>
     </aside>
   );
 }
@@ -3403,7 +3397,7 @@ function ApplicationRow({ application, onOpen }: { application: PrincipalCustomL
   const display = application.intakeContract === "registry-v3"
     ? { title: "Catalog entry", action: "View on GitHub", tone: "muted" as const }
     : customApplicationHasDurableApprovalV2(application, null)
-      ? { title: "Approved — launch anytime", action: "Set up launch", tone: "ready" as const }
+      ? { title: "Approved for launch", action: "Set up launch", tone: "ready" as const }
     : customApplicationDisplayState(application.state);
   const githubUrl = `https://github.com/${application.repositoryFullName}/pull/${application.pullRequestNumber}`;
   const opensSetup = customApplicationOpensLaunchExperienceV2(application);

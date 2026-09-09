@@ -1,75 +1,86 @@
 "use client";
 
-import { Disclosure } from "@/components/disclosure";
-
 import Link from "next/link";
-import { ArrowLeft, ArrowRight, Check, ChevronDown, Copy } from "lucide-react";
-import { useState } from "react";
+import { ArrowRight, Check, ChevronDown, Copy } from "lucide-react";
+import { useRef, useState, type Ref } from "react";
+import { Disclosure } from "@/components/disclosure";
 import { buildAgentInstructions } from "@/lib/agent-connection";
 import styles from "@/components/module-contribution-entry.module.css";
 
-export function ModuleContributionEntry() {
+export type BuilderKind = "module" | "hook";
+
+export function BuilderSetupSteps({ keyReady }: { keyReady: boolean }) {
   return (
-    <div className={styles.page}>
-      <nav className={styles.navigation} aria-label="Module builder navigation">
-        <Link href="/launch/modules" className={styles.back}><ArrowLeft size={16} aria-hidden="true" /> Modules</Link>
-        <Link href="/profile?section=submissions#profile-modules-title" className={styles.textLink}>Submissions <ArrowRight size={16} aria-hidden="true" /></Link>
-      </nav>
-      <section className={styles.workspace} aria-labelledby="module-builder-title">
-        <header className={styles.header}>
-          <h1 id="module-builder-title">Build a module</h1>
-          <p>A module gives a coin a new ability. Set up your API key, then describe your idea and copy the prompt for your AI builder.</p>
-        </header>
-        <div className={styles.actions}>
-          <Link href="/developers/api-keys?purpose=modules" className={styles.primaryAction}>Get API key <ArrowRight size={16} aria-hidden="true" /></Link>
-        </div>
-        <p className={styles.reviewNote}>Your builder submits the module for review. Approval is required before publication.</p>
-      </section>
-      <nav className={styles.resources} aria-label="Module developer resources">
-        <Link href="/developer-reference/module-mode">Module docs <ArrowRight size={16} aria-hidden="true" /></Link>
-        <a href="/agents.md">Agent guide <ArrowRight size={16} aria-hidden="true" /></a>
-      </nav>
-    </div>
+    <ol className={styles.setupSteps} aria-label="Builder setup">
+      <li data-complete={keyReady} aria-current={!keyReady ? "step" : undefined}>
+        <span aria-hidden="true">{keyReady ? <Check size={14} /> : "1"}</span>
+        API key
+      </li>
+      <li aria-current={keyReady ? "step" : undefined}>
+        <span aria-hidden="true">2</span>
+        Your idea
+      </li>
+    </ol>
   );
 }
 
-export function ModuleBuilderPrompt({ scopes, wallet }: { scopes: readonly string[]; wallet: string }) {
+export function BuilderIdeaPrompt({ kind, keyLabel, scopes, wallet, ideaRef }: {
+  kind: BuilderKind;
+  keyLabel: string;
+  scopes: readonly string[];
+  wallet: string;
+  ideaRef?: Ref<HTMLTextAreaElement>;
+}) {
   const [idea, setIdea] = useState("");
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState("");
+  const copyGeneration = useRef(0);
+  const isModule = kind === "module";
   const instructions = buildAgentInstructions({
     scopes,
     wallet,
-    intent: idea.trim()
-      ? `Build and submit a reusable Module Mode module. The module should do the following: ${idea.trim().replace(/\.+$/u, "")}`
-      : "Build and submit a reusable Module Mode module. Ask me what my module should do before starting",
+    intent: isModule
+      ? `Build and submit a reusable Module Mode module for this idea: ${idea.trim()}`
+      : `Build a complete custom hook project for this idea: ${idea.trim()}. Check current launch capabilities and requirements before coding. Prepare and submit the supported API request when authorized, preserve its receipt, and provide the website handoff for any wallet steps. Report required review or unsupported dependencies without promising publication`,
   });
 
   async function copyInstructions() {
+    if (!idea.trim()) return;
+    const generation = ++copyGeneration.current;
     try {
       await navigator.clipboard.writeText(instructions);
+      if (generation !== copyGeneration.current) return;
       setCopied(true);
       setError("");
     } catch {
+      if (generation !== copyGeneration.current) return;
+      setCopied(false);
       setError("Copy failed. Open the prompt below and copy it manually.");
     }
   }
 
   return (
-      <section className={`${styles.workspace} ${styles.promptWorkspace}`} aria-labelledby="module-prompt-title">
-        <header className={styles.header}>
-          <h2 id="module-prompt-title">Your module</h2>
-          <p>Describe what your module should do.</p>
-        </header>
+    <section className={styles.promptWorkspace} aria-labelledby="builder-prompt-title">
+      <header className={styles.header}>
+        <h2 id="builder-prompt-title">Describe your idea</h2>
+        <p>Use your saved <strong>{keyLabel}</strong> key in your AI builder’s secure setup.</p>
+      </header>
 
-        <label className={styles.ideaField} htmlFor="module-idea">
-          <span>Your idea</span>
+      <form onSubmit={(event) => { event.preventDefault(); void copyInstructions(); }}>
+        <label className={styles.ideaField} htmlFor="builder-idea">
+          <span>{isModule ? "What should your module do?" : "What should your hook do?"}</span>
           <textarea
-            id="module-idea"
+            ref={ideaRef}
+            id="builder-idea"
             value={idea}
+            required
             maxLength={4000}
-            placeholder="Reward every 10th buyer with a share of the fees."
+            placeholder={isModule
+              ? "An attachment that uses a share of trading fees to reward holders."
+              : "A coin with swap fees that change as trading activity increases."}
             onChange={(event) => {
+              copyGeneration.current += 1;
+              event.target.setCustomValidity(event.target.value.trim() ? "" : "Describe your idea first.");
               setIdea(event.target.value);
               setCopied(false);
               setError("");
@@ -78,22 +89,33 @@ export function ModuleBuilderPrompt({ scopes, wallet }: { scopes: readonly strin
         </label>
 
         <div className={styles.actions}>
-          <button className={styles.primaryAction} type="button" onClick={() => void copyInstructions()}>
+          <button className={styles.primaryAction} type="submit">
             {copied ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />}
-            Copy prompt
+            {copied ? "Copied" : "Copy prompt"}
           </button>
         </div>
-        <p className={styles.copyStatus} role={error ? "alert" : "status"}>
-          {error || (copied ? "Prompt copied. Paste it into your AI builder." : "Save your API key in your builder’s secure setup, then paste this prompt.")}
-        </p>
+      </form>
+      <p className={styles.copyStatus} role={error ? "alert" : "status"}>
+        {error || (copied
+          ? "Paste it into your AI builder to start. Your API key is not included in the prompt."
+          : "The prompt gives your builder the current docs and submission steps. Your API key stays separate.")}
+      </p>
 
+      {idea.trim() ? (
         <Disclosure className={styles.promptDetails}>
           <summary>View prompt <ChevronDown size={16} aria-hidden="true" /></summary>
           <pre>{instructions}</pre>
         </Disclosure>
+      ) : null}
 
-        <p className={styles.reviewNote}>Your builder submits the module for review. Approval is required before publication.</p>
-      </section>
-
+      <div className={styles.nextStep}>
+        <p>{isModule
+          ? "Your key supplies the author and default reward wallet. Submitted modules are reviewed before they can be published."
+          : "Your builder checks the launch requirements. Review and any wallet confirmations remain separate steps."}</p>
+        <Link href={isModule ? "/profile?section=submissions#profile-modules-title" : "/developers/api-keys?view=history"}>
+          {isModule ? "View submissions" : "View your launches"} <ArrowRight size={16} aria-hidden="true" />
+        </Link>
+      </div>
+    </section>
   );
 }

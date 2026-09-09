@@ -19,17 +19,15 @@ export default function ErrorPage({ error, unstable_retry }: ErrorPageProps) {
           role="alert"
           aria-describedby="page-error-description"
         >
-          <p className={styles.eyebrow}>Page unavailable</p>
-          <h1 id="page-error-title">Unable to display this page.</h1>
+          <h1 id="page-error-title">This page could not load.</h1>
           <p className={styles.description} id="page-error-description">
-            Try loading this view again. If it still does not load, reload the
-            site.
+            Try again or reload the page.
           </p>
         </div>
 
         <p className={styles.guidance}>
-          Before repeating a launch or transaction, check your wallet and
-          launch history.
+          If you just sent a transaction, check your wallet and launch history
+          before repeating it.
         </p>
 
         <div className={styles.actions}>
@@ -47,6 +45,8 @@ export default function ErrorPage({ error, unstable_retry }: ErrorPageProps) {
           >
             Reload site
           </button>
+          {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- Recover with a document navigation if the client router has failed. */}
+          <a className={styles.textAction} href="/">Go home</a>
         </div>
 
         {error.digest ? (

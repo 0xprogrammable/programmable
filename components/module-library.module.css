@@ -18,6 +18,7 @@
 .preview { margin-left: auto; }
 .module h3 { color: #f5f3ef; font-size: 16px; font-weight: 500; letter-spacing: -.01em; line-height: 24px; margin: 0; overflow-wrap: anywhere; }
 .module > p { color: #bdb7b1; font-size: 14px; line-height: 21px; margin: 6px 0 20px; }
+.selectionFee { color: #d9c3cd; font-size: 13px; line-height: 20px; margin: -8px 0 16px; overflow-wrap: anywhere; }
 .moduleBottom { align-items: center; display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; margin-top: auto; }
 .author { align-items: center; color: #bdb7b1; display: inline-flex; font-size: 12px; line-height: 18px; min-height: 44px; text-decoration: none; overflow-wrap: anywhere; }
 .add { align-items: center; background: #302d2c; border: 1px solid #88817a; border-radius: 12px; color: #f5f3ef; cursor: pointer; display: inline-flex; flex: 0 0 104px; font: inherit; font-size: 14px; font-weight: 500; gap: 8px; justify-content: center; line-height: 20px; margin-left: auto; min-height: 44px; padding: 10px 12px; width: 104px; }

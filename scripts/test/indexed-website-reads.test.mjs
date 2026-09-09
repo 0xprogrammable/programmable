@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { encodeAbiParameters, keccak256 } from "viem";
 
 import { RELEASE_GATED_FLAG_NAMES, WORKER_ACTIVATION_FLAG_NAMES } from "../perf/read-model-deploy-policy.mjs";
 import { evaluateIndexedWebsiteReadDeployPolicy, readIndexedWebsiteSourceExpectations } from "../perf/indexed-website-read-deploy-policy.mjs";
@@ -16,6 +17,7 @@ const DEPLOYMENT_ID = `dpl_${"a".repeat(24)}`;
 const SHA = "b".repeat(40);
 const BYPASS = "fixture-protection-bypass-0123456789";
 const PROJECT = "prj_programmablefixture";
+const PROJECTION_SOURCE = "https://api.programmable.market/v4/chains/4663/finalized-launch-projections";
 
 function ethereumItem(n) {
   const tokenAddress = ADDRESS(n);
@@ -38,6 +40,49 @@ function robinhoodItem() {
   return { tokenAddress: ADDRESS(100), launchId: HASH(100), creator: ADDRESS(1000), transactionHash: HASH(100),
     routerAddress: EXPECTATIONS.robinhood.routerAddress, blockNumber: "59000000", blockHash: HASH(3000),
     stampHash: HASH(1234), name: "Robinhood coin", symbol: "RHC", decimals: 18, launchedAt: UPDATED };
+}
+
+function projectedLaunch({ sourceVersion = "custom_launch_plan_v1", primary = false, market = false } = {}) {
+  const components = [{ componentId: "settlement", artifactId: "unknown-project", expectedAddress: ADDRESS(200), runtimeCodeHash: HASH(200) }];
+  const markets = market ? [1, 2].map(n => ({ marketId: `market-${n}`, kind: "uniswap_v4", poolManager: ADDRESS(500),
+    currency0: { address: ADDRESS(0) }, currency1: { componentId: "settlement" }, hooks: { address: ADDRESS(201) }, fee: n * 100, tickSpacing: n })) : [];
+  const projection = { schemaVersion: "programmable.launch-projection.v1", sourceVersion,
+    launchId: "312b9b12-4fba-4147-b039-cc164fd580dc", chainId: "4663", controller: ADDRESS(1000),
+    createdAt: UPDATED, finalizedAt: UPDATED, manifestDigest: sourceVersion === "multi_role_v2" ? null : DIGEST,
+    planHash: sourceVersion === "multi_role_v2" ? null : DIGEST, components, markets,
+    primaryComponentId: primary ? "settlement" : null, primaryMarketId: market ? "market-2" : null, publication: null,
+    assuranceClaims: [], claimDescriptors: [], sourceVerification: "verified",
+    distribution: { programmableRouting: "untested", uniswapApi: "not_requested", uniswapLabsRouting: "unknown", hooklist: "not_requested" },
+    finality: { status: "final", transactionHashes: [HASH(200)], blockNumber: "59000000", blockHash: HASH(200),
+      witness: { kind: "chain_read", ref: "fixture:finality", details: { fixture: true } } } };
+  return { sourceKind: sourceVersion === "multi_role_v2" ? "multi-role-v2" : "custom-launch-plan-v1", launchProjection: projection,
+    primaryAssetAddress: primary ? ADDRESS(200) : null, routerAddress: null, stampHash: null,
+    launchId: projection.launchId, tokenAddress: ADDRESS(200), creator: projection.controller,
+    hookAddress: market ? ADDRESS(201) : null, poolManager: market ? ADDRESS(500) : null,
+    poolId: market ? keccak256(encodeAbiParameters([{ type: "address" }, { type: "address" }, { type: "uint24" }, { type: "int24" }, { type: "address" }],
+      [ADDRESS(0), ADDRESS(200), 200, 2, ADDRESS(201)])) : null,
+    transactionHash: HASH(200), blockNumber: "59000000", blockHash: HASH(200), logIndex: 0,
+    launchedAt: UPDATED, name: null, symbol: null, decimals: null };
+}
+
+function projectedFixture({ rows = [projectedLaunch()], updatedAt = UPDATED, nextCursor = null, status = "ready", mutate = () => {} } = {}) {
+  return fixture(context => {
+    const { url, spec } = context;
+    if (url.pathname === "/api/explore/robinhood") {
+      spec.body.items = structuredClone(rows);
+      spec.body.presentations = [];
+      spec.body.updatedAt = [UPDATED, updatedAt].sort()[0];
+      spec.body.sourceEvidence.launchProjections = { sourceUrl: PROJECTION_SOURCE, updatedAt, nextCursor };
+      spec.body.status = status;
+      spec.headers["x-programmable-indexing-status"] = status;
+      spec.body.page.totalItems = rows.length;
+    }
+    if (url.pathname.startsWith("/token/") && !url.searchParams.has("chain")) {
+      spec.text = `<main><h1>Unnamed contract</h1><a href="/explore/robinhood">Explore</a>` +
+        `<a href="https://robinhoodchain.blockscout.com/address/${rows[0].tokenAddress}">Explorer</a></main>`;
+    }
+    mutate(context);
+  });
 }
 
 function listBody(chainId, page) {
@@ -142,6 +187,73 @@ test("production observation uses the canonical domain without authentication or
     assert.equal(call.headers.get("x-vercel-protection-bypass"), null);
     assert.equal(call.headers.get("cookie"), null);
   }
+});
+
+test("staged smoke accepts historical and new projected identities without requiring an asset or market", async () => {
+  for (const options of [{}, { primary: true, market: true }, { sourceVersion: "multi_role_v2", primary: true }]) {
+    const row = projectedLaunch(options);
+    const f = projectedFixture({ rows: [row] });
+    const result = await runIndexedWebsiteReadSmoke(input({ fetchImpl: f.fetchImpl }));
+    assert.equal(result.chains[1].totalItems, 1);
+    assert.equal(result.chains[1].pages[0].sourceEvidence.launchProjections.sourceUrl, PROJECTION_SOURCE);
+    assert.equal(result.chains[1].tokenPage.tokenAddress, row.tokenAddress);
+    assert.ok(f.calls.every(call => ["api.vercel.com", "candidate.vercel.app"].includes(call.url.hostname)));
+  }
+});
+
+test("projected source timestamps and pagination retain ready, stale and syncing meanings", async () => {
+  for (const options of [{ updatedAt: new Date(NOW - 301_000).toISOString(), status: "stale" },
+    { updatedAt: new Date(NOW - 120_000).toISOString(), nextCursor: "more", status: "syncing" }]) {
+    const f = projectedFixture(options);
+    const result = await runIndexedWebsiteReadSmoke(input({ fetchImpl: f.fetchImpl }));
+    assert.equal(result.chains[1].status, options.status);
+    assert.equal(result.chains[1].pages[0].updatedAt, options.updatedAt);
+  }
+  for (const options of [{ updatedAt: new Date(NOW - 301_000).toISOString() }, { nextCursor: "more" }]) {
+    const f = projectedFixture(options);
+    await assert.rejects(runIndexedWebsiteReadSmoke(input({ fetchImpl: f.fetchImpl })), /ready checkpoint/u);
+  }
+});
+
+test("independent projected launches may reuse a component but a duplicate launch remains invalid", async () => {
+  const first = projectedLaunch();
+  const second = projectedLaunch();
+  second.launchId = second.launchProjection.launchId = "a-second-launch";
+  const f = projectedFixture({ rows: [first, second] });
+  const result = await runIndexedWebsiteReadSmoke(input({ fetchImpl: f.fetchImpl }));
+  assert.equal(result.chains[1].totalItems, 2);
+  const duplicate = projectedFixture({ rows: [first, first] });
+  await assert.rejects(runIndexedWebsiteReadSmoke(input({ fetchImpl: duplicate.fetchImpl })), /duplicate launch/u);
+});
+
+test("projected rows cannot forge source, controller, component, market, finality or provider states", async () => {
+  for (const mutate of [
+    body => { body.sourceEvidence.launchProjections.sourceUrl = "https://untrusted.invalid/feed"; },
+    body => { body.sourceEvidence.launchProjections.updatedAt = new Date(NOW + 120_000).toISOString(); },
+    body => { body.sourceEvidence.launchProjections = null; },
+    body => { body.items[0].launchProjection.sourceVersion = "multi_role_v2"; },
+    body => { body.items[0].launchProjection.chainId = "1"; },
+    body => { body.items[0].launchProjection.controller = ADDRESS(9); },
+    body => { body.items[0].launchProjection.finality.status = "pending"; },
+    body => { body.items[0].launchProjection.finality.witness = null; },
+    body => { body.items[0].launchProjection.finality.transactionHashes = [HASH(9)]; },
+    body => { body.items[0].launchProjection.distribution.uniswapLabsRouting = "guaranteed"; },
+    body => { body.items[0].launchProjection.components[0].expectedAddress = ADDRESS(9); },
+    body => { body.items[0].launchProjection.primaryComponentId = "missing"; },
+    body => { body.items[0].primaryAssetAddress = null; },
+    body => { body.items[0].poolId = HASH(9); },
+    body => { body.items[0].launchProjection.markets[1].hooks = { componentId: "missing" }; },
+    body => { body.items[0].launchProjection.primaryMarketId = "missing"; },
+    body => { body.items[0].routerAddress = ADDRESS(9); },
+  ]) {
+    const f = projectedFixture({ rows: [projectedLaunch({ primary: true, market: true })],
+      mutate: ({ url, spec }) => { if (url.pathname === "/api/explore/robinhood") mutate(spec.body); } });
+    await assert.rejects(runIndexedWebsiteReadSmoke(input({ fetchImpl: f.fetchImpl })), /indexed website/u);
+  }
+  const wrongDetail = projectedFixture({ mutate: ({ url, spec }) => {
+    if (url.pathname.startsWith("/token/") && !url.searchParams.has("chain")) spec.text = spec.text.replace("/address/", "/token/");
+  } });
+  await assert.rejects(runIndexedWebsiteReadSmoke(input({ fetchImpl: wrongDetail.fetchImpl })), /chain links/u);
 });
 
 test("current Ethereum sources, finalized module sources and stale observations retain their meaning", async () => {

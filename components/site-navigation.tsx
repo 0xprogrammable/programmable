@@ -32,6 +32,7 @@ const desktopNavItems = [
 ];
 
 const menuNavItems = [
+  { href: "/launch/modules", label: "Modules" },
   { href: "/developers/api-keys", label: "API keys" },
   { href: "/profile", label: "Profile" },
   { href: "/docs", label: "Docs" },
@@ -143,9 +144,46 @@ function HeaderWalletButton({
   const router = useRouter();
   const menuId = useId();
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const copyAddressRef = useRef<HTMLInputElement>(null);
   const busyRef = useRef(false);
-  const [feedback, setFeedback] = useState("");
   const menuOpen = open && wallet !== null;
+  const account = wallet?.account ?? null;
+  const [feedback, setFeedback] = useState<{
+    account: string | null;
+    menuOpen: boolean;
+    operation: object | null;
+    message: string;
+    copyFailed: boolean;
+  }>({ account, menuOpen, operation: null, message: "", copyFailed: false });
+
+  // A completed action belongs to the account and menu that started it.
+  // Reset the scope before rendering a changed wallet or reopened menu.
+  if (feedback.account !== account || feedback.menuOpen !== menuOpen) {
+    setFeedback({ account, menuOpen, operation: null, message: "", copyFailed: false });
+  }
+
+  const feedbackCurrent = feedback.account === account && feedback.menuOpen === menuOpen;
+  const message = feedbackCurrent ? feedback.message : "";
+  const showCopyAddress = menuOpen && feedbackCurrent && feedback.copyFailed;
+
+  useEffect(() => {
+    if (!showCopyAddress) return;
+    copyAddressRef.current?.focus();
+    copyAddressRef.current?.select();
+  }, [showCopyAddress]);
+
+  function startFeedback() {
+    const operation = {};
+    setFeedback({ account, menuOpen, operation, message: "", copyFailed: false });
+    return operation;
+  }
+
+  function completeFeedback(operation: object, text: string, copyFailed = false) {
+    setFeedback((current) => current.operation === operation &&
+      current.account === account && current.menuOpen
+      ? { ...current, message: text, copyFailed }
+      : current);
+  }
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -191,7 +229,7 @@ function HeaderWalletButton({
         onFocus={preloadWallet}
         onPointerEnter={preloadWallet}
         onClick={() => {
-          setFeedback("");
+          startFeedback();
           onOpen();
           if (wallet) onToggle();
           else {
@@ -217,34 +255,55 @@ function HeaderWalletButton({
             onPointerEnter={() => warmNavigationRoute(router, "/profile")}
             onPointerDown={() => warmNavigationRoute(router, "/profile")}
             onClick={onClose}>Profile</Link>
+          <Link href="/developers/api-keys" prefetch={false}
+            onFocus={() => warmNavigationRoute(router, "/developers/api-keys")}
+            onPointerEnter={() => warmNavigationRoute(router, "/developers/api-keys")}
+            onPointerDown={() => warmNavigationRoute(router, "/developers/api-keys")}
+            onClick={onClose}>API keys</Link>
+          <Link href="/privacy" prefetch={false}
+            onFocus={() => warmNavigationRoute(router, "/privacy")}
+            onPointerEnter={() => warmNavigationRoute(router, "/privacy")}
+            onPointerDown={() => warmNavigationRoute(router, "/privacy")}
+            onClick={onClose}>Privacy &amp; settings</Link>
           <AdminDashboardLink account={wallet.account} authenticated={authenticated}
             menuOpen={menuOpen} onNavigate={onClose} />
           <button type="button" onClick={async () => {
+            const operation = startFeedback();
             try {
               await navigator.clipboard.writeText(wallet.account);
-              setFeedback("Address copied");
+              completeFeedback(operation, "Address copied");
             } catch {
-              setFeedback("Could not copy address. Try again.");
+              completeFeedback(operation, "Select and copy the address below.", true);
             }
           }}>Copy address</button>
           <button type="button" aria-disabled={disconnecting || undefined} aria-busy={disconnecting || undefined} onClick={async () => {
             if (busyRef.current) return;
             busyRef.current = true;
-            setFeedback("");
+            const operation = startFeedback();
             try {
               if (await disconnect({ showDialogOnFailure: false })) {
                 onClose();
                 window.requestAnimationFrame(() => triggerRef.current?.focus());
               } else {
-                setFeedback("Unable to disconnect. Try again.");
+                completeFeedback(operation, "Unable to disconnect. Try again.");
               }
             } catch {
-              setFeedback("Unable to disconnect. Try again.");
+              completeFeedback(operation, "Unable to disconnect. Try again.");
             } finally {
               busyRef.current = false;
             }
           }}>{disconnecting ? "Disconnecting…" : "Disconnect"}</button>
-          <p className={feedback ? styles.walletFeedback : "sr-only"} role="status" aria-live="polite">{feedback}</p>
+          <p className={message ? styles.walletFeedback : "sr-only"} role="status" aria-live="polite">{message}</p>
+          {showCopyAddress ? (
+            <input
+              ref={copyAddressRef}
+              className={styles.walletAddress}
+              aria-label="Wallet address"
+              readOnly
+              value={wallet.account}
+              onFocus={(event) => event.currentTarget.select()}
+            />
+          ) : null}
         </div>
       ) : null}
     </div>
@@ -470,7 +529,8 @@ export function MobileNavigation({
   return (
     <nav className="mobile-nav" aria-label="Menu navigation">
       {mobileNavItems.map((item) => {
-        const current = isCurrent(pathname, item);
+        const current = isCurrent(pathname, item) &&
+          !(item.href === "/launch" && pathname.startsWith("/launch/modules"));
         return (
           <Link
             key={item.href}
