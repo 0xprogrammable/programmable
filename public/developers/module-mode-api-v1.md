@@ -1,67 +1,84 @@
 # Module contributions through the API
 
-An agent submits the module's exact source files, configuration schema, wallet declarations and management interface. The API stores an immutable **unreviewed draft** and returns its identity. Intake does not run the source and does not approve, deploy or make the module selectable in launches.
+Use an API key and an idea to build and submit a reusable module. Start with authenticated context to establish the author, default reward wallet, required inputs and current limits before writing source. The API stores the complete source package as an immutable **unreviewed draft** and returns its identity.
+
+Source intake has no business-category allowlist. Components, interfaces and host requirements use open, versioned namespaces. A new hook, custom engine or supporting service can declare its actual architecture in the same package. The descriptor, source-byte and authentication rules still apply. An unknown runtime or host requirement needs a review plan and any missing platform integration before it can be approved or published. Intake does not execute the source.
 
 A GitHub repository is not required. The descriptor always pins `source.files` with their SHA-256 hashes. Git provenance is optional: provide both `source.repository` and `source.revision`, or omit both. Providing that pair records a provenance claim; it does not verify remote Git history.
 
 The source-intake wire contract stays `programmable.modules.api.v0.1`, with source requests in `programmable.modules.submission.v0.1`. Its receipt is a historical record of the saved source. The separate `programmable.modules.review-status.v1` response reports the current build and reviewer workflow; neither response grants onchain admission.
 
-Use the immutable **1.0.0-development.6** standalone CLI for the review commands. Download its [manifest](https://programmable.market/developers/module-mode-cli/v1.0.0-development.6/manifest.json) and [CLI file](https://programmable.market/developers/module-mode-cli/v1.0.0-development.6/programmable-module-mode-1.0.0-development.6.mjs), and verify the file's SHA-256 against `artifact.sha256` in the manifest before running it. It needs Node.js, with no npm install or repository checkout. The older development.1 file remains unchanged and supports intake receipts only. These are development distribution versions; the live API capabilities determine which operations are enabled.
+Use the immutable **1.0.0-development.7** standalone CLI for authenticated context, submission and review. Download its [manifest](https://programmable.market/developers/module-mode-cli/v1.0.0-development.7/manifest.json) and [CLI file](https://programmable.market/developers/module-mode-cli/v1.0.0-development.7/programmable-module-mode-1.0.0-development.7.mjs), and verify the file's SHA-256 against `artifact.sha256` in the manifest before running it. It needs Node.js, with no npm install or repository checkout. The older development.1 file remains unchanged and supports intake receipts only. These are development distribution versions; the live API capabilities determine which operations are enabled.
 
-## Native and Engine source profiles
+## Before writing source
 
-The same source request accepts reusable Native programs and Engine contributions. A Native component uses `runtime: "programmable.module-native-runtime@1"`; an Engine component uses `runtime: "programmable.module-engine-solidity@1"` with its real Solidity `sourcePath` and `entrypoint`. Listing a capability in `requiresHost` does not implement it. No second Engine intake or signing endpoint is introduced.
+Create a key with **Launches + modules** access on [API keys](https://programmable.market/developers/api-keys?purpose=modules), or use an existing key with `modules:submit` and `modules:read`. Configure it privately as `PROGRAMMABLE_API_KEY` in the agent's secret environment. The CLI also accepts `PROGRAMMABLE_MODULES_API_KEY`; if both are set, they must contain the same key. Do not put credentials in a prompt, source files, generated artifacts, command-line arguments or shell history.
 
-The operator chooses `programmable.native-solidity@1` or `programmable.module-engine-solidity@1` in the existing review plan. Engine builds bind the complete compiler input, creation code, canonical `constructor(Context,bytes)` arguments, runtime template and compiler-derived immutable patches, then execute the declared operations in the isolated test harness. Contributor plans and local results cannot assign a protected review job or approve a revision.
+Use Node.js 24.14 or newer within the supported Node 24 release line. Set `MODULE_CLI` to the absolute path of the verified standalone download and run context before the build:
 
-The [Engine starter manifest](https://programmable.market/developers/module-mode-starters/engine-program/v0.1.0-development.1/manifest.json) identifies the [source archive](https://programmable.market/developers/module-mode-starters/engine-program/v0.1.0-development.1/engine-program-0.1.0-development.1.tar.gz). Verify its hash before extracting it. Follow its `README.md`, supply your own author/reward wallets and family salt, run the local build, then use `prepare-module-submission` and `submit-module` below. The starter implements funded, creator-attested settlement with expiry refunds. It has no deployed host, approved revision or public availability claim.
+```bash
+MODULE_CLI=/absolute/path/to/programmable-module-mode-1.0.0-development.7.mjs
+MODULE_API_ORIGIN=https://api.programmable.market
 
-SDK development.4 configuration fields can declare `binding: {mode: "input", default?: value}` or `binding: {mode: "fixed", value}`. Fixed values may be omitted or repeated exactly; an override fails with `OPEN_CONFIG_FIXED_OVERRIDE`. A general quote address is a launch input in one reusable package. A fixed quote also requires the reviewed host revision and constructor to enforce that address against direct onchain calls. General quote trading still requires a nonzero fixed infrastructure configuration hash. See [Build a module](https://programmable.market/developer-reference/module-mode) for profile limits, fee versions and website-independent recovery.
+node "$MODULE_CLI" module-context \
+  --api-origin "$MODULE_API_ORIGIN"
+```
 
-### Packaged Engine dependencies
+This reads `GET /v1/modules/context` using the key's `modules:read` scope. The response schema is `programmable.modules.context.v1`. It reports:
 
-Keep dependency bytes in the submitted source inventory and include their hashes. For scoped Solidity imports, Engine review supports these fixed aliases from SDK-safe file paths to compiler source names:
-
-| Submitted path prefix | Solidity import prefix |
+| Field | Use |
 | --- | --- |
-| `dependencies/scoped/openzeppelin/contracts/` | `@openzeppelin/contracts/` |
-| `dependencies/scoped/openzeppelin/uniswap-hooks/` | `@openzeppelin/uniswap-hooks/` |
-| `dependencies/scoped/uniswap/blocknumberish/` | `@uniswap/blocknumberish/` |
-| `dependencies/scoped/uniswap/liquidity-launcher/` | `@uniswap/liquidity-launcher/` |
-| `dependencies/scoped/uniswap/uerc20-factory/` | `@uniswap/uerc20-factory/` |
-| `dependencies/scoped/uniswap/v4-core/` | `@uniswap/v4-core/` |
-| `dependencies/scoped/uniswap/v4-periphery/` | `@uniswap/v4-periphery/` |
-| `dependencies/scoped/solady/src/` | `@solady/src/` |
+| `identity.author` | Authenticated wallet to put in `descriptor.author`. Do not ask the user to provide it again. |
+| `identity.defaultRewardWallet` | Default for `descriptor.rewardWallet`; it is the same wallet as the author. Use another nonzero EVM address only when explicitly requested. |
+| `authorization.scopes`, `missingScopes`, `canSubmit`, `canRead` | Resolve missing key permissions before the relevant request. Context is still useful when a read-only key cannot submit. |
+| `intake.available`, `limits`, `submissionFormat`, `descriptorFormat` | Check the live intake contract and byte/resource limits before creating the package. |
+| `intake.openRuntimeIdentifiers`, `openHostRequirements`, `categoryRequired`, `repositoryRequired` | Runtime and capability names are open. A business category and Git repository are not required. |
+| `inputs.requiredUserInput`, `optionalUserInput`, `agentPreparedFields` | Establish what comes from the user and what the agent prepares. The idea is required; a different reward wallet is optional. |
+| `review.profiles`, `limits`, `available`, `statusReadAvailable` | Inspect the deployed worker's current executable review coverage independently of intake eligibility. |
+| `review.unknownRequirements`, `planRequired`, `approval`, `publicationSeparate` | Unknown requirements wait for a review plan. Review is manual; publication follows separately. |
 
-For example, package `dependencies/scoped/uniswap/v4-core/src/interfaces/IPoolManager.sol` for an unchanged import of `@uniswap/v4-core/src/interfaces/IPoolManager.sol`. The worker preserves file contents and rejects duplicate compiler source names with `MODULE_BUILD_SOURCE_ALIAS_COLLISION`. It does not fetch imports or accept contributor-selected remappings. These aliases apply only to Engine compilation; the Native profile keeps its existing source rules.
+The descriptor still requires explicit `author` and `rewardWallet` fields. Copy the context values into the package before hashing it; the server does not rewrite a submitted descriptor. `author` must match the key's wallet. A supplied reward wallet declares a payout destination, not ownership proof or existing rewards.
 
-### Quote review environment
+Require `authorization.canSubmit: true` and `intake.available: true` before upload. `approved: false` and `available: false` at the response root describe the absence of any module approval or public availability; they are separate from the intake gate. A missing review adapter or unavailable review service does not change the source package into an invalid business category. Preserve the submitted identity while the platform establishes its review path.
 
-The operator can select `testEnvironment` in the existing Engine build plan with `profile: "programmable.engine-quote-v4-v3@1"` and the exact `sourceDigest` supplied by the deployed worker's reviewed service profile. This selects a fixed isolated V4/V3 environment, including archived dependency artifacts and service-owned test assets. The digest binds its recipe, Solidity fixture and dependency archive. A plan cannot supply a different genesis, deployment script, compiler command or external endpoint.
+### Inputs to resolve upfront
 
-Plans without this field retain the existing Engine environment. The selected profile and digest remain bound through the saved plan, worker job and build artifact. Tests of fixed templates must still use the exact configuration admitted for publication. Successful fixture execution does not establish live token eligibility, production market liquidity or public launch availability.
+| Input | Who provides it |
+| --- | --- |
+| Intended behavior | The user supplies the idea, including any requested special rights, conditions or outcomes. |
+| Author and default reward wallet | Read authenticated context. Ask only if the user wants a different payout destination. |
+| Name, initial version and family salt | The agent chooses routine package details and generates a lowercase bytes32 salt once. Preserve the salt across revisions. |
+| Chain, exact assets and external dependencies | Derive from the request and trusted discovery. Resolve ambiguous token identities, units, oracle/service assumptions or controller roles before implementing them. |
+| Funding and exit behavior | Specify who funds what, who can act, limits, refunds and failure cases. Ask together for missing decisions that affect correctness. |
+| Source, configuration, management and evidence | The agent builds and packages these from the settled requirements, reusing suitable code and meaningful checks. |
 
-## Author and reward wallet
+A ticker alone does not identify a tokenized stock or prove that a market route exists. Resolve the exact chain and address when the idea fixes an asset. For a reusable asset input, describe the permitted asset behavior and how each launch supplies and validates it. Never fill missing real-world addresses or services with fixture values.
 
-The package descriptor requires two nonzero EVM addresses:
+## Source request format
 
-- `author` is the contributor's wallet. It must match the authenticated wallet that owns the Module contributions API key. A wallet string alone does not establish ownership.
-- `rewardWallet` is the payout wallet submitted for this immutable module revision. It may differ from `author`. Supplying it does not claim control over that wallet or prove that any rewards exist.
+`module.json` uses `format: "programmable.classic.source-package.v0.1"`. The historical word `classic` in that identifier does not restrict contributions to Classic V1 effects. Required descriptor fields are:
 
-Create a key with **Launches + modules** access in the website's authenticated developer key settings, or use an existing key with `modules:submit` and `modules:read`. Module operations require those two scopes. Existing keys keep their original permissions. Keys are secrets; source files, descriptors, output artifacts and command-line arguments must not contain them.
+| Fields | Required content |
+| --- | --- |
+| `format`, `name`, `version`, `author`, `rewardWallet`, `familySalt` | Exact format, package identity, semantic version, authenticated author, payout address and stable lowercase bytes32 salt. |
+| `source.files`, `documentation` | Every source/dependency/documentation file with its relative path and lowercase SHA-256; `documentation` names one of these pinned files. |
+| `components` | At least one component with `id`, actual versioned `runtime`, pinned `sourcePath` and `entrypoint`. |
+| `configuration` | Supported typed schema with units, bounds, input/default/fixed bindings and documented ABI encoding. |
+| `ports`, `constraints` | Typed input/output interfaces and configuration constraints. Use `ports: {inputs: {}, outputs: {}}` and `constraints: []` when unused. |
+| `management` | Summary, reads and actions. Each action declares its component, entrypoint, role and input schema. |
+| `requiresHost` | Exact versioned host capabilities needed by the source; an empty list is valid when none are required. |
 
-The CLI reads only `PROGRAMMABLE_MODULES_API_KEY` for authentication. Inject it through your agent's secret environment or a secret manager. Do not pass it as an argument or put a literal key in shell history. Capabilities are public and receive no Authorization header.
+Runtime, port interface, host and optional `extensions` keys use names such as `your-org.your-runtime@1`. These identifiers declare interfaces; they do not activate them. Use `extensions` for inert metadata under a versioned namespace and pinned documentation for additional requirements. Arbitrary top-level descriptor fields are rejected. See the [open package reference](https://github.com/programmablehq/PROGRAMMABLE/blob/production/packages/classic-modules/OPEN-PACKAGES.md) for the configuration codec and exact constraints.
+
+The HTTP body is `{format, descriptor, files}` with `format: "programmable.modules.submission.v0.1"`. Each uploaded file is `{path, sha256, encoding: "base64", bytes}` and must match the descriptor's file inventory exactly. A revised request may also include `supersedesSubmissionId`. Use the CLI to prepare and validate these exact bytes.
 
 ## Prepare, submit and track
 
-Use Node.js 24.14 or newer within the supported Node 24 release line. Set `MODULE_CLI` to the absolute path of the verified download. `MODULE_API_ORIGIN` identifies the API deployment; read its capabilities before submitting. HTTPS is required; `http://localhost`, `http://127.0.0.1` and `http://[::1]` with an optional port are allowed for local integration.
+`MODULE_API_ORIGIN` identifies the explicit API deployment. Read its public capabilities before submitting. HTTPS is required; `http://localhost`, `http://127.0.0.1` and `http://[::1]` with an optional port are allowed for local integration.
 
 The standalone CLI works from your own module directory:
 
 ```bash
-MODULE_CLI=/absolute/path/to/programmable-module-mode-1.0.0-development.6.mjs
-MODULE_API_ORIGIN=https://api.programmable.market
-
 node "$MODULE_CLI" module-capabilities \
   --api-origin "$MODULE_API_ORIGIN"
 ```
@@ -70,7 +87,7 @@ When developing the SDK from a checkout with its dependencies installed, set `MO
 
 Check `moduleContributions.submissions`. A false value means this deployment is not accepting drafts. `apiKeyIssuance` independently states whether it issues new module keys. The client also verifies capabilities before every upload; it sends no credentials or source when intake is unavailable or the format is incompatible.
 
-Prepare a reviewable source request offline. Every path is relative to the explicit `--root` directory; source files must be ordinary files below that root, with no symlinks or traversal. `module.json` is an open source-package descriptor, not the older fixed-module manifest.
+Prepare a reviewable source request offline. Every path is relative to the explicit `--root` directory; source files must be ordinary files below that root, with no symlinks or traversal. Paths may contain common application names such as `[slug]`, `(group)`, `@scope` and `+page.svelte`. Each path is at most 240 ASCII characters; segments allow letters, digits, `.`, `_`, `@`, `+`, `(`, `)`, `[`, `]` and `-`. Empty segments, `.` or `..` segments, backslashes and control characters are rejected. `module.json` is an open source-package descriptor, not the older fixed-module manifest.
 
 ```bash
 node "$MODULE_CLI" prepare-module-submission \
@@ -127,7 +144,7 @@ node "$MODULE_CLI" review-status-module \
 
 | Review state | `nextAction` | Contributor's next step |
 | --- | --- | --- |
-| `awaiting_plan` | `await_review_plan` | Wait for the reviewer to select the build plan for this source package. |
+| `awaiting_plan` | `await_review_plan` | The platform selects the build plan and establishes missing review coverage. Keep the receipt; no duplicate upload is needed. |
 | `queued` / `running` | `await_build` | Check again later; do not upload a duplicate revision. |
 | `built` | `await_reviewer_decision` | Build evidence was recorded. Wait for the security and compatibility decision. |
 | `build_failed` | `await_review_plan` | Read `lastError`; the operator must address the build plan or request source changes. |
@@ -155,7 +172,7 @@ Submit this new revision with its own stable idempotency key. The old source req
 
 After `review.state` becomes `accepted`, use `GET /v1/modules/submissions/:id/review-export` to download the exact accepted build plan, artifact and reviewer decision. Use a normal key with `modules:read`, owned by the same principal and author wallet as the submission. A key for another linked wallet of that principal cannot export this build.
 
-Read `GET /v1/modules/review-capabilities` first and require `statusReadAvailable: true`. Then use the submission UUID from the original intake receipt. The request accepts no query string or body. Populate the Authorization header from `PROGRAMMABLE_MODULES_API_KEY` in your HTTP client's secret environment:
+Read `GET /v1/modules/review-capabilities` first and require `statusReadAvailable: true`. Then use the submission UUID from the original intake receipt. The request accepts no query string or body. Populate the Authorization header from `PROGRAMMABLE_API_KEY` in your HTTP client's secret environment:
 
 ```http
 GET /v1/modules/submissions/{submissionId}/review-export HTTP/1.1
@@ -200,9 +217,15 @@ import { createModuleApiClient } from './packages/classic-modules/src/open-clien
 
 const client = createModuleApiClient({
   apiOrigin: process.env.MODULE_API_ORIGIN,
-  apiKey: process.env.PROGRAMMABLE_MODULES_API_KEY,
+  apiKey: process.env.PROGRAMMABLE_API_KEY,
   timeoutMs: 20_000,
 });
+const context = await client.context();
+if (!context.authorization.canSubmit || !context.intake.available) {
+  throw new Error('Resolve the context prerequisites before submitting.');
+}
+// Build module.json with context.identity.author and its defaultRewardWallet,
+// unless the contributor explicitly supplied another reward wallet.
 const pack = await loadOpenSourcePackage('/absolute/path/to/my-module', 'module.json');
 const request = moduleSubmissionFromPack(pack);
 const receipt = await client.submit(request, { idempotencyKey: 'my-module-0.1.0-intake-001' });
@@ -217,6 +240,39 @@ if (reviewCapabilities.statusReadAvailable) {
 
 Public capabilities do not require `apiKey`. Authenticated methods require a key and send it only to the explicit origin. Redirects are rejected. The client has a default 20-second timeout covering headers and streamed body reads, and a maximum 1 MiB response size after decompression. A caller may set a timeout between 1 and 120,000 milliseconds. There are no automatic retries or arbitrary URL fetches from package metadata.
 
+## Native and Engine source profiles
+
+The current worker includes Native and Engine review profiles. Read `review.profiles` and `review.limits` in context for the deployed coverage. These profiles do not restrict the source-intake runtime namespace. A Native component uses `runtime: "programmable.module-native-runtime@1"`; an Engine component uses `runtime: "programmable.module-engine-solidity@1"` with its real Solidity `sourcePath` and `entrypoint`. Listing a capability in `requiresHost` does not implement it. No second Engine intake or signing endpoint is introduced.
+
+The operator chooses `programmable.native-solidity@1` or `programmable.module-engine-solidity@1` in the existing review plan. Engine builds bind the complete compiler input, creation code, canonical `constructor(Context,bytes)` arguments, runtime template and compiler-derived immutable patches, then execute the declared operations in the isolated test harness. Contributor plans and local results cannot assign a protected review job or approve a revision.
+
+The [Engine starter manifest](https://programmable.market/developers/module-mode-starters/engine-program/v0.1.0-development.1/manifest.json) identifies the [source archive](https://programmable.market/developers/module-mode-starters/engine-program/v0.1.0-development.1/engine-program-0.1.0-development.1.tar.gz). Verify its hash before extracting it. Follow its `README.md`, use the context-derived author/default reward wallet and your saved family salt, run the local build, then use `prepare-module-submission` and `submit-module` below. The starter implements funded, creator-attested settlement with expiry refunds. It has no deployed host, approved revision or public availability claim.
+
+SDK development.4 configuration fields can declare `binding: {mode: "input", default?: value}` or `binding: {mode: "fixed", value}`. Fixed values may be omitted or repeated exactly; an override fails with `OPEN_CONFIG_FIXED_OVERRIDE`. A general quote address is a launch input in one reusable package. A fixed quote also requires the reviewed host revision and constructor to enforce that address against direct onchain calls. General quote trading still requires a nonzero fixed infrastructure configuration hash. See [Build a module](https://programmable.market/developer-reference/module-mode) for profile limits, fee versions and website-independent recovery.
+
+### Packaged Engine dependencies
+
+Keep dependency bytes in the submitted source inventory and include their hashes. For scoped Solidity imports, Engine review supports these fixed aliases from SDK-safe file paths to compiler source names:
+
+| Submitted path prefix | Solidity import prefix |
+| --- | --- |
+| `dependencies/scoped/openzeppelin/contracts/` | `@openzeppelin/contracts/` |
+| `dependencies/scoped/openzeppelin/uniswap-hooks/` | `@openzeppelin/uniswap-hooks/` |
+| `dependencies/scoped/uniswap/blocknumberish/` | `@uniswap/blocknumberish/` |
+| `dependencies/scoped/uniswap/liquidity-launcher/` | `@uniswap/liquidity-launcher/` |
+| `dependencies/scoped/uniswap/uerc20-factory/` | `@uniswap/uerc20-factory/` |
+| `dependencies/scoped/uniswap/v4-core/` | `@uniswap/v4-core/` |
+| `dependencies/scoped/uniswap/v4-periphery/` | `@uniswap/v4-periphery/` |
+| `dependencies/scoped/solady/src/` | `@solady/src/` |
+
+For example, package `dependencies/scoped/uniswap/v4-core/src/interfaces/IPoolManager.sol` for an unchanged import of `@uniswap/v4-core/src/interfaces/IPoolManager.sol`. The worker preserves file contents and rejects duplicate compiler source names with `MODULE_BUILD_SOURCE_ALIAS_COLLISION`. It does not fetch imports or accept contributor-selected remappings. These aliases apply only to Engine compilation; the Native profile keeps its existing source rules.
+
+### Quote review environment
+
+The operator can select `testEnvironment` in the existing Engine build plan with `profile: "programmable.engine-quote-v4-v3@1"` and the exact `sourceDigest` supplied by the deployed worker's reviewed service profile. This selects a fixed isolated V4/V3 environment, including archived dependency artifacts and service-owned test assets. The digest binds its recipe, Solidity fixture and dependency archive. A plan cannot supply a different genesis, deployment script, compiler command or external endpoint.
+
+Plans without this field retain the existing Engine environment. The selected profile and digest remain bound through the saved plan, worker job and build artifact. Tests of fixed templates must still use the exact configuration admitted for publication. Successful fixture execution does not establish live token eligibility, production market liquidity or public launch availability.
+
 ## Request limits and failure handling
 
 Each request contains the descriptor and exactly its pinned source files, encoded as canonical base64. Local limits are 128 files, 4 MiB per file, 16 MiB total raw source and 24 MiB serialized HTTP request bytes. Base64 expansion is included in the HTTP limit. The deployment may publish lower limits; the client checks those before uploading. A source hash match proves the received bytes match the descriptor. It does not prove source ownership, repository history, a successful build, runtime safety or approval.
@@ -227,9 +283,11 @@ CLI failures return a nonzero exit code and structured JSON on stderr. Codes and
 
 | Code or HTTP status | Action |
 | --- | --- |
-| `OPEN_ADDRESS` / `MODULE_AUTHOR_MISMATCH` | Provide nonzero EVM addresses and use a module key owned by the declared author wallet. |
+| `MODULE_API_KEY_CONFLICT` | The credential environment variables differ. Configure one key or make both values identical. |
+| `MODULE_CONTEXT_RESPONSE` | The context response is inconsistent or unsupported. Do not use its identity or infer permission to submit. |
+| `OPEN_ADDRESS` / `MODULE_AUTHOR_MISMATCH` | Re-read authenticated context and bind its author to the descriptor. Use a nonzero reward wallet. |
 | `OPEN_SOURCE_HASH` / `MODULE_FILE_HASH` | Reconcile source bytes and declared hashes before preparing a new request. |
-| 401 / `API_SCOPE_REQUIRED` | Use an active Module contributions key with the required scopes. |
+| 401 / `API_SCOPE_REQUIRED` | Use an active key with the required scopes; inspect `authorization.missingScopes` in context when available. |
 | `MODULE_IDEMPOTENCY_CONFLICT` | The same key was used with different source bytes or declarations. Do not overwrite or replace the original attempt. |
 | `MODULE_PACKAGE_CONFLICT` / `MODULE_VERSION_ALREADY_SUBMITTED` | Read the existing revision or intentionally create a new version and revision link. |
 | `MODULE_REVISION_LINEAGE_INVALID` | The supplied predecessor is not a valid revision for this author and package family. |

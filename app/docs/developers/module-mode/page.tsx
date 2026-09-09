@@ -5,7 +5,7 @@ import styles from "@/components/developer-docs.module.css";
 
 export const metadata: Metadata = {
   title: "Build a module · Programmable",
-  description: "Create, submit and track a Module Mode source package with your EVM wallet and an API key.",
+  description: "Give your agent an idea and an API key to build, submit and track a reusable module.",
   alternates: { canonical: "/developer-reference/module-mode" },
 };
 const sections = [
@@ -17,35 +17,36 @@ const sections = [
   { id: "rewards", label: "Author rewards" },
   { id: "recovery", label: "Recover transactions" },
 ] as const;
-const cliDirectory = "/developers/module-mode-cli/v1.0.0-development.6";
+const cliDirectory = "/developers/module-mode-cli/v1.0.0-development.7";
 
 export default function ModuleModeDeveloperPage() {
   return <DocsShell currentPath="/docs/developers/module-mode" title="Build a module"
     kicker="Module Mode" parentHref="/docs/developers" parentLabel="Developers" sections={sections}
-    description="Build and submit a reusable program with its source, configuration, wallet declarations and management controls.">
+    description="Start with an idea and an API key. Your agent builds the module and submits its source for review.">
     <p className={styles.bodyCopy}>
       Module Mode starts with a simple coin and adds optional programs. A contribution can provide
       its own logic, state and management actions, or propose a new market engine.
-      Its required host capabilities and compatible configurations are part of the review.
+      Ideas do not have to fit a preset category. Required host capabilities and compatible configurations are part of the review.
     </p>
     <p className={styles.bodyCopy}>For product settings, read <Link href="/docs/models/module-mode">Module Mode</Link>.
       For terminal integration, read <Link href="/developer-reference/module-mode-indexing">Index Module Mode launches</Link>.</p>
     <section id="start">
       <h2>Get started</h2>
       <ol className={styles.steps}>
-        <li>Connect your EVM wallet on <Link href="/developers/api-keys">API keys</Link> and create a key with
+        <li>Connect your EVM wallet on <Link href="/developers/api-keys?purpose=modules">API keys</Link> and create a key with
           <strong> Launches + modules</strong> access.</li>
-        <li>Choose <strong>Copy connection</strong> and give it to your agent. It includes the key and
-          instructions for finding the <a href="/developers/module-mode-api-v1.md">API guide</a> and
-          <a href={`${cliDirectory}/manifest.json`}> pinned CLI manifest</a>. Verify the file hash from
-          that manifest before running the standalone CLI with Node.js 24.14 or later in the Node 24 line.</li>
-        <li>Provide your idea, author wallet and reward wallet. Keep the API key in the agent&apos;s
-          <code> PROGRAMMABLE_MODULES_API_KEY</code> secret environment.</li>
-        <li>Build and test the module, prepare its exact source request, submit it, then keep the returned ID.
+        <li>Save the key in your agent&apos;s <code>PROGRAMMABLE_API_KEY</code> secret environment.
+          Describe your idea and copy the prompt from the key page.</li>
+        <li>Your agent reads the <a href="/developers/module-mode-api-v1.md">API guide</a> and verifies the
+          <a href={`${cliDirectory}/manifest.json`}> current CLI</a>. Before building, it runs <code>module-context</code>
+          to obtain your author wallet, default reward wallet, permissions and prerequisites.</li>
+        <li>The agent builds and checks the module, prepares its exact source request, submits it, then keeps the returned ID.
           Use <code> review-status-module</code> to follow its build, review feedback and next step.</li>
       </ol>
       <p className={styles.bodyCopy}>A GitHub repository or pull request is optional. The API receives the complete,
         hash-bound source package directly.</p>
+      <p className={styles.bodyCopy}>Rewards default to the wallet linked to your key. Specify another payout address only
+        if you want to use one. The agent resolves any missing asset, funding or exit requirements before coding.</p>
       <p className={styles.bodyCopy}>For an executable Engine contribution, download the source archive identified by the
         <a href="/developers/module-mode-starters/engine-program/v0.1.0-development.1/manifest.json"> Engine starter manifest</a>,
         verify its hash, then follow its README. The creator-attested settlement example has no approved revision or deployed host.</p>
@@ -59,8 +60,8 @@ export default function ModuleModeDeveloperPage() {
         <div><dt>Capabilities</dt><dd>Required runtime, contracts, dependencies, resources, funding and failure behavior.</dd></div>
         <div><dt>Management</dt><dd>Reads, actions, input schemas, authorized roles and instructions for any controls your module needs.</dd></div>
       </dl>
-      <p className={styles.bodyCopy}>The author must match the wallet that owns the API key. The reward wallet may be
-        different. Both must be nonzero EVM addresses. Repeated helper contracts or instances do not create extra author shares.</p>
+      <p className={styles.bodyCopy}>Authenticated context provides the author and default reward wallet. Both become explicit
+        fields in the source package. Repeated helper contracts or instances do not create extra author shares.</p>
     </section>
     <section id="profiles">
       <h2>Profiles and configuration</h2>
@@ -68,6 +69,9 @@ export default function ModuleModeDeveloperPage() {
         <code> programmable.native-solidity@1</code> for the Native callback interface or
         <code> programmable.module-engine-solidity@1</code> for executable constructor, initialization and operation logic.
         A capability name in a descriptor does not implement that behavior.</p>
+      <p className={styles.bodyCopy}>These are installed review adapters. A new runtime, hook interface or external service
+        can still be submitted with its actual requirements. Read the context&apos;s review coverage before building;
+        the platform must provide any missing review environment or integration before publication.</p>
       <p className={styles.bodyCopy}>SDK development.4 fields can declare <code>binding.mode</code> as <code>input</code> or
         <code> fixed</code>. Inputs can vary within their schema. A fixed override fails API compilation, and the constructor
         and reviewed host revision must also enforce it. One general quote template can accept different token contract addresses;
@@ -85,6 +89,7 @@ export default function ModuleModeDeveloperPage() {
         before uploading. An absent or disabled capability means this deployment is not accepting contributions.</p>
       <dl className={`${styles.dataList} ${styles.technicalData}`}>
         <div><dt>Capabilities</dt><dd><code>GET /v1/modules/capabilities</code></dd></div>
+        <div><dt>Author and prerequisites</dt><dd><code>GET /v1/modules/context</code></dd></div>
         <div><dt>Submit source</dt><dd><code>POST /v1/modules/submissions</code></dd></div>
         <div><dt>Your submissions</dt><dd><code>GET /v1/modules/submissions</code></dd></div>
         <div><dt>One submission</dt><dd><code>GET /v1/modules/submissions/:id</code></dd></div>
@@ -95,7 +100,7 @@ export default function ModuleModeDeveloperPage() {
         Use one stable idempotency key for each exact request. If a connection fails, retry the same saved request
         and key. Changed source becomes a new immutable revision.</p>
       <p className={styles.bodyCopy}><a href="/developers/module-mode-api-v1.md">Read the complete API and CLI guide</a>
-        {" · "}<a href={`${cliDirectory}/programmable-module-mode-1.0.0-development.6.mjs`}>Standalone CLI</a></p>
+        {" · "}<a href={`${cliDirectory}/programmable-module-mode-1.0.0-development.7.mjs`}>Standalone CLI</a></p>
     </section>
     <section id="review">
       <h2>Review and availability</h2>
@@ -106,6 +111,8 @@ export default function ModuleModeDeveloperPage() {
         queued build, result and reviewer decision. Read its <code>nextAction</code>: wait for the build or
         decision, apply requested changes in a new source version, or wait for registry admission after acceptance.
         The review capability must be enabled before these private progress reads are available.</p>
+      <p className={styles.bodyCopy}><code>awaiting_plan</code> means the platform must select or provide the review path.
+        Keep the existing submission. Submit a new version only when its source needs to change.</p>
       <p className={styles.bodyCopy}><code>status-module</code> keeps the historical intake receipt.
         <code> review-status-module</code> reads current progress with your existing Module contributions key.
         An <code>accepted</code> review is followed by registry admission and catalog activation.</p>

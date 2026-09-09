@@ -6,7 +6,7 @@ description: Module interfaces, launch API contracts and release discovery
 
 ## Module Mode
 
-Read [agent discovery](https://programmable.market/api/agent) for the current contribution workflow and CLI manifest. The [module API guide](https://programmable.market/developers/module-mode-api-v1.md) defines submission and review. The [indexer JSON contract](https://programmable.market/api/module-mode/indexer/v1) publishes the native source ABI and identity rules; the [indexing guide](module-mode-indexing.md) explains the verification procedure. Read the current release from [Module Mode availability](https://programmable.market/api/module-mode).
+Read [agent discovery](https://programmable.market/api/agent) for the current contribution workflow and CLI manifest. Before building, use the authenticated `GET /v1/modules/context` at `https://api.programmable.market`, or the current CLI's `module-context` command. It provides the key-bound author, default reward wallet, prerequisites, open source-intake contract and separate review coverage. The [module API guide](https://programmable.market/developers/module-mode-api-v1.md) defines the complete preparation, submission and review flow. The [indexer JSON contract](https://programmable.market/api/module-mode/indexer/v1) publishes the native source ABI and identity rules; the [indexing guide](module-mode-indexing.md) explains the verification procedure. Read the current release from [Module Mode availability](https://programmable.market/api/module-mode).
 
 ## Custom Launch APIs
 

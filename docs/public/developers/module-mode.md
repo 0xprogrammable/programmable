@@ -6,22 +6,28 @@ description: Build, configure and submit a reusable Module Mode program through 
 
 A Module Mode contribution is a reusable program with a versioned source package. Its configuration, required capabilities, funding and management actions are part of the package. The same package can be used by multiple coins with different configuration values.
 
-Native programs and Engine contributions use the same source API and immutable submission format. The operator selects the executable build profile for the submitted source. A `requiresHost` name alone does not implement a capability.
+The source API accepts contributions through open, versioned runtime and capability names. There is no business-category allowlist. Describe the actual idea and its requirements, including any new execution interface or supporting service. The platform selects a review plan for that source. A missing adapter or test environment is review work that must be resolved before approval and publication.
 
 ## Connect an agent
 
-1. Connect the author's EVM wallet on [API keys](https://programmable.market/developers/api-keys). Create a key with **Launches + modules** access or use an existing key with `modules:submit` and `modules:read`.
-2. Select **Copy connection**. Give the connection to your agent through its private credential setup.
-3. Read the [agent guide](https://programmable.market/agents.md) and [agent discovery](https://programmable.market/api/agent). Follow `workflows.moduleContribution` for the API guide, current CLI manifest and capability endpoints.
-4. Verify the CLI download against the hash in its manifest. Keep the key in `PROGRAMMABLE_API_KEY`; the module CLI reads the same secret through `PROGRAMMABLE_MODULES_API_KEY`.
+1. Connect the author's EVM wallet on [API keys](https://programmable.market/developers/api-keys?purpose=modules). Create a key with **Launches + modules** access or use an existing key with `modules:submit` and `modules:read`.
+2. Save the key in the agent's private `PROGRAMMABLE_API_KEY` environment. Describe the idea and copy the module prompt. The prompt contains instructions; credentials belong in the agent's secure setup.
+3. The agent reads [discovery](https://programmable.market/api/agent), follows `workflows.moduleContribution`, and verifies the current CLI download against its manifest.
+4. Before building, it runs `module-context --api-origin https://api.programmable.market` with the verified CLI. The context returns the key's author wallet, default reward wallet, missing permissions, required inputs, intake limits and current review coverage.
 
-An API key authorizes the scopes assigned to it. It does not sign wallet transactions or approve a module. Documentation and capability reads are public.
+The agent uses `identity.author` in the source descriptor and defaults the reward wallet to `identity.defaultRewardWallet`. It should ask for another payout address only when you request one. It chooses routine package details and creates one stable family salt. Missing decisions about the intended behavior, exact assets, funding, exits or external dependencies belong at the start.
 
-The current standalone CLI is **1.0.0-development.6**. It retains the SDK development.4 source/API and configuration formats. The [Engine starter manifest](https://programmable.market/developers/module-mode-starters/engine-program/v0.1.0-development.1/manifest.json) identifies the versioned source archive and its hash. Download and verify that archive, then follow its `README.md` to compile, provide your own author/reward wallets and prepare the existing source request. The example implements creator-attested quote settlement. It contains no approved revision or deployed host address.
+An API key authorizes its assigned requests. Module submission needs `modules:submit`; context and private progress reads need `modules:read`. It does not sign transactions or approve a module. Documentation and capability reads are public. The CLI also accepts the older `PROGRAMMABLE_MODULES_API_KEY` alias; configure only one value or keep both identical.
 
-## Select a build profile
+The current standalone CLI is **1.0.0-development.7** and retains the existing source/API and configuration formats. The [API reference](https://programmable.market/developers/module-mode-api-v1.md#before-writing-source) provides the complete context contract, upfront inputs and copyable commands. For an agent starting from an idea, use the [contributor prompt](https://github.com/programmablehq/PROGRAMMABLE/blob/production/packages/classic-modules/AGENT_GUIDE.md#starting-prompt).
 
-`programmable.native-solidity@1` builds a Native program and factory for the existing callback interface. `programmable.module-engine-solidity@1` builds executable Solidity against `constructor(Context,bytes)`, `contextHash()`, `initialize(bytes)` and `execute(Operation)`. The Engine host binds creation code, canonical constructor arguments, actual runtime and compiler-derived immutable locations for each instance. Both profiles require an operator-authorized plan, isolated compiler/test execution and an independent review decision.
+## Describe the actual runtime
+
+The package declares each component's actual runtime, source path and entrypoint, then the host capabilities and interfaces it needs. Use the existing versioned namespaces; a module does not have to fit a business category or an example. Additional inert requirements can use versioned `extensions` and pinned documentation. The source package schema and its resource limits still apply.
+
+Read `review.profiles` and `review.limits` in authenticated context before choosing an implementation interface. A matching profile can reuse existing review infrastructure. If the idea needs another interface, submit that requirement with its source; do not disguise it as a supported profile. The platform must establish an executable review plan and any host integration before making it available.
+
+The Native source reference uses `programmable.native-solidity@1` to build a program and factory for the callback interface. `programmable.module-engine-solidity@1` builds executable Solidity against `constructor(Context,bytes)`, `contextHash()`, `initialize(bytes)` and `execute(Operation)`. The Engine host binds creation code, canonical constructor arguments, actual runtime and compiler-derived immutable locations for each instance. These interfaces require an operator-authorized plan, isolated compiler/test execution and an independent review decision. The [Engine starter manifest](https://programmable.market/developers/module-mode-starters/engine-program/v0.1.0-development.1/manifest.json) pins a downloadable source archive. Use its implementation only when it fits the idea and replace its fixture identities with the values from context.
 
 The Engine interface supports different operation models. These source references describe behavior and review requirements; they are not a list of available templates:
 
@@ -51,7 +57,7 @@ General quote trading leaves `fixedQuoteAsset` zero but still binds the reviewed
 | Management | Read methods, transaction actions, input schemas and the wallet roles allowed to use them |
 | Evidence | Tests, build artifacts and the security and compatibility evidence required by the selected profile |
 
-Both wallets must be nonzero EVM addresses. The author must match the wallet that owns the API key. The reward wallet may be different. A family identifies one contribution across its revisions; helper contracts and repeated instances do not create additional reward shares.
+Both wallets must be nonzero EVM addresses. Use the authenticated context for the author and default reward wallet; an explicit different reward wallet is optional. A family identifies one contribution across its revisions; helper contracts and repeated instances do not create additional reward shares.
 
 Configuration fields and management actions must be described in the supported manifests. The website renders the supported configuration fields and the quote, escrow and settlement controls for their reviewed interfaces. Other admitted Engine operations use **Advanced actions**, with the exact reviewed operation ID, allowed asset roles, amounts, recipient and action data. Required custom initial actions use the same controls during launch. The website simulates the complete host transaction and revalidates permissions before the wallet request; it does not infer a payload ABI or explain opaque action data from its operation ID. Contributors must document that data format.
 
@@ -65,6 +71,7 @@ Use the [API and CLI reference](https://programmable.market/developers/module-mo
 
 | Operation | Endpoint at `https://api.programmable.market` |
 | --- | --- |
+| Read author, prerequisites and review coverage | `GET /v1/modules/context` with `modules:read` |
 | Read intake capabilities | `GET /v1/modules/capabilities` |
 | Submit a package | `POST /v1/modules/submissions` |
 | List your submissions | `GET /v1/modules/submissions` |
@@ -75,7 +82,7 @@ Use the [API and CLI reference](https://programmable.market/developers/module-mo
 
 Prepare and test the package locally, save the exact request and submit it with a stable idempotency key. Keep the returned submission ID. If the connection fails, retry those same bytes with the same key. Changed source requires a new revision.
 
-The intake receipt records that the package was received. Read the separate review resource for current progress and `nextAction`. Review acceptance is followed by registry admission, deployed-code verification and catalog activation. Availability is determined by the active release and catalog.
+The intake receipt records that the package was received. Read the separate review resource for current progress and `nextAction`. `awaiting_plan` means the platform must select the build plan or establish missing review coverage. Keep the original submission while it waits for a plan. If the source changes, prepare a linked new version. Review acceptance is followed by registry admission, deployed-code verification and catalog activation. Availability is determined by the active release and catalog.
 
 After acceptance, the author's `modules:read` key can download the exact plan, artifact and decision through the [HTTP build export](https://programmable.market/developers/module-mode-api-v1.md#export-an-accepted-build-over-http). The response is bounded to 3 MiB. The existing CLI has no export command and keeps its 1 MiB response limit. The export grants no publication authority: the existing authorized operator still performs the protected publication steps, and launch or management transactions require their existing wallet authority.
 

@@ -681,15 +681,15 @@ describe("developer API key interface", () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
-  it("gives module agents a source-intake setup without launch instructions or secrets", () => {
-    expect(PROGRAMMABLE_MODULE_AGENT_SETUP_TEXT_V1).toContain("$PROGRAMMABLE_MODULES_API_KEY");
-    expect(PROGRAMMABLE_MODULE_AGENT_SETUP_TEXT_V1).toContain("modules:submit and modules:read");
-    expect(PROGRAMMABLE_MODULE_AGENT_SETUP_TEXT_V1).toContain("GET https://api.programmable.market/v1/modules/capabilities");
-    expect(PROGRAMMABLE_MODULE_AGENT_SETUP_TEXT_V1).toContain("POST /v1/modules/submissions");
-    expect(PROGRAMMABLE_MODULE_AGENT_SETUP_TEXT_V1).toContain("GET /v1/modules/submissions/:id");
-    expect(PROGRAMMABLE_MODULE_AGENT_SETUP_TEXT_V1).toContain("draft_received");
-    expect(PROGRAMMABLE_MODULE_AGENT_SETUP_TEXT_V1).toContain("not an approval");
-    expect(PROGRAMMABLE_MODULE_AGENT_SETUP_TEXT_V1).not.toContain("custom-launch:create");
+  it("gives module agents the authenticated prerequisites and direct source workflow without secrets", () => {
+    expect(PROGRAMMABLE_MODULE_AGENT_SETUP_TEXT_V1).toContain("PROGRAMMABLE_API_KEY");
+    expect(PROGRAMMABLE_MODULE_AGENT_SETUP_TEXT_V1).toContain("PROGRAMMABLE_MODULES_API_KEY is a compatible alias");
+    expect(PROGRAMMABLE_MODULE_AGENT_SETUP_TEXT_V1).toContain("GET /v1/modules/context");
+    expect(PROGRAMMABLE_MODULE_AGENT_SETUP_TEXT_V1).toContain("identity.defaultRewardWallet");
+    expect(PROGRAMMABLE_MODULE_AGENT_SETUP_TEXT_V1).toContain("call submit-module");
+    expect(PROGRAMMABLE_MODULE_AGENT_SETUP_TEXT_V1).toContain("no fixed idea categories");
+    expect(PROGRAMMABLE_MODULE_AGENT_SETUP_TEXT_V1).toContain("Wallet signing remains a separate action");
+    expect(PROGRAMMABLE_MODULE_AGENT_SETUP_TEXT_V1).not.toContain("Obtain the reward wallet from the user");
     expect(PROGRAMMABLE_MODULE_AGENT_SETUP_TEXT_V1).not.toMatch(/pm_live_[A-Za-z0-9_-]{22}_[A-Za-z0-9_-]{43}/u);
     expect(apiKeysSource).toContain('setPurpose(apiKeyPurpose(parsed.apiKey.scopes) ?? "custom-launches")');
   });

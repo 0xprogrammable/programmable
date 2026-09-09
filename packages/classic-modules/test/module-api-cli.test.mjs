@@ -40,10 +40,10 @@ test('CLI prepares a pinned source request offline with two EVM wallets and no t
   assert.deepEqual(await fs.readFile(path.join(root, 'request.json')), wire);
 });
 
-test('CLI capabilities, authenticated submission, status and listing use the real HTTP API', async (t) => {
+test('CLI capabilities, authenticated submission, status and listing use the public API-key environment contract', async (t) => {
   const root = await workspace(t);
   const { apiOrigin, seen } = await localServer(t, intakeHandler());
-  const env = { PROGRAMMABLE_MODULES_API_KEY: TEST_KEY };
+  const env = { PROGRAMMABLE_API_KEY: TEST_KEY };
   const caps = await cli(root, 'module-capabilities', { 'api-origin': apiOrigin }, env);
   assert.equal(caps.exitCode, 0, caps.stderr); assert.equal(caps.result.moduleContributions.submissions, true);
   const args = { package: 'module.json', 'api-origin': apiOrigin, 'idempotency-key': IDEMPOTENCY_KEY };
