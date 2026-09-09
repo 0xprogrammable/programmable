@@ -38,6 +38,7 @@ type FixtureState = {
   waitingNetworkSwitches: number;
   providerAccountOverride: string | null;
   providerChainOverride: string | null;
+  delayedLogoutReadback: boolean;
 };
 
 function user(id: string, primary: string | null, addresses: string[]): FixtureUser {
@@ -104,6 +105,7 @@ let state: FixtureState = {
   isOpen: false, calls: [], delayedLocks: false, waitingLocks: 0,
   delayedNetworkSwitch: false, waitingNetworkSwitches: 0,
   providerAccountOverride: null, providerChainOverride: null,
+  delayedLogoutReadback: false,
 };
 
 function update(patch: Partial<FixtureState>) {
@@ -160,12 +162,19 @@ let loginCallbacks: LoginCallbacks;
 let connectCallbacks: ConnectCallbacks;
 let linkCallbacks: LinkCallbacks;
 
-const login = (options: unknown) => { record("login", options); update({ isOpen: true }); };
+const login = (options: unknown) => {
+  record("login", options);
+  // Privy 3.35.2 returns without opening a modal or firing a callback when
+  // its user is already present. The app must never depend on that callback.
+  if (state.user) return;
+  update({ isOpen: true });
+};
 const connectWallet = (options: unknown) => { record("connectWallet", options); update({ isOpen: true }); };
 const linkWallet = (options: unknown) => { record("linkWallet", options); update({ isOpen: true }); };
 const linkGithub = () => { record("linkGithub"); update({ isOpen: true }); };
 const logout = async () => {
   record("logout");
+  if (state.delayedLogoutReadback) return;
   // Provider connections may outlive the SDK user. The product must ignore them.
   update({ authenticated: false, user: null, isOpen: false });
 };
@@ -202,12 +211,17 @@ function chooseScenario(scenario: string) {
   const base = {
     ready: true, authenticated: true, walletsReady: true, isOpen: false, calls: [],
     providerAccountOverride: null, providerChainOverride: null,
+    delayedLogoutReadback: false,
   };
   switch (scenario) {
     case "website-admin":
       update({ ...base, user: user("fixture-website-admin", WEBSITE_ADMIN_WALLET, [WEBSITE_ADMIN_WALLET]), wallets: [wallet(WEBSITE_ADMIN_WALLET)] }); break;
     case "both-owned":
       update({ ...base, user: alphaBoth, wallets: [wallet(accountB, true, 900), wallet(accountA)] }); break;
+    case "owned-unmatched":
+      update({ ...base, user: user(alpha.id, accountA, ["0x" + "A".repeat(40)]), wallets: [wallet(accountA, false)] }); break;
+    case "restoring-user":
+      update({ ...base, authenticated: false, user: alpha, wallets: [wallet(accountA, false)] }); break;
     case "foreign-linked":
       update({ ...base, user: alpha, wallets: [wallet(accountB, true, 900), wallet(accountA)] }); break;
     case "owned-with-foreign":
@@ -241,6 +255,8 @@ export function FixtureControls() {
       <option value="primary">Primary wallet with unlinked recent wallet</option>
       <option value="website-admin">Website admin wallet</option>
       <option value="both-owned">Two linked owned wallets</option>
+      <option value="owned-unmatched">Owned wallet with stale SDK linked flag</option>
+      <option value="restoring-user">SDK user restoring authentication</option>
       <option value="foreign-linked">Foreign linked recent wallet</option>
       <option value="owned-with-foreign">Two owned wallets and one foreign wallet</option>
       <option value="unsupported-network">Connected wallet on an unsupported network</option>
@@ -254,6 +270,9 @@ export function FixtureControls() {
     <button onClick={() => update({ authenticated: true, user: betaC })}>Change SDK user, keep old wallets</button>
     <button onClick={() => update({ authenticated: true, user: betaBoth })}>Change SDK user, same linked addresses</button>
     <button onClick={() => update({ authenticated: true, user: alpha, wallets: [wallet(accountA)] })}>Restore SDK session</button>
+    <button onClick={() => update({ authenticated: true, user: alpha, wallets: [wallet(accountA)], isOpen: false })}>Restore session without login callback</button>
+    <button onClick={() => update({ delayedLogoutReadback: true })}>Delay logout readback</button>
+    <button onClick={() => update({ authenticated: false, user: null, delayedLogoutReadback: false })}>Finish logout readback</button>
     <button onClick={() => update({ wallets: state.wallets.map((candidate) => wallet(
       candidate.address, candidate.linked, candidate.connectedAt + 1, candidate.chainId,
     )) })}>Replace connected wallet capability</button>

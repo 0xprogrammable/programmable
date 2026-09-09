@@ -73,6 +73,7 @@ export async function createWalletSessionServer() {
   const sources = new Map(bundled.outputFiles.map((file) => [file.path.endsWith(".css") ? "/fixture.css" : "/fixture.js", file.contents]));
   return createServer(async (request, response) => {
     const url = new URL(request.url, "http://localhost");
+    if (url.pathname === "/favicon.ico") { response.writeHead(204); response.end(); return; }
     if (sources.has(url.pathname)) {
       response.setHeader("Content-Type", url.pathname.endsWith(".css") ? "text/css" : "text/javascript");
       response.end(sources.get(url.pathname)); return;

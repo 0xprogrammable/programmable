@@ -1,0 +1,171 @@
+.dialog.dialog {
+  --wallet-pink: #e786b2;
+  background: var(--webde-surface, #181818);
+  border: 1px solid var(--webde-line, #323232);
+  border-radius: 16px;
+  color: var(--webde-ink, #fff);
+  inset: 0;
+  margin: auto;
+  max-height: calc(100dvh - 32px);
+  max-width: 400px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 24px;
+  width: calc(100% - 32px);
+}
+
+.dialog::backdrop {
+  backdrop-filter: blur(5px);
+  background: rgb(0 0 0 / 0.64);
+}
+
+.heading {
+  align-items: center;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.heading h2 {
+  font-size: 20px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  line-height: 28px;
+  margin: 0;
+  text-wrap: balance;
+}
+
+.content {
+  display: grid;
+  gap: 16px;
+  margin-top: 24px;
+}
+
+.iconButton,
+.primaryButton,
+.signOut,
+.walletOption {
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  display: inline-flex;
+  font: inherit;
+  font-size: 14px;
+  gap: 8px;
+  justify-content: center;
+  line-height: 20px;
+  min-height: 44px;
+  padding: 8px 12px;
+  touch-action: manipulation;
+}
+
+.iconButton {
+  background: transparent;
+  color: var(--webde-muted, #b7b7b3);
+  flex: none;
+  padding: 0;
+  width: 44px;
+}
+
+.account {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+.account > div {
+  display: grid;
+  flex: 1;
+  gap: 8px;
+  min-width: 0;
+}
+
+.account strong {
+  font-family: var(--font-plex-mono, ui-monospace), monospace;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+
+.account strong span { display: block; }
+
+.label,
+.network,
+.copy,
+.error {
+  font-size: 14px;
+  line-height: 20px;
+  margin: 0;
+}
+
+.label,
+.network dt,
+.copy {
+  color: var(--webde-muted, #b7b7b3);
+}
+
+.network {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.network dd { margin: 0; }
+
+.wallets {
+  display: grid;
+  gap: 8px;
+}
+
+.walletOption {
+  background: transparent;
+  border-color: var(--webde-line, #323232);
+  color: inherit;
+  justify-content: space-between;
+  text-align: start;
+}
+
+.walletOption[aria-pressed="true"] { border-color: var(--wallet-pink); }
+
+.actions {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.primaryButton {
+  background: var(--wallet-pink);
+  color: #21151b;
+  font-weight: 600;
+  width: 100%;
+}
+
+.signOut {
+  background: transparent;
+  color: var(--webde-muted, #b7b7b3);
+}
+
+.error { color: #ffb7aa; }
+.copy, .error { overflow-wrap: anywhere; text-wrap: pretty; }
+
+.dialog.dialog :is(button, a):focus-visible {
+  outline: 2px solid var(--wallet-pink);
+  outline-offset: 3px;
+}
+
+.dialog button:disabled:not([aria-pressed="true"]) { opacity: 0.6; }
+
+@media (hover: hover) and (pointer: fine) {
+  .iconButton:hover, .signOut:hover, .walletOption:hover:not(:disabled) {
+    background: #272727;
+    color: #fff;
+  }
+  .primaryButton:hover:not(:disabled) { background: #efa3c7; }
+}
+
+@media (max-width: 380px) {
+  .dialog.dialog { padding: 16px; }
+}
