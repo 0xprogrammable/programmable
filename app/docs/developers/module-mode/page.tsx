@@ -33,7 +33,7 @@ export default function ModuleModeDeveloperPage() {
     <section id="start">
       <h2>Get started</h2>
       <ol className={styles.steps}>
-        <li>Connect your EVM wallet on <Link href="/developers/api-keys">API keys</Link> and create a key with
+        <li>Connect your EVM wallet on <Link href="/developers/api-keys?purpose=modules">API keys</Link> and create a key with
           <strong> Launches + modules</strong> access.</li>
         <li>Save the key in your agent&apos;s <code>PROGRAMMABLE_API_KEY</code> secret environment.
           Describe your idea and copy the prompt from the key page.</li>
