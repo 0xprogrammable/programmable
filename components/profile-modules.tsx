@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
+import { lazy, Suspense, useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { ArrowLeftRight, ArrowUpRight, ChevronLeft, ChevronRight, Coins, FlaskConical, Gift, Link2, Percent, Puzzle, RefreshCw, Shield, Waves } from "lucide-react";
 import { ModuleDetailDialog } from "@/components/module-detail-dialog";
-import { ProfileModuleSubmissionsFeed } from "@/components/profile-module-submissions-feed";
+import { ProfileModuleSubmissions } from "@/components/profile-module-submissions";
 import { useLiveDataRefresh } from "@/components/use-live-data-refresh";
 import { MODULE_CATEGORIES } from "@/lib/module-mode/library";
 import type { ModulePublicDetails } from "@/lib/module-mode/public-details";
@@ -13,6 +13,9 @@ import styles from "./profile-modules.module.css";
 
 const categoryIcons = { rewards: Gift, trading: ArrowLeftRight, fees: Percent, liquidity: Waves, pairs: Link2, supply: Coins, access: Shield, experiments: FlaskConical };
 type ProfileModulesSection = "published" | "submissions";
+// Public publications do not need to load or initialize the private wallet session.
+const ProfileModuleSubmissionsFeed = lazy(() => import("@/components/profile-module-submissions-feed")
+  .then(module => ({ default: module.ProfileModuleSubmissionsFeed })));
 
 export function ProfileModuleCards({ items, onSelect }: { items: readonly ModulePublicDetails[]; onSelect: (item: ModulePublicDetails) => void }) {
   return <ul className={styles.list}>
@@ -108,7 +111,9 @@ export function ProfileModules({ account, ownProfile = false, initialSection = "
       </div>
     </div> : null}
     <div className={styles.content} id={ownProfile ? `${tabId}-panel` : undefined} role={ownProfile ? "tabpanel" : undefined} aria-labelledby={ownProfile ? `${tabId}-${section}` : undefined} tabIndex={ownProfile ? 0 : undefined}>
-      {section === "submissions" ? <ProfileModuleSubmissionsFeed account={account} refreshNonce={retry} /> : <>
+      {section === "submissions" ? <Suspense fallback={<ProfileModuleSubmissions data={{ status: "loading" }} />}>
+        <ProfileModuleSubmissionsFeed account={account} refreshNonce={retry} />
+      </Suspense> : <>
       <p className={failed || partial ? styles.notice : styles.srOnly} role="status">{notice}</p>
       <div aria-busy={loading}>
       {items.length ? <ProfileModuleCards items={items} onSelect={setSelected} />
