@@ -4,7 +4,8 @@ export { moduleNativeLaunchAbiFor } from '../../../lib/module-mode/native-abi';
 export { bindActiveModuleEngineRelease } from '../../../lib/module-engine/catalog';
 export { bindModuleEngineCatalogFile, verifyModuleEnginePublication } from '../../../lib/server/module-engine/publication';
 export { readPublication } from '../../../lib/server/module-mode/catalog';
-export { moduleEngineStandardInputV1, materializeModuleEngineRuntimeV1 } from '../../../lib/module-mode/review-engine-contract';
+export { materializeModuleEngineRuntimeV1 } from '../../../lib/module-mode/review-engine-contract';
+export { moduleEngineStandardInputV1 } from '../../../lib/server/module-mode/review-engine-source';
 export { moduleEngineHostAbi, moduleEngineResourcesAbi, moduleEngineConstructorParameters, moduleEnginePlanParameters,
   ENGINE_LAUNCH_PARAMETERS } from '../../../lib/module-engine/index/abi-v1';
 export { reviewDigest } from '../../../lib/module-mode/review-contract';

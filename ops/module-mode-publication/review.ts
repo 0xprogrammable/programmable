@@ -1,4 +1,4 @@
-import { verifyModuleEngineBuildArtifactV1 } from "../../lib/module-mode/review-engine-contract";
+import { verifyModuleEngineBuildArtifactV1 } from "../../lib/server/module-mode/review-engine-source";
 import type { ModuleEngineBuildArtifactV1, ModuleEngineBuildPlanV1 } from "../../lib/module-mode/review-engine-types";
 import { constants } from "node:fs";
 import { open } from "node:fs/promises";

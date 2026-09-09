@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
-import { ArrowDownToLine, ArrowLeft, ArrowRight, Check, RefreshCw } from "lucide-react";
+import { ArrowDownToLine, ArrowLeft, ArrowRight, Check, ChevronDown, Clipboard, Clock3, FileCode2, Inbox, Puzzle, RefreshCw, Search, Settings2, ShieldCheck } from "lucide-react";
 import { useWallet } from "@/components/wallet-provider";
 import { isWebsiteAdminWallet } from "@/lib/admin-access";
 import { isReviewDigest, parseReviewPlan, reviewStateLabel, type ModuleReviewDecisionCommandV1, type ModuleReviewDecisionRecordV1, type ReviewDetail, type ReviewManifestCheck, type ReviewQueue } from "@/lib/module-mode/review-contract";
@@ -34,9 +34,21 @@ function download(text: string, filename: string) {
     const link = document.createElement("a"); link.href = url; link.download = filename; link.click();
   } finally { window.setTimeout(() => URL.revokeObjectURL(url), 1000); }
 }
-function Status({ state }: { state: ReviewState }) { return <span className={styles.badge} data-state={state}>{reviewStateLabel(state)}</span>; }
+const dateFormat = new Intl.DateTimeFormat("en", { day: "numeric", month: "short", timeZone: "UTC" });
+function submittedDate(value: string) { return dateFormat.format(new Date(value)); }
+function Status({ state }: { state: ReviewState }) {
+  const label = ({ awaiting_plan: "Needs checks", queued: "Checks queued", running: "Checking", build_failed: "Checks failed" } as Partial<Record<ReviewState, string>>)[state] ?? reviewStateLabel(state);
+  return <span className={styles.badge} data-state={state}><span aria-hidden="true" />{label}</span>;
+}
 function Hash({ label, value }: { label: string; value: string }) { return <div className={styles.hash}><dt>{label}</dt><dd>{value}</dd></div>; }
 function JsonView({ title, value }: { title: string; value: unknown }) { return <details className={styles.disclosure}><summary>{title}</summary><pre tabIndex={0}>{json(value)}</pre></details>; }
+function WalletIdentity({ label, value }: { label: string; value: string }) {
+  const [copied, setCopied] = useState(false);
+  const [failed, setFailed] = useState(false);
+  return <div className={styles.walletIdentity}><dt>{label}</dt><dd><span title={value}>{short(value)}</span><button type="button" className={styles.iconButton} aria-label={`Copy ${label.toLowerCase()}`} title="Copy address" onClick={() => {
+    void navigator.clipboard.writeText(value).then(() => { setCopied(true); setFailed(false); }, () => { setFailed(true); });
+  }}>{copied ? <Check size={16} aria-hidden="true" /> : <Clipboard size={16} aria-hidden="true" />}</button></dd><span className={failed ? styles.error : styles.srOnly} role="status">{failed ? `Copy unavailable. ${value}` : copied ? `${label} copied` : ""}</span></div>;
+}
 const AREA_LABELS: Record<string, string> = {
   "complete-constructor-accepted-configuration-range": "All accepted constructor configurations",
   "external-calls-and-mutable-dependencies": "External calls and mutable dependencies",
@@ -78,17 +90,22 @@ export function ModuleReviewAdminConsole() {
     }
     return asText ? text : JSON.parse(text);
   }, [account, getAccessToken, getIdentityToken]);
-  return <div className={`${styles.page} page-width`}>
+  return <div className={`${styles.page} page-width`} data-module-review-page>
     <header className={styles.header}>
-      <div><p className={styles.eyebrow}>Modules</p><h1>Admin Dashboard</h1></div>
-      <Link className={styles.textLink} href="/admin/partners">Partner access <ArrowRight size={15} aria-hidden="true" /></Link>
+      <div><p className={styles.eyebrow}>Admin</p><h1>Module reviews</h1></div>
+      <details className={styles.tools} onKeyDown={event => { if (event.key === "Escape") { event.currentTarget.open = false; event.currentTarget.querySelector("summary")?.focus(); } }}>
+        <summary><Settings2 size={17} aria-hidden="true" />Tools<ChevronDown size={14} aria-hidden="true" /></summary>
+        <div className={styles.toolsMenu}>
+          <Link className={styles.textLink} href="/admin/partners">Partner access <ArrowRight size={15} aria-hidden="true" /></Link>
+          {account && <PublicationSessionDownload ready={publicationReady} readSession={() => publicationSession.current}
+            getAccessToken={getAccessToken} getIdentityToken={getIdentityToken} />}
+        </div>
+      </details>
     </header>
     {account ? <>
-      <PublicationSessionDownload ready={publicationReady} readSession={() => publicationSession.current}
-        getAccessToken={getAccessToken} getIdentityToken={getIdentityToken} />
       <ModuleReviewWorkspace key={account} account={account} request={request} />
     </> : <section className={styles.gate}>
-      <div className={styles.gateMark} aria-hidden="true">M</div><h2>Admin wallet required</h2>
+      <div className={styles.gateMark} aria-hidden="true"><ShieldCheck size={24} /></div><h2>Connect your admin wallet</h2>
       <p>Connect the admin wallet to review submissions.</p>
       <button className={styles.primary} type="button" disabled={connecting} onClick={openWallet}>{connecting ? "Connecting…" : "Connect wallet"}</button>
     </section>}
@@ -137,9 +154,13 @@ export function ModuleReviewWorkspace({ account, request }: { account: string; r
   const [blocked, setBlocked] = useState(false);
   const [refresh, setRefresh] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [queryText, setQueryText] = useState("");
+  const [filter, setFilter] = useState<"all" | "pending" | "approved">("all");
+  const [knownNames, setKnownNames] = useState<Record<string, { name: string; version: string }>>({});
   const lifetime = useRef<AbortController | null>(null);
   const selection = useRef(0);
   const heading = useRef<HTMLHeadingElement>(null);
+  const search = useRef<HTMLInputElement>(null);
   useEffect(() => { const controller = new AbortController(); lifetime.current = controller; return () => controller.abort(); }, []);
   const guardedRequest = useCallback<RequestReview>(async (...args) => {
     try { return await request(args[0], args[1], args[2] ?? lifetime.current?.signal, args[3]); }
@@ -164,28 +185,46 @@ export function ModuleReviewWorkspace({ account, request }: { account: string; r
     try {
       const value = await guardedRequest(`/${id}?walletAddress=${encodeURIComponent(account)}`) as ReviewDetail;
       if (value.schemaVersion !== "programmable.modules.website-review-detail.v1" || value.job.subject.submissionId !== id) throw new Error("The review detail response is invalid.");
-      if (selection.current === generation) { setDetail(value); window.requestAnimationFrame(() => heading.current?.focus()); }
+      if (selection.current === generation) {
+        setDetail(value);
+        setKnownNames(names => ({ ...names, [`${id}:${value.job.subject.requestDigest}`]: { name: value.source.descriptor.name, version: value.source.descriptor.version } }));
+        window.requestAnimationFrame(() => heading.current?.focus());
+      }
       return true;
     } catch (e) { if (selection.current === generation) setError(message(e)); return false; }
     finally { if (selection.current === generation) setDetailLoading(false); }
   }, [account, guardedRequest]);
   const current = detail?.job.subject.submissionId === selected ? detail : null;
+  const refreshQueue = () => { setLoading(true); setError(""); setRefresh(n => n + 1); if (selected) void loadDetail(selected); };
+  const jobs = queue?.jobs ?? [];
+  const visibleJobs = jobs.filter(job => {
+    const identity = job.sourceSummary ?? knownNames[`${job.subject.submissionId}:${job.subject.requestDigest}`];
+    const matchesState = filter === "all" || (filter === "approved" ? job.state === "accepted" : !["accepted", "rejected"].includes(job.state));
+    return matchesState && [identity?.name, identity?.version, job.subject.submissionId, job.subject.author].join(" ").toLowerCase().includes(queryText.trim().toLowerCase());
+  });
   return <>
-    <div className={styles.toolbar}><p>Private review inbox <span className={styles.muted}>· {short(account)}</span></p><button type="button" className={styles.secondary} disabled={loading || busy} onClick={() => { setLoading(true); setError(""); setRefresh(n => n + 1); if (selected) void loadDetail(selected); }}><RefreshCw size={14} aria-hidden="true" /> Refresh</button></div>
     {error && <p className={styles.error} role="alert">{error}</p>}
-    {blocked ? <section className={styles.gate}><h2>Review access required</h2><p>Use a wallet that is included in the module reviewer allowlist.</p></section> : <div className={styles.workspace}>
+    {blocked ? <section className={styles.gate}><h2>Review access required</h2><p>Connect an authorized admin wallet to continue.</p></section> : <div className={styles.workspace} data-selected={selected !== null}>
       <aside className={styles.inbox} aria-label="Module submissions" aria-busy={loading}>
-        <div className={styles.inboxHeading}><h2>Submissions</h2>{queue && <span>{queue.jobs.length} on this page</span>}</div>
-        {!queue && loading && <p className={styles.empty}>Loading submissions…</p>}
-        {queue?.jobs.length === 0 && <p className={styles.empty}>No submissions on this page. New API submissions appear here once they reach the review service.</p>}
-        <ul className={styles.submissions}>{queue?.jobs.map(job => <li key={job.subject.submissionId}><button type="button" className={styles.submission} aria-current={selected === job.subject.submissionId ? "true" : undefined} disabled={busy || loading} onClick={() => void loadDetail(job.subject.submissionId)}>
-          <strong>{job.build?.programName ?? "Module submission"}</strong><span className={styles.identifier}>{short(job.subject.submissionId)}</span><Status state={job.state} />
-          <span className={styles.muted}>{job.build ? `${job.build.caseCount} test ${job.build.caseCount === 1 ? "case" : "cases"} · ${job.build.testsPassed ? "Checks passed" : "Checks incomplete"}` : `Build attempt ${job.attempt}`}</span>
-        </button></li>)}</ul>
+        <div className={styles.inboxHeading}><h2>Submissions{queue && <span className={styles.srOnly}> · {queue.jobs.length} on this page</span>}</h2><button type="button" className={styles.iconButton} aria-label="Refresh" title="Refresh submissions" disabled={loading || busy} onClick={refreshQueue}><RefreshCw size={16} aria-hidden="true" /></button></div>
+        <label className={styles.search}><Search size={17} aria-hidden="true" /><span className={styles.srOnly}>Search this page by module, author or submission ID</span><input ref={search} type="search" placeholder="Search this page" value={queryText} onChange={event => setQueryText(event.target.value)} /></label>
+        <div className={styles.filters} aria-label="Filter submissions on this page">{([["all", "All"], ["pending", "Pending"], ["approved", "Approved"]] as const).map(([value, label]) => <button type="button" key={value} aria-pressed={filter === value} onClick={() => setFilter(value)}>{label}</button>)}</div>
+        {!queue && loading && <div className={styles.queueSkeleton} role="status"><span className={styles.srOnly}>Loading submissions</span>{[0, 1, 2, 3].map(item => <div key={item}><span /><span /></div>)}</div>}
+        {queue && visibleJobs.length === 0 && <div className={styles.empty}><Inbox size={24} aria-hidden="true" /><h3>{jobs.length ? "No matches on this page" : "No submissions yet"}</h3><p>{jobs.length ? "Try another name, filter or page." : "New module applications will appear here."}</p>{(queryText || filter !== "all") && <button type="button" className={styles.textButton} onClick={() => { setQueryText(""); setFilter("all"); }}>Clear filters</button>}</div>}
+        <ul className={styles.submissions}>{visibleJobs.map(job => {
+          const identity = job.sourceSummary ?? knownNames[`${job.subject.submissionId}:${job.subject.requestDigest}`];
+          return <li key={job.subject.submissionId}><button type="button" className={styles.submission} aria-current={selected === job.subject.submissionId ? "true" : undefined} disabled={busy || loading} onClick={() => void loadDetail(job.subject.submissionId)}>
+            <span className={styles.submissionHeading}><strong>{identity?.name ?? `Submission ${short(job.subject.submissionId)}`}</strong><ArrowRight size={15} aria-hidden="true" /></span>
+            <span className={styles.submissionMeta}><span>{identity ? `v${identity.version}` : `By ${short(job.subject.author)}`}</span><time dateTime={job.createdAt} title={job.createdAt}>{submittedDate(job.createdAt)}</time></span>
+            <Status state={job.state} />
+          </button></li>;
+        })}</ul>
         <div className={styles.pagination}><button className={styles.iconButton} aria-label="Previous page of submissions" disabled={!previous.length || busy || loading} onClick={() => { setLoading(true); setError(""); setCursor(previous.at(-1) ?? null); setPrevious(p => p.slice(0, -1)); }}><ArrowLeft size={17} /></button><span>Page {previous.length + 1}</span><button className={styles.iconButton} aria-label="Next page of submissions" disabled={!queue?.nextCursor || busy || loading} onClick={() => { setLoading(true); setError(""); setPrevious(p => [...p, cursor]); setCursor(queue!.nextCursor); }}><ArrowRight size={17} /></button></div>
       </aside>
       <section className={styles.detail} aria-busy={detailLoading} aria-label="Selected submission">
-        {detailLoading && <p className={styles.caption} role="status">Checking source and build evidence…</p>}{current ? <><h2 className={styles.detailTitle} ref={heading} tabIndex={-1}>{current.source.descriptor.name} <span>v{current.source.descriptor.version}</span></h2><ReviewEditor key={current.job.subject.submissionId} detail={current} account={account} request={guardedRequest} setParentBusy={setBusy} refresh={async () => { if (!await loadDetail(current.job.subject.submissionId)) throw new Error("The current review could not be refreshed."); setLoading(true); setRefresh(n => n + 1); }} /></> : <div className={styles.selectionEmpty}><p className={styles.eyebrow}>Source → Build → Decision</p><h2>Select a submission</h2><p>Each review keeps the submitted source, build results, and decision together.</p><p className={styles.note}>Review approval does not publish a module or approve it onchain.</p></div>}
+        {selected && <div className={styles.mobileDetailTools}><button type="button" className={styles.backToInbox} disabled={busy} onClick={() => { selection.current++; setSelected(null); setDetail(null); setDetailLoading(false); window.requestAnimationFrame(() => search.current?.focus()); }}><ArrowLeft size={17} aria-hidden="true" />All submissions</button><button type="button" className={styles.iconButton} aria-label="Refresh" title="Refresh submission" disabled={loading || busy} onClick={refreshQueue}><RefreshCw size={16} aria-hidden="true" /></button></div>}
+        {detailLoading && <p className={styles.loadingDetail} role="status">Loading submission…</p>}
+        {current ? <><div className={styles.detailHeading}><div className={styles.moduleMark}><Puzzle size={25} aria-hidden="true" /></div><div><h2 className={styles.detailTitle} ref={heading} tabIndex={-1}>{current.source.descriptor.name}</h2><p className={styles.detailVersion}>Version {current.source.descriptor.version}<span aria-hidden="true">·</span><time dateTime={current.job.createdAt}>Submitted {submittedDate(current.job.createdAt)}</time></p></div></div><ReviewEditor key={current.job.subject.submissionId} detail={current} account={account} request={guardedRequest} setParentBusy={setBusy} refresh={async () => { if (!await loadDetail(current.job.subject.submissionId)) throw new Error("The current review could not be refreshed."); setLoading(true); setRefresh(n => n + 1); }} /></> : !detailLoading && <div className={styles.selectionEmpty}><div className={styles.emptyMark}><Puzzle size={36} strokeWidth={1.4} aria-hidden="true" /></div><h2>Choose a module</h2><p>Open a submission to review its source, checks and next steps.</p></div>}
       </section>
     </div>}
   </>;
@@ -217,6 +256,8 @@ function ReviewEditor({ detail, account, request, refresh, setParentBusy }: { de
   const [receipt, setReceipt] = useState<ModuleReviewDecisionRecordV1 | null>(null);
   const [sourceText, setSourceText] = useState<string | null>(null);
   const [sourceFile, setSourceFile] = useState<string | null>(null);
+  const [fileQuery, setFileQuery] = useState("");
+  const [tab, setTab] = useState<"overview" | "source" | "checks" | "decision">("overview");
   const [seenRevision, setSeenRevision] = useState(job.reviewRevision);
   const operationLock = useRef(false);
   if (seenRevision !== job.reviewRevision) {
@@ -255,26 +296,39 @@ function ReviewEditor({ detail, account, request, refresh, setParentBusy }: { de
       artifactDigest: outcome === "accept" ? artifact!.artifactDigest : null, hostManifestHash: outcome === "accept" ? manifestCheck!.hostManifestHash : null, acknowledgedReviewAreas: outcome === "accept" ? areas : [] });
   };
   return <div className={styles.editor}>
-    <div className={styles.detailMeta}><Status state={job.state} /><span>Revision {job.reviewRevision}</span><span>Build attempt {job.attempt}</span></div>
-    <dl className={styles.identities}><Hash label="Author wallet" value={job.subject.author} /><Hash label="Reward wallet" value={source.descriptor.rewardWallet} /><Hash label="Submission" value={id} /></dl>
-    <section className={styles.section}><h3>What this module needs</h3><p>{source.descriptor.management.summary}</p><ul className={styles.capabilities}>{source.descriptor.requiresHost.map(capability => <li key={capability}>{capability}</li>)}</ul><JsonView title="Configuration, compatibility and management" value={{ configuration: source.descriptor.configuration, ports: source.descriptor.ports, constraints: source.descriptor.constraints, management: source.descriptor.management }} /></section>
-    <section className={styles.section}><div className={styles.sectionHeading}><h3>Submitted source</h3><button type="button" className={styles.secondary} disabled={busy !== null} onClick={() => void run("source", async () => download(await readSource(), `module-${id}.json`))}><ArrowDownToLine size={14} aria-hidden="true" /> Download source</button></div>
-      <ul className={styles.files}>{source.files.map(file => <li key={file.path}><button type="button" className={styles.fileButton} disabled={busy !== null} onClick={() => void run("source", async () => { await readSource(); setSourceFile(file.path); })}>{file.path}</button><span>{file.bytes.toLocaleString()} B</span></li>)}</ul>
+    <div className={styles.detailMeta}><Status state={job.state} /><span>{source.files.length} source files</span></div>
+    <nav className={styles.detailTabs} aria-label="Submission sections">{([["overview", "Overview"], ["source", "Source"], ["checks", "Checks"], ["decision", "Decision"]] as const).map(([value, label]) => <button type="button" key={value} aria-pressed={tab === value} onClick={() => setTab(value)}>{label}</button>)}</nav>
+    <div className={styles.editorBody}>
+    {tab === "overview" && <section className={styles.overview}>
+      <h3>About this module</h3><p className={styles.description}>{source.descriptor.management.summary}</p>
+      <dl className={styles.identities}><WalletIdentity label="Author wallet" value={job.subject.author} /><WalletIdentity label="Reward wallet" value={source.descriptor.rewardWallet} /></dl>
+      <div className={styles.reviewProgress} aria-label="Review progress">
+        <div data-complete="true"><span className={styles.stepMark}><Check size={16} aria-hidden="true" /></span><div><strong>Submission received</strong><p>Source and author recorded.</p></div></div>
+        <div data-complete={canApprove || job.state === "accepted"}><span className={styles.stepMark}>{canApprove || job.state === "accepted" ? <Check size={16} aria-hidden="true" /> : <FileCode2 size={17} aria-hidden="true" />}</span><div><strong>{canApprove || job.state === "accepted" ? "Build checks passed" : job.state === "build_failed" ? "Build needs attention" : ["queued", "running"].includes(job.state) ? "Build checks in progress" : "Build checks needed"}</strong><p>{artifact ? `${artifact.tests.cases.length} test ${artifact.tests.cases.length === 1 ? "case" : "cases"} recorded.` : ["queued", "running"].includes(job.state) ? "Refresh to see the latest result." : "Prepare a test plan for this module."}</p></div></div>
+        <div data-complete={job.state === "accepted" || job.state === "rejected"}><span className={styles.stepMark}>{terminal ? <Check size={16} aria-hidden="true" /> : <ShieldCheck size={17} aria-hidden="true" />}</span><div><strong>{job.state === "accepted" ? "Review approved" : job.state === "rejected" ? "Submission rejected" : job.state === "changes_requested" ? "Changes requested" : "Review decision"}</strong><p>{job.state === "accepted" ? "Ready for the separate publication process." : job.state === "rejected" || job.state === "changes_requested" ? "The decision is available to the author." : "Check the evidence and record your decision."}</p></div></div>
+      </div>
+
+      <details className={styles.disclosure}><summary>Technical details</summary><ul className={styles.capabilities}>{source.descriptor.requiresHost.map(capability => <li key={capability}>{capability}</li>)}</ul><dl><Hash label="Submission" value={id} /><Hash label="Request digest" value={job.subject.requestDigest} /><Hash label="Package ID" value={source.packageId} /><Hash label="Family ID" value={source.familyId} /></dl><p className={styles.caption}>Revision {job.reviewRevision} · Build attempt {job.attempt}</p><JsonView title="Configuration and management" value={{ configuration: source.descriptor.configuration, ports: source.descriptor.ports, constraints: source.descriptor.constraints, management: source.descriptor.management }} /></details>
+    </section>}
+    {tab === "source" && <section className={styles.section}><div className={styles.sectionHeading}><h3>Source files <span className={styles.muted}>{source.files.length}</span></h3><button type="button" className={styles.secondary} disabled={busy !== null} onClick={() => void run("source", async () => download(await readSource(), `module-${id}.json`))}><ArrowDownToLine size={16} aria-hidden="true" /> Download source</button></div>
+      <label className={styles.fileSearch}><Search size={17} aria-hidden="true" /><span className={styles.srOnly}>Find a source file</span><input type="search" value={fileQuery} onChange={event => setFileQuery(event.target.value)} placeholder="Find a file" /></label>
+      <ul className={styles.files}>{source.files.filter(file => file.path.toLowerCase().includes(fileQuery.toLowerCase())).map(file => <li key={file.path}><button type="button" className={styles.fileButton} disabled={busy !== null} onClick={() => void run("source", async () => { await readSource(); setSourceFile(file.path); })}><FileCode2 size={16} aria-hidden="true" /><span>{file.path}</span></button><span>{file.bytes.toLocaleString()} B</span></li>)}</ul>
+      {fileQuery && !source.files.some(file => file.path.toLowerCase().includes(fileQuery.toLowerCase())) && <p className={styles.caption}>No files match this search.</p>}
       {sourceFile && <div className={styles.sourceViewer}><div className={styles.sectionHeading}><strong>{sourceFile}</strong><button type="button" className={styles.textButton} onClick={() => setSourceFile(null)}>Close source</button></div><pre tabIndex={0}>{code}</pre></div>}
       <JsonView title="Source manifest and file hashes" value={source.descriptor} />
-    </section>
-    <section className={styles.section}><h3>Build evidence</h3>{artifact ? <><p className={styles.buildResult}><Check size={17} aria-hidden="true" /> {artifact.tests.allRequiredChecksPassed ? "Required build checks passed" : "Build checks are incomplete"}</p><p className={styles.muted}>{artifact.tests.cases.length} test {artifact.tests.cases.length === 1 ? "case" : "cases"} · Solidity {artifact.compiler.version} · {artifact.schemaVersion === "programmable.modules.engine-build.v1" ? `${artifact.executionGas.toLocaleString()} execution gas` : `${artifact.callbackGas.toLocaleString()} callback gas`}</p>
+    </section>}
+    {tab === "checks" && <section className={styles.section}><h3>Build checks</h3>{artifact ? <><p className={styles.buildResult}><Check size={17} aria-hidden="true" /> {artifact.tests.allRequiredChecksPassed ? "Required build checks passed" : "Build checks are incomplete"}</p><p className={styles.muted}>{artifact.tests.cases.length} test {artifact.tests.cases.length === 1 ? "case" : "cases"} · Solidity {artifact.compiler.version} · {artifact.schemaVersion === "programmable.modules.engine-build.v1" ? `${artifact.executionGas.toLocaleString()} execution gas` : `${artifact.callbackGas.toLocaleString()} callback gas`}</p>
       {artifact.schemaVersion === "programmable.modules.engine-build.v1" ? <div className={styles.testTable}><table><caption>Isolated engine test results</caption><thead><tr>{["Case", "Deploy", "Code", "Context", "Resources", "Initialize auth", "Execute auth", "Operations"].map(label => <th key={label}>{label}</th>)}</tr></thead><tbody>{artifact.tests.cases.map(test => <tr key={test.id}><th scope="row">{test.id}</th>{[test.deploymentMatched, test.codeHashMatched, test.contextMatched, test.resourcesMatched, test.unauthorizedInitializeReverted, test.unauthorizedExecuteReverted].map((flag, index) => <td key={index}>{flag === true ? "Pass" : flag === false ? "Fail" : "—"}</td>)}<td>{test.operations.length ? `${test.operations.filter(op => op.outcomeMatched && op.resultMatched && op.stateMatched && op.inputOutputBound && op.replayReverted && op.feesBacked).length}/${test.operations.length} passed` : "—"}</td></tr>)}</tbody></table></div> : <div className={styles.testTable}><table><caption>Isolated build test results</caption><thead><tr><th>Case</th><th>Deploy</th><th>Code</th><th>Binding</th><th>Trade auth</th><th>Action auth</th><th>Gas</th><th>Budget</th></tr></thead><tbody>{artifact.tests.cases.map((test, index) => <tr key={index}><th scope="row">{String(test.id)}</th>{["deploymentMatched", "codeHashMatched", "bindingMatched", "unauthorizedTradeReverted", "unauthorizedActionReverted", "callbackGasBound", "budgetIsolationChecked"].map(key => <td key={key}>{test[key] === true ? "Pass" : test[key] === false ? "Fail" : "—"}</td>)}</tr>)}</tbody></table></div>}<p className={styles.caption}>A dash means the check does not apply to that deployment case. Passing tests still requires a human source review.</p>
-      <JsonView title="Compiler, ABI, bytecode and complete test artifact" value={artifact} /></> : <p className={styles.muted}>No completed build artifact is attached to this revision.</p>}
+      <JsonView title="Compiler, ABI, bytecode and complete test artifact" value={artifact} /></> : <div className={styles.checksEmpty}><Clock3 size={24} aria-hidden="true" /><div><h4>{["queued", "running"].includes(job.state) ? "Checks are in progress" : "Checks have not passed yet"}</h4><p>{["queued", "running"].includes(job.state) ? "Refresh the submission to see the latest result." : "Import a reviewed test plan below to build and test this module."}</p></div></div>}
       {job.lastError && <p className={styles.error}>Last build error: {job.lastError}</p>}
       {detail.attempts.length > 0 && <details className={styles.disclosure}><summary>Worker runs and build history</summary><ol className={styles.history}>{detail.attempts.map((attempt, i) => <li key={i}><strong>Attempt {attempt.attempt} · {attempt.event}</strong><span>{attempt.createdAt}</span>{attempt.workerIdentity && <dl><Hash label="Worker source commit" value={attempt.workerIdentity.sourceCommit} /><Hash label="GitHub run / attempt" value={`${attempt.workerIdentity.runId} / ${attempt.workerIdentity.runAttempt}`} /><Hash label="Workflow" value={attempt.workerIdentity.workflowRef} /></dl>}{attempt.errorCode && <code>{attempt.errorCode}</code>}</li>)}</ol></details>}
-      <details className={styles.disclosure}><summary>Queue a reviewed build plan</summary><p>Import the operator plan for this exact submission. A new build clears the previous artifact and uses the fixed review worker.</p><ImportJson id="review-plan" label="Build plan JSON" value={planText} onChange={setPlanText} maximum={262144} disabled={active || !canQueue} /><button className={styles.secondary} type="button" disabled={active || !canQueue} onClick={() => void run("plan", async () => {
+      <details className={styles.disclosure} open={!artifact && canQueue}><summary>Build plan</summary><p>Import the reviewed plan for this submission. Starting a new build replaces the previous build result.</p><ImportJson id="review-plan" label="Build plan JSON" value={planText} onChange={setPlanText} maximum={262144} disabled={active || !canQueue} /><button className={styles.secondary} type="button" disabled={active || !canQueue} onClick={() => void run("plan", async () => {
         let plan; try { plan = parseReviewPlan(JSON.parse(planText), job.subject); } catch { throw new ReviewRequestError(400, "MODULE_REVIEW_PLAN_INVALID"); }
         await request(`/${id}/plan`, { expectedReviewRevision: job.reviewRevision, planJson: json(plan) }); setNotice("Build plan queued. Check the current status for worker results."); await refresh();
       }, true)}>{busy === "plan" ? "Queueing build…" : "Queue build"}</button>{!canQueue && <p className={styles.caption}>{self ? "An author cannot queue their own review build." : "A build can be queued when the submission needs a plan, failed, needs changes, or is ready for review."}</p>}</details>
-    </section>
+    </section>}
     {self && <p className={styles.note}>This is your submission. Another authorized reviewer must make the decision.</p>}
-    {!terminal && !self && !receipt && <section className={styles.section}><h3>Review decision</h3><p className={styles.muted}>Approval records the reviewed build and host manifest. Publication and onchain admission happen separately.</p>
+    {tab === "decision" && !terminal && !self && !receipt && <section className={styles.section}><h3>Review decision</h3><p className={styles.muted}>Record your review here. Publication and onchain approval follow separately.</p>
       <details className={styles.disclosure}><summary>Check a host manifest for approval</summary><p>The import must match this build, source configuration, website controls, and the configured host release.</p><ImportJson id="review-manifest" label="Host manifest JSON" value={manifestText} onChange={text => { setManifestText(text); setManifestCheck(null); setConfirmation(null); }} maximum={2 * 1024 * 1024} disabled={active} /><button type="button" className={styles.secondary} disabled={active || !artifact} onClick={() => void run("manifest", async () => {
         const value = await request(`/${id}/manifest`, { expectedReviewRevision: job.reviewRevision, hostManifestJson: manifestText }) as ReviewManifestCheck;
         if (value.schemaVersion !== "programmable.modules.website-manifest-check.v1" || value.submissionId !== id || value.reviewRevision !== job.reviewRevision || value.requestDigest !== job.subject.requestDigest || value.artifactDigest !== artifact?.artifactDigest || !isReviewDigest(value.hostManifestHash)) throw new Error("The checked manifest belongs to a different review.");
@@ -294,7 +348,8 @@ function ReviewEditor({ detail, account, request, refresh, setParentBusy }: { de
     {uncertain && <p className={styles.note}>The server may have recorded the action. Check the current review before submitting anything again.</p>}
     {(uncertain || receipt) && <button type="button" className={styles.secondary} disabled={busy !== null} onClick={() => void run("refresh", async () => { await refresh(); setUncertain(false); setConfirmation(null); setManifestCheck(null); })}>Check current review status</button>}
     {receipt && <dl><Hash label="Recorded decision digest" value={receipt.decisionDigest} /></dl>}
-    {detail.decisions.length > 0 && <section className={styles.section}><h3>Decision history</h3><ol className={styles.history}>{detail.decisions.map(decision => <li key={decision.decisionDigest}><strong>{decision.command.outcome === "accept" ? "Review approved" : decision.command.outcome === "reject" ? "Rejected" : "Changes requested"}</strong><span>{decision.decidedAt} · {short(decision.reviewerWallet)}</span><p>{decision.command.reason}</p><JsonView title="Canonical decision record" value={decision} /></li>)}</ol></section>}
-    <details className={styles.disclosure}><summary>Submission identity</summary><dl><Hash label="Request digest" value={job.subject.requestDigest} /><Hash label="Package ID" value={source.packageId} /><Hash label="Family ID" value={source.familyId} /></dl></details>
+    {tab === "decision" && detail.decisions.length > 0 && <section className={styles.section}><h3>Decision history</h3><ol className={styles.history}>{detail.decisions.map(decision => <li key={decision.decisionDigest}><strong>{decision.command.outcome === "accept" ? "Review approved" : decision.command.outcome === "reject" ? "Rejected" : "Changes requested"}</strong><span>{submittedDate(decision.decidedAt)} · {short(decision.reviewerWallet)}</span><p>{decision.command.reason}</p><JsonView title="Canonical decision record" value={decision} /></li>)}</ol></section>}
+    </div>
+    {tab === "overview" && (<div className={styles.overviewActions}><button type="button" className={styles.primary} onClick={() => setTab(canApprove || terminal || job.state === "changes_requested" ? "decision" : "checks")}>{terminal ? "View decision" : canApprove ? "Review module" : job.state === "changes_requested" ? "View feedback" : "Open checks"}<ArrowRight size={17} aria-hidden="true" /></button><button type="button" className={styles.secondary} onClick={() => setTab("source")}>View source</button></div>)}
   </div>;
 }

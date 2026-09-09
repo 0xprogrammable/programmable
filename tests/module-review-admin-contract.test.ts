@@ -27,6 +27,17 @@ describe("Private module review wire boundaries", () => {
   it("requires an artifact for built and accepted detail states", () => {
     const f = moduleReviewAdminFixture(); expect(() => parseReviewJob({ ...f.job, artifact: null })).toThrow("required build");
   });
+  it("accepts compact inbox names without accepting source bytes or relaxing detail fields", () => {
+    const f = moduleReviewAdminFixture();
+    const light = { ...f.job, plan: null, artifact: null };
+    const sourceSummary = { name: f.source.descriptor.name, version: f.source.descriptor.version };
+    expect(parseReviewQueueItem({ ...light, sourceSummary }).sourceSummary).toEqual(sourceSummary);
+    expect(parseReviewQueueItem({ ...light, sourceSummary: null }).sourceSummary).toBeUndefined();
+    expect(() => parseReviewQueueItem({ ...light, sourceSummary: { ...sourceSummary, bytes: "source" } })).toThrow();
+    expect(() => parseReviewQueueItem({ ...light, sourceSummary: { ...sourceSummary, name: "🧩".repeat(129) } })).toThrow();
+    expect(() => parseReviewQueueItem({ ...light, sourceSummary: { ...sourceSummary, version: "" } })).toThrow();
+    expect(() => parseReviewJob({ ...f.job, sourceSummary })).toThrow();
+  });
   it("rejects an artifact attached to a different submission", () => {
     const f = moduleReviewAdminFixture(); expect(() => parseReviewArtifact(f.artifact, { ...f.subject, submissionId: "00000000-0000-4000-8000-000000000003" })).toThrow("subject");
   });

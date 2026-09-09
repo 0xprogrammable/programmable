@@ -10,7 +10,7 @@ import { a, h, moduleEvidenceFixture } from "./module-mode-evidence";
 import { WEBSITE_ADMIN_WALLET } from "../../lib/admin-access";
 
 // Synthetic parser and UI fixtures. Never deployment, worker, reviewer, or publication evidence.
-export function moduleReviewAdminFixture(author = a(900)) {
+export function moduleReviewAdminFixture(author = a(900), options: { name?: string; submissionId?: string } = {}) {
   const release = bindActiveModuleModeRelease(moduleEvidenceFixture().release);
   const files = [{ path: "README.md", text: "Synthetic module review fixture. Never publish or admit." },
     { path: "src/Program.sol", text: "// Synthetic parser fixture, not a deployable module.\ncontract Program {}\ncontract Factory {}\n" }].map(file => ({
@@ -18,7 +18,7 @@ export function moduleReviewAdminFixture(author = a(900)) {
   }));
   const schema = { type: "record" as const, fields: { capNative: { type: "uint" as const, bits: 128, min: "1", label: "Maximum buys" }, duration: { type: "uint" as const, bits: 64, min: "1", label: "Duration" } }, required: ["capNative", "duration"] };
   const source: ModuleSubmissionRequest = { format: "programmable.modules.submission.v0.1", files, descriptor: {
-    format: "programmable.classic.source-package.v0.1", name: "Synthetic opening cap", version: "1.0.0", author, rewardWallet: a(901), familySalt: h(902),
+    format: "programmable.classic.source-package.v0.1", name: options.name ?? "Synthetic opening cap", version: "1.0.0", author, rewardWallet: a(901), familySalt: h(902),
     source: { files: files.map(({ path, sha256 }) => ({ path, sha256 })) }, configuration: schema,
     components: [
       { id: "program", runtime: "programmable.module-native-runtime@1", sourcePath: "src/Program.sol", entrypoint: "Program" },
@@ -28,7 +28,7 @@ export function moduleReviewAdminFixture(author = a(900)) {
   } };
   const checked = validateModuleSubmissionRequest(source);
   if (!checked.ok) throw new Error(JSON.stringify(checked.errors));
-  const subject: ReviewSubject = { submissionId: "00000000-0000-4000-8000-000000000001", principalId: "00000000-0000-4000-8000-000000000002", author, requestDigest: checked.requestDigest };
+  const subject: ReviewSubject = { submissionId: options.submissionId ?? "00000000-0000-4000-8000-000000000001", principalId: "00000000-0000-4000-8000-000000000002", author, requestDigest: checked.requestDigest };
   const plan: ReviewPlan = { schemaVersion: "programmable.modules.native-build-plan.v1", submissionId: subject.submissionId, requestDigest: subject.requestDigest,
     programComponentId: "program", factoryComponentId: "factory", configurationCodec: "programmable.native-abi@1", programAbi: [{ path: ["capNative"], type: "uint128" }, { path: ["duration"], type: "uint64" }], callbackGas: 75000,
     cases: [{ id: "basic", parameters: { capNative: "1", duration: "60" }, budgetWei: "0", expectedDeployment: "success" }] };
