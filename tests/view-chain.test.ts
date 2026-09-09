@@ -87,8 +87,9 @@ describe("view chain", () => {
 
     expect(provider).toContain("window.localStorage.getItem");
     expect(provider).toContain(
-      "readViewChainCookie() ?? readStoredViewChain() ?? initialViewChainId",
+      "readStoredViewChain() ?? readViewChainCookie()",
     );
+    expect(provider).toContain("readBrowserViewChain() ?? initialViewChainId");
     expect(provider).toContain('window.addEventListener("storage"');
     expect(provider).toContain("document.cookie = serializeViewChainCookie");
     expect(provider).not.toContain("useWallet");

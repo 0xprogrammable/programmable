@@ -255,6 +255,50 @@ test("an open module launch tab cannot undo another tab's browsing network choic
   }
 });
 
+test("the cookie remains usable when a new preference cannot replace existing browser storage", async ({ page }) => {
+  await open(page);
+  await page.getByRole("button", { name: "Browse Ethereum", exact: true }).click();
+  await expect(page.getByLabel("Selected browsing chain", { exact: true })).toHaveText("1");
+  await page.evaluate(() => window.__viewChainScheduling.blockPreferenceWrites());
+  await page.getByRole("button", { name: "Browse Robinhood", exact: true }).click();
+  await expect(page.getByLabel("Selected browsing chain", { exact: true })).toHaveText("4663");
+  expect(await page.evaluate(() => document.cookie)).toContain("programmable-view-chain-v2=4663");
+  expect(await page.evaluate(() => localStorage.getItem("programmable:view-chain:v2"))).toBeNull();
+  await expectMethods(page, []);
+});
+
+test("a receiving tab uses the published preference while its cookie view is still old", async ({ page }) => {
+  await open(page);
+  await page.getByRole("button", { name: "Browse Ethereum", exact: true }).click();
+  await expect(page.getByLabel("Selected browsing chain", { exact: true })).toHaveText("1");
+  await page.evaluate(() => window.__viewChainScheduling.freezeCookieReads());
+  const routeTab = await page.context().newPage();
+  const errors = browserErrors.get(page)!;
+  routeTab.on("pageerror", (error) => errors.push(error.message));
+  routeTab.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });
+  try {
+    await routeTab.goto(origin + "/launch/modules?holdRouteEntry=1");
+    await expect.poll(() => routeTab.evaluate(() => window.__viewChainScheduling.pendingEntries())).toBe(1);
+    await routeTab.evaluate(() => window.__viewChainScheduling.releaseEntries());
+    // A real cross-tab event has arrived, but this renderer's cookie cache has
+    // not caught up. The event's backing storage already has the new value.
+    await expect.poll(() => page.evaluate(() => window.__viewChainScheduling.receivedPreferences())).toContain("4663");
+    expect(await page.evaluate(() => localStorage.getItem("programmable:view-chain:v2"))).toBe("4663");
+    expect(await page.evaluate(() => document.cookie)).toContain("programmable-view-chain-v2=1");
+    await expect(routeTab.getByLabel("Selected browsing chain", { exact: true })).toHaveText("4663");
+    await expect(page.getByLabel("Selected browsing chain", { exact: true })).toHaveText("4663");
+    await page.evaluate(() => window.__viewChainScheduling.releaseCookieReads());
+    expect(await page.evaluate(() => document.cookie)).toContain("programmable-view-chain-v2=4663");
+    await expect(page.getByLabel("Selected browsing chain", { exact: true })).toHaveText("4663");
+    await expect(routeTab.getByLabel("Selected browsing chain", { exact: true })).toHaveText("4663");
+    await expectMethods(page, []);
+    await expectMethods(routeTab, []);
+  } finally {
+    await page.evaluate(() => window.__viewChainScheduling.releaseCookieReads());
+    await routeTab.close();
+  }
+});
+
 for (const phase of ["route", "provider"] as const) {
   test(`a delayed ${phase} passive effect cannot replace a choice made after the first render`, async ({ page }) => {
     await open(page);
