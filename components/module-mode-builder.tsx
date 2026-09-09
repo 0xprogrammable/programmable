@@ -82,7 +82,7 @@ export interface ModuleModeBuilderProps {
 }
 
 export function ModuleModeBuilder({ catalog = PREVIEW_MODULE_CATALOG, engine = NATIVE_ENGINE_PROFILE, configurationContext = {}, launchAction, minimumInitialBuyWei, release, previewDescription, statusContent, reviewContent, resultContent, onEdit }: Readonly<ModuleModeBuilderProps>) {
-  const { hydrated, viewChainId, setViewChainId } = useViewChain();
+  const { hydrated, setViewChainId } = useViewChain();
   useEffect(() => {
     if (!hydrated) return;
     // Set the route preference once after hydration; other tabs may change it later.
@@ -176,7 +176,7 @@ export function ModuleModeBuilder({ catalog = PREVIEW_MODULE_CATALOG, engine = N
   }
   function backToEdit() { if (contextLocked) return; onEdit?.(); setReview(null); setLaunchError(""); setAnnouncement("Back to your draft. All settings are kept."); requestAnimationFrame(() => form.current?.querySelector<HTMLInputElement>("#module-name")?.focus()); }
   async function continueLaunch(draft = review) {
-    if (!draft || !launchAction || launchAction.disabled || launchAction.busy || continuing || !hydrated || viewChainId !== 4663) return;
+    if (!draft || !launchAction || launchAction.disabled || launchAction.busy || continuing || !hydrated) return;
     setContinuing(true); setLaunchError("");
     try {
       if (draft.token.image.kind === "local" && !imageResource) throw new Error("Choose the token image again before launching.");
@@ -209,7 +209,7 @@ export function ModuleModeBuilder({ catalog = PREVIEW_MODULE_CATALOG, engine = N
             {!launchAction ? <div className={styles.previewNotice} role="status"><p>{previewMessage}</p></div> : null}
             {reviewContent}
             {launchError ? <p className={styles.fieldError} role="alert">{launchError}</p> : null}
-            <div className={styles.reviewActions}><button type="button" className={styles.secondaryButton} disabled={contextLocked} onClick={backToEdit}><ArrowLeft size={16} aria-hidden="true" /> Edit coin</button>{launchAction ? <button type="button" className={styles.primaryButton} disabled={continuing || launchAction.disabled || launchAction.busy || !hydrated || viewChainId !== 4663} aria-busy={continuing || launchAction.busy} onClick={() => void continueLaunch()}>{launchAction.label}<ArrowRight size={17} aria-hidden="true" /></button> : <button type="button" className={styles.primaryButton} onClick={() => { downloadDraft(review); setAnnouncement("Draft exported."); }}><Download size={17} aria-hidden="true" /> Export draft</button>}</div>
+            <div className={styles.reviewActions}><button type="button" className={styles.secondaryButton} disabled={contextLocked} onClick={backToEdit}><ArrowLeft size={16} aria-hidden="true" /> Edit coin</button>{launchAction ? <button type="button" className={styles.primaryButton} disabled={continuing || launchAction.disabled || launchAction.busy || !hydrated} aria-busy={continuing || launchAction.busy} onClick={() => void continueLaunch()}>{launchAction.label}<ArrowRight size={17} aria-hidden="true" /></button> : <button type="button" className={styles.primaryButton} onClick={() => { downloadDraft(review); setAnnouncement("Draft exported."); }}><Download size={17} aria-hidden="true" /> Export draft</button>}</div>
             {!launchAction && imageResource && review.token.image.kind === "local" ? <a className={styles.textButton} href={imageResource.objectUrl} download={`${review.token.symbol.toLowerCase()}-token-image.webp`}><Download size={14} aria-hidden="true" /> Save image</a> : null}
           </section>
         ) : (
