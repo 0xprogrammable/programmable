@@ -1,10 +1,11 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { formatUnits, keccak256, toHex, type Address, type Hex } from "viem";
-import { ChevronDown, Plus } from "lucide-react";
+import { ArrowUpRight, Check, ChevronDown, Plus, Puzzle } from "lucide-react";
 import { MODULE_DEFAULT_TOKEN_IMAGE, validateModuleSocialLinks, type ModuleSocialLinks, type ModuleSocialIssue } from "@/lib/module-mode/token-metadata";
-import { ModuleModeImagePicker, type ModuleModeImageResource } from "@/components/module-mode-image";
+import { ModuleModeImagePicker, moduleModeImageSource, type ModuleModeImageResource } from "@/components/module-mode-image";
 import { ModuleSchemaField } from "@/components/module-mode-fields";
 import { assertModuleModeWalletUnchanged, moduleModeWalletStep } from "@/components/module-mode-wallet-state";
 import { configurationFromForm, configurationToForm, defaultSchemaValue, parseExactUnits, utcDateTimeToSeconds, type FormValue, type ModuleModeImage } from "@/lib/module-mode/builder";
@@ -55,6 +56,7 @@ export function ModuleEngineBuilder({ availability: raw, client: suppliedClient,
   const [prepared, setPrepared] = useState<PreparedModuleEngineTransaction | null>(null); const [approval, setApproval] = useState<ModuleEngineApprovalRequired | null>(null);
   const [error, setError] = useState<string | null>(null); const [notice, setNotice] = useState<string | null>(null); const [busy, setBusy] = useState(false);
   const salts = useRef<{ creator: Hex; engine: Hex } | null>(null);
+  const coinDetails = useRef<HTMLDetailsElement>(null);
   const template = availability?.templates.find(item => item.manifest.manifest.catalogDefinition.id === selected) ?? availability?.templates[0];
   const definition = template?.manifest.manifest.catalogDefinition, revision = template?.manifest.manifest.revision;
   const fixedQuote = revision && revision.fixedQuoteAsset !== ENGINE_ZERO_ADDRESS ? revision.fixedQuoteAsset : null;
@@ -81,7 +83,7 @@ export function ModuleEngineBuilder({ availability: raw, client: suppliedClient,
       const account = moduleAddress(wallet.account, "account"); assertModuleModeWalletUnchanged(wallet, account);
       if (!quoteVerified || !quoteState) throw new Error("Check the quote asset before reviewing the launch.");
       const social = validateModuleSocialLinks(socialLinks);
-      if (!social.ok) { setSocialIssues(social.issues); if (social.issues.some(issue => /\/(discord|github|gitbook)$/.test(issue.path))) setMoreLinks(true); throw new Error(social.issues[0]!.message); }
+      if (!social.ok) { if (coinDetails.current) coinDetails.current.open = true; setSocialIssues(social.issues); if (social.issues.some(issue => /\/(discord|github|gitbook)$/.test(issue.path))) setMoreLinks(true); throw new Error(social.issues[0]!.message); }
       setSocialIssues([]);
       let resolvedImage = imageUri;
       if (image.kind === "local" && onUploadImage) {
@@ -119,24 +121,140 @@ export function ModuleEngineBuilder({ availability: raw, client: suppliedClient,
   const checkedSocial = validateModuleSocialLinks(socialLinks);
   const socialInput = ({ key, label, placeholder }: typeof socialFields[number]) => { const issue = socialIssues.find(item => item.path === `/socialLinks/${key}`); return <div className={styles.field} key={key}><label htmlFor={`engine-social-${key}`}>{label}</label><input id={`engine-social-${key}`} inputMode="url" autoComplete="off" placeholder={placeholder} value={socialLinks[key] ?? ""} aria-invalid={Boolean(issue) || undefined} aria-describedby={issue ? `engine-social-${key}-error` : undefined} onChange={event => edit(() => { setSocialLinks(current => ({ ...current, [key]: event.target.value })); setSocialIssues(current => current.filter(item => item.path !== `/socialLinks/${key}`)); })} />{issue ? <p id={`engine-social-${key}-error`} className={styles.fieldError}>{issue.message}</p> : null}</div>; };
 
-  return <div className={`${styles.page} ${engineStyles.root}`}>
-    <header className={styles.heading}><div className={styles.titleRow}><h1>Create a coin</h1><span className={styles.network}>Robinhood Chain</span></div><p>Choose a reviewed template and configure your coin.</p></header>
+  const tokenImageSource = moduleModeImageSource(image, imageResource)
+    ?? (imageUri ? moduleModeImageSource({ kind: "uri", uri: imageUri, contentVerified: false }, null) : null);
+  const quoteLabel = spot ? "Trading token" : "Funding token";
+  const quoteShort = quoteAsset ? `${quoteAsset.slice(0, 6)}…${quoteAsset.slice(-4)}` : "Not chosen";
+
+  return <div className={`${styles.page} ${engineStyles.root} ${engineStyles.builderRoot}`}>
+    <header className={`${styles.heading} ${engineStyles.heading}`}>
+      <div className={styles.titleRow}><h1>Create a coin</h1><span className={styles.network}>Robinhood Chain</span></div>
+      <p>Choose its look. Give it a module.</p>
+    </header>
     {statusContent}
     {parsed.error || availability?.reason ? <p className={engineStyles.notice} role="status">{parsed.error ?? availability?.reason}</p> : null}
-    {!template || !definition || !availability?.release ? <p className={engineStyles.notice}>No reviewed template is currently available for a new launch.</p> : <>
-      <form className={styles.formPanel} hidden={Boolean(prepared)} aria-busy={busy || imageBusy} onSubmit={event => { event.preventDefault(); void prepare(); }}>
-        <fieldset className={styles.formFields} disabled={busy || imageBusy || Boolean(prepared)}>
-          <section className={styles.formSection}><h2>Template</h2><div className={engineStyles.templateLibrary}><ModuleEngineLibrary templates={availability.templates} selectedId={definition.id} disabled={busy || imageBusy || blocked} onSelect={item => edit(() => { setSelected(item.manifest.manifest.catalogDefinition.id); setQuoteState(null); salts.current = null; setCustomInitialForm(emptyModuleEngineCustomOperation()); setCreatorSaltInput(""); setEngineSaltInput(""); setLaunchData("0x"); setBuyFee("0"); setSellFee("0"); })} /></div><div className={engineStyles.templateDetails} aria-live="polite"><p>Selected: <strong>{definition.title}</strong></p><p className={styles.help}>{definition.detail}</p></div>{versionContent}</section>
-          <section className={styles.formSection}><h2>Your coin</h2><div className={styles.tokenFields}><div className={styles.field}><label htmlFor="engine-name">Name</label><input id="engine-name" autoComplete="off" value={name} onChange={event => edit(() => setName(event.target.value))} required /></div><div className={styles.field}><label htmlFor="engine-symbol">Symbol</label><input id="engine-symbol" autoComplete="off" value={symbol} maxLength={11} onChange={event => edit(() => setSymbol(event.target.value))} required /></div></div><div className={styles.field}><label htmlFor="engine-description">Description</label><textarea id="engine-description" value={description} onChange={event => edit(() => setDescription(event.target.value))} /></div>{onUploadImage ? <ModuleModeImagePicker image={image} resource={imageResource} onChange={changeImage} onBusyChange={setImageBusy} /> : <div className={styles.field}><label htmlFor="engine-image">Image URL <span>Optional</span></label><input id="engine-image" type="url" placeholder="https://…" value={imageUri} onChange={event => edit(() => setImageUri(event.target.value))} /><p className={styles.help}>Leave blank to use the Programmable token image.</p></div>}<div className={styles.socialFields} role="group" aria-labelledby="engine-socials-title"><h3 id="engine-socials-title">Links <span>Optional</span></h3><div className={styles.socialGrid}>{socialFields.slice(0, 3).map(socialInput)}</div><div id="engine-more-links" className={styles.socialGrid} hidden={!moreLinks}>{socialFields.slice(3).map(socialInput)}</div><button className={styles.textButton} type="button" aria-expanded={moreLinks} aria-controls="engine-more-links" onClick={() => setMoreLinks(current => !current)}>{moreLinks ? <ChevronDown size={16} className={styles.chevronOpen} aria-hidden="true" /> : <Plus size={16} aria-hidden="true" />}{moreLinks ? "Fewer links" : "Add more links"}</button></div></section>
-          <section className={styles.formSection}><h2>Quote token</h2><div className={styles.field}><label htmlFor="engine-quote">Token contract address {fixedQuote ? <span>Fixed by template</span> : null}</label><input id="engine-quote" value={quoteAsset} readOnly={Boolean(fixedQuote)} placeholder="0x…" spellCheck={false} autoComplete="off" onChange={event => edit(() => { setQuote(event.target.value); setQuoteState(null); })} /><p className={styles.help}>{fixedQuote ? "The contract enforces this asset address. It cannot be changed at launch." : "Use the exact ERC20 contract address on Robinhood Chain. Its decimals and available balance are checked onchain."}</p></div><div className={engineStyles.actions}><button type="button" className={styles.secondaryButton} disabled={step !== "prepare"} onClick={() => void checkQuote()}>{busy ? "Checking quote token…" : "Check quote token"}</button>{quoteVerified && quoteState ? <p className={styles.help}>Balance: {formatUnits(quoteState.balance, quoteState.decimals)} quote tokens · {quoteState.decimals} decimals</p> : null}</div></section>
-          <section className={styles.formSection}><h2>Coin settings</h2>{fixedConfiguration(definition.schema) ? <details className={engineStyles.fixedSettings}><summary>Fixed template settings</summary><p className={styles.help}>These settings are set by the reviewed template.</p><ModuleSchemaField schema={definition.schema} value={form} onChange={() => {}} path="/engine/fixed-configuration" fields={definition.fields} context={{ roles: wallet.account ? { launchWallet: wallet.account as Address } : {}, assets: quoteVerified && quoteState ? { quote: { chainId: "4663", address: quoteState.address, decimals: quoteState.decimals } } : {} }} /></details> : <ModuleSchemaField schema={definition.schema} value={form} onChange={value => edit(() => setForms(current => ({ ...current, [definition.id]: value })))} path="/engine/configuration" fields={definition.fields} context={{ roles: wallet.account ? { launchWallet: wallet.account as Address } : {}, assets: quoteVerified && quoteState ? { quote: { chainId: "4663", address: quoteState.address, decimals: quoteState.decimals } } : {} }} />}</section>
-          {needsInitial && customInitial && initialPermission ? <section className={styles.formSection}><h2>Initial action</h2><ModuleEngineCustomOperationFields id="engine-initial-action" permission={initialPermission} value={customInitialForm} account={wallet.account} onChange={value => edit(() => setCustomInitialForm(value))} /></section> : null}
-          {needsInitial && !customInitial ? <section className={styles.formSection}><h2>{spot ? "Initial buy" : "Initial funding"}</h2><p className={styles.help}>This action is funded and executed in the launch transaction. If it fails, the entire launch reverts.</p><div className={styles.field}><label htmlFor="engine-amount">Quote amount</label><input id="engine-amount" inputMode="decimal" value={amount} onChange={event => edit(() => setAmount(event.target.value))} required /></div>{spot ? <><div className={styles.twoFields}><div className={styles.field}><label htmlFor="engine-min-tokens">Minimum tokens received</label><input id="engine-min-tokens" inputMode="decimal" value={minimumTokens} onChange={event => edit(() => setMinimumTokens(event.target.value))} required /></div><div className={styles.field}><label htmlFor="engine-min-eth">Minimum fee conversion in ETH</label><input id="engine-min-eth" inputMode="decimal" value={minimumEth} onChange={event => edit(() => setMinimumEth(event.target.value))} required /><p className={styles.help}>A lower limit for the ETH received from converting trade fees. This is taken from the quote amount.</p></div></div><div className={styles.field}><label htmlFor="engine-route">Fee conversion route <span>Fixed by template</span></label><input id="engine-route" readOnly value={quoteState?.routes.find(item => item.data === route)?.label ?? "Check the quote asset first"} /></div></> : null}{revision?.initialOperationId === ENGINE_OPERATIONS.request ? <><div className={styles.field}><label htmlFor="engine-beneficiary">Beneficiary wallet</label><input id="engine-beneficiary" value={beneficiary} onChange={event => edit(() => setBeneficiary(event.target.value))} /></div><div className={styles.field}><label htmlFor="engine-refund">Refund available at (UTC)</label><input id="engine-refund" type="datetime-local" value={refundTime} onChange={event => edit(() => setRefundTime(event.target.value))} /></div><div className={styles.field}><label htmlFor="engine-obligation">Obligation reference</label><textarea id="engine-obligation" value={obligation} onChange={event => edit(() => setObligation(event.target.value))} /><p className={styles.help}>Its hash is stored with the payment. Fulfillment relies on the launch creator’s attestation.</p></div></> : null}</section> : null}
-          {customLaunch ? <details className={`${styles.formSection} ${engineStyles.fixedSettings}`}><summary>Advanced launch inputs</summary><p className={styles.help}>Use the values prepared for this template when its address or initialization requires them. Blank salts use fresh random values. The full launch is simulated before your wallet opens.</p><div className={engineStyles.stack}><div className={styles.field}><label htmlFor="engine-creator-salt">Creator salt <span>Optional</span></label><input id="engine-creator-salt" autoComplete="off" spellCheck={false} value={creatorSaltInput} placeholder="0x… (32 bytes)" onChange={event => edit(() => setCreatorSaltInput(event.target.value))} /><p className={styles.help}>Binds the new token identity. Keep the same coin details used when preparing the salts.</p></div><div className={styles.field}><label htmlFor="engine-address-salt">Engine salt <span>Optional</span></label><input id="engine-address-salt" autoComplete="off" spellCheck={false} value={engineSaltInput} placeholder="0x… (32 bytes)" onChange={event => edit(() => setEngineSaltInput(event.target.value))} /><p className={styles.help}>Used exactly as entered for this custom template.</p></div><div className={styles.field}><label htmlFor="engine-launch-data">Initialization data</label><textarea id="engine-launch-data" autoComplete="off" autoCapitalize="none" spellCheck={false} maxLength={32_770} value={launchData} onChange={event => edit(() => setLaunchData(event.target.value))} /><p className={styles.help}>Hex bytes for the template initializer. Use 0x for no data. Maximum 16 KiB.</p></div></div></details> : null}
-          {spot || customLaunch ? <section className={styles.formSection}><h2>{customLaunch ? "Creator fee terms" : "Creator fees"}</h2><div className={styles.twoFields}>{[["buy", buyFee, setBuyFee], ["sell", sellFee, setSellFee]].map(([side, value, setValue]) => <div className={styles.field} key={side as string}><label htmlFor={`engine-${side}-fee`}>{side === "buy" ? "Buy" : "Sell"} fee</label><select id={`engine-${side}-fee`} value={value as string} onChange={event => edit(() => (setValue as (value: string) => void)(event.target.value))}>{Array.from({ length: 11 }, (_, i) => <option key={i} value={String(i)}>{i}%</option>)}</select></div>)}</div><p className={styles.help}>{customLaunch ? "These registered terms are available to the engine. They affect operations that use them; consult the template’s fee behavior." : "Fees accrue in ETH to your connected wallet. The platform fee is read from the registered fee policy during review."}</p></section> : null}
-        </fieldset>
-        {!prepared ? <div className={engineStyles.actions}>{connectedAction ? <button type="button" className={styles.primaryButton} onClick={() => void connectedAction()}>{step === "connect" ? "Connect wallet" : "Switch to Robinhood Chain"}</button> : <button type="submit" className={styles.primaryButton} id="engine-launch-review" disabled={busy || imageBusy || blocked || !quoteVerified}>{imageBusy ? "Preparing image…" : busy ? "Checking launch…" : "Review launch"}</button>}</div> : null}
-      </form>
+    {!template || !definition || !availability?.release ? <div className={engineStyles.emptyState}><Puzzle size={28} aria-hidden="true" /><h2>No modules available yet</h2><p>Published modules will appear here when they are ready to use.</p></div> : <>
+      <div className={engineStyles.studio} hidden={Boolean(prepared)}>
+        <form className={`${styles.formPanel} ${engineStyles.builderForm}`} aria-busy={busy || imageBusy} onSubmit={event => { event.preventDefault(); void prepare(); }}>
+          <fieldset className={styles.formFields} disabled={busy || imageBusy || Boolean(prepared)}>
+            <section className={styles.formSection}>
+              <div className={engineStyles.sectionHeading}><h2>Your coin</h2></div>
+              <div className={styles.tokenFields}>
+                <div className={styles.field}><label htmlFor="engine-name">Name</label><input id="engine-name" autoComplete="off" placeholder="Your coin name" value={name} onChange={event => edit(() => setName(event.target.value))} required /></div>
+                <div className={styles.field}><label htmlFor="engine-symbol">Ticker</label><input id="engine-symbol" autoComplete="off" placeholder="COIN" value={symbol} maxLength={11} onChange={event => edit(() => setSymbol(event.target.value))} required /></div>
+              </div>
+              {onUploadImage ? <ModuleModeImagePicker image={image} resource={imageResource} onChange={changeImage} onBusyChange={setImageBusy} /> : <div className={styles.field}><label htmlFor="engine-image">Image link <span>Optional</span></label><input id="engine-image" type="url" placeholder="https://…" value={imageUri} onChange={event => edit(() => setImageUri(event.target.value))} /><p className={styles.help}>Leave blank to use the Programmable token image.</p></div>}
+              <details ref={coinDetails} className={engineStyles.optionalDetails}>
+                <summary><span>Description and links</span><span className={engineStyles.optionalLabel}>Optional</span><ChevronDown size={16} aria-hidden="true" /></summary>
+                <div className={engineStyles.detailsBody}>
+                  <div className={styles.field}><label htmlFor="engine-description">Description</label><textarea id="engine-description" placeholder="A few words about your coin" value={description} onChange={event => edit(() => setDescription(event.target.value))} /></div>
+                  <div className={styles.socialFields} role="group" aria-labelledby="engine-socials-title">
+                    <h3 id="engine-socials-title">Links</h3>
+                    <div className={styles.socialGrid}>{socialFields.slice(0, 3).map(socialInput)}</div>
+                    <div id="engine-more-links" className={styles.socialGrid} hidden={!moreLinks}>{socialFields.slice(3).map(socialInput)}</div>
+                    <button className={styles.textButton} type="button" aria-expanded={moreLinks} aria-controls="engine-more-links" onClick={() => setMoreLinks(current => !current)}>{moreLinks ? <ChevronDown size={16} className={styles.chevronOpen} aria-hidden="true" /> : <Plus size={16} aria-hidden="true" />}{moreLinks ? "Fewer links" : "Add more links"}</button>
+                  </div>
+                </div>
+              </details>
+            </section>
+
+            <section className={styles.formSection} id="engine-modules">
+              <div className={engineStyles.sectionHeading}><h2>Modules</h2><p>Choose one to shape how your coin works.</p></div>
+              <div className={engineStyles.templateLibrary}>
+                <ModuleEngineLibrary templates={availability.templates} selectedId={definition.id} disabled={busy || imageBusy || blocked} onSelect={item => edit(() => { setSelected(item.manifest.manifest.catalogDefinition.id); setQuoteState(null); salts.current = null; setCustomInitialForm(emptyModuleEngineCustomOperation()); setCreatorSaltInput(""); setEngineSaltInput(""); setLaunchData("0x"); setBuyFee("0"); setSellFee("0"); })} />
+              </div>
+              <details className={engineStyles.moduleAbout} key={`about-${definition.id}`}>
+                <summary><span>About {definition.title}</span><ChevronDown size={16} aria-hidden="true" /></summary>
+                <div className={engineStyles.detailsBody}><p>{definition.detail}</p>{versionContent}</div>
+              </details>
+
+              <div className={engineStyles.moduleSettings}>
+                <div className={engineStyles.settingsHeading}><Puzzle size={18} aria-hidden="true" /><h3>{definition.title} settings</h3></div>
+                <div className={styles.field}>
+                  <label htmlFor="engine-quote">{quoteLabel} {fixedQuote ? <span>Fixed by module</span> : null}</label>
+                  <input id="engine-quote" value={quoteAsset} readOnly={Boolean(fixedQuote)} placeholder="Token address, 0x…" spellCheck={false} autoComplete="off" onChange={event => edit(() => { setQuote(event.target.value); setQuoteState(null); })} />
+                  <p className={styles.help}>{fixedQuote ? "This module uses this token for every launch." : spot ? "The token used to buy and sell your coin. Enter its contract address on Robinhood Chain." : "The token this module accepts. Enter its contract address on Robinhood Chain."}</p>
+                </div>
+                <div className={engineStyles.assetCheck}>
+                  <button type="button" className={styles.secondaryButton} disabled={step !== "prepare"} onClick={() => void checkQuote()}>{quoteVerified ? <Check size={16} aria-hidden="true" /> : null}{busy ? "Checking token…" : quoteVerified ? "Check again" : "Check token"}</button>
+                  {quoteVerified && quoteState ? <span className={engineStyles.assetBalance}><Check size={14} aria-hidden="true" />{formatUnits(quoteState.balance, quoteState.decimals)} available</span> : null}
+                </div>
+                {fixedConfiguration(definition.schema) ? <details className={engineStyles.optionalDetails}>
+                  <summary><span>Fixed module settings</span><ChevronDown size={16} aria-hidden="true" /></summary>
+                  <div className={engineStyles.detailsBody}><ModuleSchemaField schema={definition.schema} value={form} onChange={() => {}} path="/engine/fixed-configuration" fields={definition.fields} context={{ roles: wallet.account ? { launchWallet: wallet.account as Address } : {}, assets: quoteVerified && quoteState ? { quote: { chainId: "4663", address: quoteState.address, decimals: quoteState.decimals } } : {} }} /></div>
+                </details> : <div className={engineStyles.configuration}><ModuleSchemaField schema={definition.schema} value={form} onChange={value => edit(() => setForms(current => ({ ...current, [definition.id]: value })))} path="/engine/configuration" fields={definition.fields} context={{ roles: wallet.account ? { launchWallet: wallet.account as Address } : {}, assets: quoteVerified && quoteState ? { quote: { chainId: "4663", address: quoteState.address, decimals: quoteState.decimals } } : {} }} /></div>}
+              </div>
+            </section>
+
+            <section className={styles.formSection}>
+              <div className={engineStyles.sectionHeading}><h2>Launch settings</h2></div>
+              {needsInitial && customInitial && initialPermission ? <div className={engineStyles.initialAction}><h3>First action</h3><ModuleEngineCustomOperationFields id="engine-initial-action" permission={initialPermission} value={customInitialForm} account={wallet.account} onChange={value => edit(() => setCustomInitialForm(value))} /></div> : null}
+              {needsInitial && !customInitial ? <div className={engineStyles.initialAction}>
+                <h3>{spot ? "First buy" : "Starting funds"}</h3>
+                <p className={engineStyles.sectionNote}>{spot ? "Buy coins as part of your launch." : "Fund the module as part of your launch."} If this fails, the launch is cancelled.</p>
+                <div className={styles.field}><label htmlFor="engine-amount">{spot ? "Amount to spend" : "Amount to deposit"}</label><input id="engine-amount" inputMode="decimal" value={amount} onChange={event => edit(() => setAmount(event.target.value))} required /><p className={styles.help}>In the {spot ? "trading" : "funding"} token selected above.</p></div>
+                {spot ? <>
+                  <div className={styles.twoFields}>
+                    <div className={styles.field}><label htmlFor="engine-min-tokens">Minimum coins received</label><input id="engine-min-tokens" inputMode="decimal" value={minimumTokens} onChange={event => edit(() => setMinimumTokens(event.target.value))} required /></div>
+                    <div className={styles.field}><label htmlFor="engine-min-eth">Minimum fees in ETH</label><input id="engine-min-eth" inputMode="decimal" value={minimumEth} onChange={event => edit(() => setMinimumEth(event.target.value))} required /></div>
+                  </div>
+                  <details className={engineStyles.optionalDetails}><summary><span>How fees are converted</span><ChevronDown size={16} aria-hidden="true" /></summary><div className={engineStyles.detailsBody}><p className={styles.help}>Trade fees come from your spend amount and are converted to ETH. Your minimum sets the lowest ETH return you accept.</p><div className={styles.field}><label htmlFor="engine-route">Conversion route <span>Fixed by module</span></label><input id="engine-route" readOnly value={quoteState?.routes.find(item => item.data === route)?.label ?? "Check the trading token first"} /></div></div></details>
+                </> : null}
+                {revision?.initialOperationId === ENGINE_OPERATIONS.request ? <>
+                  <div className={styles.field}><label htmlFor="engine-beneficiary">Recipient wallet</label><input id="engine-beneficiary" value={beneficiary} onChange={event => edit(() => setBeneficiary(event.target.value))} /></div>
+                  <div className={styles.field}><label htmlFor="engine-refund">Refund available at (UTC)</label><input id="engine-refund" type="datetime-local" value={refundTime} onChange={event => edit(() => setRefundTime(event.target.value))} /></div>
+                  <div className={styles.field}><label htmlFor="engine-obligation">Payment reference</label><textarea id="engine-obligation" value={obligation} onChange={event => edit(() => setObligation(event.target.value))} /><p className={styles.help}>You confirm when this obligation is fulfilled. A fingerprint of the reference is stored with the payment.</p></div>
+                </> : null}
+              </div> : null}
+              {spot || customLaunch ? <details className={engineStyles.optionalDetails}>
+                <summary><span>{customLaunch ? "Creator fee settings" : "Creator fees"}</span><span className={engineStyles.optionalLabel}>{buyFee}% buy · {sellFee}% sell</span><ChevronDown size={16} aria-hidden="true" /></summary>
+                <div className={engineStyles.detailsBody}>
+                  <div className={styles.twoFields}>{[["buy", buyFee, setBuyFee], ["sell", sellFee, setSellFee]].map(([side, value, setValue]) => <div className={styles.field} key={side as string}><label htmlFor={`engine-${side}-fee`}>{side === "buy" ? "Buy" : "Sell"} fee</label><select id={`engine-${side}-fee`} value={value as string} onChange={event => edit(() => (setValue as (value: string) => void)(event.target.value))}>{Array.from({ length: 11 }, (_, i) => <option key={i} value={String(i)}>{i}%</option>)}</select></div>)}</div>
+                  <p className={styles.help}>{customLaunch ? "These terms apply to actions that use the module’s fee settings. Check its description for details." : "Creator fees accrue in ETH to your connected wallet. The platform fee is shown at review."}</p>
+                </div>
+              </details> : null}
+              {customLaunch ? <details className={engineStyles.optionalDetails}>
+                <summary><span>Advanced launch inputs</span><ChevronDown size={16} aria-hidden="true" /></summary>
+                <div className={engineStyles.detailsBody}>
+                  <p className={engineStyles.sectionNote}>Use these only when your module requires specific deployment values. Blank salts use fresh random values.</p>
+                  <div className={engineStyles.stack}>
+                    <div className={styles.field}><label htmlFor="engine-creator-salt">Creator salt <span>Optional</span></label><input id="engine-creator-salt" autoComplete="off" spellCheck={false} value={creatorSaltInput} placeholder="0x… (32 bytes)" onChange={event => edit(() => setCreatorSaltInput(event.target.value))} /><p className={styles.help}>Binds the new coin identity. Use the coin details that were used to prepare this salt.</p></div>
+                    <div className={styles.field}><label htmlFor="engine-address-salt">Engine salt <span>Optional</span></label><input id="engine-address-salt" autoComplete="off" spellCheck={false} value={engineSaltInput} placeholder="0x… (32 bytes)" onChange={event => edit(() => setEngineSaltInput(event.target.value))} /></div>
+                    <div className={styles.field}><label htmlFor="engine-launch-data">Initialization data</label><textarea id="engine-launch-data" autoComplete="off" autoCapitalize="none" spellCheck={false} maxLength={32_770} value={launchData} onChange={event => edit(() => setLaunchData(event.target.value))} /><p className={styles.help}>Use 0x for no data. Maximum 16 KiB.</p></div>
+                  </div>
+                </div>
+              </details> : null}
+              {!needsInitial && !spot && !customLaunch ? <p className={engineStyles.sectionNote}>This module needs no starting funds.</p> : null}
+            </section>
+          </fieldset>
+          <div className={engineStyles.launchFooter}>
+            <p>{step === "prepare" && !quoteVerified ? `Check the ${spot ? "trading" : "funding"} token to continue.` : "Review everything before your wallet opens."}</p>
+            {connectedAction ? <button type="button" className={styles.primaryButton} onClick={() => void connectedAction()}>{step === "connect" ? "Connect wallet" : "Switch to Robinhood Chain"}<ArrowUpRight size={18} aria-hidden="true" /></button> : <button type="submit" className={styles.primaryButton} id="engine-launch-review" disabled={busy || imageBusy || blocked || !quoteVerified}>{imageBusy ? "Preparing image…" : busy ? "Checking launch…" : "Review launch"}<ArrowUpRight size={18} aria-hidden="true" /></button>}
+          </div>
+        </form>
+
+        <aside className={engineStyles.preview} aria-label="Your coin preview">
+          <div className={engineStyles.previewTop}><span>Preview</span><span>Robinhood Chain</span></div>
+          <div className={engineStyles.coinIdentity}>
+            <div className={engineStyles.coinArtwork}><Image src={tokenImageSource ?? "/brand/loop/programmable-module-token-default-v1.png"} alt="" fill sizes="128px" unoptimized /></div>
+            <h2>{name.trim() || "Your coin"}</h2>
+            <p>{symbol.trim() ? `$${symbol.trim()}` : "$COIN"}</p>
+            {description.trim() ? <p className={engineStyles.coinDescription}>{description}</p> : null}
+          </div>
+          <div className={engineStyles.attachmentLine} aria-hidden="true"><span /></div>
+          <div className={engineStyles.previewModule}>
+            <span className={engineStyles.moduleIcon}><Puzzle size={20} aria-hidden="true" /></span>
+            <div><span>Module attached</span><strong>{definition.title}</strong></div>
+            <Check size={16} aria-label="Selected" />
+          </div>
+          <dl className={engineStyles.previewFacts}>
+            <div><dt>{quoteLabel}</dt><dd title={quoteAsset || undefined}>{quoteShort}</dd></div>
+            {spot || customLaunch ? <div><dt>{customLaunch ? "Fee settings" : "Creator fees"}</dt><dd>{buyFee}% buy · {sellFee}% sell</dd></div> : null}
+            {needsInitial && !customInitial ? <div><dt>{spot ? "First buy" : "Starting funds"}</dt><dd>{amount.trim() ? `${amount} tokens` : "Not set"}</dd></div> : null}
+          </dl>
+          <a className={engineStyles.previewEdit} href="#engine-modules">Change module<ArrowUpRight size={16} aria-hidden="true" /></a>
+        </aside>
+      </div>
       {approval && !prepared ? <section className={engineStyles.notice} role="status"><p>Allow the launch contract to use exactly {quoteState ? formatUnits(approval.amount, quoteState.decimals) : approval.amount.toString()} quote tokens to fund this launch.</p><button id="engine-approval-review" className={styles.secondaryButton} type="button" disabled={busy || blocked} onClick={() => void prepareApproval()}>{approval.currentAllowance > 0n ? "Review allowance reset" : "Review exact approval"}</button></section> : null}
       {prepared ? <ModuleEngineTransactionReview prepared={prepared} busy={busy} disabled={blocked || step !== "prepare"} onEdit={backToEdit} onConfirm={() => void confirm()} quoteAsset={quoteState?.address} quoteDecimals={quoteState?.decimals} tradeFees={spot || customLaunch} genericAction={customInitial} showLaunchInputs={customLaunch}>{prepared.kind === "launch" ? <div className={engineStyles.launchSummary}><strong>{name} · {symbol}</strong><p>{description}</p><p className={styles.help}>Image: {imageUri || MODULE_DEFAULT_TOKEN_IMAGE}</p>{checkedSocial.ok ? <dl className={styles.reviewRows}>{socialFields.filter(({ key }) => checkedSocial.links[key]).map(({ key, label }) => <div key={key}><dt>{label}</dt><dd>{checkedSocial.links[key]}</dd></div>)}</dl> : null}</div> : null}</ModuleEngineTransactionReview> : null}
     </>}
