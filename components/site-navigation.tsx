@@ -203,8 +203,15 @@ function HeaderWalletButton({
         <span>{label}</span>
         {wallet && !connecting && !disconnecting ? <NavigationChevronIcon /> : null}
       </button>
-      {menuOpen && wallet ? (
-        <div className={styles.walletMenu} id={menuId} role="group" aria-label="Wallet actions">
+      {wallet ? (
+        <div
+          className={`${styles.walletMenu} ${menuOpen ? styles.walletMenuOpen : ""}`}
+          id={menuId}
+          role="group"
+          aria-label="Wallet actions"
+          aria-hidden={!menuOpen}
+          inert={menuOpen ? undefined : true}
+        >
           <Link href="/profile" prefetch={false}
             onFocus={() => warmNavigationRoute(router, "/profile")}
             onPointerEnter={() => warmNavigationRoute(router, "/profile")}
@@ -291,6 +298,7 @@ export function SiteHeader() {
   const walletButtonRef = useRef<HTMLButtonElement>(null);
   const [menuPath, setMenuPath] = useState<string | null>(null);
   const [walletMenuPath, setWalletMenuPath] = useState<string | null>(null);
+  const [navigationInput, setNavigationInput] = useState<"pointer" | "keyboard">("pointer");
   const menuOpen = menuPath === pathname;
   const walletMenuOpen = walletMenuPath === pathname;
 
@@ -307,6 +315,7 @@ export function SiteHeader() {
 
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
+      setNavigationInput("keyboard");
       if (menuOpen) {
         setMenuPath(null);
         menuButtonRef.current?.focus();
@@ -317,12 +326,19 @@ export function SiteHeader() {
       }
     };
 
+    const closeOnHistoryNavigation = () => {
+      setMenuPath(null);
+      setWalletMenuPath(null);
+    };
+
     document.addEventListener("pointerdown", closeOnOutsidePress);
     document.addEventListener("keydown", closeOnEscape);
+    window.addEventListener("popstate", closeOnHistoryNavigation);
 
     return () => {
       document.removeEventListener("pointerdown", closeOnOutsidePress);
       document.removeEventListener("keydown", closeOnEscape);
+      window.removeEventListener("popstate", closeOnHistoryNavigation);
     };
   }, [menuOpen, walletMenuOpen]);
 
@@ -345,7 +361,16 @@ export function SiteHeader() {
     <header
       ref={headerRef}
       className={`site-header ${styles.siteHeader}`}
+      data-navigation-input={navigationInput}
       onBlur={closeOnFocusLeave}
+      onPointerDownCapture={() => setNavigationInput("pointer")}
+      onKeyDownCapture={() => setNavigationInput("keyboard")}
+      onClickCapture={(event) => {
+        if (event.target instanceof Element && event.target.closest("a[href]")) {
+          setMenuPath(null);
+          setWalletMenuPath(null);
+        }
+      }}
     >
       <div className={`header-inner ${styles.headerInner}`}>
         <div className="header-brand">
@@ -401,22 +426,22 @@ export function SiteHeader() {
             </span>
           </button>
         </div>
-      </div>
 
-      <div
-        className={`${styles.mobileSheet} ${
-          menuOpen ? styles.mobileSheetOpen : ""
-        }`}
-        aria-hidden={!menuOpen}
-        inert={menuOpen ? undefined : true}
-      >
-        <div className={styles.mobileSheetSurface} id={menuId}>
-          <MobileNavigation
-            id={menuId}
-            open={menuOpen}
-            onNavigate={() => setMenuPath(null)}
-          />
-          <HeaderSocialLinks mobile />
+        <div
+          className={`${styles.mobileSheet} ${
+            menuOpen ? styles.mobileSheetOpen : ""
+          }`}
+          aria-hidden={!menuOpen}
+          inert={menuOpen ? undefined : true}
+        >
+          <div className={styles.mobileSheetSurface} id={menuId}>
+            <MobileNavigation
+              id={menuId}
+              open={menuOpen}
+              onNavigate={() => setMenuPath(null)}
+            />
+            <HeaderSocialLinks mobile />
+          </div>
         </div>
       </div>
     </header>

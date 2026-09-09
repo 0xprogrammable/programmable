@@ -17,12 +17,13 @@ describe("topbar and Explore hero polish", () => {
     );
   });
 
-  it("masks scrolling content below the sticky mobile navigation", () => {
+  it("masks scrolling content below the shared sticky navigation", () => {
     const css = read("components/site-navigation.module.css");
 
     expect(css).toMatch(
-      /@media \(max-width: 60rem\)[\s\S]*?\.siteHeader\.siteHeader\s*\{[^}]*background-color:\s*var\(--webde-canvas, #000\);/s,
+      /\.siteHeader\.siteHeader,[\s\S]*?\{[^}]*background-color:\s*var\(--webde-canvas, #000\);/s,
     );
+    expect(css).toContain("background-color: rgb(0 0 0 / 0.9)");
   });
 
   it("uses large white navigation text with a restrained active indicator", () => {
