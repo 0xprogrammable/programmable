@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   cookie: vi.fn(),
   readToken: vi.fn(),
+  readEthereumToken: vi.fn(),
 }));
 
 vi.mock("server-only", () => ({}));
@@ -15,6 +16,9 @@ vi.mock("next/navigation", () => ({
 }));
 vi.mock("../lib/server/robinhood-index/read", () => ({
   readRobinhoodToken: mocks.readToken,
+}));
+vi.mock("../lib/server/ethereum-explore", () => ({
+  readEthereumToken: mocks.readEthereumToken,
 }));
 
 import ExplorePage from "../app/explore/page";
@@ -31,6 +35,7 @@ const token = { tokenAddress: address, name: "Example token" };
 beforeEach(() => {
   mocks.cookie.mockReset();
   mocks.readToken.mockReset().mockResolvedValue({ status: "ready", token: null, updatedAt: null });
+  mocks.readEthereumToken.mockReset().mockResolvedValue({ chainId: 1, status: "ready", token: null, updatedAt: null });
 });
 
 describe("Explore chain routes", () => {
@@ -109,7 +114,10 @@ describe("verified token routing", () => {
 
   it("keeps explicit Ethereum authoritative even when the address exists on Robinhood", async () => {
     mocks.readToken.mockResolvedValue({ status: "ready", token, updatedAt: null });
-    expect(await resolveTokenPage(address, "1")).toEqual({ chainId: 1 });
+    const ethereumResult = { chainId: 1, status: "ready", token: { ...token, name: "Ethereum token" }, updatedAt: null };
+    mocks.readEthereumToken.mockResolvedValue(ethereumResult);
+    expect(await resolveTokenPage(address, "1")).toEqual(ethereumResult);
+    expect(mocks.readEthereumToken).toHaveBeenCalledExactlyOnceWith(address);
     expect(mocks.readToken).not.toHaveBeenCalled();
   });
 
@@ -128,6 +136,7 @@ describe("verified token routing", () => {
     expect(await resolveTokenPage(address, "8453")).toBeNull();
     expect(await resolveTokenPage(address, ["1", "4663"])).toBeNull();
     expect(mocks.readToken).not.toHaveBeenCalled();
+    expect(mocks.readEthereumToken).not.toHaveBeenCalled();
   });
 
   it("validates the address before reading any token data", async () => {
@@ -136,6 +145,7 @@ describe("verified token routing", () => {
       searchParams: Promise.resolve({}),
     })).rejects.toThrow("NOT_FOUND");
     expect(mocks.readToken).not.toHaveBeenCalled();
+    expect(mocks.readEthereumToken).not.toHaveBeenCalled();
   });
 
   it("uses the clean token URL as the canonical for old and new Robinhood links", async () => {

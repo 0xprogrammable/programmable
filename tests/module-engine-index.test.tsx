@@ -39,7 +39,7 @@ describe("Engine source and canonical website projection", () => {
     const html = renderToStaticMarkup(<RobinhoodTokenView address={row.tokenAddress} token={row} status="ready" />);
     expect(html).toContain("Manage coin"); expect(html).toContain("No trading market is verified"); expect(html).not.toContain("<iframe");
     expect(readRobinhoodProfileResponse({ chainId: 4663, status: "ready", updatedAt: saved.updatedAt, account: row.creator,
-      items: [row], page: { number: 1, size: 50, totalItems: 1, totalPages: 1, hasMore: false } }, row.creator).items).toEqual([row]);
+      items: [row], page: { number: 1, size: 5, totalItems: 1, totalPages: 1, hasMore: false } }, row.creator).items).toEqual([row]);
   });
   it("binds real pool data and rejects pool, generation, fee and receipt substitutions", () => {
     const source = lane(true), row = source.items[0];
