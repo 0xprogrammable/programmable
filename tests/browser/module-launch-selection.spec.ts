@@ -61,6 +61,48 @@ for (const width of [1440, 390, 320]) {
   });
 }
 
+test("a delayed remove frame cannot steal the next Undo keyboard activation", async ({ page }) => {
+  await page.addInitScript(() => {
+    const requestFrame = window.requestAnimationFrame.bind(window);
+    const cancelFrame = window.cancelAnimationFrame.bind(window);
+    const frames = new Map<number, FrameRequestCallback>();
+    let hold = false, nextId = -1;
+    window.addEventListener("hold-module-selection-frames", () => { hold = true; });
+    window.addEventListener("flush-module-selection-frames", () => {
+      hold = false;
+      const pending = [...frames.values()]; frames.clear();
+      for (const callback of pending) callback(performance.now());
+    });
+    window.requestAnimationFrame = callback => {
+      if (!hold) return requestFrame(callback);
+      const id = nextId--; frames.set(id, callback); return id;
+    };
+    window.cancelAnimationFrame = id => { if (!frames.delete(id)) cancelFrame(id); };
+  });
+  await page.setViewportSize({ width: 320, height: 900 }); await page.goto(origin);
+  const trigger = page.getByRole("button", { name: "Add modules", exact: true });
+  await trigger.press("Enter");
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("button", { name: "Add Opening buy cap", exact: true }).press("Enter");
+  await dialog.getByRole("button", { name: "Done", exact: true }).press("Enter");
+  const configure = page.getByRole("button", { name: "Configure Opening buy cap", exact: true });
+  await configure.press("Enter");
+  await dialog.getByLabel("Maximum ETH per wallet (ETH)", { exact: true }).fill("0.25");
+  await page.keyboard.press("Escape");
+  await page.evaluate(() => window.dispatchEvent(new Event("hold-module-selection-frames")));
+  await page.getByRole("button", { name: "Remove Opening buy cap", exact: true }).press("Enter");
+  await expect(page.getByRole("complementary")).toContainText("Includes the 0.10% platform fee.");
+  const undo = page.getByRole("button", { name: "Undo", exact: true });
+  await undo.focus();
+  await page.evaluate(() => window.dispatchEvent(new Event("flush-module-selection-frames")));
+  await expect(undo).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(configure).toBeFocused();
+  await expect(page.getByRole("complementary")).toContainText("Includes the 0.30% platform fee.");
+  await configure.press("Enter");
+  await expect(dialog.getByLabel("Maximum ETH per wallet (ETH)", { exact: true })).toHaveValue("0.25");
+});
+
 test("empty and single-template libraries keep irrelevant controls out of the flow", async ({ page }) => {
   await page.goto(`${origin}?mode=empty`); await page.getByRole("button", { name: "Add modules", exact: true }).click();
   await expect(page.getByText("No modules available yet", { exact: true })).toBeVisible();

@@ -5,7 +5,7 @@ import { Disclosure, DisclosurePanel, useDisclosureState } from "@/components/di
 import Image from "next/image";
 import Link from "next/link";
 import { ArrowLeft, ArrowRight, ChevronDown, Download, Plus, Puzzle, Settings2, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import { ModuleLibrary, ModuleCategoryIcon } from "@/components/module-library";
 import { ModulePickerDialog } from "@/components/module-picker-dialog";
@@ -108,6 +108,16 @@ export function ModuleModeBuilder({ catalog = PREVIEW_MODULE_CATALOG, engine = N
     return () => { for (const url of urls) URL.revokeObjectURL(url); };
   }, []);
   const form = useRef<HTMLFormElement>(null);
+  const selectionFocus = useRef<{ kind: "add" } | { kind: "configure"; id: string } | null>(null);
+  useLayoutEffect(() => {
+    const target = selectionFocus.current;
+    selectionFocus.current = null;
+    if (!target) return;
+    // Restore focus with the committed selection, before a later keyboard action.
+    const button = target.kind === "add" ? form.current?.querySelector<HTMLButtonElement>("[data-module-add]")
+      : document.getElementById(`module-selection-${target.id}`)?.querySelector<HTMLButtonElement>("button");
+    button?.focus();
+  }, [state.selectedModules]);
   const reviewHeading = useRef<HTMLHeadingElement>(null);
   const result = useMemo(() => checked ? validateModuleModeDraft(state, catalog, configurationContext, engine, undefined, minimumInitialBuyWei, release) : null, [checked, state, catalog, configurationContext, engine, minimumInitialBuyWei, release]);
   const issues = result && !result.ok ? result.issues : [];
@@ -131,18 +141,17 @@ export function ModuleModeBuilder({ catalog = PREVIEW_MODULE_CATALOG, engine = N
     if (resource) imageUrls.current.add(resource.objectUrl);
     setImageResource(resource); update("tokenImage", image);
   }
-  function add(entry: ModuleModeCatalogEntry) {
-    const fromUndo = document.activeElement instanceof HTMLElement && Boolean(document.activeElement.closest("[data-module-undo]"));
+  function add(entry: ModuleModeCatalogEntry, fromUndo = false) {
+    if (fromUndo) selectionFocus.current = { kind: "configure", id: entry.id };
     setChosenEntries((current) => ({ ...current, [entry.id]: entry }));
     setState((current) => setModuleSelected(current, entry, true)); setRemoved(null);
     setAnnouncement(`${entry.title} added to your coin.`);
-    if (fromUndo) requestAnimationFrame(() => document.getElementById(`module-selection-${entry.id}`)?.querySelector<HTMLButtonElement>("button")?.focus());
   }
   function remove(entry: ModuleModeCatalogEntry) {
     const fromEditor = form.current?.contains(document.activeElement);
+    if (fromEditor) selectionFocus.current = { kind: "add" };
     setState((current) => setModuleSelected(current, entry, false)); setRemoved(entry);
     setAnnouncement(`${entry.title} removed. Your settings are kept.`);
-    if (fromEditor) requestAnimationFrame(() => form.current?.querySelector<HTMLButtonElement>("[data-module-add]")?.focus());
   }
   function showModules(pointer: boolean, id?: string) {
     setPickerPointer(pointer);
@@ -242,7 +251,7 @@ export function ModuleModeBuilder({ catalog = PREVIEW_MODULE_CATALOG, engine = N
                   <button type="button" className={styles.removeModule} onClick={() => remove(entry)} aria-label={`Remove ${entry.title}`}><X size={17} aria-hidden="true" /></button>
                 </li>)}</ul> : null}
                 <button type="button" className={styles.addModulesButton} data-module-add onClick={event => showModules(event.detail > 0)}><Plus size={18} aria-hidden="true" />Add modules</button>
-                {removed ? <div className={styles.undo} data-module-undo><span>{removed.title} removed.</span><button type="button" onClick={() => add(removed)}>Undo</button></div> : null}
+                {removed ? <div className={styles.undo} data-module-undo><span>{removed.title} removed.</span><button type="button" onClick={() => add(removed, true)}>Undo</button></div> : null}
                 {missingSelected.map((entry) => <div className={styles.unavailableModule} key={entry.id}><p><strong>{entry.title}</strong> is no longer in the current catalog. Your settings are kept; remove it to continue with another configuration.</p><button className={styles.textButton} type="button" onClick={() => remove(entry)}>Remove {entry.title}</button></div>)}
 
               </div>
