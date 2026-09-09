@@ -225,3 +225,9 @@
 @media (forced-colors: active) { .primaryButton, .secondaryButton, .dangerButton, .keyList, .mutationConfirmation, .createPanel, .keyReveal, .walletGate, .sectionSwitch button, .expiryTrigger, .expiryMenu, .expiryOption, .connectionOptions { border: 1px solid CanvasText; } .keyStatus::before { forced-color-adjust: none; } }
 
 @media (max-width: 600px) { .hero h1 { font-size: 28px; line-height: 36px; } .intro { min-height: 40px; } }
+.workspace:is(details) { display: block; }
+.keySettingsSummary { align-items: center; border: 1px solid var(--api-line); border-radius: 12px; cursor: pointer; display: flex; font-size: 14px; gap: 16px; justify-content: space-between; list-style: none; min-height: 48px; padding: 12px 16px; }
+.keySettingsSummary::-webkit-details-marker { display: none; }
+.keySettingsSummary:focus-visible { outline: 2px solid #e786b2; outline-offset: 3px; }
+.workspace[open] > .keySettingsSummary { margin-bottom: 16px; }
+.workspace[open] > .keySettingsSummary svg { transform: rotate(180deg); }

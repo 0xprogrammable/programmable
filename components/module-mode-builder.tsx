@@ -79,7 +79,7 @@ export interface ModuleModeBuilderProps {
   onEdit?: () => void;
 }
 
-export function ModuleModeBuilder({ catalog = PREVIEW_MODULE_CATALOG, engine = NATIVE_ENGINE_PROFILE, configurationContext = {}, launchAction, minimumInitialBuyWei, release, previewDescription, statusContent, versionContent, reviewContent, resultContent, onEdit }: Readonly<ModuleModeBuilderProps>) {
+export function ModuleModeBuilder({ catalog = PREVIEW_MODULE_CATALOG, engine = NATIVE_ENGINE_PROFILE, configurationContext = {}, launchAction, minimumInitialBuyWei, release, previewDescription, statusContent, reviewContent, resultContent, onEdit }: Readonly<ModuleModeBuilderProps>) {
   const { hydrated, viewChainId, setViewChainId } = useViewChain();
   useEffect(() => {
     if (!hydrated || viewChainId === 4663) return;
@@ -188,7 +188,7 @@ export function ModuleModeBuilder({ catalog = PREVIEW_MODULE_CATALOG, engine = N
 
   return (
     <div className={`${styles.page} ${styles.studio}`}>
-      <div className={styles.pageTop}><Link href="/launch" className={styles.backLink}><ArrowLeft size={16} aria-hidden="true" /> Launch</Link><span className={styles.network} aria-label="Launch network: Robinhood. Fee currency: ETH.">Robinhood <span aria-hidden="true">·</span> ETH</span></div>
+      <div className={styles.pageTop}><Link href="/launch" className={styles.backLink}><ArrowLeft size={16} aria-hidden="true" /> Launch</Link></div>
       {statusContent}
       <div className={resultContent ? styles.resultLayout : styles.layout}>
         {resultContent ? <section className={styles.formPanel}>{resultContent}</section> : review ? (
@@ -248,7 +248,6 @@ export function ModuleModeBuilder({ catalog = PREVIEW_MODULE_CATALOG, engine = N
                 {missingSelected.map((entry) => <div className={styles.unavailableModule} key={entry.id}><p><strong>{entry.title}</strong> is no longer in the current catalog. Your settings are kept; remove it to continue with another configuration.</p><button className={styles.textButton} type="button" onClick={() => remove(entry)}>Remove {entry.title}</button></div>)}
 
               </div>
-              {versionContent ? <details className={styles.setupDetails}><summary>Other coin setups<ChevronDown size={16} aria-hidden="true" /></summary><div>{versionContent}</div></details> : null}
             </section>
             <section className={styles.formSection} aria-labelledby="module-launch-title">
               <h2 id="module-launch-title" className={styles.liveRegion}>Launch settings</h2>

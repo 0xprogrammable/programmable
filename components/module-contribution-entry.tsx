@@ -7,10 +7,37 @@ import { buildAgentInstructions } from "@/lib/agent-connection";
 import styles from "@/components/module-contribution-entry.module.css";
 
 export function ModuleContributionEntry() {
+  return (
+    <div className={styles.page}>
+      <nav className={styles.navigation} aria-label="Module builder navigation">
+        <Link href="/launch/modules" className={styles.back}><ArrowLeft size={16} aria-hidden="true" /> Modules</Link>
+        <Link href="/profile?section=submissions#profile-modules-title" className={styles.textLink}>Submissions <ArrowRight size={16} aria-hidden="true" /></Link>
+      </nav>
+      <section className={styles.workspace} aria-labelledby="module-builder-title">
+        <header className={styles.header}>
+          <h1 id="module-builder-title">Build a module</h1>
+          <p>A module gives a coin a new ability. Set up your API key, then describe your idea and copy the prompt for your AI builder.</p>
+        </header>
+        <div className={styles.actions}>
+          <Link href="/developers/api-keys?purpose=modules" className={styles.primaryAction}>Get API key <ArrowRight size={16} aria-hidden="true" /></Link>
+        </div>
+        <p className={styles.reviewNote}>Your builder submits the module for review. Approval is required before publication.</p>
+      </section>
+      <nav className={styles.resources} aria-label="Module developer resources">
+        <Link href="/developer-reference/module-mode">Module docs <ArrowRight size={16} aria-hidden="true" /></Link>
+        <a href="/agents.md">Agent guide <ArrowRight size={16} aria-hidden="true" /></a>
+      </nav>
+    </div>
+  );
+}
+
+export function ModuleBuilderPrompt({ scopes, wallet }: { scopes: readonly string[]; wallet: string }) {
   const [idea, setIdea] = useState("");
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState("");
   const instructions = buildAgentInstructions({
+    scopes,
+    wallet,
     intent: idea.trim()
       ? `Build and submit a reusable Module Mode module. The module should do the following: ${idea.trim().replace(/\.+$/u, "")}`
       : "Build and submit a reusable Module Mode module. Ask me what my module should do before starting",
@@ -27,20 +54,10 @@ export function ModuleContributionEntry() {
   }
 
   return (
-    <div className={styles.page}>
-      <nav className={styles.navigation} aria-label="Module builder navigation">
-        <Link href="/launch/modules" className={styles.back}>
-          <ArrowLeft size={16} aria-hidden="true" /> Modules
-        </Link>
-        <Link href="/profile?section=submissions#profile-modules-title" className={styles.textLink}>
-          Submissions <ArrowRight size={16} aria-hidden="true" />
-        </Link>
-      </nav>
-
-      <section className={styles.workspace} aria-labelledby="module-builder-title">
+      <section className={`${styles.workspace} ${styles.promptWorkspace}`} aria-labelledby="module-prompt-title">
         <header className={styles.header}>
-          <h1 id="module-builder-title">Build a module</h1>
-          <p>A module gives a coin a new ability. Describe yours and let your AI builder create it.</p>
+          <h2 id="module-prompt-title">Your module</h2>
+          <p>Describe what your module should do.</p>
         </header>
 
         <label className={styles.ideaField} htmlFor="module-idea">
@@ -63,12 +80,9 @@ export function ModuleContributionEntry() {
             {copied ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />}
             Copy prompt
           </button>
-          <Link href="/developers/api-keys?purpose=modules" className={styles.secondaryAction}>
-            Get API key <ArrowRight size={16} aria-hidden="true" />
-          </Link>
         </div>
         <p className={styles.copyStatus} role={error ? "alert" : "status"}>
-          {error || (copied ? "Prompt copied. Paste it into your AI builder." : "Paste the prompt into your AI builder. Connect the API key through its secure setup.")}
+          {error || (copied ? "Prompt copied. Paste it into your AI builder." : "Save your API key in your builder’s secure setup, then paste this prompt.")}
         </p>
 
         <details className={styles.promptDetails}>
@@ -79,10 +93,5 @@ export function ModuleContributionEntry() {
         <p className={styles.reviewNote}>Your builder submits the module for review. Approval is required before publication.</p>
       </section>
 
-      <nav className={styles.resources} aria-label="Module developer resources">
-        <Link href="/developer-reference/module-mode">Module docs <ArrowRight size={16} aria-hidden="true" /></Link>
-        <a href="/agents.md">Agent guide <ArrowRight size={16} aria-hidden="true" /></a>
-      </nav>
-    </div>
   );
 }

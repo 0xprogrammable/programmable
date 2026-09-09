@@ -335,7 +335,7 @@ describe("developer API key interface", () => {
   });
 
   it("keeps the first view compact and focused on key management", () => {
-    expect(apiKeysSource).toContain('activeSection === "keys" ? "API keys"');
+    expect(apiKeysSource).toContain('activeSection === "keys" ? moduleBuilder ? "Build a module" : "API keys"');
     expect(apiKeysSource).toContain('aria-label="Developer access view"');
     expect(apiKeysSource).toContain('aria-pressed={activeSection === "keys"}');
     expect(apiKeysSource).toContain('aria-pressed={activeSection === "history"}');
