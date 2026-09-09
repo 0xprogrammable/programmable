@@ -19,9 +19,6 @@ import {
   ChevronLeft,
   ChevronRight,
   RefreshCw,
-  KeyRound,
-  Puzzle,
-  Wallet,
 } from "lucide-react";
 
 import styles from "@/components/developer-api-keys.module.css";
@@ -1547,29 +1544,20 @@ export function DeveloperApiKeysView({
         {statusMessage}
       </p>
 
-      <Link className={styles.backLink} href="/launch">
-        <ArrowLeft aria-hidden="true" size={16} strokeWidth={1.9} />
-        <span>Back</span>
-      </Link>
+      <nav className={styles.topNavigation} aria-label="Builder navigation">
+        <Link className={styles.backLink} href="/launch">
+          <ArrowLeft aria-hidden="true" size={16} strokeWidth={1.9} />
+          <span>Back</span>
+        </Link>
+        <Link className={styles.textLink} href="/profile?section=submissions#profile-modules-title">Submissions <ArrowRight size={16} aria-hidden="true" /></Link>
+      </nav>
 
       <header className={styles.hero}>
         <div className={styles.heroCopy}>
-          <p className={styles.eyebrow}>Developer tools</p>
           <h1>API keys</h1>
-          <p className={styles.intro}>Connect your builder to Programmable.</p>
-        </div>
-        <div className={styles.headerActions}>
-          <Link className={styles.textLink} href="/profile?section=submissions#profile-modules-title">Your submissions <ArrowRight size={16} aria-hidden="true" /></Link>
+          <p className={styles.intro}>Connect your AI builder.</p>
         </div>
       </header>
-
-      {activeSection === "keys" ? (
-        <ol className={styles.connectionSteps} aria-label="Connect your builder">
-          <li><span>1</span>Create a key</li>
-          <li><span>2</span>Copy connection</li>
-          <li><span>3</span>Start building</li>
-        </ol>
-      ) : null}
 
       {activeSection === "launch" ? (
         <RobinhoodFeePolicyDisclosure />
@@ -1604,17 +1592,17 @@ export function DeveloperApiKeysView({
       ) : !account ? (
         <section className={styles.walletGate} aria-labelledby="connect-title">
           <div className={styles.walletGateCopy}>
-            <Wallet className={styles.walletIcon} size={24} aria-hidden="true" />
             <h2 id="connect-title">Connect your wallet</h2>
             <p>Create and manage keys for this account.</p>
           </div>
           <button
             className={styles.primaryButton}
             disabled={connecting}
+            aria-busy={connecting}
             type="button"
             onClick={openWallet}
           >
-            {connecting ? "Opening wallet" : "Connect wallet"}
+            <span>Connect wallet</span>
           </button>
         </section>
       ) : (
@@ -1661,14 +1649,16 @@ export function DeveloperApiKeysView({
                     <code>{mutationResult.result.apiKeySecret}</code>
                     <div className={styles.secretActions}>
                       <button className={styles.primaryButton} type="button" onClick={() => void copyConnection()}>
-                        {connectionCopyState === "copied" ? "Connection copied" : "Copy connection"}
+                        {connectionCopyState === "copied" ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />}
+                        Copy connection
                       </button>
                       <button
                         className={styles.secondaryButton}
                         type="button"
                         onClick={() => void copyApiKey()}
                       >
-                        {keyCopyState === "copied" ? "Copied" : "Copy key"}
+                        {keyCopyState === "copied" ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />}
+                        Copy key
                       </button>
                     </div>
                   </div>
@@ -1728,7 +1718,7 @@ export function DeveloperApiKeysView({
               type="button"
               onClick={() => showSection("history")}
             >
-              Launch history
+              History
             </button>
           </nav>
 
@@ -1740,11 +1730,7 @@ export function DeveloperApiKeysView({
                 aria-busy={mutationState.kind === "issue"}
               >
                 <div className={styles.panelHeading}>
-                  <div>
-                    <h2 id="create-key-title">Create key</h2>
-                    <p className={styles.panelIntro}>Give your connection a name.</p>
-                  </div>
-                  <KeyRound className={styles.panelIcon} size={22} aria-hidden="true" />
+                  <h2 id="create-key-title">New key</h2>
                 </div>
 
                 <form className={styles.createForm} onSubmit={createApiKey}>
@@ -1783,11 +1769,14 @@ export function DeveloperApiKeysView({
                       ) : null}
                     </div>
 
-                    <details className={styles.connectionOptions}>
-                      <summary>
-                        <span>Access and expiry<small>{apiKeyPurposeLabel(selectedScopes)} · {expiresInDays} days</small></span>
-                        <ChevronDown size={16} aria-hidden="true" />
-                      </summary>
+                    <div className={styles.optionsField}>
+                      <span>Access and expiry</span>
+                      <details className={styles.connectionOptions}>
+                        <summary aria-label={`Access and expiry: ${apiKeyPurposeLabel(selectedScopes)}, ${expiresInDays} days`}>
+                          <span>{apiKeyPurposeLabel(selectedScopes)}</span>
+                          <small>{expiresInDays} days</small>
+                          <ChevronDown size={16} aria-hidden="true" />
+                        </summary>
                       <div className={styles.connectionOptionsBody}>
                         <ApiKeyPurposeChoice
                           value={purpose}
@@ -1813,7 +1802,8 @@ export function DeveloperApiKeysView({
                           onChange={setExpiresInDays}
                         />
                       </div>
-                    </details>
+                      </details>
+                    </div>
 
                     <button
                       ref={createButtonRef}
@@ -1827,13 +1817,14 @@ export function DeveloperApiKeysView({
                         || (purpose === "custom-launches" && access === "read-only" && !canIssueReadOnly && !pendingMutationAttempt)
                       }
                       type="submit"
+                      aria-busy={mutationState.kind === "issue"}
                     >
-                      {mutationState.kind === "issue"
-                        ? "Creating key"
-                        : mutationResult?.result.secretState === "delivered-once"
-                          ? "Save current key first"
-                          : pendingMutationAttempt?.kind === "issue" ? "Retry create key" : "Create key"}
-                      <ArrowRight size={17} aria-hidden="true" />
+                      <span>{mutationResult?.result.secretState === "delivered-once"
+                        ? "Save current key first"
+                        : pendingMutationAttempt?.kind === "issue" && mutationState.kind !== "issue" ? "Retry create key" : "Create key"}</span>
+                      <span className={styles.buttonIcon} aria-hidden="true">
+                        {mutationState.kind === "issue" ? <RefreshCw size={16} className={styles.refreshIcon} data-spinning="true" /> : <ArrowRight size={16} />}
+                      </span>
                     </button>
                   </div>
 
@@ -1856,17 +1847,6 @@ export function DeveloperApiKeysView({
                   ) : null}
                 </form>
               </section>
-
-              <aside className={styles.connectionGuide} aria-labelledby="connection-guide-title">
-                <div className={styles.connectionGraphic} aria-hidden="true">
-                  <span><KeyRound size={22} strokeWidth={1.5} /></span>
-                  <span className={styles.connectionLine} />
-                  <span className={styles.connectionDestination}><Puzzle size={22} strokeWidth={1.5} /></span>
-                </div>
-                <h2 id="connection-guide-title">Copy the connection.</h2>
-                <p>After creating a key, copy the connection to your builder&apos;s secure setup. It includes the key and instructions.</p>
-                <p className={styles.guideNote}><Wallet size={16} aria-hidden="true" /> Transactions still need your wallet.</p>
-              </aside>
 
               <section
                 className={`${styles.panel} ${styles.listPanel}`}
@@ -1946,9 +1926,7 @@ export function DeveloperApiKeysView({
                         size={16}
                         strokeWidth={1.9}
                       />
-                      {listState === "loading" || refreshingKeys
-                        ? "Refreshing"
-                        : "Refresh keys"}
+                      Refresh keys
                     </button>
                   </div>
                 </div>
@@ -2017,12 +1995,16 @@ export function DeveloperApiKeysView({
                                 {status}
                               </span>
                             </div>
-                            <code>{displayPrefix(apiKey.keyPrefix)}</code>
+                            <span className={styles.keyPurpose}>{apiKeyPurposeLabel(apiKey.scopes)}</span>
                             {status === "Active" && !rotationSupported ? (
                               <p className={styles.securityNote}>Rotation is unavailable until this key&apos;s restrictions can be preserved.</p>
                             ) : null}
                           </div>
 
+                          <details className={styles.keyDetails}>
+                            <summary>Details <ChevronDown size={14} aria-hidden="true" /></summary>
+                            <div className={styles.keyDetailBody}>
+                              <code>{displayPrefix(apiKey.keyPrefix)}</code>
                           <dl className={styles.keyMetadata}>
                             <div>
                               <dt>Access</dt>
@@ -2047,11 +2029,10 @@ export function DeveloperApiKeysView({
                               </div>
                             ) : null}
                           </dl>
-
-                          <div className={styles.keyDetails}>
-                            <ApiKeyPermissions scopes={apiKey.scopes} />
-                            <ApiKeyChainPolicy apiKey={apiKey} />
-                          </div>
+                              <ApiKeyPermissions scopes={apiKey.scopes} />
+                              <ApiKeyChainPolicy apiKey={apiKey} />
+                            </div>
+                          </details>
 
                           {confirmingRotate ? (
                             <div
@@ -2089,11 +2070,12 @@ export function DeveloperApiKeysView({
                                 <button
                                   className={styles.dangerButton}
                                   disabled={rotating}
+                                  aria-busy={rotating}
                                   type="button"
                                   data-confirm-rotate
                                   onClick={() => void rotateApiKey(apiKey)}
                                 >
-                                  {rotating ? "Rotating key" : "Rotate key"}
+                                  Rotate key
                                 </button>
                               </div>
                             </div>
@@ -2131,17 +2113,18 @@ export function DeveloperApiKeysView({
                                   ref={confirmRevokeRef}
                                   className={styles.dangerButton}
                                   disabled={revoking}
+                                  aria-busy={revoking}
                                   type="button"
                                   data-confirm-revoke
                                   onClick={() => void revokeApiKey(apiKey)}
                                 >
-                                  {revoking ? "Revoking key" : "Revoke key"}
+                                  Revoke key
                                 </button>
                               </div>
                             </div>
                           ) : status === "Active" ? (
                             <div className={styles.keyActions}>
-                              <button className={styles.secondaryButton} type="button" onClick={() => void copyAgentSetup(apiKey.scopes)}>Copy instructions</button>
+                              <button className={`${styles.secondaryButton} ${styles.iconButton}`} type="button" aria-label={`Copy instructions for ${apiKey.label}`} title="Copy instructions" onClick={() => void copyAgentSetup(apiKey.scopes)}><Copy size={16} aria-hidden="true" /></button>
                               <button
                                 className={styles.secondaryButton}
                                 disabled={mutationBusy || !rotationSupported}
@@ -2199,7 +2182,7 @@ export function DeveloperApiKeysView({
       <nav className={styles.resourceLinks} aria-label="Developer resources">
         <button className={styles.guideAction} type="button" onClick={() => void copyAgentSetup()}>
           {setupCopyState === "copied" ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />}
-          {setupCopyState === "copied" ? "Instructions copied" : "Copy instructions"}
+          Copy instructions
         </button>
         <Link href="/developers/modules">Build a module <ArrowRight size={16} aria-hidden="true" /></Link>
         <a href="/agents.md" target="_blank" rel="noreferrer">Agent guide <ExternalLink size={14} aria-hidden="true" /></a>
