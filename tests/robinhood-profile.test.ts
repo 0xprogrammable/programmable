@@ -74,18 +74,21 @@ describe("Robinhood creator launch history", () => {
     expect(profileLaunchList(saved, OTHER).items).toEqual([]);
   });
 
-  it("filters the full catalog before 50-row pagination", () => {
-    const owned = Array.from({ length: 55 }, (_, index) => launch(index + 1));
+  it("filters the full catalog before five-row pagination without losing any launch", () => {
+    const owned = Array.from({ length: 11 }, (_, index) => launch(index + 1));
     const others = Array.from({ length: 80 }, (_, index) => launch(index + 100, { creator: OTHER }));
     const saved = snapshot([...owned, ...others]);
     const first = profileLaunchList(saved, OWNER);
     const second = profileLaunchList(saved, OWNER, 2);
-    expect(first.page).toEqual({ number: 1, size: 50, totalItems: 55, totalPages: 2, hasMore: true });
-    expect(second.page).toEqual({ number: 2, size: 50, totalItems: 55, totalPages: 2, hasMore: false });
-    expect(first.items).toEqual(owned.slice(5).toReversed());
-    expect(second.items).toEqual(owned.slice(0, 5).toReversed());
-    expect(new Set([...first.items, ...second.items].map((row) => row.launchId)).size).toBe(55);
-    expect(profileLaunchList(saved, OWNER, 999_999)).toEqual(second);
+    const third = profileLaunchList(saved, OWNER, 3);
+    expect(first.page).toEqual({ number: 1, size: 5, totalItems: 11, totalPages: 3, hasMore: true });
+    expect(second.page).toEqual({ number: 2, size: 5, totalItems: 11, totalPages: 3, hasMore: true });
+    expect(third.page).toEqual({ number: 3, size: 5, totalItems: 11, totalPages: 3, hasMore: false });
+    expect(first.items).toEqual(owned.slice(6).toReversed());
+    expect(second.items).toEqual(owned.slice(1, 6).toReversed());
+    expect(third.items).toEqual([owned[0]]);
+    expect([...first.items, ...second.items, ...third.items]).toEqual(owned.toReversed());
+    expect(profileLaunchList(saved, OWNER, 999_999)).toEqual(third);
   });
 
   it("orders by exact block and log position with a deterministic address tie-break", () => {
@@ -100,7 +103,7 @@ describe("Robinhood creator launch history", () => {
   it("distinguishes an empty ready profile from an unavailable index", () => {
     const ready = profileLaunchList(snapshot([launch(1, { creator: OTHER })]), OWNER, 9);
     expect(ready).toMatchObject({ status: "ready", items: [], updatedAt: new Date(NOW).toISOString() });
-    expect(ready.page).toEqual({ number: 1, size: 50, totalItems: 0, totalPages: 0, hasMore: false });
+    expect(ready.page).toEqual({ number: 1, size: 5, totalItems: 0, totalPages: 0, hasMore: false });
     expect(profileLaunchList(null, OWNER)).toMatchObject({
       chainId: 4663, account: OWNER, status: "unavailable", updatedAt: null, items: [],
     });
@@ -174,11 +177,11 @@ describe("Robinhood public profile HTTP boundary", () => {
   });
 
   it("serves the requested creator page with no cross-account rows", async () => {
-    const owned = Array.from({ length: 51 }, (_, index) => launch(index + 1));
+    const owned = Array.from({ length: 6 }, (_, index) => launch(index + 1));
     boundary.read.mockResolvedValue({ snapshot: snapshot([...owned, launch(90, { creator: OTHER })]), etag: "saved" });
     const response = await GET(request(`account=${OWNER}&page=2`));
     expect(await response.json()).toMatchObject({
-      items: [owned[0]], page: { number: 2, totalItems: 51, totalPages: 2, hasMore: false },
+      items: [owned[0]], page: { number: 2, size: 5, totalItems: 6, totalPages: 2, hasMore: false },
     });
   });
 

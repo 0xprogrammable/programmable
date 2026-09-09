@@ -27,6 +27,8 @@ import { ProfileModules } from "@/components/profile-modules";
 import {
   ProfileProjects,
   ProfileProjectsLoadingState,
+  ProfileProjectsSection,
+  creatorProjectPageSize,
   rewardReceiverActionKeyV1,
   type CreatorProjectMarketCapV1,
   type CreatorProjectSummaryV1,
@@ -4602,25 +4604,30 @@ function ProfileLoadingState() {
 export function ProfileRouterLaunches({
   entries,
   refreshing = false,
+  onRefresh,
 }: {
   entries: readonly ProfilePortfolioEntry[];
   refreshing?: boolean;
+  onRefresh?: () => void;
 }) {
+  const [page, setPage] = useState(1);
+  const totalPages = Math.max(1, Math.ceil(entries.length / creatorProjectPageSize));
+  const currentPage = Math.min(page, totalPages);
+  const visibleEntries = entries.slice((currentPage - 1) * creatorProjectPageSize, currentPage * creatorProjectPageSize);
+  if (page !== currentPage) setPage(currentPage);
   if (!entries.length) return null;
 
   return (
-    <section
-      className={styles.launchesPanel}
-      aria-labelledby="profile-launches-title"
-      aria-busy={refreshing || undefined}
+    <ProfileProjectsSection
+      refreshInProgress={refreshing}
+      onRefresh={onRefresh}
+      currentPage={currentPage}
+      totalPages={totalPages}
+      totalItems={entries.length}
+      onPageChange={setPage}
     >
-      <header className={styles.launchesHeader}>
-        <h2 id="profile-launches-title">Launches</h2>
-        <span className={styles.visuallyHidden} role="status">{refreshing ? "Refreshing launches" : ""}</span>
-      </header>
-
-      <div className={styles.launchList}>
-        {entries.map(({ token }) => {
+      <div className={styles.launchList} aria-busy={refreshing || undefined}>
+        {visibleEntries.map(({ token }) => {
           const tokenImage =
             token.imageUrl?.trim() || getFallbackTokenImage(token.address);
           const tokenImageSource = getTokenCardImageSource(tokenImage);
@@ -4658,7 +4665,7 @@ export function ProfileRouterLaunches({
           );
         })}
       </div>
-    </section>
+    </ProfileProjectsSection>
   );
 }
 
@@ -4776,7 +4783,7 @@ export function PublicCreatorProfile({
         </section>
       ) : entries.length ? (
         <>
-          <ProfileRouterLaunches entries={entries} refreshing={refreshing} />
+          <ProfileRouterLaunches entries={entries} key={account.toLowerCase()} refreshing={refreshing} onRefresh={() => setRefreshKey((value) => value + 1)} />
           {scopedData.sourceQuality === "stale" && !refreshing ? <p className={styles.publicRefreshNote} role="status">
             Couldn’t refresh launches.
             <button className={styles.retryButton} type="button" onClick={() => setRefreshKey((current) => current + 1)}>Try again</button>

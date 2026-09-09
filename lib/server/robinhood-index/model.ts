@@ -1,5 +1,5 @@
 import type { RobinhoodLaunch, RobinhoodModuleLaunch, RobinhoodLaunchList, RobinhoodProfileLaunchList } from "@/lib/robinhood-launches";
-import { isRobinhoodModuleLaunch, isRobinhoodModuleSourceKind } from "@/lib/robinhood-launches";
+import { isRobinhoodModuleLaunch, isRobinhoodModuleSourceKind, ROBINHOOD_PROFILE_PAGE_SIZE } from "@/lib/robinhood-launches";
 import { DEFAULT_EXPLORE_FILTERS, type RobinhoodExploreFilters } from "@/lib/robinhood-explore-filters";
 import { isPinnedRobinhoodToken, isVisibleRobinhoodToken } from "@/lib/robinhood-explore-policy";
 
@@ -218,13 +218,14 @@ export function profileLaunchList(snapshot: RobinhoodSnapshot | null, account: s
         ? b.logIndex - a.logIndex : BigInt(a.blockNumber) > BigInt(b.blockNumber) ? -1 : 1;
       return newest || a.tokenAddress.toLowerCase().localeCompare(b.tokenAddress.toLowerCase());
     });
-  const totalPages = Math.ceil(items.length / 50);
+  const size = ROBINHOOD_PROFILE_PAGE_SIZE;
+  const totalPages = Math.ceil(items.length / size);
   const requestedPage = Number.isSafeInteger(page) && page > 0 ? page : 1;
   const number = Math.min(requestedPage, Math.max(1, totalPages));
   const status = snapshotStatus(snapshot, now);
   return {
     chainId: 4663, account: normalizedAccount, status, updatedAt: snapshotUpdatedAt(snapshot),
-    items: items.slice((number - 1) * 50, number * 50),
-    page: { number, size: 50, totalItems: items.length, totalPages, hasMore: number < totalPages },
+    items: items.slice((number - 1) * size, number * size),
+    page: { number, size, totalItems: items.length, totalPages, hasMore: number < totalPages },
   };
 }

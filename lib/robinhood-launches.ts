@@ -61,8 +61,13 @@ export type RobinhoodLaunchList = Readonly<{
   }>;
 }>;
 
-export type RobinhoodProfileLaunchList = RobinhoodLaunchList & Readonly<{
+export const ROBINHOOD_PROFILE_PAGE_SIZE = 5;
+
+export type RobinhoodProfileLaunchList = Omit<RobinhoodLaunchList, "page"> & Readonly<{
   account: string;
+  page: Omit<RobinhoodLaunchList["page"], "size"> & Readonly<{
+    size: typeof ROBINHOOD_PROFILE_PAGE_SIZE;
+  }>;
 }>;
 
 /** Module Mode is a separate canonical source; it never receives a fabricated Router stamp. */
