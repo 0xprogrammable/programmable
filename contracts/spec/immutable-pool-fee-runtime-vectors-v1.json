@@ -1,0 +1,184 @@
+{
+  "schemaVersion": "programmable.immutable-pool-fee-runtime-vectors.v1",
+  "scope": "local original reviewed source fixtures; no deployment evidence",
+  "proofs": [
+    {
+      "schemaVersion": "programmable.immutable-pool-fee-runtime-proof.v1",
+      "recipeId": "native_fee_kernel_v1",
+      "sourceArtifactHash": "sha256:917c03d59c7b6c051d6aa238cd0b2a91aa02c8993ccbfce6421d5c6341d5380e",
+      "market": {
+        "chainId": "4663",
+        "poolManager": "0x8366a39CC670B4001A1121B8F6A443A643e40951",
+        "currency0": "0x0000000000000000000000000000000000000000",
+        "currency1": "0x3333333333333333333333333333333333333333",
+        "hooks": "0x44444444444444444444444444444444444420Cc",
+        "fee": 3000,
+        "tickSpacing": 60
+      },
+      "recipient": "0xD88539d3c4C460136a733A3Fd60cf6BF269079da",
+      "rateBps": 20,
+      "denominator": 10000,
+      "scope": "exact_pool_key",
+      "feeCurrency": "native",
+      "assessmentBase": "gross_native_leg",
+      "rounding": "ceil_per_trade",
+      "accrual": "backed_pool_manager_native_claims",
+      "claim": "permissionless_fixed_recipient",
+      "feeVault": "0x124Ab56098E466eff57462880D2a9bd939EF283f",
+      "feeRecorder": "0x44444444444444444444444444444444444420Cc",
+      "runtimeBindings": [
+        {
+          "role": "hook",
+          "address": "0x44444444444444444444444444444444444420Cc",
+          "runtimeCodeHash": "0x491741f1531d121738addab2cc3cbad0e1f4412fd4fbb7c25fb320b1ec0caa6c",
+          "immutableWords": {
+            "poolManager": "0x0000000000000000000000008366a39cc670b4001a1121b8f6a443a643e40951",
+            "token": "0x0000000000000000000000003333333333333333333333333333333333333333",
+            "lpFee": "0x0000000000000000000000000000000000000000000000000000000000000bb8",
+            "tickSpacing": "0x000000000000000000000000000000000000000000000000000000000000003c",
+            "initialSqrtPriceX96": "0x0000000000000000000000000000000000000001000000000000000000000000",
+            "initializer": "0x0000000000000000000000002222222222222222222222222222222222222222",
+            "creatorBuyFeeBps": "0x000000000000000000000000000000000000000000000000000000000000000f",
+            "creatorSellFeeBps": "0x0000000000000000000000000000000000000000000000000000000000000019",
+            "module": "0x0000000000000000000000000000000000000000000000000000000000000000",
+            "moduleCodeHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+            "maxModuleLpFeePips": "0x0000000000000000000000000000000000000000000000000000000000002710",
+            "feeVault": "0x000000000000000000000000124ab56098e466eff57462880d2a9bd939ef283f"
+          }
+        },
+        {
+          "role": "vault",
+          "address": "0x124Ab56098E466eff57462880D2a9bd939EF283f",
+          "runtimeCodeHash": "0x0a02bb65c4f17d9e8ff2c953c107dee00b8b408741015c28716bfa5e1b359765",
+          "immutableWords": {
+            "poolManager": "0x0000000000000000000000008366a39cc670b4001a1121b8f6a443a643e40951",
+            "kernel": "0x00000000000000000000000044444444444444444444444444444444444420cc",
+            "creatorRecipient": "0x0000000000000000000000001111111111111111111111111111111111111111"
+          }
+        }
+      ],
+      "proofDigest": "0x5f711d9a73a2083a2ea960ac3e6477a49f21e789ce15cad75a7334637358726f"
+    },
+    {
+      "schemaVersion": "programmable.immutable-pool-fee-runtime-proof.v1",
+      "recipeId": "native20_combined_v2",
+      "sourceArtifactHash": "sha256:48d87fb9ca425b13fcb446d6db4c04dac2e8cfcb095fadf0d0781db58692ed0b",
+      "market": {
+        "chainId": "4663",
+        "poolManager": "0x8366a39CC670B4001A1121B8F6A443A643e40951",
+        "currency0": "0x0000000000000000000000000000000000000000",
+        "currency1": "0x90aEba852bfC2810E56744d9b879790144A920cC",
+        "hooks": "0x90aEba852bfC2810E56744d9b879790144A920cC",
+        "fee": 0,
+        "tickSpacing": 60
+      },
+      "recipient": "0xD88539d3c4C460136a733A3Fd60cf6BF269079da",
+      "rateBps": 20,
+      "denominator": 10000,
+      "scope": "exact_pool_key",
+      "feeCurrency": "native",
+      "assessmentBase": "gross_native_leg",
+      "rounding": "ceil_per_trade",
+      "accrual": "backed_pool_manager_native_claims",
+      "claim": "permissionless_fixed_recipient",
+      "feeVault": "0xA31982d59F033D90d8663Da8E89f0560A184d47d",
+      "feeRecorder": "0x90aEba852bfC2810E56744d9b879790144A920cC",
+      "runtimeBindings": [
+        {
+          "role": "hook",
+          "address": "0x90aEba852bfC2810E56744d9b879790144A920cC",
+          "runtimeCodeHash": "0x5dd70f3369d62d8e671a557f7ad7caa09bc1c1d7659110922e81198cc569f806",
+          "immutableWords": {
+            "creatorBuyFeeBps": "0x0000000000000000000000000000000000000000000000000000000000000000",
+            "creatorSellFeeBps": "0x0000000000000000000000000000000000000000000000000000000000000000",
+            "feeVault": "0x000000000000000000000000a31982d59f033d90d8663da8e89f0560a184d47d",
+            "initializer": "0x0000000000000000000000009ad5968bc00e16029e6a321b429b97cb34609d86",
+            "initialSqrtPriceX96": "0x000000000000000000000000000000000000562b87606d8f935d666e00c1c51d",
+            "lpFee": "0x0000000000000000000000000000000000000000000000000000000000000000",
+            "maxModuleLpFeePips": "0x0000000000000000000000000000000000000000000000000000000000000000",
+            "module": "0x0000000000000000000000000000000000000000000000000000000000000000",
+            "moduleCodeHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+            "poolManager": "0x0000000000000000000000008366a39cc670b4001a1121b8f6a443a643e40951",
+            "tickSpacing": "0x000000000000000000000000000000000000000000000000000000000000003c",
+            "token": "0x00000000000000000000000090aeba852bfc2810e56744d9b879790144a920cc"
+          }
+        },
+        {
+          "role": "vault",
+          "address": "0xA31982d59F033D90d8663Da8E89f0560A184d47d",
+          "runtimeCodeHash": "0x8dfab8ad9534e6a1b573f55297f312e86c25c42a3a43aada409c69e2afa8c307",
+          "immutableWords": {
+            "creatorRecipient": "0x0000000000000000000000000000000000000000000000000000000000000b0b",
+            "kernel": "0x00000000000000000000000090aeba852bfc2810e56744d9b879790144a920cc",
+            "poolManager": "0x0000000000000000000000008366a39cc670b4001a1121b8f6a443a643e40951"
+          }
+        }
+      ],
+      "proofDigest": "0xc83e0933e0c42968654fb040954733ec1abf7a689e9d25690ce0d41a2c58edeb"
+    },
+    {
+      "schemaVersion": "programmable.immutable-pool-fee-runtime-proof.v1",
+      "recipeId": "blob_fee_controller_v2",
+      "sourceArtifactHash": "sha256:b53f058db0851bd922cd2ae9306761df493f0f24f63b306f7a5ddcb3122e7e95",
+      "market": {
+        "chainId": "4663",
+        "poolManager": "0x8366a39CC670B4001A1121B8F6A443A643e40951",
+        "currency0": "0x0000000000000000000000000000000000000000",
+        "currency1": "0xC51ded643d09D4e746658A4931F4ADC83f2710cc",
+        "hooks": "0xC51ded643d09D4e746658A4931F4ADC83f2710cc",
+        "fee": 3000,
+        "tickSpacing": 60
+      },
+      "recipient": "0xD88539d3c4C460136a733A3Fd60cf6BF269079da",
+      "rateBps": 20,
+      "denominator": 10000,
+      "scope": "exact_pool_key",
+      "feeCurrency": "native",
+      "assessmentBase": "gross_native_leg",
+      "rounding": "ceil_per_trade",
+      "accrual": "backed_pool_manager_native_claims",
+      "claim": "permissionless_fixed_recipient",
+      "feeVault": "0x8047c6F993aF529C2EcDEdFF3B6Fe5982df88871",
+      "feeRecorder": "0xEb3e03F6dA69D4fa91eb2E922cfEE947C6d87960",
+      "runtimeBindings": [
+        {
+          "role": "controller",
+          "address": "0xEb3e03F6dA69D4fa91eb2E922cfEE947C6d87960",
+          "runtimeCodeHash": "0x34f05520042a80cd4883fe8dc4ebb5cf4942340efd8ad2064ab519d2d3ee848e",
+          "immutableWords": {
+            "hook": "0x000000000000000000000000c51ded643d09d4e746658a4931f4adc83f2710cc",
+            "poolManager": "0x0000000000000000000000008366a39cc670b4001a1121b8f6a443a643e40951",
+            "feeVault": "0x0000000000000000000000008047c6f993af529c2ecdedff3b6fe5982df88871"
+          }
+        },
+        {
+          "role": "hook",
+          "address": "0xC51ded643d09D4e746658A4931F4ADC83f2710cc",
+          "runtimeCodeHash": "0x4fe24d6e9167f552a10595ca80c62168ec3f7c07f3f5b5af9a183fcc6adb679a",
+          "immutableWords": {
+            "decimals": "0x0000000000000000000000000000000000000000000000000000000000000012",
+            "INITIAL_CHAIN_ID": "0x0000000000000000000000000000000000000000000000000000000000001237",
+            "INITIAL_DOMAIN_SEPARATOR": "0xc8991bfb24881d315d503586d2a9ef9fa3847e0a92c0623cd57776ecdfae9d95",
+            "poolManager": "0x0000000000000000000000008366a39cc670b4001a1121b8f6a443a643e40951",
+            "platformFeeVault": "0x0000000000000000000000008047c6f993af529c2ecdedff3b6fe5982df88871",
+            "platformFeeController": "0x000000000000000000000000eb3e03f6da69d4fa91eb2e922cfee947c6d87960",
+            "treasury": "0x0000000000000000000000007777777777777777777777777777777777777777",
+            "capAdmin": "0x0000000000000000000000001111111111111111111111111111111111111111",
+            "deployer": "0x000000000000000000000000f65120019f65b3f33ad47eb98cbd4bc86553d2b3"
+          }
+        },
+        {
+          "role": "vault",
+          "address": "0x8047c6F993aF529C2EcDEdFF3B6Fe5982df88871",
+          "runtimeCodeHash": "0xa8c5b663cdd5e34a27bac307f73f084c2e1757052e5f939a93783fccf69c0db8",
+          "immutableWords": {
+            "poolManager": "0x0000000000000000000000008366a39cc670b4001a1121b8f6a443a643e40951",
+            "kernel": "0x000000000000000000000000eb3e03f6da69d4fa91eb2e922cfee947c6d87960",
+            "creatorRecipient": "0x0000000000000000000000007777777777777777777777777777777777777777"
+          }
+        }
+      ],
+      "proofDigest": "0x3ddc648adf6b77960212a318dafe00927f48e392cb72f2b8208355f6f79c9160"
+    }
+  ]
+}

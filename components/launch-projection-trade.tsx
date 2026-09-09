@@ -4,7 +4,7 @@ import { useId, useRef, useState } from "react";
 import { formatUnits, parseUnits, type Hex } from "viem";
 import { useWallet } from "@/components/wallet-provider";
 import type { LaunchProjectionV1 } from "@/lib/custom-launch/launch-plan-v1";
-import { resolveProjectionAddress } from "@/lib/custom-launch/launch-projection-v1";
+import { projectionObject, resolveProjectionAddress } from "@/lib/custom-launch/launch-projection-v1";
 import type { LaunchPlanTradeWalletReviewV1 } from "@/lib/custom-launch/routed-trade-wallet-v1";
 import styles from "./launch-projection-trade.module.css";
 
@@ -24,6 +24,10 @@ export function LaunchProjectionTrade({ projection }: { projection: LaunchProjec
   const currency0 = resolveProjectionAddress(projection, market.currency0), currency1 = resolveProjectionAddress(projection, market.currency1);
   const inputCurrency = zeroForOne ? currency0 : currency1, outputCurrency = zeroForOne ? currency1 : currency0;
   const nativeInput = inputCurrency === "0x0000000000000000000000000000000000000000";
+  const feeTransfer = review?.preparation.evidence.feeTransfer;
+  const poolAccrual = projectionObject(feeTransfer) && projectionObject(feeTransfer.poolFeeAccrual) ? feeTransfer.poolFeeAccrual : null;
+  const poolFeeWei = typeof poolAccrual?.platformAccruedIncrease === "string" && /^[0-9]+$/.test(poolAccrual.platformAccruedIncrease)
+    ? poolAccrual.platformAccruedIncrease : null;
   const clear = () => { setReview(null); setError(""); setSubmitted(null); };
   async function prepare() {
     if (!wallet.wallet) { wallet.openWallet(); return; }
@@ -79,10 +83,13 @@ export function LaunchProjectionTrade({ projection }: { projection: LaunchProjec
         <div><dt>Expected received after route fee</dt><dd>{amount(review.preparation.quote.amountOut, review.preparation.quote.outputDecimals)} {short(outputCurrency)}</dd></div>
         <div><dt>Minimum received</dt><dd>{amount(review.preparation.quote.amountOutMinimum, review.preparation.quote.outputDecimals)} {short(outputCurrency)}</dd></div>
         <div><dt>Programmable route fee</dt><dd>{amount(review.preparation.quote.platformFeeAmount, review.preparation.quote.outputDecimals)} {short(outputCurrency)} ({review.preparation.fee.routedRateBps / 100}%)</dd></div>
-        <div><dt>Fee recipient</dt><dd><code>{review.preparation.fee.recipient}</code></dd></div>
+        {review.preparation.fee.mode === "pool_enforced" ? <div><dt>Platform fee included in pool</dt><dd>{poolFeeWei ? `${formatUnits(BigInt(poolFeeWei), 18)} ETH` : "Native ETH"} (0.2%)</dd></div> : null}
+        <div><dt>Fee recipient</dt><dd><code>{review.preparation.fee.recipient.slice(0, 22)}<wbr />{review.preparation.fee.recipient.slice(22)}</code></dd></div>
         <div><dt>Estimated transaction gas cost</dt><dd>{formatUnits(BigInt(review.maxGasCostWei), 18)} ETH</dd></div>
       </dl>
-      <p>{review.preparation.fee.mode === "pool_enforced" ? "The published immutable pool fee proof covers the declared pool paths. This transaction adds no route fee."
+      <p>{review.preparation.fee.mode === "pool_enforced" ? review.preparation.status === "ready"
+        ? "The 0.2% platform fee is already included in this pool. This transaction adds no route fee."
+        : "This pool includes a 0.2% platform fee on swaps. Review its exact amount after this approval."
         : "This fee applies to swaps built here. External routes and direct pool interactions can bypass it."}</p>
       {review.preparation.status === "approval_required" ? <p>This transaction approves only the requested input amount. Refresh the trade after that approval is included.</p> : null}
       {review.controllerKind === "connected_contract_wallet" ? <p>Your contract wallet must obtain its own approvals. Its wallet shows the final execution fee.</p> : null}

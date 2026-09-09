@@ -19,6 +19,7 @@
 .review dl div { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .review dt { color: var(--muted-foreground, #aaa); }
 .review dd { margin: 0; overflow-wrap: anywhere; }
+.review code { font-size: 12px; }
 .review pre { font-size: 12px; white-space: pre-wrap; word-break: break-word; max-height: 240px; overflow: auto; }
 .actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 16px; }
 .trade .error { color: #ffb6be; }

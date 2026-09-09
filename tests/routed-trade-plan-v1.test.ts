@@ -16,6 +16,11 @@ import { prepareLaunchPlanTradeV1 } from "@/lib/server/custom-launch/routed-trad
 import { productionTradeRpcsV1, tradePostStateV1, type TradeRpcV1 } from "@/lib/server/custom-launch/routed-trade-rpc-v1";
 import { prepareLaunchPlanTradeWalletV1 } from "@/lib/custom-launch/routed-trade-wallet-v1";
 import sdkVector from "@/contracts/spec/routed-trade-fee-vnext-vector.json";
+import feeVectors from "@/contracts/spec/immutable-pool-fee-runtime-vectors-v1.json";
+import { rebuildImmutablePoolFeeRuntimeProofV1, materializeImmutableFeeRuntimeWordsV1,
+  type ImmutablePoolFeeRuntimeProofV1 } from "@/lib/custom-launch/immutable-pool-fee-runtime-custom-launch-plan-v1";
+import { IMMUTABLE_POOL_FEE_RECIPES_V1 as feeRecipes } from "@/lib/custom-launch/immutable-pool-fee-recipes-custom-launch-plan-v1";
+import type { LaunchProjectionV1 } from "@/lib/custom-launch/launch-plan-v1";
 
 const ZERO = "0x0000000000000000000000000000000000000000" as const;
 const TAKE = parseAbi(["function take(address,address,uint256)"]);
@@ -67,7 +72,86 @@ function fixtureRpc(options: { revert?: boolean; missingFee?: boolean; underpaid
 const prepared = async (options: Parameters<typeof fixtureRpc>[0] = {}) => prepareLaunchPlanTradeV1(request(), {
   loadProjection: async () => projection(), rpcs: [fixtureRpc(options), fixtureRpc(options)], now: () => now });
 
+function immutablePoolFixture(index = 0, options: { unbacked?: boolean; wrongAccrual?: boolean; missingRecord?: boolean; missingVault?: boolean; sell?: boolean } = {}) {
+  const vector = feeVectors.proofs[index]! as unknown as ImmutablePoolFeeRuntimeProofV1;
+  const proof = rebuildImmutablePoolFeeRuntimeProofV1(vector, vector.market), recipes = feeRecipes[proof.recipeId];
+  const tradeRequest = { ...request(), zeroForOne: !options.sell };
+  const creatorAmount = proof.recipeId === "native_fee_kernel_v1" ? options.sell ? 250n : 150n : 0n;
+  const quoteAmount = options.sell ? proof.recipeId === "blob_fee_controller_v2" ? 84800n : 99800n - creatorAmount : 50001n;
+  const codes = Object.fromEntries(proof.runtimeBindings.filter(b => b.role !== "module").map(binding => [binding.address.toLowerCase(),
+    materializeImmutableFeeRuntimeWordsV1((binding.role === "controller" && "controller" in recipes ? recipes.controller
+      : binding.role === "hook" ? recipes.hook : recipes.vault), binding.immutableWords!)]));
+  const value: LaunchProjectionV1 = { ...projection(), components: [...projection().components,
+    ...proof.runtimeBindings.map(binding => ({ componentId: `fee-${binding.role}`, artifactId: `fee-source-${binding.role}`,
+      expectedAddress: binding.address, runtimeCodeHash: binding.runtimeCodeHash }))], markets: [{ marketId: request().marketId, kind: "uniswap_v4",
+        poolManager: proof.market.poolManager, currency0: { address: proof.market.currency0 }, currency1: { address: proof.market.currency1 },
+        hooks: { address: proof.market.hooks }, fee: proof.market.fee, tickSpacing: proof.market.tickSpacing }] };
+  const CALLBACK = parseAbi(["function beforeSwap(address,(address currency0,address currency1,uint24 fee,int24 tickSpacing,address hooks),(bool zeroForOne,int256 amountSpecified,uint160 sqrtPriceLimitX96),bytes)",
+    "function afterSwap(address,(address currency0,address currency1,uint24 fee,int24 tickSpacing,address hooks),(bool zeroForOne,int256 amountSpecified,uint160 sqrtPriceLimitX96),int256,bytes)"]);
+  const LEDGER = parseAbi(["function platformAccrued() view returns(uint256)", "function creatorAccrued() view returns(uint256)", "function balanceOf(address,uint256) view returns(uint256)", "function recordFees(uint256,uint256)"]);
+  const key = { currency0: proof.market.currency0, currency1: proof.market.currency1, fee: proof.market.fee, tickSpacing: proof.market.tickSpacing, hooks: proof.market.hooks };
+  const parameters = {zeroForOne:tradeRequest.zeroForOne,amountSpecified:-100000n,sqrtPriceLimitX96:4295128740n};
+  const base = fixtureRpc();
+  const rpc: TradeRpcV1 = async (method, params) => {
+    if (method === "eth_getCode") {
+      const address=String(params[0]).toLowerCase();
+      return options.missingVault && address===proof.feeVault.toLowerCase()?"0x":codes[address]??base(method,params);
+    }
+    const tx=params[0] as {from:string;to:string;data:Hex;value:Hex};
+    if (method === "eth_call" && tx.to.toLowerCase() === ROUTED_TRADE_CONTRACTS_V1.v4Quoter.address.toLowerCase()) return encodeAbiParameters([{type:"uint256"},{type:"uint256"}],[quoteAmount,100000n]);
+    if (method === "eth_call" && tx.to.toLowerCase() === ROUTED_TRADE_CONTRACTS_V1.permit2.address.toLowerCase()) return encodeAbiParameters([{type:"uint160"},{type:"uint48"},{type:"uint48"}],[100000n,Number(BigInt(tradeRequest.deadline)),0]);
+    if (method === "eth_call" && [proof.feeVault.toLowerCase(),proof.market.poolManager.toLowerCase()].includes(tx.to.toLowerCase())) {
+      const name=decodeFunctionData({abi:LEDGER,data:tx.data}).functionName,post=!!params[2];
+      return toHex(name==="platformAccrued"?1000n+(post?(options.wrongAccrual?199n:200n):0n)
+        :name==="creatorAccrued"?500n+(post?creatorAmount:0n):1500n+(post?(options.unbacked?199n:200n)+creatorAmount:0n),{size:32});
+    }
+    if(method==="eth_call" && tx.to.toLowerCase()===proof.market.currency1.toLowerCase()){
+      const decoded=decodeFunctionData({abi:ROUTED_TRADE_TOKEN_ABI_V1,data:tx.data});
+      if(decoded.functionName==="balanceOf")return toHex(String(decoded.args[0]).toLowerCase()===controller?params[2]?options.sell?0n:150001n:100000n:0n,{size:32});
+      if(decoded.functionName==="allowance")return toHex(100000n,{size:32});
+      if(decoded.functionName==="decimals")return toHex(18n,{size:32});
+    }
+    if(method==="debug_traceCall" && (params[2] as {tracer:string}).tracer==="prestateTracer" && options.sell) return {pre:{[controller]:{balance:"0x100000000000000000"}},post:{[controller]:{balance:toHex(BigInt("0x100000000000000000")+quoteAmount)}}};
+    if(method==="debug_traceCall" && (params[2] as {tracer:string}).tracer==="callTracer"){
+      const frame=(from:string,to:string,input:Hex)=>({type:"CALL",from,to,input,output:"0x",value:"0x0",gasUsed:"0x2710"});
+      return {type:"CALL",from:tx.from,to:tx.to,input:tx.data,value:tx.value,output:"0x",gasUsed:"0x186a0",calls:[
+        frame(proof.market.poolManager,proof.market.hooks,encodeFunctionData({abi:CALLBACK,functionName:"beforeSwap",args:[ROUTED_TRADE_CONTRACTS_V1.universalRouter.address as Hex,key,parameters,tradeRequest.hookData]})),
+        frame(proof.market.poolManager,proof.market.hooks,encodeFunctionData({abi:CALLBACK,functionName:"afterSwap",args:[ROUTED_TRADE_CONTRACTS_V1.universalRouter.address as Hex,key,parameters,options.sell?(100000n<<128n)+(1n<<128n)-100000n:((-99800n-creatorAmount)<<128n)+quoteAmount,tradeRequest.hookData]})),
+        ...(options.missingRecord?[]:[frame(proof.feeRecorder,proof.feeVault,encodeFunctionData({abi:LEDGER,functionName:"recordFees",args:[200n,creatorAmount]}))]),
+        frame(ROUTED_TRADE_CONTRACTS_V1.universalRouter.address,proof.market.poolManager,encodeFunctionData({abi:TAKE,functionName:"take",args:[options.sell?ZERO:proof.market.currency1,controller,quoteAmount]})),
+      ]};
+    }
+    return base(method,params);
+  };
+  return {proof,codes,projection:value,rpc,request:tradeRequest,prepare:()=>prepareLaunchPlanTradeV1(tradeRequest,{loadProjection:async()=>value,rpcs:[rpc,rpc],now:()=>now})};
+}
+
 describe("generic vNext routed swap", () => {
+  it("reuses each exact immutable native20 path without an additional output fee and verifies actual backed accrual", async()=>{
+    for(let index=0;index<feeVectors.proofs.length;index++) for(const sell of [false,true]){
+      const fixture=immutablePoolFixture(index,{sell}),value=await fixture.prepare();
+      expect(value.fee).toMatchObject({mode:"pool_enforced",routedRateBps:0,rateBps:20,scope:"fee_on_proven_pool_paths"});
+      expect(value.evidence.feeTransfer).toMatchObject({routedFeeAmount:"0",poolFeeAccrual:{platformAccruedIncrease:"200",grossNativeAmount:"100000"}});
+      expect(validateLaunchPlanTradePreparationV1(value,fixture.projection,fixture.request,now)).toEqual(value);
+      const decoded=decodeFunctionData({abi:ROUTED_TRADE_ROUTER_ABI_V1,data:value.transaction.data});
+      expect(decodeAbiParameters([{type:"bytes"},{type:"bytes[]"}],decoded.args[1][0]!)[0]).toBe("0x060c0f");
+    }
+  });
+  it("never suppresses routing from an unbacked, under-accrued, absent-vault or copied source witness", async()=>{
+    for(const options of [{unbacked:true},{wrongAccrual:true},{missingRecord:true},{missingVault:true}]) await expect(immutablePoolFixture(0,options).prepare()).rejects.toMatchObject({status:503});
+    const fixture=immutablePoolFixture(),value=await fixture.prepare();
+    const changed=structuredClone(value);
+    (changed.fee.poolEnforcementWitness as {recipient:string}).recipient=component;
+    const {preparationDigest: oldDigest,...changedBody}=changed; void oldDigest;
+    expect(()=>validateLaunchPlanTradePreparationV1({...changedBody,preparationDigest:launchPlanTradePreparationDigestV1(changedBody)},fixture.projection,request(),now)).toThrow(/runtime proof/);
+    expect(()=>buildLaunchPlanRoutedSwapV1(fixture.projection,request(),50001n,structuredClone(fixture.proof))).toThrow();
+    for(const mutation of [{nativePoolDelta:"99800"},{grossNativeAmount:"100001"},{platformAccruedBefore:"999"},{creatorAccruedIncrease:"149"},{backingBefore:"1499"}]){
+      const altered=structuredClone(value),transfer=altered.evidence.feeTransfer as {poolFeeAccrual:Record<string,unknown>};
+      Object.assign(transfer.poolFeeAccrual,mutation);
+      const {preparationDigest: priorDigest,...alteredBody}=altered; void priorDigest;
+      expect(()=>validateLaunchPlanTradePreparationV1({...alteredBody,preparationDigest:launchPlanTradePreparationDigestV1(alteredBody)},fixture.projection,request(),now)).toThrow();
+    }
+  });
   it("collects the exact output-credit floor fee before the trader take in the canonical SDK transaction", () => {
     const tx = buildLaunchPlanRoutedSwapV1(projection(), request(), 50001n);
     expect(tx.data).toBe(sdkVector.buy.transactionData);

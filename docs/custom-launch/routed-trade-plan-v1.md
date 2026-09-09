@@ -25,12 +25,23 @@ No-market/no-swap projections retain `not_applicable` and zero swap fees.
 External routers and direct pool interactions can bypass this routed fee.
 
 A normal getter or a successful call never proves immutable pool enforcement.
-The current backend runtime does not issue an immutable pool-fee certificate, so
-this adapter consistently certifies and charges only the routed scope. A future
-zero-additional-route-fee adapter must independently establish the exact plan,
-market, rate, recipient, base, rounding, runtimes, immutability, bypass exclusion
-and liability exclusion. A normal verified getter or a caller-shaped certificate
-cannot select that branch. No immutable pool-fee authority is invented here.
+The shared `immutable-pool-fee-runtime-custom-launch-plan-v1` verifier rebuilds
+the existing reviewed NativeFeeKernel, Native20 combined and BLOB fee-controller
+runtime property proofs from their original compiled artifacts. It checks every
+runtime byte, repeated immutable, exact PoolKey, fixed recipient, fee vault and
+controller relationship. The browser and server hold identical generated recipes
+and independent vectors. Serialized certificates are reconstructed through this
+verifier; a caller-shaped object cannot select the zero-routing-fee branch.
+
+When both current providers match every required runtime, the adapter reuses the
+existing `pool_enforced` fee and omits `TAKE_PORTION`. That fee is 20 bps of the
+gross native leg, rounded up per trade, accrued as a backed native claim in the
+immutable fee vault and claimable permissionlessly to the fixed recipient. Each
+prepared swap must also prove its exact callbacks, vault accrual and PoolManager
+ERC-6909 backing before and after execution. A recognized fee implementation with
+an unavailable or changed child runtime stays pending. Unrecognized mechanisms
+use the normal 20 bps routed path without a source category or hook-name gate.
+The proof covers the exact PoolKey only; it never claims universal `all_routes`.
 
 The production transport requires a configured dRPC endpoint and an independently
 configured Alchemy endpoint. It reads `ROBINHOOD_V4_RPC_PRIMARY_URL` and
@@ -54,7 +65,8 @@ category, tag or hook catalog determines eligibility.
 
 The public status has distinct meanings:
 
-- `ready`: the exact current swap, routed fee and recipient credits were simulated;
+- `ready`: the exact current swap, output credits and either the routed fee
+  transfer or the existing pool fee's backed accrual were simulated;
 - `approval_required`: only an exact bounded ERC20 or Permit2 approval is prepared;
   there is no successful swap claim;
 - `analysis_pending`: an independent observation or required execution adapter is
@@ -73,9 +85,30 @@ simulated transaction. Distribution adapters may only use `ready` with this
 complete evidence as a bounded routing observation; quoter success or an
 approval alone is insufficient.
 
+For `pool_enforced`, `fee.poolEnforcementWitness` contains the reconstructed
+source property proof and `evidence.runtimeBindings` contains every fresh
+runtime observation. `evidence.feeTransfer.poolFeeAccrual` additionally binds
+the native PoolManager delta; gross native amount; platform, creator and backing
+balances before and after the simulated transaction; their exact increases;
+and callback/record trace digests. The platform increase must equal
+`ceil(grossNativeAmount * 20 / 10000)` and the backing increase must exactly cover
+both new liabilities, with solvency before and after the trade. Separate creator
+or token taxes can change net output and are not reclassified as platform fees.
+The wallet helper reconstructs the canonical command bytes and rereads every
+runtime binding before invoking the connected wallet. The review displays the
+included native pool fee separately from the zero additional route fee.
+
 Local validation includes the existing Uniswap V4Router and PoolManager code:
 actual native-to-token and token-to-native payouts, atomic rollback when the net
 minimum fails, and 256 fuzz cases. The shared SDK vector is checked in TypeScript
 and executed by `contracts/test/RoutedSwapFeeVNext.t.sol`. These tests are local
 execution evidence, not a live Robinhood swap, provider certification, wallet
 signature, deployment, or public release.
+
+The pool reuse tests reconstruct all three exact source/runtime proofs and cover
+both swap directions, funded accrual, absent records and child code, underpayment,
+unbacked liabilities and forged certificates. Their RPC traces and poststates are
+local deterministic fixtures, distinct from the actual local V4Router execution
+tests and from production provider or onchain evidence. The backend recipe
+generator is `services/custom-launch-api-v1/scripts/generate-immutable-pool-fee-recipes-custom-launch-plan-v1.ts`;
+its `--check` mode verifies the shared recipes against the original artifacts.

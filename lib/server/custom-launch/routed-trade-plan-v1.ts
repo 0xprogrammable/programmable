@@ -10,6 +10,9 @@ import { indexStore } from "@/lib/server/robinhood-index/store";
 import { snapshotLaunches } from "@/lib/server/robinhood-index/model";
 import { agreedTradeRpcV1, bytesV1, pendingTradeV1, productionTradeRpcsV1, quantityV1, successfulTradeFramesV1,
   tradeBlockV1, tradePostStateV1, tradeTraceV1, type TradeRpcV1 } from "./routed-trade-rpc-v1";
+import { immutablePoolFeeRequiredAddressesV1, proveImmutablePoolFeeRuntimeV1,
+  type ImmutablePoolFeeMarketV1 } from "@/lib/custom-launch/immutable-pool-fee-runtime-custom-launch-plan-v1";
+import { proveImmutablePoolFeeTradeAccrualV1 } from "./immutable-pool-fee-trade-v1";
 
 const ZERO = "0x0000000000000000000000000000000000000000" as Address;
 const QUOTER = parseAbi(["function quoteExactInputSingle(((address currency0,address currency1,uint24 fee,int24 tickSpacing,address hooks) poolKey,bool zeroForOne,uint128 exactAmount,bytes hookData) params) returns(uint256 amountOut,uint256 gasEstimate)"]);
@@ -33,7 +36,7 @@ export async function prepareLaunchPlanTradeV1(input: unknown, dependencies: {
   if (BigInt(request.deadline) <= now + 30n || BigInt(request.deadline) > now + 1800n) throw new LaunchPlanTradeErrorV1("INVALID_DEADLINE", "Use a deadline between 30 seconds and 30 minutes from now.", 400);
   const projection = await (dependencies.loadProjection ?? loadIndexedProjection)(request.launchId).catch(() => pendingTradeV1("LAUNCH_INDEX_UNAVAILABLE"));
   if (!projection) return pendingTradeV1("LAUNCH_NOT_INDEXED");
-  const binding = launchPlanTradeBindingV1(projection, request);
+  let binding = launchPlanTradeBindingV1(projection, request);
   const rpcs = dependencies.rpcs ?? productionTradeRpcsV1(), rpc = agreedTradeRpcV1(rpcs);
   const chain = await rpc("eth_chainId", [], value => quantityV1(value).toString());
   if (chain !== "4663") return pendingTradeV1("TRADE_CHAIN_MISMATCH");
@@ -44,6 +47,7 @@ export async function prepareLaunchPlanTradeV1(input: unknown, dependencies: {
   if (BigInt(block.timestamp) > now || BigInt(block.timestamp) + 60n < now) return pendingTradeV1("TRADE_CHECKPOINT_STALE");
   const reference = { blockHash: block.hash, requireCanonical: true };
   const runtimeBindings: { address: Address; runtimeCodeHash: Hex }[] = [];
+  const runtimeCodes: Record<string, Hex> = {};
   const expected = new Map<string, string>();
   INFRA.forEach(name => expected.set(ROUTED_TRADE_CONTRACTS_V1[name].address.toLowerCase(), ROUTED_TRADE_CONTRACTS_V1[name].runtimeCodeHash.toLowerCase()));
   projection.components.forEach(component => {
@@ -56,7 +60,18 @@ export async function prepareLaunchPlanTradeV1(input: unknown, dependencies: {
     const code = await rpc("eth_getCode", [address, reference], bytesV1), hash = keccak256(code);
     if ((address !== request.owner.toLowerCase() && address !== binding.fee.recipient.toLowerCase() && code === "0x") || (expected.has(address) && expected.get(address) !== hash)) return pendingTradeV1("TRADE_RUNTIME_CHANGED");
     runtimeBindings.push({ address: getAddress(address), runtimeCodeHash: hash });
+    runtimeCodes[address.toLowerCase()] = code;
   }));
+  const feeMarket: ImmutablePoolFeeMarketV1 = { chainId: "4663", poolManager: getAddress(ROUTED_TRADE_CONTRACTS_V1.poolManager.address), ...binding.poolKey };
+  const requiredFeeRuntimes = immutablePoolFeeRequiredAddressesV1(feeMarket, runtimeCodes[binding.poolKey.hooks.toLowerCase()] ?? "0x");
+  if (requiredFeeRuntimes) await Promise.all(requiredFeeRuntimes.filter(address => runtimeCodes[address.toLowerCase()] === undefined).map(async address => {
+    const code = await rpc("eth_getCode", [address, reference], bytesV1);
+    runtimeCodes[address.toLowerCase()] = code;
+    runtimeBindings.push({ address, runtimeCodeHash: keccak256(code) });
+  }));
+  const poolFeeProof = requiredFeeRuntimes ? proveImmutablePoolFeeRuntimeV1(feeMarket, runtimeCodes) ?? undefined : undefined;
+  if (requiredFeeRuntimes && !poolFeeProof) return pendingTradeV1("IMMUTABLE_POOL_FEE_RUNTIME_PENDING");
+  if (poolFeeProof) binding = launchPlanTradeBindingV1(projection, request, poolFeeProof);
   runtimeBindings.sort((a, b) => a.address.toLowerCase().localeCompare(b.address.toLowerCase()));
   const call = async (to: Address, data: Hex, overrides?: Record<string, Record<string, unknown>>) => rpc("eth_call",
     [{ from: request.owner, to, data }, reference, ...(overrides ? [overrides] : [])], bytesV1);
@@ -75,7 +90,7 @@ export async function prepareLaunchPlanTradeV1(input: unknown, dependencies: {
   const amounts = launchPlanTradeAmountsV1(gross, binding.fee.routedRateBps, request.slippageBps);
   const decimals = async (currency: Address) => currency === ZERO ? 18 : tokenUint(currency, "decimals", []).then(v => v <= 255n ? Number(v) : null).catch(() => null);
   const [inputDecimals, outputDecimals] = await Promise.all([decimals(binding.inputCurrency), decimals(binding.outputCurrency)]);
-  let transaction = buildLaunchPlanRoutedSwapV1(projection, request, gross);
+  let transaction = buildLaunchPlanRoutedSwapV1(projection, request, gross, poolFeeProof);
   if (binding.inputCurrency !== ZERO) {
     const [balance, allowance, raw] = await Promise.all([tokenUint(binding.inputCurrency, "balanceOf", [request.owner]),
       tokenUint(binding.inputCurrency, "allowance", [request.owner, ROUTED_TRADE_CONTRACTS_V1.permit2.address]),
@@ -149,13 +164,16 @@ export async function prepareLaunchPlanTradeV1(input: unknown, dependencies: {
     // accounting differs need an exact settlement adapter, regardless of name or
     // economic category; nominal PoolManager.take arguments are insufficient.
     if (sameRecipient ? ownerCredit !== actualGross : (binding.fee.routedRateBps && feeCredit !== feeAmount) || ownerCredit !== userAmount) return pendingTradeV1("OUTPUT_CREDIT_ADAPTER_PENDING");
+    const poolFeeAccrual = poolFeeProof ? await proveImmutablePoolFeeTradeAccrualV1({ proof: poolFeeProof, request,
+      router: transaction.to, trace, post, call }) : undefined;
     feeTransfer = { policyVersion: binding.fee.policyVersion, scope: binding.fee.scope, currency: binding.outputCurrency,
       inputCurrency: binding.inputCurrency, maximumInput: request.amountIn, inputBalanceDecrease: (inputBefore - inputAfter).toString(),
       recipient: binding.fee.recipient, rateBps: binding.fee.routedRateBps, base: binding.fee.base, rounding: binding.fee.rounding,
       grossOutputCredit: actualGross.toString(), routedFeeAmount: feeAmount.toString(), traderOutputCredit: userAmount.toString(),
       recipientBalanceIncrease: feeCredit.toString(), traderBalanceIncrease: ownerCredit.toString(),
       transferTraceDigest: canonicalBrowserSha256V2("programmable.routed-fee-transfer-trace.v1", takes.map(item => item.frame)),
-      postStateDigest: canonicalBrowserSha256V2("programmable.routed-fee-post-state.v1", post) };
+      postStateDigest: canonicalBrowserSha256V2("programmable.routed-fee-post-state.v1", post),
+      ...(poolFeeAccrual ? { poolFeeAccrual } : {}) };
   } else if (transaction.kind === "token_approval") {
     const allowance = await tokenUint(binding.inputCurrency, "allowance", [request.owner, ROUTED_TRADE_CONTRACTS_V1.permit2.address], post);
     if (allowance !== BigInt(request.amountIn)) return pendingTradeV1("EXACT_APPROVAL_UNPROVEN");
