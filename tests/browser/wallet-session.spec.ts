@@ -100,7 +100,7 @@ for (const path of ["/profile", "/developers/api-keys"]) {
     await scenario(page, "foreign-linked");
     await expect(page.getByLabel("Selected account", { exact: true })).toHaveText(accountA);
     await page.getByRole("button", { name: "Open account", exact: true }).click();
-    const dialog = page.getByRole("dialog", { name: "Connected account", exact: true });
+    const dialog = page.getByRole("dialog", { name: "Wallet", exact: true });
     await expect(dialog).toBeVisible();
     await expect(dialog).not.toContainText("0xbbbb");
     await expectMethods(page, []);
@@ -133,6 +133,97 @@ test("a user change never adopts connected wallets belonging to the previous acc
   await expectMethods(page, ["connectWallet"]);
 });
 
+test("verified ownership survives an SDK linked flag with mismatched address casing", async ({ page }) => {
+  await open(page);
+  await scenario(page, "owned-unmatched");
+  await expect(page.getByLabel("Selected account", { exact: true })).toHaveText(accountA);
+  await expect(page.getByLabel("Wallet linked", { exact: true })).toHaveText("true");
+  await page.getByRole("button", { name: "Open account", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "Wallet", exact: true })).toBeVisible();
+  await expectMethods(page, []);
+});
+
+test("an SDK user restoring authentication cannot start another login", async ({ page }) => {
+  await open(page);
+  await scenario(page, "restoring-user");
+  await expect(inlineWallet(page).getByRole("button", { name: "Loading wallet", exact: true })).toBeDisabled();
+  await page.getByRole("button", { name: "Open account", exact: true }).click();
+  await expectMethods(page, []);
+  await page.getByRole("button", { name: "Restore SDK session", exact: true }).click();
+  await expect(page.getByLabel("Selected account", { exact: true })).toHaveText(accountA);
+  await expect(page.getByLabel("Wallet busy", { exact: true })).toHaveText("false");
+  await expectMethods(page, []);
+});
+
+test("a completed SDK session settles login even when no completion callback arrives", async ({ page }) => {
+  await open(page);
+  await scenario(page, "anonymous");
+  await page.getByRole("button", { name: "Open account", exact: true }).click();
+  await expectMethods(page, ["login"]);
+  await page.getByRole("button", { name: "Restore session without login callback", exact: true }).dispatchEvent("click");
+  await expect(page.getByLabel("Selected account", { exact: true })).toHaveText(accountA);
+  await expect(page.getByLabel("Wallet busy", { exact: true })).toHaveText("false");
+  await expect(page.getByLabel("Wallet opening", { exact: true })).toHaveText("false");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expectMethods(page, ["login"]);
+});
+
+test("sign out waits for the SDK readback before allowing a fresh login", async ({ page }) => {
+  await open(page);
+  await page.getByRole("button", { name: "Delay logout readback", exact: true }).click();
+  await page.getByRole("button", { name: "Sign out of app", exact: true }).click();
+  await expect(page.getByLabel("Session authenticated", { exact: true })).toHaveText("false");
+  await expect(inlineWallet(page).getByRole("button", { name: "Loading wallet", exact: true })).toBeDisabled();
+  await page.getByRole("button", { name: "Open account", exact: true }).click();
+  expect((await calls(page)).some((call) => call.method === "login")).toBe(false);
+  await page.getByRole("button", { name: "Finish logout readback", exact: true }).click();
+  await expect(page.getByLabel("Wallet busy", { exact: true })).toHaveText("false");
+  await inlineWallet(page).getByRole("button", { name: "Connect wallet", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "SDK wallet dialog", exact: true })).toBeVisible();
+  expect((await calls(page)).filter((call) => call.method === "login")).toHaveLength(1);
+});
+
+for (const width of [1440, 390, 320]) {
+  test(`wallet dialog at ${width}px keeps copy, focus, and provider recovery usable`, async ({ page }) => {
+    await page.setViewportSize({ width, height: width === 1440 ? 1000 : 844 });
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+    await open(page);
+    const trigger = page.getByRole("button", { name: "Open account", exact: true });
+    await trigger.click();
+    const dialog = page.getByRole("dialog", { name: "Wallet", exact: true });
+    const close = dialog.getByRole("button", { name: "Close wallet dialog", exact: true });
+    await expect(close).toBeFocused();
+    await page.keyboard.press("Shift+Tab");
+    await expect(dialog.getByRole("button", { name: "Sign out", exact: true })).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(close).toBeFocused();
+    // Native modal focus cannot be moved into the underlying page.
+    await trigger.evaluate((button) => button.focus());
+    await expect(close).toBeFocused();
+    await page.keyboard.press("Tab");
+    const copy = dialog.getByRole("button", { name: "Copy address", exact: true });
+    await expect(copy).toBeFocused();
+    await expect(copy).toHaveCSS("outline-color", "rgb(231, 134, 178)");
+    await page.keyboard.press("Enter");
+    await expect(dialog.getByRole("button", { name: "Address copied", exact: true })).toBeVisible();
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(accountA);
+    expect(await dialog.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+    for (const button of await dialog.getByRole("button").all()) {
+      const size = await button.boundingBox();
+      expect(size?.height).toBeGreaterThanOrEqual(44);
+      expect(size?.width).toBeGreaterThanOrEqual(44);
+    }
+    await dialog.getByRole("button", { name: "Add wallet", exact: true }).click();
+    await expectMethods(page, ["linkWallet"]);
+    await expect(page.getByRole("dialog")).toHaveCount(1);
+    await page.getByRole("button", { name: "Reject linking foreign account", exact: true }).click();
+    await expect(dialog.getByRole("alert")).toHaveText("This wallet belongs to another account. Sign out, then sign in with that wallet.");
+    await expect(dialog.getByRole("button", { name: "Reconnect wallet", exact: true })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+  });
+}
+
 test("wallet hydration prevents login and linking until the connected wallet list settles", async ({ page }) => {
   await open(page);
   await scenario(page, "hydrating");
@@ -164,10 +255,10 @@ test("only an authenticated account without a linked wallet starts the SDK link 
 test("the SDK modal suppresses an existing application wallet dialog", async ({ page }) => {
   await open(page);
   await page.getByRole("button", { name: "Open account", exact: true }).click();
-  await expect(page.getByRole("dialog", { name: "Connected account", exact: true })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Wallet", exact: true })).toBeVisible();
   // This represents an SDK status event, not a click through the application modal.
   await page.getByRole("button", { name: "Open SDK modal", exact: true }).dispatchEvent("click");
-  await expect(page.getByRole("dialog", { name: "Connected account", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("dialog", { name: "Wallet", exact: true })).toHaveCount(0);
   await expect(page.getByRole("dialog", { name: "SDK wallet dialog", exact: true })).toBeVisible();
   await expect(page.getByRole("dialog")).toHaveCount(1);
   await expectMethods(page, []);
@@ -279,7 +370,7 @@ for (const path of ["/profile", "/developers/api-keys"]) {
     await scenario(page, "owned-with-foreign");
     const trigger = page.getByRole("button", { name: "Open account", exact: true });
     await trigger.click();
-    const dialog = page.getByRole("dialog", { name: "Connected account", exact: true });
+    const dialog = page.getByRole("dialog", { name: "Wallet", exact: true });
     await expect(dialog).toBeVisible();
     const wallets = dialog.locator('[aria-label="Connected wallets"]');
     await expect(wallets.getByRole("button")).toHaveCount(2);
@@ -316,7 +407,7 @@ test("an unsupported wallet network is informational and never forces Ethereum f
   await open(page, "/developers/api-keys");
   await scenario(page, "unsupported-network");
   await page.getByRole("button", { name: "Open account", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Connected account", exact: true });
+  const dialog = page.getByRole("dialog", { name: "Wallet", exact: true });
   await expect(dialog.getByText("Wallet network", { exact: true })).toBeVisible();
   await expect(dialog.getByRole("button", { name: /Switch to/ })).toHaveCount(0);
   await expect(dialog).not.toContainText("Programmable uses Ethereum");
@@ -403,7 +494,7 @@ for (const transition of ["user", "account", "capability"] as const) {
         // Observe any late error in the new account's visible dialog, without
         // reopening after completion (which would clear the error itself).
         await page.getByRole("button", { name: "Open account", exact: true }).click();
-        await expect(page.getByRole("dialog", { name: "Connected account", exact: true })).toBeVisible();
+        await expect(page.getByRole("dialog", { name: "Wallet", exact: true })).toBeVisible();
       } else {
         await page.getByRole("button", { name: "Replace connected wallet capability", exact: true }).dispatchEvent("click");
       }
@@ -436,7 +527,7 @@ for (const completion of ["Resolve network switch", "Reject network switch"]) {
     await open(page);
     await scenario(page, "both-owned");
     await beginDelayedNetworkSwitch(page);
-    const dialog = page.getByRole("dialog", { name: "Connected account", exact: true });
+    const dialog = page.getByRole("dialog", { name: "Wallet", exact: true });
 
     await dialog.getByRole("button", { name: "0xbbbb…bbbb", exact: true }).click();
     await expect(page.getByLabel("Selected account", { exact: true })).toHaveText(accountB);

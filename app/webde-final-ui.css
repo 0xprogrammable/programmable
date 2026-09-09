@@ -403,7 +403,6 @@ body:has([data-docs-shell]) .site-header::before {
 }
 
 .route-transition {
-  animation: webde-page-enter 220ms cubic-bezier(0.23, 1, 0.32, 1) both;
   min-height: calc(100svh - var(--header-height));
 }
 
@@ -415,15 +414,6 @@ body:has([data-docs-shell]) .site-header::before {
 
 .app-frame:has(.landing-page-root) [data-site-footer] {
   margin-top: clamp(144px, 16vw, 232px);
-}
-
-@keyframes webde-page-enter {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
 }
 
 @media (hover: hover) and (pointer: fine) {

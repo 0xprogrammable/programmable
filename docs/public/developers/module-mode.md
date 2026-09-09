@@ -17,7 +17,7 @@ Native programs and Engine contributions use the same source API and immutable s
 
 An API key authorizes the scopes assigned to it. It does not sign wallet transactions or approve a module. Documentation and capability reads are public.
 
-The current standalone CLI is **1.0.0-development.5**. It retains the SDK development.4 source/API and configuration formats. The [Engine starter manifest](https://programmable.market/developers/module-mode-starters/engine-program/v0.1.0-development.1/manifest.json) identifies the versioned source archive and its hash. Download and verify that archive, then follow its `README.md` to compile, provide your own author/reward wallets and prepare the existing source request. The example implements creator-attested quote settlement. It contains no approved revision or deployed host address.
+The current standalone CLI is **1.0.0-development.6**. It retains the SDK development.4 source/API and configuration formats. The [Engine starter manifest](https://programmable.market/developers/module-mode-starters/engine-program/v0.1.0-development.1/manifest.json) identifies the versioned source archive and its hash. Download and verify that archive, then follow its `README.md` to compile, provide your own author/reward wallets and prepare the existing source request. The example implements creator-attested quote settlement. It contains no approved revision or deployed host address.
 
 ## Select a build profile
 

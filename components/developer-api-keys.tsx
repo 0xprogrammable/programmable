@@ -1,5 +1,7 @@
 "use client";
 
+import { Disclosure } from "@/components/disclosure";
+
 import Link from "next/link";
 import {
   useCallback,
@@ -411,7 +413,7 @@ export function ApiKeyPermissions({ scopes }: Readonly<{ scopes: readonly string
     "modules:read": "Read module submission status.",
   };
   return (
-    <details className={styles.scopeLedger}>
+    <Disclosure className={styles.scopeLedger}>
       <summary><span>Permissions</span><strong>{summary}</strong></summary>
       <ul>{scopes.map((scope) => (
         <li key={scope}>
@@ -419,7 +421,7 @@ export function ApiKeyPermissions({ scopes }: Readonly<{ scopes: readonly string
           <p>{descriptions[scope] ?? "Not recognized by this manager."}</p>
         </li>
       ))}</ul>
-    </details>
+    </Disclosure>
   );
 }
 
@@ -437,7 +439,7 @@ export function parseApiKeyChainRestriction(value: unknown): ApiKeyChainRestrict
 export function ApiKeyChainPolicy({ apiKey }: Readonly<{ apiKey: ApiKeySummary }>) {
   const restriction = apiKey.chainRestriction;
   return (
-    <details className={styles.scopeLedger}>
+    <Disclosure className={styles.scopeLedger}>
       <summary><span>Chain restriction</span><strong>{!restriction ? "Not available"
         : restriction.allowedChainIds === null ? "Legacy policy"
           : restriction.allowedChainIds.map((id) => id === "1" ? "Ethereum (1)"
@@ -448,7 +450,7 @@ export function ApiKeyChainPolicy({ apiKey }: Readonly<{ apiKey: ApiKeySummary }
             : "This is the key’s saved chain restriction. Current access is checked for each request."}
       </p>
       {apiKey.controllerWallet ? <p className={styles.securityNote}>Controller wallet: <code>{apiKey.controllerWallet}</code></p> : null}
-    </details>
+    </Disclosure>
   );
 }
 
@@ -935,7 +937,7 @@ export function DeveloperApiKeysView({
   const [rotateError, setRotateError] = useState("");
   const [statusMessage, setStatusMessage] = useState("");
   const [activeSection, setActiveSection] = useState<ActiveSection>(
-    initialSection,
+    moduleBuilder ? "keys" : initialSection,
   );
   const [initialLaunchId, setInitialLaunchId] = useState<string | null>(null);
   const [initialLaunchChainId, setInitialLaunchChainId] = useState<"4663" | null>(null);
@@ -966,7 +968,7 @@ export function DeveloperApiKeysView({
     activeKeyPage * API_KEY_PAGE_SIZE,
   );
   const moduleKey = moduleBuilder ? apiKeys.find((key) => keyStatus(key) === "Active" && moduleScopes.every((scope) => key.scopes.includes(scope))) : undefined;
-  const KeyWorkspace = moduleKey ? "details" : "div";
+  const KeyWorkspace = moduleKey ? Disclosure : "div";
 
   const getAuthHeaders = useCallback(
     async (json = false) => {
@@ -1580,7 +1582,7 @@ export function DeveloperApiKeysView({
         </div>
       </header>
 
-      <nav
+      {!moduleBuilder ? <nav
         className={styles.sectionSwitch}
         aria-label="Developer access view"
       >
@@ -1608,7 +1610,7 @@ export function DeveloperApiKeysView({
         >
           History
         </button>
-      </nav>
+      </nav> : null}
 
       {activeSection === "launch" ? (
         <RobinhoodFeePolicyDisclosure />
@@ -1804,7 +1806,7 @@ export function DeveloperApiKeysView({
 
                     <div className={styles.optionsField}>
                       <span>Access and expiry</span>
-                      <details className={styles.connectionOptions}>
+                      <Disclosure className={styles.connectionOptions}>
                         <summary aria-label={`Access and expiry: ${apiKeyPurposeLabel(selectedScopes)}, ${expiresInDays} days`}>
                           <span>{apiKeyPurposeLabel(selectedScopes)}</span>
                           <small>{expiresInDays} days</small>
@@ -1835,7 +1837,7 @@ export function DeveloperApiKeysView({
                           onChange={setExpiresInDays}
                         />
                       </div>
-                      </details>
+                      </Disclosure>
                     </div>
 
                     <button
@@ -2034,7 +2036,7 @@ export function DeveloperApiKeysView({
                             ) : null}
                           </div>
 
-                          <details className={styles.keyDetails}>
+                          <Disclosure className={styles.keyDetails}>
                             <summary>Details <ChevronDown size={14} aria-hidden="true" /></summary>
                             <div className={styles.keyDetailBody}>
                               <code>{displayPrefix(apiKey.keyPrefix)}</code>
@@ -2065,7 +2067,7 @@ export function DeveloperApiKeysView({
                               <ApiKeyPermissions scopes={apiKey.scopes} />
                               <ApiKeyChainPolicy apiKey={apiKey} />
                             </div>
-                          </details>
+                          </Disclosure>
 
                           {confirmingRotate ? (
                             <div
@@ -2217,7 +2219,7 @@ export function DeveloperApiKeysView({
           {setupCopyState === "copied" ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />}
           Copy instructions
         </button> : null}
-        <Link href="/developers/modules">Build a module <ArrowRight size={16} aria-hidden="true" /></Link>
+        {!moduleBuilder ? <Link href="/developers/modules">Build a module <ArrowRight size={16} aria-hidden="true" /></Link> : null}
         <a href="/agents.md" target="_blank" rel="noreferrer">Agent guide <ExternalLink size={14} aria-hidden="true" /></a>
       </nav>
       {setupCopyState === "error" ? <p className={styles.inlineError} role="alert">Copy failed. Open the agent guide to read the instructions.</p> : null}

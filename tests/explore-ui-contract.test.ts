@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 const root = process.cwd();
 
 describe("Explore UI contract", () => {
-  it("loads Robinhood while preserving the Ethereum reset", () => {
+  it("routes both chains to indexed launches and keeps the legacy reset explicit", () => {
     const page = readFileSync(join(root, "app/explore/[chain]/page.tsx"), "utf8");
     const entry = readFileSync(join(root, "app/explore/page.tsx"), "utf8");
     const resetView = readFileSync(
@@ -20,6 +20,7 @@ describe("Explore UI contract", () => {
     expect(entry).toContain("redirect(exploreChainPath(");
     expect(page).toContain("<RobinhoodLaunchesView chainId={chainId} />");
     expect(page).toContain("exploreChainIdFromSlug");
+    expect(readFileSync(join(root, "components/robinhood-launches-view.tsx"), "utf8")).not.toContain("ExploreIndexResetView");
     expect(page).toContain("index: false");
     expect(page).not.toContain("ExploreView");
     expect(page).not.toContain("@/app/api/explore/route");

@@ -113,6 +113,7 @@ import {
   loginConnectedEthereumWalletWithSiwe,
   selectInjectedEthereumProvider,
 } from "../lib/wallet-siwe-login";
+import styles from "./wallet-dialog.module.css";
 
 type WalletState = {
   account: `0x${string}`;
@@ -886,10 +887,17 @@ export function selectAuthenticatedWallet<T extends WalletCandidate>(
   ownedAddresses?: ReadonlySet<string>,
 ) {
   if (!authenticated) return undefined;
-  const ownedWallets = ownedAddresses
-    ? wallets.filter((candidate) => ownedAddresses.has(candidate.address.toLowerCase()))
-    : wallets;
-  return selectLinkedWallet(ownedWallets, primaryAddress);
+  if (!ownedAddresses) return selectLinkedWallet(wallets, primaryAddress);
+
+  // Privy 3.35.2 derives candidate.linked using case-sensitive address equality.
+  // The authenticated user's linkedAccounts is the ownership authority; a
+  // connected capability with the same normalized address remains usable.
+  const ownedWallets = wallets.filter((candidate) =>
+    isEthereumAddress(candidate.address)
+    && ownedAddresses.has(candidate.address.toLowerCase()))
+    .sort((left, right) => left.address.toLowerCase().localeCompare(right.address.toLowerCase()));
+  return ownedWallets.find((candidate) => candidate.address.toLowerCase() === primaryAddress?.toLowerCase())
+    ?? ownedWallets[0];
 }
 
 export function selectLinkedWallet<T extends WalletCandidate>(
@@ -1263,9 +1271,15 @@ function PrivyWalletBridge({
     userId: string;
     address: string;
   } | null>(null);
+  const sdkSessionRef = useRef({ ready, authenticated, userId: user?.id ?? null, sessionSuppressed, disconnecting });
+  useLayoutEffect(() => {
+    sdkSessionRef.current = { ready, authenticated, userId: user?.id ?? null, sessionSuppressed, disconnecting };
+  }, [authenticated, disconnecting, ready, sessionSuppressed, user?.id]);
+  const walletLoginIntentRef = useRef<"login" | "connect" | "link" | null>(null);
   const walletLoginAttemptGateRef = useRef(createWalletLoginAttemptGate());
   const walletLoginLeaseRef = useRef<BrowserWalletLoginLease | null>(null);
   const settleWalletLoginAttempt = useCallback(() => {
+    walletLoginIntentRef.current = null;
     walletLoginAttemptGateRef.current.settle();
     walletLoginLeaseRef.current?.release();
     walletLoginLeaseRef.current = null;
@@ -1339,6 +1353,21 @@ function PrivyWalletBridge({
   });
 
   const activeAuthenticated = authenticated && !sessionSuppressed;
+  // Logout may resolve before Privy's hooks publish the cleared user. Keep
+  // login blocked until that readback, then allow a future restored session.
+  if (sessionSuppressed && ready && !authenticated && !user && !disconnecting) {
+    setSessionSuppressed(false);
+  }
+  useEffect(() => {
+    if (walletLoginIntentRef.current !== "login" || !loginPending
+      || !ready || !activeAuthenticated || !user || privyModalOpen) return;
+    // Privy can restore an existing session without emitting this attempt's
+    // completion callback. Authentication settles login, never a connect/link.
+    settleWalletLoginAttempt();
+    setError("");
+    setWalletLoginStatus("");
+    setDialogOpen(false);
+  }, [activeAuthenticated, loginPending, privyModalOpen, ready, settleWalletLoginAttempt, user]);
   const ownerUserId = user?.id ?? null;
   const ownerSessionRef = useRef<PrivyPolicyOwnerSession>({
     ready: false,
@@ -1418,7 +1447,6 @@ function PrivyWalletBridge({
       ? undefined
       : wallets.find((candidate) =>
         isEthereumAddress(candidate.address)
-        && candidate.linked
         && ownedWalletAddresses.has(candidate.address.toLowerCase())
         && candidate.address.toLowerCase() === selectedWallet?.address.toLowerCase());
     return selected ?? selectAuthenticatedWallet(activeAuthenticated, wallets, user?.wallet?.address, ownedWalletAddresses);
@@ -1435,7 +1463,6 @@ function PrivyWalletBridge({
     return wallets.flatMap((candidate) => {
       if (
         !isEthereumAddress(candidate.address)
-        || !candidate.linked
         || !ownedWalletAddresses.has(candidate.address.toLowerCase())
       ) return [];
       const normalized = candidate.address.toLowerCase();
@@ -1464,7 +1491,7 @@ function PrivyWalletBridge({
       chainId: normalizeChainId(connectedWalletChainId),
     };
   }, [connectedWalletAddress, connectedWalletChainId]);
-  const walletLinked = connectedWallet?.linked === true;
+  const walletLinked = Boolean(connectedWallet && ownedWalletAddresses.has(connectedWallet.address.toLowerCase()));
   const walletSessionGenerationRef = useRef(0);
   const walletRequestSessionRef = useRef({
     authenticated: activeAuthenticated && ready && walletsReady && !disconnecting,
@@ -1499,10 +1526,11 @@ function PrivyWalletBridge({
     };
   }, []);
   const providerSettled = isWalletProviderSettled(
-    ready,
+    ready && !sessionSuppressed && authenticated === Boolean(user),
     walletsReady,
     activeAuthenticated,
   );
+  if (providerSettled && providerTimedOut) setProviderTimedOut(false);
   const hasSession = activeAuthenticated;
   const hasLinkedWallet = activeAuthenticated && Boolean(user?.linkedAccounts.some((account) =>
     account.type === "wallet" && account.chainType === "ethereum" && isEthereumAddress(account.address)));
@@ -1661,15 +1689,16 @@ function PrivyWalletBridge({
   );
 
   const startLogin = useCallback(() => {
-    if (activeAuthenticated) {
+    const session = sdkSessionRef.current;
+    if (session.authenticated || session.userId || session.sessionSuppressed || session.disconnecting) {
       setDialogOpen(true);
       return;
     }
     if (privyModalOpen) return;
     if (!walletLoginAttemptGateRef.current.tryStart()) return;
 
+    walletLoginIntentRef.current = "login";
     setLoginPending(true);
-    setSessionSuppressed(false);
     setError("");
     setWalletLoginStatus("");
     setDialogOpen(false);
@@ -1690,7 +1719,9 @@ function PrivyWalletBridge({
           return;
         }
         walletLoginLeaseRef.current = lease;
-        if (ownerSessionRef.current.authenticated) {
+        const currentSession = sdkSessionRef.current;
+        if (!currentSession.ready || currentSession.authenticated || currentSession.userId
+          || currentSession.sessionSuppressed || currentSession.disconnecting) {
           settleWalletLoginAttempt();
           setDialogOpen(false);
           return;
@@ -1742,7 +1773,6 @@ function PrivyWalletBridge({
         setDialogOpen(true);
       });
   }, [
-    activeAuthenticated,
     applicantRefreshUserGate,
     generateSiweMessage,
     login,
@@ -1759,11 +1789,11 @@ function PrivyWalletBridge({
   }, []);
 
   const connectGithub = useCallback(() => {
-    setSessionSuppressed(false);
+    if (sdkSessionRef.current.sessionSuppressed || sdkSessionRef.current.disconnecting) return;
     setError("");
     setDialogOpen(false);
 
-    if (!ready) {
+    if (!ready || authenticated !== Boolean(user)) {
       setError(
         "GitHub sign-in is taking longer than expected. Reload the page and try again.",
       );
@@ -1778,13 +1808,15 @@ function PrivyWalletBridge({
       loginMethods: ["github"],
       walletChainType: "ethereum-only",
     });
-  }, [activeAuthenticated, githubConnected, linkGithub, login, ready]);
+  }, [activeAuthenticated, authenticated, githubConnected, linkGithub, login, ready, user]);
 
   const connectAccountWallet = useCallback((link: boolean) => {
     if (!providerSettled || !activeAuthenticated || privyModalOpen) return;
     if (!walletLoginAttemptGateRef.current.tryStart()) return;
+    walletLoginIntentRef.current = link ? "link" : "connect";
     setLoginPending(true);
     setError("");
+    setWalletLoginStatus("");
     setDialogOpen(false);
     void acquireBrowserWalletLoginLease().then((lease) => {
       if (!walletLoginAttemptGateRef.current.isPending()) {
@@ -1878,6 +1910,7 @@ function PrivyWalletBridge({
     walletSessionGenerationRef.current += 1;
     walletRequestSessionRef.current.authenticated = false;
     applicantRefreshUserGate.invalidate();
+    settleWalletLoginAttempt();
     setDisconnecting(true);
     setError("");
     const markDisconnectFailed = () => {
@@ -1917,7 +1950,7 @@ function PrivyWalletBridge({
     } finally {
       setDisconnecting(false);
     }
-  }, [applicantRefreshUserGate, authenticated, logout, wallets]);
+  }, [applicantRefreshUserGate, authenticated, logout, settleWalletLoginAttempt, wallets]);
 
   const copyAddress = useCallback(async () => {
     if (!wallet) return;
@@ -3034,6 +3067,7 @@ function PrivyWalletBridge({
           authenticated={activeAuthenticated}
           hasSession={hasSession}
           hasLinkedWallet={hasLinkedWallet}
+          sessionReady={providerSettled}
           copied={copied}
           disconnecting={disconnecting}
           error={error}
@@ -3044,7 +3078,7 @@ function PrivyWalletBridge({
           onClose={() => setDialogOpen(false)}
           onCopyAddress={copyAddress}
           onLogout={disconnect}
-          onRetryLogin={startLogin}
+          onRetryLogin={openWallet}
           onSelectWallet={(account) => {
             if (!user) return;
             setSelectedWallet({ userId: user.id, address: account });
@@ -3150,7 +3184,6 @@ function UnconfiguredWalletProvider({ children }: { children: ReactNode }) {
       {children}
       {dialogOpen ? (
         <DialogFrame
-          eyebrow="Wallet"
           title="Wallet sign-in is unavailable"
           onClose={() => setDialogOpen(false)}
         >
@@ -3175,6 +3208,7 @@ function WalletDialog({
   authenticated,
   hasSession,
   hasLinkedWallet,
+  sessionReady,
   copied,
   disconnecting,
   error,
@@ -3192,6 +3226,7 @@ function WalletDialog({
   authenticated: boolean;
   hasSession: boolean;
   hasLinkedWallet: boolean;
+  sessionReady: boolean;
   copied: boolean;
   disconnecting: boolean;
   error: string;
@@ -3205,243 +3240,173 @@ function WalletDialog({
   onRetryLogin: () => void;
   onSelectWallet: (account: `0x${string}`) => void;
 }) {
-  const title = wallet
-    ? "Connected account"
-    : authenticated
-      ? "Connect wallet"
-      : error
-        ? "Wallet connection failed"
-        : status
-          ? "Wallet connection in progress"
-          : "Finish wallet connection";
+  const title = !sessionReady ? "Wallet session" : wallet ? "Wallet" : "Connect wallet";
+  const connect = authenticated
+    ? hasLinkedWallet ? onReconnectWallet : onAddWallet
+    : onRetryLogin;
 
   return (
-    <DialogFrame eyebrow="Wallet" title={title} onClose={onClose}>
-      {wallet ? (
-        <div className="connected-wallet">
-          <div className="wallet-account-row">
-            <span>Active wallet</span>
-            <strong>{wallet.account.slice(0, 22)}<wbr />{wallet.account.slice(22)}</strong>
-          </div>
-          <dl className="wallet-network-row">
-            <dt>Wallet network</dt>
-            <dd>{getWalletNetworkLabel(wallet.chainId)}</dd>
-          </dl>
-
-          {walletOptions.length > 1 ? (
-            <div className="wallet-switcher" aria-label="Connected wallets">
-              <span>Use another wallet</span>
+    <DialogFrame title={title} onClose={onClose}>
+      <div className={styles.content}>
+        {wallet ? (
+          <>
+            <div className={styles.account}>
               <div>
+                <span className={styles.label}>Active wallet</span>
+                <strong><span>{wallet.account.slice(0, 22)}</span><span>{wallet.account.slice(22)}</span></strong>
+              </div>
+              <button
+                className={styles.iconButton}
+                type="button"
+                aria-label={copied ? "Address copied" : "Copy address"}
+                onClick={onCopyAddress}
+              >
+                {copied ? <Check aria-hidden="true" size={18} /> : <Copy aria-hidden="true" size={18} />}
+              </button>
+            </div>
+            <dl className={styles.network}>
+              <dt>Wallet network</dt>
+              <dd>{getWalletNetworkLabel(wallet.chainId)}</dd>
+            </dl>
+            {walletOptions.length > 1 ? (
+              <div className={styles.wallets} role="group" aria-label="Connected wallets">
+                <span className={styles.label}>Use another wallet</span>
                 {walletOptions.map((candidate) => {
-                  const active = candidate.account.toLowerCase()
-                    === wallet.account.toLowerCase();
+                  const active = candidate.account.toLowerCase() === wallet.account.toLowerCase();
                   return (
                     <button
                       key={candidate.account.toLowerCase()}
-                      className="wallet-switch-option"
+                      className={styles.walletOption}
                       type="button"
                       aria-pressed={active}
-                      disabled={active}
+                      disabled={active || disconnecting}
                       onClick={() => onSelectWallet(candidate.account)}
                     >
                       <span>{shortenAddress(candidate.account)}</span>
-                      {active ? <Check aria-hidden="true" size={15} /> : null}
+                      {active ? <Check aria-hidden="true" size={16} /> : null}
                     </button>
                   );
                 })}
               </div>
-            </div>
-          ) : null}
-
-          {error ? (
-            <p className="form-error" role="alert">
-              {error}
-            </p>
-          ) : null}
-          <span
-            className="sr-only"
-            role="status"
-            aria-live="polite"
-            aria-atomic="true"
+            ) : null}
+          </>
+        ) : !error ? (
+          <p className={styles.copy}>
+            {!sessionReady
+              ? "Your wallet session is still updating. Reload the page to continue."
+              : authenticated && hasLinkedWallet
+                ? "Connect a wallet linked to your account."
+                : authenticated
+                  ? "Connect a wallet to your account."
+                  : "Choose a wallet to sign in with Privy."}
+          </p>
+        ) : null}
+        {status ? <p className={styles.copy}>{status}</p> : null}
+        {error ? <p className={styles.error} role="alert">{error}</p> : null}
+        <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+          {copied ? "Address copied" : ""}
+        </span>
+        <div className={styles.actions}>
+          <button
+            className={styles.primaryButton}
+            type="button"
+            disabled={disconnecting}
+            onClick={!sessionReady
+              ? () => window.location.reload()
+              : wallet ? error ? onReconnectWallet : onAddWallet : connect}
           >
-            {copied ? "Address copied" : ""}
-          </span>
-
-          <div className="dialog-actions">
+            {!sessionReady ? "Reload page" : wallet ? error ? "Reconnect wallet" : "Add wallet" : "Connect wallet"}
+          </button>
+          {hasSession ? (
             <button
-              className="secondary-button"
-              type="button"
-              onClick={onAddWallet}
-            >
-              <Wallet aria-hidden="true" size={16} />
-              Add wallet
-            </button>
-            <button
-              className="secondary-button"
-              type="button"
-              onClick={onCopyAddress}
-            >
-              {copied ? (
-                <Check aria-hidden="true" size={16} />
-              ) : (
-                <Copy aria-hidden="true" size={16} />
-              )}
-              {copied ? "Copied" : "Copy address"}
-            </button>
-            <button
-              className="text-button danger-text"
+              className={styles.signOut}
               type="button"
               disabled={disconnecting}
               onClick={() => void onLogout()}
             >
               <LogOut aria-hidden="true" size={16} />
-              {disconnecting ? "Disconnecting" : "Disconnect wallet"}
+              {disconnecting ? "Signing out" : "Sign out"}
             </button>
-          </div>
+          ) : null}
         </div>
-      ) : (
-        <>
-          <p className="dialog-copy">
-            {authenticated
-              ? hasLinkedWallet
-                ? "Reconnect the wallet linked to your account."
-                : "Connect a wallet to your account."
-              : hasSession
-                ? "The wallet connected, but sign-in was not completed"
-                : "Connect your wallet to continue"}
-          </p>
-
-          {status ? <p className="dialog-copy">{status}</p> : null}
-
-          {error ? (
-            <p className="form-error" role="alert">
-              {error}
-            </p>
-          ) : null}
-
-          <button
-            className="primary-button dialog-full-button"
-            type="button"
-            onClick={authenticated ? hasLinkedWallet ? onReconnectWallet : onAddWallet : onRetryLogin}
-          >
-            <Wallet aria-hidden="true" size={16} />
-            {authenticated ? "Connect wallet" : "Try again"}
-          </button>
-          {hasSession ? (
-            <button
-              className="text-button dialog-logout-button danger-text"
-              type="button"
-              disabled={disconnecting}
-              onClick={() => void onLogout()}
-            >
-              {disconnecting ? "Disconnecting" : "Disconnect wallet"}
-            </button>
-          ) : null}
-        </>
-      )}
+      </div>
     </DialogFrame>
   );
 }
 
 function DialogFrame({
-  eyebrow,
   title,
   onClose,
   children,
 }: {
-  eyebrow: string;
   title: string;
   onClose: () => void;
   children: ReactNode;
 }) {
-  const dialogRef = useRef<HTMLElement>(null);
+  const dialogRef = useRef<HTMLDialogElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
-  const onCloseRef = useRef(onClose);
+  const titleId = useId();
 
   useEffect(() => {
-    onCloseRef.current = onClose;
-  }, [onClose]);
-
-  useEffect(() => {
-    const previousFocus =
-      document.activeElement instanceof HTMLElement
-        ? document.activeElement
-        : null;
-
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    dialog.showModal();
     closeButtonRef.current?.focus();
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        onCloseRef.current();
-        return;
-      }
-
-      if (event.key !== "Tab" || !dialogRef.current) return;
-
-      const focusable = Array.from(
-        dialogRef.current.querySelectorAll<HTMLElement>(
-          'button:not([disabled]), a[href], input:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-        ),
-      );
-
-      if (focusable.length === 0) return;
-
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    window.addEventListener("keydown", handleKeyDown);
-
     return () => {
+      dialog.close();
       document.body.style.overflow = previousOverflow;
-      window.removeEventListener("keydown", handleKeyDown);
       previousFocus?.focus();
     };
   }, []);
 
   return (
-    <div
-      className="dialog-backdrop"
-      role="presentation"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
+    <dialog
+      ref={dialogRef}
+      className={`wallet-dialog ${styles.dialog}`}
+      aria-labelledby={titleId}
+      onCancel={(event) => {
+        event.preventDefault();
+        onClose();
+      }}
+      onKeyDown={(event) => {
+        if (event.key !== "Tab") return;
+        const controls = event.currentTarget.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), a[href], [tabindex="0"]',
+        );
+        const first = controls[0];
+        const last = controls[controls.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last?.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first?.focus();
+        }
+      }}
+      onClick={(event) => {
+        if (event.target !== event.currentTarget) return;
+        const bounds = event.currentTarget.getBoundingClientRect();
+        if (event.clientX < bounds.left || event.clientX > bounds.right
+          || event.clientY < bounds.top || event.clientY > bounds.bottom) onClose();
       }}
     >
-      <section
-        ref={dialogRef}
-        className="wallet-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="wallet-dialog-title"
-      >
-        <div className="dialog-heading">
-          <div>
-            <p className="eyebrow">{eyebrow}</p>
-            <h2 id="wallet-dialog-title">{title}</h2>
-          </div>
-          <button
-            ref={closeButtonRef}
-            className="icon-button"
-            type="button"
-            aria-label="Close wallet dialog"
-            onClick={onClose}
-          >
-            <X aria-hidden="true" size={18} />
-          </button>
-        </div>
-        {children}
-      </section>
-    </div>
+      <div className={styles.heading}>
+        <h2 id={titleId}>{title}</h2>
+        <button
+          ref={closeButtonRef}
+          className={styles.iconButton}
+          type="button"
+          aria-label="Close wallet dialog"
+          onClick={onClose}
+        >
+          <X aria-hidden="true" size={18} />
+        </button>
+      </div>
+      {children}
+    </dialog>
   );
 }
 

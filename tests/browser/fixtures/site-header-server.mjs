@@ -65,7 +65,7 @@ export async function createSiteHeaderServer() {
   `;
   const bundled = await build({
     stdin: {
-      contents: `import React from 'react'; import {createRoot} from 'react-dom/client'; import {ExploreChainSelector} from './components/explore-chain-selector'; import {SiteHeader} from './components/site-navigation'; import {Fixture} from 'fixture-state'; import './app/globals.css'; import './app/interface.css'; import './app/programmable-experience.css'; import './app/webde-final-ui.css'; createRoot(document.getElementById('root')).render(<Fixture selector={<ExploreChainSelector/>}><SiteHeader/></Fixture>);`,
+      contents: `import React from 'react'; import {createRoot} from 'react-dom/client'; import {ExploreChainSelector} from './components/explore-chain-selector'; import {SiteHeader} from './components/site-navigation'; import {Fixture} from 'fixture-state'; import './app/globals.css'; import './app/programmable-experience.css'; import './app/interface.css'; import './app/webde-final-ui.css'; createRoot(document.getElementById('root')).render(<Fixture selector={<ExploreChainSelector/>}><SiteHeader/></Fixture>);`,
       loader: "tsx", resolveDir: root,
     },
     bundle: true, format: "esm", platform: "browser", write: false,
@@ -99,6 +99,6 @@ export async function createSiteHeaderServer() {
       catch {response.writeHead(404);response.end();} return;
     }
     response.setHeader('Content-Type','text/html');
-    response.end('<!doctype html><html data-theme="dark"><head><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/fixture.css"><style>body{background:#000;color:#fff;font-family:Arial,sans-serif}main label{display:block;margin:16px 0}main button{padding:12px} .header-inner{max-width:1320px}</style></head><body><div id="root"></div><script type="module" src="/fixture.js"></script></body></html>');
+    response.end('<!doctype html><html data-theme="dark"><head><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/fixture.css"><style>body{background:#000;color:#fff;font-family:Arial,sans-serif}main label{display:block;margin:16px 0}main button{padding:12px}</style></head><body><div id="root"></div><script type="module" src="/fixture.js"></script></body></html>');
   });
 }

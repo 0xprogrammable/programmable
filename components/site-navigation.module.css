@@ -1,9 +1,23 @@
-.siteHeader.siteHeader {
+.siteHeader.siteHeader,
+:global(body:has([data-docs-shell])) .siteHeader {
+  background-color: var(--webde-canvas, #000);
+  box-shadow: 0 1px 0 rgb(255 255 255 / 0.07);
   overflow: visible;
 }
 
+@supports ((backdrop-filter: blur(16px)) or (-webkit-backdrop-filter: blur(16px))) {
+  .siteHeader.siteHeader,
+  :global(body:has([data-docs-shell])) .siteHeader {
+    -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(16px);
+    background-color: rgb(0 0 0 / 0.9);
+  }
+}
+
 .headerInner.headerInner {
+  --navigation-inline-padding: 32px;
   grid-template-columns: minmax(44px, 1fr) auto minmax(44px, 1fr);
+  position: relative;
 }
 
 .headerActions.headerActions {
@@ -62,6 +76,7 @@
   justify-content: center;
   padding: 0 12px;
   transition:
+    background-color 160ms cubic-bezier(0.32, 0.72, 0, 1),
     opacity 160ms cubic-bezier(0.32, 0.72, 0, 1),
     transform 160ms cubic-bezier(0.32, 0.72, 0, 1);
   white-space: nowrap;
@@ -92,19 +107,31 @@
   gap: 2px;
   inset-inline-end: 0;
   padding: 8px;
-  top: calc(100% + 8px);
+  max-height: calc(100dvh - var(--header-height) - 24px);
+  opacity: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  pointer-events: none;
+  top: calc(100% + (var(--header-height) - env(safe-area-inset-top) - 48px) / 2 + 8px);
+  transform: translate3d(0, -4px, 0) scale(0.98);
   transform-origin: top right;
   transition:
-    opacity 180ms cubic-bezier(0.32, 0.72, 0, 1),
-    transform 180ms cubic-bezier(0.32, 0.72, 0, 1);
+    opacity 160ms var(--webde-ease),
+    transform 180ms var(--webde-ease),
+    visibility 0s linear 180ms;
+  visibility: hidden;
   width: 216px;
 }
 
-@starting-style {
-  .walletMenu {
-    opacity: 0;
-    transform: translate3d(0, -4px, 0) scale(0.98);
-  }
+.walletMenuOpen {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate3d(0, 0, 0) scale(1);
+  transition:
+    opacity 180ms var(--webde-ease),
+    transform 220ms var(--webde-ease),
+    visibility 0s linear;
+  visibility: visible;
 }
 
 .walletMenu > a,
@@ -180,20 +207,20 @@
 }
 
 .mobileSheet {
-  max-height: calc(100dvh - 80px - env(safe-area-inset-top));
+  max-height: calc(100dvh - var(--header-height) - 24px);
   overflow-y: auto;
   overscroll-behavior: contain;
-  inset-inline-end: max(16px, env(safe-area-inset-right));
+  inset-inline-end: max(var(--navigation-inline-padding), env(safe-area-inset-right));
   opacity: 0;
   pointer-events: none;
   position: absolute;
-  top: 64px;
-  transform: translate3d(0, -8px, 0) scale(0.98);
+  top: calc(100% + 8px);
+  transform: translate3d(0, -4px, 0) scale(0.98);
   transform-origin: top right;
   transition:
-    opacity 180ms cubic-bezier(0.32, 0.72, 0, 1),
-    transform 260ms cubic-bezier(0.32, 0.72, 0, 1),
-    visibility 0s linear 260ms;
+    opacity 160ms var(--webde-ease),
+    transform 180ms var(--webde-ease),
+    visibility 0s linear 180ms;
   visibility: hidden;
   width: min(340px, calc(100vw - 32px));
   z-index: 90;
@@ -204,9 +231,9 @@
   pointer-events: auto;
   transform: translate3d(0, 0, 0) scale(1);
   transition:
-    opacity 200ms cubic-bezier(0.32, 0.72, 0, 1),
-    transform 240ms cubic-bezier(0.32, 0.72, 0, 1),
-    visibility 0s linear 0s;
+    opacity 180ms var(--webde-ease),
+    transform 220ms var(--webde-ease),
+    visibility 0s linear;
   visibility: visible;
 }
 
@@ -215,7 +242,7 @@
   border: 1px solid var(--webde-line);
   border-radius: var(--webde-radius-card);
   box-shadow: 0 16px 32px rgb(0 0 0 / 0.32);
-  padding: 10px;
+  padding: 8px;
 }
 
 .mobileSheet.mobileSheet :global(.mobile-nav) {
@@ -233,7 +260,7 @@
   inset: auto;
   max-width: none;
   min-width: 0;
-  padding: 6px 0 0;
+  padding: 0;
   position: static;
   width: 100%;
 }
@@ -241,16 +268,16 @@
 .mobileSheet.mobileSheet :global(.mobile-nav a) {
   align-items: center;
   background: transparent;
-  border-radius: 12px;
+  border-radius: 8px;
   color: var(--navigation-glass-ink-muted);
   display: flex;
   font-family: var(--font-instrument), sans-serif;
   flex-direction: row;
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 520;
   justify-content: flex-start;
-  line-height: 1;
-  min-height: 46px;
+  line-height: 1.5;
+  min-height: 48px;
   min-width: 0;
   padding: 0 12px;
   text-align: start;
@@ -291,14 +318,14 @@
   display: flex;
   gap: 8px;
   justify-content: center;
-  margin-top: 6px;
-  padding: 7px 2px 0;
+  margin-top: 8px;
+  padding: 8px 0 0;
 }
 
 .mobileSocials :global(.header-social-link) {
   color: var(--navigation-glass-ink-muted);
-  height: 46px;
-  width: 46px;
+  height: 48px;
+  width: 48px;
 }
 
 .mobileSocials :global(.header-social-link svg),
@@ -312,6 +339,10 @@
 }
 
 @media (hover: hover) and (pointer: fine) {
+  .siteHeader.siteHeader :global(.desktop-nav a:hover) {
+    text-shadow: none;
+  }
+
   .menuButton:hover {
     background: rgb(255 255 255 / 0.06);
     border-color: rgb(255 255 255 / 0.08);
@@ -328,22 +359,20 @@
     color: var(--navigation-glass-ink);
   }
 
-  .headerWalletButton:hover:not(:disabled) { opacity: 0.72; }
+  .headerWalletButton:hover:not(:disabled) {
+    background: rgb(255 255 255 / 0.06);
+  }
 }
 
 @media (max-width: 60rem) {
   .siteHeader.siteHeader {
-    background-color: var(--webde-canvas, #000);
     height: calc(72px + env(safe-area-inset-top));
     min-height: calc(72px + env(safe-area-inset-top));
     padding-top: env(safe-area-inset-top);
   }
 
-  .mobileSheet {
-    top: calc(64px + env(safe-area-inset-top));
-  }
-
   .headerInner.headerInner {
+    --navigation-inline-padding: 16px;
     grid-template-columns: minmax(44px, 1fr) auto;
   }
 
@@ -376,6 +405,25 @@
   }
 }
 
+.siteHeader[data-navigation-input="keyboard"] :is(
+  .menuButton,
+  .menuIcon svg,
+  .walletMenu,
+  .mobileSheet,
+  .headerWalletButton
+),
+.siteHeader[data-navigation-input="keyboard"] :global(.mobile-nav a) {
+  transition: none;
+}
+
+.siteHeader[data-navigation-input="keyboard"] :is(
+  .menuButton,
+  .headerWalletButton
+):active,
+.siteHeader[data-navigation-input="keyboard"] :global(.mobile-nav a:active) {
+  transform: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .menuButton,
   .menuIcon svg,
@@ -383,10 +431,11 @@
   .mobileSheet,
   .mobileSheet.mobileSheet :global(.mobile-nav a),
   .headerWalletButton {
-    transition-duration: 0.01ms;
+    transition: none;
   }
 
-  .mobileSheet { transform: none; }
+  .mobileSheet,
+  .walletMenu { transform: none; }
 }
 
 @media (forced-colors: active) {

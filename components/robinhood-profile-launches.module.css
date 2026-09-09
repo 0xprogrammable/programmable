@@ -1,5 +1,5 @@
 .list { list-style: none; margin: 0; padding: 0; }
-.row { align-items: center; border-radius: var(--webde-radius-control); display: flex; gap: 14px; min-height: var(--project-row-min-height); padding: 12px 10px; }
+.row { align-items: center; border-radius: var(--webde-radius-control); display: flex; gap: 14px; min-height: 96px; padding: 12px 10px; }
 .artwork { border-radius: var(--webde-radius-control); flex: none; height: 56px; width: 56px; }
 .identity { display: grid; gap: 4px; min-width: 0; }
 .identity strong { color: var(--webde-ink); font-size: 16px; font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -8,6 +8,7 @@
 .metrics strong { color: var(--webde-ink); font-size: 15px; font-variant-numeric: tabular-nums; }
 .empty { color: var(--webde-muted); padding: 8px 10px 16px; }
 .empty p { margin: 0 0 12px; }
+.notice { color: var(--webde-muted); font-size: 14px; line-height: 20px; margin: 0 0 12px; }
 .empty a, .empty button { align-items: center; background: var(--webde-surface-raised); border: 1px solid var(--webde-line); border-radius: var(--webde-radius-control); color: var(--webde-ink); cursor: pointer; display: inline-flex; justify-content: center; min-height: 44px; padding: 10px 14px; }
 .row:focus-visible, .empty a:focus-visible, .empty button:focus-visible { outline: 2px solid var(--webde-muted); outline-offset: 2px; }
 @media (hover: hover) and (pointer: fine) { .row:hover { background: var(--webde-surface-raised); } }

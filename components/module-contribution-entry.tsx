@@ -1,5 +1,7 @@
 "use client";
 
+import { Disclosure } from "@/components/disclosure";
+
 import Link from "next/link";
 import { ArrowLeft, ArrowRight, Check, ChevronDown, Copy } from "lucide-react";
 import { useState } from "react";
@@ -85,10 +87,10 @@ export function ModuleBuilderPrompt({ scopes, wallet }: { scopes: readonly strin
           {error || (copied ? "Prompt copied. Paste it into your AI builder." : "Save your API key in your builder’s secure setup, then paste this prompt.")}
         </p>
 
-        <details className={styles.promptDetails}>
+        <Disclosure className={styles.promptDetails}>
           <summary>View prompt <ChevronDown size={16} aria-hidden="true" /></summary>
           <pre>{instructions}</pre>
-        </details>
+        </Disclosure>
 
         <p className={styles.reviewNote}>Your builder submits the module for review. Approval is required before publication.</p>
       </section>

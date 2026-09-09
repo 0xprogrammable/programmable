@@ -25,6 +25,14 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("Robinhood website HTTP boundaries", () => {
+  it("returns an uncached failure when the saved index cannot be read", async () => {
+    mocks.read.mockResolvedValue({ chainId: 4663, status: "unavailable", items: [] });
+    const response = await list(new Request("https://website.invalid/api/explore/robinhood"));
+    expect(response.status).toBe(503);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("x-programmable-indexing-status")).toBe("unavailable");
+    expect(mocks.source).not.toHaveBeenCalled();
+  });
   it.each(["chainId=1", "page=0", "page=1&page=2", "q=a&q=b", `q=${"x".repeat(129)}`, "age=0", "age=any", "age=7d&age=30d", "sort=market-cap", "sort=oldest&sort=newest", "pageSize=9", "pageSize=10&pageSize=50", "mode=invalid", "mode=module&mode=custom"])("rejects invalid public query %s without reading storage", async (query) => {
     expect((await list(new Request(`https://website.invalid/api/explore/robinhood?${query}`))).status).toBe(400);
     expect(mocks.read).not.toHaveBeenCalled();

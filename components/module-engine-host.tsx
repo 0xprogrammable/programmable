@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { ModuleBuilderLoading } from "@/components/module-builder-loading";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import type { Address, Hex } from "viem";
@@ -198,5 +199,6 @@ export function ModuleEngineHost({ releaseDigest, token, versions = [] }: { rele
   </section>;
   if (token) return release && boundManagement ? <ModuleEngineConsole {...actions} token={token} release={release} template={boundManagement.template} client={client} statusContent={statusContent} />
     : <section className={styles.page}><header className={styles.heading}><h1>Coin controls</h1><p>Load the version bound to this coin to read its available actions.</p></header>{statusContent}</section>;
+  if (loadedSelection === null && !saved.blocked) return <ModuleBuilderLoading />;
   return <ModuleEngineBuilder {...actions} availability={availability} client={client} statusContent={statusContent} versionContent={versionContent} onUploadImage={uploadImage} />;
 }

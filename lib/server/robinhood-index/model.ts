@@ -1,4 +1,4 @@
-import type { RobinhoodLaunch, RobinhoodModuleLaunch, RobinhoodLaunchList, RobinhoodProfileLaunchList } from "@/lib/robinhood-launches";
+import type { RobinhoodLaunch, RobinhoodModuleLaunch, RobinhoodLaunchList, RobinhoodProfileLaunchList, RobinhoodProfilePageSize } from "@/lib/robinhood-launches";
 import { isRobinhoodModuleLaunch, isRobinhoodModuleSourceKind } from "@/lib/robinhood-launches";
 import { DEFAULT_EXPLORE_FILTERS, type RobinhoodExploreFilters } from "@/lib/robinhood-explore-filters";
 import { isPinnedRobinhoodToken, isVisibleRobinhoodToken } from "@/lib/robinhood-explore-policy";
@@ -208,7 +208,8 @@ export function launchList(snapshot: RobinhoodSnapshot | null, page = 1, query =
 
 // A profile shows the recorded launch wallet's history. Explore's display policy
 // and market ranking do not change which canonical launches belong to that wallet.
-export function profileLaunchList(snapshot: RobinhoodSnapshot | null, account: string, page = 1, now = Date.now()): RobinhoodProfileLaunchList {
+// Deployed clients require the legacy 50-row default; the website opts into five.
+export function profileLaunchList(snapshot: RobinhoodSnapshot | null, account: string, page = 1, now = Date.now(), size: RobinhoodProfilePageSize = 50): RobinhoodProfileLaunchList {
   const normalizedAccount = account.toLowerCase();
   if (!ADDRESS.test(normalizedAccount)) throw new Error("Invalid Robinhood profile account");
   const items = snapshotLaunches(snapshot)
@@ -218,13 +219,13 @@ export function profileLaunchList(snapshot: RobinhoodSnapshot | null, account: s
         ? b.logIndex - a.logIndex : BigInt(a.blockNumber) > BigInt(b.blockNumber) ? -1 : 1;
       return newest || a.tokenAddress.toLowerCase().localeCompare(b.tokenAddress.toLowerCase());
     });
-  const totalPages = Math.ceil(items.length / 50);
+  const totalPages = Math.ceil(items.length / size);
   const requestedPage = Number.isSafeInteger(page) && page > 0 ? page : 1;
   const number = Math.min(requestedPage, Math.max(1, totalPages));
   const status = snapshotStatus(snapshot, now);
   return {
     chainId: 4663, account: normalizedAccount, status, updatedAt: snapshotUpdatedAt(snapshot),
-    items: items.slice((number - 1) * 50, number * 50),
-    page: { number, size: 50, totalItems: items.length, totalPages, hasMore: number < totalPages },
+    items: items.slice((number - 1) * size, number * size),
+    page: { number, size, totalItems: items.length, totalPages, hasMore: number < totalPages },
   };
 }

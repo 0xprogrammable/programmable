@@ -376,6 +376,7 @@ export function ProfileProjects({
     () => paginateCreatorProjectsV1(visibleProjects, marketCaps, projectPage),
     [marketCaps, projectPage, visibleProjects],
   );
+  if (projectPage !== pageData.currentPage) setProjectPage(pageData.currentPage);
   const marketCapByToken = useMemo(() => new Map(
     marketCaps.map((marketCap) => [marketCap.tokenAddress.toLowerCase(), marketCap]),
   ), [marketCaps]);
@@ -478,14 +479,10 @@ export function ProfileProjects({
       onRefresh={refreshProjects}
       currentPage={pageData.currentPage}
       totalPages={pageData.totalPages}
+      totalItems={visibleProjects.length > 0 || phase === "ready" ? visibleProjects.length : undefined}
       onPageChange={setProjectPage}
+      statusMessage={refreshInProgress ? "Refreshing launches" : phase === "ready" ? "Launches updated" : ""}
     >
-      <span className={styles.visuallyHidden} role="status" aria-live="polite">
-        {refreshInProgress
-          ? "Refreshing launches"
-          : phase === "ready" ? "Launches updated" : ""}
-      </span>
-
       {scopedProjectError && visibleProjects.length > 0 ? (
         <p className={styles.error} role="alert">{scopedProjectError}</p>
       ) : null}
@@ -659,21 +656,28 @@ export function ProfileProjectsSection({
   onRefresh,
   currentPage = 1,
   totalPages = 1,
+  totalItems,
   onPageChange,
+  pageChangePending = false,
+  statusMessage,
 }: Readonly<{
   children: ReactNode;
   refreshInProgress?: boolean;
   onRefresh?: () => void;
   currentPage?: number;
   totalPages?: number;
+  totalItems?: number;
   onPageChange?: (page: number) => void;
+  pageChangePending?: boolean;
+  statusMessage?: string;
 }>) {
   return (
     <section className={styles.section} aria-labelledby="profile-launches-title">
       <header className={styles.heading}>
-        <h2 id="profile-launches-title">Launches</h2>
+        <h2 id="profile-launches-title">Launches{totalItems !== undefined
+          ? <span className={styles.launchCount}> {totalItems}</span> : null}</h2>
         <div className={styles.headerActions}>
-          <button
+          {onRefresh || refreshInProgress ? <button
             className={styles.refresh}
             type="button"
             aria-busy={refreshInProgress}
@@ -690,33 +694,46 @@ export function ProfileProjectsSection({
             <span className={styles.refreshLabel}>
               {refreshInProgress ? "Refreshing…" : "Refresh"}
             </span>
-          </button>
-          {totalPages > 1 ? (
-            <nav className={styles.pagination} aria-label="Creator project pages">
-              <button
-                type="button"
-                aria-label="Previous creator projects page"
-                disabled={currentPage === 1}
-                onClick={() => onPageChange?.(Math.max(1, currentPage - 1))}
-              >
-                <ChevronLeft aria-hidden="true" size={17} strokeWidth={1.8} />
-              </button>
-              <span aria-live="polite" aria-atomic="true">
-                {currentPage} / {totalPages}
-              </span>
-              <button
-                type="button"
-                aria-label="Next creator projects page"
-                disabled={currentPage === totalPages}
-                onClick={() => onPageChange?.(Math.min(totalPages, currentPage + 1))}
-              >
-                <ChevronRight aria-hidden="true" size={17} strokeWidth={1.8} />
-              </button>
-            </nav>
-          ) : null}
+          </button> : null}
         </div>
       </header>
+      <span className={styles.visuallyHidden} role="status" aria-live="polite" aria-atomic="true">
+        {statusMessage ?? (refreshInProgress ? "Refreshing launches" : "")}
+      </span>
       {children}
+      {totalPages > 1 && onPageChange ? (
+        <footer className={styles.paginationFooter}>
+          <span className={styles.pageRange} role="status" aria-live="polite" aria-atomic="true">
+            {totalItems !== undefined ? <><span className={styles.visuallyHidden}>Showing launches </span>
+              {(currentPage - 1) * creatorProjectPageSize + 1}–{Math.min(currentPage * creatorProjectPageSize, totalItems)} of {totalItems}
+              <span className={styles.visuallyHidden}>, page {currentPage} of {totalPages}</span>
+            </> : <>Page {currentPage} of {totalPages}</>}
+          </span>
+          <nav className={styles.pagination} aria-label="Launches pages">
+            <button
+              type="button"
+              aria-label="Previous launches page"
+              disabled={currentPage === 1}
+              aria-disabled={pageChangePending || undefined}
+              onClick={() => { if (!pageChangePending) onPageChange(Math.max(1, currentPage - 1)); }}
+            >
+              <ChevronLeft aria-hidden="true" size={17} strokeWidth={1.8} />
+            </button>
+            <span aria-hidden="true">
+              {currentPage} / {totalPages}
+            </span>
+            <button
+              type="button"
+              aria-label="Next launches page"
+              disabled={currentPage === totalPages}
+              aria-disabled={pageChangePending || undefined}
+              onClick={() => { if (!pageChangePending) onPageChange(Math.min(totalPages, currentPage + 1)); }}
+            >
+              <ChevronRight aria-hidden="true" size={17} strokeWidth={1.8} />
+            </button>
+          </nav>
+        </footer>
+      ) : null}
     </section>
   );
 }
@@ -749,7 +766,7 @@ export function ProfileProjectCard({
       : "Classic";
 
   return (
-    <article className={styles.project}>
+    <article className={styles.project} data-reward-action={rewardReceiverAvailable ? "available" : "unavailable"}>
       <div className={styles.art}>
         {project.imageUrl ? (
           <Image src={project.imageUrl} alt="" fill sizes="64px" unoptimized />

@@ -109,7 +109,46 @@ test("passive session hydration is labelled loading without claiming an SDK prom
   await expect(page.getByRole("button", { name: walletName, exact: true })).toBeEnabled();
 });
 
-for(const width of [320,390,1440]) {
+test("keyboard navigation opens instantly and returns focus without trapping the page", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const trigger = page.getByRole("button", { name: "Open menu", exact: true });
+  await trigger.focus();
+  await page.keyboard.press("Enter");
+  const navigation = page.getByRole("navigation", { name: "Menu navigation", exact: true });
+  await expect(navigation).toBeVisible();
+  const sheet = navigation.locator("../..");
+  await expect(sheet).toHaveCSS("transition-duration", "0s");
+  await page.keyboard.press("Tab");
+  await expect(navigation.getByRole("link", { name: "Explore", exact: true })).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(trigger).toBeFocused();
+  await expect(navigation).not.toBeVisible();
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("button", { name: "Explore chain: Ethereum", exact: true })).toBeFocused();
+});
+
+test("sticky navigation stays readable and opening its menu preserves the scroll position", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.evaluate(() => {
+    document.querySelector("main")!.style.minHeight = "2400px";
+    window.scrollTo(0, 600);
+  });
+  const header = page.getByRole("banner");
+  await expect.poll(async () => (await header.boundingBox())?.y).toBe(0);
+  expect(await header.evaluate((element) => {
+    const color = getComputedStyle(element).backgroundColor;
+    return color !== "rgba(0, 0, 0, 0)" && color !== "transparent";
+  })).toBe(true);
+  const scrollBefore = await page.evaluate(() => window.scrollY);
+  const triggerBox = await page.getByRole("button", { name: "Open menu", exact: true }).boundingBox();
+  if (!triggerBox) throw new Error("Missing menu trigger");
+  // Use the visible pointer target. Locator.click() first scrolls a sticky
+  // control into the document's scroll-padding area, unlike a user's click.
+  await page.mouse.click(triggerBox.x + triggerBox.width / 2, triggerBox.y + triggerBox.height / 2);
+  expect(await page.evaluate(() => window.scrollY)).toBe(scrollBefore);
+});
+
+for(const width of [320,390,1440,1920]) {
   test(`header menus fit at ${width}px and remain mutually exclusive`,async ({page})=>{
     await page.setViewportSize({width,height:844});
     await page.getByRole("button",{name:walletName,exact:true}).click();
@@ -119,7 +158,13 @@ for(const width of [320,390,1440]) {
     expect((box?.x??0)+(box?.width??0)).toBeLessThanOrEqual(width);
     await page.getByRole("button",{name:"Open menu",exact:true}).click();
     await expect(menu).toHaveCount(0);
-    await expect(page.getByRole("navigation",{name:"Menu navigation",exact:true})).toBeVisible();
+    const navigation = page.getByRole("navigation",{name:"Menu navigation",exact:true});
+    await expect(navigation).toBeVisible();
+    const headerBox = await page.getByRole("banner").boundingBox();
+    const sheetBox = await navigation.locator("../..").boundingBox();
+    const triggerBox = await page.getByRole("button", { name: "Close menu", exact: true }).boundingBox();
+    expect(sheetBox?.y).toBeGreaterThanOrEqual((headerBox?.y ?? 0) + (headerBox?.height ?? 0));
+    expect(Math.abs((sheetBox?.x ?? 0) + (sheetBox?.width ?? 0) - (triggerBox?.x ?? 0) - (triggerBox?.width ?? 0))).toBeLessThanOrEqual(4);
     await page.getByRole("button",{name:walletName,exact:true}).click();
     await expect(menu).toBeVisible();
     await expect(page.getByRole("button",{name:"Open menu",exact:true})).toHaveAttribute("aria-expanded","false");

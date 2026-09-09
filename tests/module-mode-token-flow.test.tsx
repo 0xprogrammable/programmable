@@ -64,12 +64,12 @@ describe("Module Mode token identity and navigation", () => {
   ])("rejects incomplete or disguised Module data %j", change => {
     const row = { ...moduleRow(), ...change };
     expect(isRobinhoodModuleLaunch(row)).toBe(false);
-    const response = { ...profileLaunchList(snapshot(), a(90), 1, now), items: [row] };
+    const response = { ...profileLaunchList(snapshot(), a(90), 1, now, 5), items: [row] };
     expect(() => readRobinhoodProfileResponse(response, a(90))).toThrow("Invalid profile launch");
   });
   it("retains the native source through Explore and the launch wallet's profile, excluding pending rows", () => {
     const saved = snapshot(); const row = saved.moduleMode!.items[0];
-    const list = launchList(saved, 1, "", now); const profile = profileLaunchList(saved, a(90), 1, now);
+    const list = launchList(saved, 1, "", now); const profile = profileLaunchList(saved, a(90), 1, now, 5);
     expect(list.items.find(item => item.sourceKind === "module-native-v1")).toEqual(row);
     expect(readRobinhoodProfileResponse(profile, a(90)).items).toContainEqual(row);
     expect(profileLaunchList(saved, a(999), 1, now).items).toEqual([]);

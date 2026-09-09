@@ -216,8 +216,8 @@ test("Custom V2 evidence is immutable while the workflow remains stage-only", ()
   );
 });
 
-test("staging enforces the provider-free index-reset policy", () => {
-  const policy = stepBlock(deploy, "Validate staged Explore index-reset policy");
+test("staging retains the provider-free legacy API reset policy", () => {
+  const policy = stepBlock(deploy, "Validate staged legacy Explore API reset policy");
   assert.match(policy, /id: read-model-policy/u);
   assert.match(policy, /npm run perf:read-model:deploy-policy --/u);
   assert.match(policy, /--env-file \.vercel\/\.env\.production\.local/u);
@@ -432,7 +432,7 @@ test("every staged candidate proves the exact Explore index reset", () => {
   );
   assert.ok(
     deploy.indexOf("Bind staged production environment metadata") <
-      deploy.indexOf("Validate staged Explore index-reset policy"),
+      deploy.indexOf("Validate staged legacy Explore API reset policy"),
   );
   assert.match(
     deploy,
@@ -453,7 +453,7 @@ test("every staged candidate proves the exact Explore index reset", () => {
 
   const smoke = stepBlock(
     deploy,
-    "Smoke exact staged Explore index reset",
+    "Smoke exact staged legacy Explore API reset",
   );
   assert.match(smoke, /id: index-reset-smoke/u);
   assert.match(
@@ -475,10 +475,10 @@ test("every staged candidate proves the exact Explore index reset", () => {
   );
   assert.ok(
     deploy.indexOf("Resolve exact staged deployment") <
-      deploy.indexOf("Smoke exact staged Explore index reset"),
+      deploy.indexOf("Smoke exact staged legacy Explore API reset"),
   );
   assert.ok(
-    deploy.indexOf("Smoke exact staged Explore index reset") <
+    deploy.indexOf("Smoke exact staged legacy Explore API reset") <
       deploy.indexOf("Reverify staged candidate binding"),
   );
 
@@ -510,10 +510,10 @@ test("every staged candidate proves the exact Explore index reset", () => {
     handoff,
     /INDEXING_STATUS: \$\{\{ steps\.index-reset-smoke\.outputs\.indexing_status \}\}/u,
   );
-  assert.match(handoff, /Explore indexing status:/u);
+  assert.match(handoff, /Legacy Explore API indexing status:/u);
   assert.match(handoff, /Public reset routes checked:/u);
   assert.match(handoff, /Retired operations checked:/u);
-  assert.match(handoff, /Expected external indexing calls:/u);
+  assert.match(handoff, /Expected external indexing calls from legacy reset probes:/u);
 
   assert.doesNotMatch(
     deploy,

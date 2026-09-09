@@ -8,10 +8,14 @@ import {
 } from "@/lib/robinhood-explore-filters";
 import styles from "./explore-filters.module.css";
 
-export function ExploreFilters({ value = DEFAULT_EXPLORE_FILTERS, onApply, disabled = false }: {
+export function ExploreFilters({ value = DEFAULT_EXPLORE_FILTERS, onApply, disabled = false,
+  defaultValue = DEFAULT_EXPLORE_FILTERS, modeOptions = LAUNCH_MODE_OPTIONS, marketCapAvailable = true }: {
   value?: RobinhoodExploreFilters;
   onApply?: (filters: RobinhoodExploreFilters) => void;
   disabled?: boolean;
+  defaultValue?: RobinhoodExploreFilters;
+  modeOptions?: readonly { value: NonNullable<RobinhoodExploreFilters["mode"]>; label: string }[];
+  marketCapAvailable?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [panelOffset, setPanelOffset] = useState(0);
@@ -19,7 +23,8 @@ export function ExploreFilters({ value = DEFAULT_EXPLORE_FILTERS, onApply, disab
   const triggerRef = useRef<HTMLButtonElement>(null);
   const keyboardOpenRef = useRef(false);
   const panelId = useId();
-  const count = activeExploreFilterCount(value);
+  const count = defaultValue === DEFAULT_EXPLORE_FILTERS ? activeExploreFilterCount(value)
+    : Number(value.sort !== defaultValue.sort) + Number((value.mode ?? "all") !== (defaultValue.mode ?? "all"));
 
   function close(restoreFocus = false) {
     setOpen(false);
@@ -72,14 +77,14 @@ export function ExploreFilters({ value = DEFAULT_EXPLORE_FILTERS, onApply, disab
       <div className={styles.heading}>
         <div className={styles.headingLabel}>
           <h2>Filters</h2>
-          <button className={styles.reset} type="button" onClick={() => onApply?.(DEFAULT_EXPLORE_FILTERS)}>Reset</button>
+          <button className={styles.reset} type="button" onClick={() => onApply?.(defaultValue)}>Reset</button>
         </div>
         <button className={styles.close} type="button" aria-label="Close filters" onClick={() => close(true)}><X size={18} aria-hidden="true" /></button>
       </div>
       <fieldset className={styles.field}>
         <legend>Launch type</legend>
         <div className={`${styles.choices} ${styles.modeChoices}`}>
-          {LAUNCH_MODE_OPTIONS.map(mode => <button type="button" key={mode.value}
+          {modeOptions.map(mode => <button type="button" key={mode.value}
             aria-pressed={(value.mode ?? "all") === mode.value}
             onClick={() => onApply?.({ ...value, mode: mode.value })}>{mode.label}</button>)}
         </div>
@@ -91,13 +96,13 @@ export function ExploreFilters({ value = DEFAULT_EXPLORE_FILTERS, onApply, disab
           <button type="button" aria-pressed={value.sort === "newest"} onClick={() => onApply?.({ ...value, sort: "newest" })}>Newest</button>
         </div>
       </fieldset>
-      <fieldset className={styles.field}>
+      {marketCapAvailable ? <fieldset className={styles.field}>
         <legend>Market cap</legend>
         <div className={styles.choices}>
           <button type="button" aria-pressed={value.sort === "lowest"} onClick={() => onApply?.({ ...value, sort: "lowest" })}>Lowest</button>
           <button type="button" aria-pressed={value.sort === "highest"} onClick={() => onApply?.({ ...value, sort: "highest" })}>Highest</button>
         </div>
-      </fieldset>
+      </fieldset> : null}
     </div> : null}
   </div>;
 }

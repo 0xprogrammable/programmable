@@ -26,6 +26,13 @@ describe("Explore request identity", () => {
 });
 
 describe("Explore toolbar and loading structure", () => {
+  it("loads the explicit Ethereum chain with an enabled search and its own list", () => {
+    const html = renderToStaticMarkup(<RobinhoodLaunchesView chainId={1} />);
+    expect(html).toContain("Search Ethereum launches by name, symbol or address");
+    expect(html).toContain('aria-label="Ethereum token launches"');
+    expect(html).not.toContain("indexing is being rebuilt");
+    expect(html).not.toContain('aria-label="Robinhood token launches"');
+  });
   it("keeps accessible arrows beside the chain and Filters controls without a separate page or mode row", () => {
     const html = renderToStaticMarkup(<RobinhoodLaunchesView chainId={4663} />);
     expect(html).toContain('placeholder="Search"');

@@ -620,7 +620,7 @@ export function evaluateReadModelOperationsSourceContracts(
   const workflow = source(".github/workflows/deploy-production.yml") ?? "";
   const resetSmokeStep = exactWorkflowStep(
     workflow,
-    "Smoke exact staged Explore index reset",
+    "Smoke exact staged legacy Explore API reset",
   );
   const handoffStep = exactWorkflowStep(workflow, "Record staged candidate handoff");
   const resetSmoke = source(operations?.release?.smoke?.source) ?? "";

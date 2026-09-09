@@ -38,6 +38,8 @@ import {
   persistRouterCustomIdentitySnapshotFromSourceV1,
   publicLaunchSourceV1,
   readFinalizedRouterCustomExploreEntriesV1,
+  readSavedRouterCustomIdentitySnapshotV1,
+  readWebsiteRouterCustomIdentitySnapshotV1,
   ROUTER_CUSTOM_SNAPSHOT_CACHE_TTL_MS,
   ROUTER_CUSTOM_SNAPSHOT_MAX_IDENTITIES,
   routerCustomSnapshotPreservesFinalizedIdentitiesV1,
@@ -137,6 +139,19 @@ function profile(blockNumber = "25740000"): CreatorProfile {
 }
 
 describe("finalized Router Custom public projection", () => {
+  it("reads saved identities without invoking the updater or writing storage", async () => {
+    const snapshot = routerCustomIdentitySnapshotFromSourceV1(source());
+    const body = JSON.stringify({ schemaVersion: "programmable.router-custom-identity-snapshot-envelope.v1",
+      binding: LAUNCH_STAMP_ROUTER_BINDING, snapshot });
+    mocks.blobGet.mockResolvedValue({ statusCode: 200, stream: new Response(body).body,
+      blob: { size: Buffer.byteLength(body), etag: `"${"ab".repeat(16)}"` } });
+    vi.stubEnv("OPS_BLOB_READ_WRITE_TOKEN", "vercel_blob_rw_test");
+    const result = await readSavedRouterCustomIdentitySnapshotV1();
+    expect(result.entries).toEqual(snapshot.entries);
+    expect(result.status).toBe("last-known-good");
+    expect(mocks.readAlchemyRouterCustomIdentitySourceV1).not.toHaveBeenCalled();
+    expect(mocks.blobPut).not.toHaveBeenCalled();
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     vi.unstubAllEnvs();
@@ -144,6 +159,24 @@ describe("finalized Router Custom public projection", () => {
     mocks.readAlchemyRouterCustomIdentitySourceV1.mockResolvedValue(source());
     mocks.enrichRouterCustomSnapshotWithFinalizedMetadataV1
       .mockImplementation(async (snapshot) => snapshot);
+  });
+
+  it("reuses fresh saved identities and refreshes only after the shared cache TTL", async () => {
+    const snapshot = { ...routerCustomIdentitySnapshotFromSourceV1(source()), status: "last-known-good" as const };
+    const readSaved = vi.fn().mockResolvedValue(snapshot);
+    const refresh = vi.fn().mockResolvedValue({ ...snapshot, status: "current" });
+    const startedAt = Date.parse(snapshot.generatedAt);
+    await expect(readWebsiteRouterCustomIdentitySnapshotV1({ readSaved, refresh, now: () => startedAt + ROUTER_CUSTOM_SNAPSHOT_CACHE_TTL_MS })).resolves.toBe(snapshot);
+    expect(refresh).not.toHaveBeenCalled();
+    await expect(readWebsiteRouterCustomIdentitySnapshotV1({ readSaved, refresh, now: () => startedAt + ROUTER_CUSTOM_SNAPSHOT_CACHE_TTL_MS + 1 })).resolves.toMatchObject({ status: "current" });
+    expect(refresh).toHaveBeenCalledOnce();
+  });
+
+  it("delegates missing snapshots to the verified refresher and does not swallow refresh conflicts", async () => {
+    const readSaved = vi.fn().mockRejectedValue(new Error("saved snapshot unavailable"));
+    const refresh = vi.fn().mockRejectedValue(new Error("snapshot identity conflict"));
+    await expect(readWebsiteRouterCustomIdentitySnapshotV1({ readSaved, refresh })).rejects.toThrow("snapshot identity conflict");
+    expect(refresh).toHaveBeenCalledOnce();
   });
 
   it("projects only fully verified Custom Graph stamps", async () => {

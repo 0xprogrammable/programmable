@@ -913,6 +913,16 @@ describe("wallet recovery state", () => {
       new Set([primary.address]))).toBeUndefined();
   });
 
+  it("uses authenticated ownership when a connected SDK wallet has a stale linked flag", () => {
+    const owned = { address: APPLICANT_WALLET, connectedAt: 1, linked: false, walletClientType: "metamask" };
+    const foreign = { address: OTHER_WALLET, connectedAt: 100, linked: true, walletClientType: "metamask" };
+    const ownership = new Set([APPLICANT_WALLET.toLowerCase()]);
+    expect(walletProvider.selectAuthenticatedWallet(true, [foreign, owned], APPLICANT_WALLET.toUpperCase(), ownership)).toBe(owned);
+    expect(walletProvider.selectAuthenticatedWallet(true, [foreign], APPLICANT_WALLET, ownership)).toBeUndefined();
+    expect(walletProvider.selectAuthenticatedWallet(false, [owned], APPLICANT_WALLET, ownership)).toBeUndefined();
+    expect(walletProvider.selectAuthenticatedWallet(true, [owned], APPLICANT_WALLET)).toBeUndefined();
+  });
+
   it("waits for wallet hydration and reconnects an existing account instead of linking it twice", () => {
     const pending = subject.getWalletSessionAction(subject.isWalletProviderSettled(true, false, true), true);
     expect(walletProvider.getWalletOpenAction(pending, false, true)).toBe("wait");

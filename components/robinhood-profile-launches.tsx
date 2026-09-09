@@ -8,7 +8,7 @@ import { MODULE_TOKEN_FALLBACK_IMAGE, RobinhoodCoinArtwork } from "@/components/
 import { useLiveDataRefresh } from "@/components/use-live-data-refresh";
 import { useRobinhoodPresentation } from "@/components/use-robinhood-presentation";
 import { readRobinhoodProfileResponse } from "@/lib/profile/robinhood-profile";
-import { isRobinhoodModuleLaunch, type RobinhoodProfileLaunchList } from "@/lib/robinhood-launches";
+import { isRobinhoodModuleLaunch, ROBINHOOD_PROFILE_PAGE_SIZE, type RobinhoodProfileLaunchList } from "@/lib/robinhood-launches";
 import { coinAge, coinTicker } from "@/lib/robinhood-presentation";
 import styles from "./robinhood-profile-launches.module.css";
 
@@ -21,6 +21,10 @@ function remembered(account: string) {
 }
 
 export function RobinhoodProfileLaunches({ account }: { account: string }) {
+  return <RobinhoodAccountLaunches key={account.toLowerCase()} account={account.toLowerCase()} />;
+}
+
+function RobinhoodAccountLaunches({ account }: { account: string }) {
   const [page, setPage] = useState(1);
   const [data, setData] = useState(() => remembered(account));
   const [loading, setLoading] = useState(true);
@@ -31,16 +35,29 @@ export function RobinhoodProfileLaunches({ account }: { account: string }) {
   const scoped = data?.account === account.toLowerCase() ? data : null;
   const items = scoped?.items ?? [];
   const shownPage = scoped?.page.number ?? page;
-  const presentationQuery = new URLSearchParams({ account: account.toLowerCase(), page: String(shownPage) }).toString();
+  const presentationQuery = new URLSearchParams({ account: account.toLowerCase(), page: String(shownPage), pageSize: String(ROBINHOOD_PROFILE_PAGE_SIZE) }).toString();
   const presentation = useRobinhoodPresentation(presentationQuery, items.length > 0);
   const details = new Map(presentation.items.map((item) => [item.tokenAddress.toLowerCase(), item]));
+  const notice = failed
+    ? items.length > 0
+      ? page !== shownPage ? `Couldn’t load page ${page}. Showing page ${shownPage}.` : "Couldn’t refresh launches."
+      : "Couldn’t load launches."
+    : scoped?.status === "stale" ? "Launch data may be out of date. Refresh to check again."
+    : scoped?.status === "syncing" && items.length > 0 ? "Checking for more launches…" : "";
+
+  function requestPage(nextPage: number) {
+    setLoading(true);
+    setFailed(false);
+    setPage(nextPage);
+    setRetry((value) => value + 1);
+  }
 
   useEffect(() => {
     let disposed = false;
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 10_000);
-    queueMicrotask(() => { if (!controller.signal.aborted) setLoading(true); });
-    const query = new URLSearchParams({ account: account.toLowerCase(), page: String(page) });
+    queueMicrotask(() => { if (!controller.signal.aborted) { setLoading(true); setFailed(false); } });
+    const query = new URLSearchParams({ account: account.toLowerCase(), page: String(page), pageSize: String(ROBINHOOD_PROFILE_PAGE_SIZE) });
     void fetch(`/api/profile/robinhood?${query}`, { signal: controller.signal, headers: { accept: "application/json" } })
       .then(async (response) => {
         if (!response.ok) throw new Error("Profile unavailable");
@@ -50,6 +67,7 @@ export function RobinhoodProfileLaunches({ account }: { account: string }) {
         if (controller.signal.aborted) return;
         if (next.status === "unavailable") throw new Error("Profile unavailable");
         setData(next);
+        setPage(next.page.number);
         setFailed(false);
         setNow(Date.now());
         const key = cacheKey(account, next.page.number);
@@ -64,11 +82,15 @@ export function RobinhoodProfileLaunches({ account }: { account: string }) {
 
   return <ProfileProjectsSection
     refreshInProgress={loading}
-    onRefresh={() => setRetry((value) => value + 1)}
+    onRefresh={() => requestPage(shownPage)}
     currentPage={shownPage}
     totalPages={scoped?.page.totalPages ?? 1}
-    onPageChange={setPage}
+    totalItems={scoped?.page.totalItems}
+    onPageChange={requestPage}
+    pageChangePending={loading}
+    statusMessage={loading ? page !== shownPage ? `Loading launches page ${page}` : "Refreshing launches" : notice}
   >
+    {items.length > 0 && notice ? <p className={styles.notice}>{notice}</p> : null}
     {items.length ? <ul className={styles.list} aria-busy={loading}>
       {items.map((launch) => {
         const detail = details.get(launch.tokenAddress.toLowerCase());
@@ -85,7 +107,7 @@ export function RobinhoodProfileLaunches({ account }: { account: string }) {
         </li>;
       })}
     </ul> : loading && !scoped ? <ProfileProjectsSkeleton />
-      : failed || scoped?.status === "stale" ? <div className={styles.empty}><p>Couldn’t load launches.</p><button type="button" onClick={() => setRetry((value) => value + 1)}>Try again</button></div>
+      : failed || scoped?.status === "stale" ? <div className={styles.empty}><p>Couldn’t load launches.</p><button type="button" onClick={() => requestPage(shownPage)}>Try again</button></div>
       : <div className={styles.empty}><p>{scoped?.status === "syncing" ? "Checking launches…" : "No launches yet."}</p><Link href="/launch">Launch a token</Link></div>}
   </ProfileProjectsSection>;
 }

@@ -77,14 +77,11 @@ describe("public shell polish", () => {
     }
   });
 
-  it("keeps route motion measured, interruptible and compositor-friendly", () => {
+  it("keeps route changes steady and announces the new heading", () => {
     const source = read("components/route-transition.tsx");
     const interfaceStyles = read("app/interface.css");
 
-    expect(source).toContain('"(prefers-reduced-motion: reduce)"');
-    expect(source).toContain("routeAnimationRef.current?.cancel()");
-    expect(source).toContain("translate3d(0, 6px, 0)");
-    expect(source).toContain("duration: enteringDocs ? 180 : 220");
+    expect(source).not.toContain("content.animate(");
     expect(source).not.toContain("key={pathname}");
     expect(source).toContain('heading.dataset.routeAnnouncementFocus = "true"');
     expect(interfaceStyles).toMatch(

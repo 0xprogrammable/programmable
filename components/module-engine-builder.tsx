@@ -1,5 +1,7 @@
 "use client";
 
+import { Disclosure, DisclosurePanel, useDisclosureState } from "@/components/disclosure";
+
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
@@ -50,7 +52,7 @@ export function ModuleEngineBuilder({ availability: raw, client: suppliedClient,
   const availability = parsed.availability;
   const [selected, setSelected] = useState(""); const [forms, setForms] = useState<Record<string, FormValue>>({});
   const [name, setName] = useState(""); const [symbol, setSymbol] = useState(""); const [description, setDescription] = useState(""); const [imageUri, setImageUri] = useState("");
-  const [socialLinks, setSocialLinks] = useState<ModuleSocialLinks>({}); const [socialIssues, setSocialIssues] = useState<ModuleSocialIssue[]>([]); const [moreLinks, setMoreLinks] = useState(false);
+  const [socialLinks, setSocialLinks] = useState<ModuleSocialLinks>({}); const [socialIssues, setSocialIssues] = useState<ModuleSocialIssue[]>([]); const { expanded: moreLinks, setExpanded: setMoreLinks, toggle: toggleMoreLinks, panelProps: moreLinksPanel } = useDisclosureState();
   const [image, setImage] = useState<ModuleModeImage>({ kind: "none" }); const [imageResource, setImageResource] = useState<ModuleModeImageResource | null>(null); const [imageBusy, setImageBusy] = useState(false);
   const imageUrls = useRef(new Set<string>()), uploadedImage = useRef<{ hash: Hex; account: Address; uri: string } | null>(null);
   useEffect(() => { const urls = imageUrls.current; return () => urls.forEach(url => URL.revokeObjectURL(url)); }, []);
@@ -148,18 +150,18 @@ export function ModuleEngineBuilder({ availability: raw, client: suppliedClient,
                 <div className={styles.field}><label htmlFor="engine-symbol">Ticker</label><input id="engine-symbol" autoComplete="off" placeholder="COIN" value={symbol} maxLength={11} onChange={event => edit(() => setSymbol(event.target.value))} required /></div>
               </div>
               {onUploadImage ? <ModuleModeImagePicker compact="row" image={image} resource={imageResource} onChange={changeImage} onBusyChange={setImageBusy} /> : <div className={styles.field}><label htmlFor="engine-image">Image link <span>Optional</span></label><input id="engine-image" type="url" placeholder="https://…" value={imageUri} onChange={event => edit(() => setImageUri(event.target.value))} /><p className={styles.help}>Leave blank to use the Programmable token image.</p></div>}
-              <details ref={coinDetails} className={engineStyles.optionalDetails}>
+              <Disclosure ref={coinDetails} className={engineStyles.optionalDetails}>
                 <summary><span>Description and links</span><ChevronDown size={16} aria-hidden="true" /></summary>
                 <div className={engineStyles.detailsBody}>
                   <div className={styles.field}><label htmlFor="engine-description">Description</label><textarea id="engine-description" placeholder="A few words about your coin" value={description} onChange={event => edit(() => setDescription(event.target.value))} /></div>
                   <div className={styles.socialFields} role="group" aria-labelledby="engine-socials-title">
                     <h3 id="engine-socials-title">Links</h3>
                     <div className={styles.socialGrid}>{socialFields.slice(0, 3).map(socialInput)}</div>
-                    <div id="engine-more-links" className={styles.socialGrid} hidden={!moreLinks}>{socialFields.slice(3).map(socialInput)}</div>
-                    <button className={styles.textButton} type="button" aria-expanded={moreLinks} aria-controls="engine-more-links" onClick={() => setMoreLinks(current => !current)}>{moreLinks ? <ChevronDown size={16} className={styles.chevronOpen} aria-hidden="true" /> : <Plus size={16} aria-hidden="true" />}{moreLinks ? "Fewer links" : "Add more links"}</button>
+                    <DisclosurePanel id="engine-more-links" {...moreLinksPanel} className={styles.socialGrid}>{socialFields.slice(3).map(socialInput)}</DisclosurePanel>
+                    <button className={styles.textButton} type="button" aria-expanded={moreLinks} aria-controls="engine-more-links" onClick={toggleMoreLinks}>{moreLinks ? <ChevronDown size={16} className={styles.chevronOpen} aria-hidden="true" /> : <Plus size={16} aria-hidden="true" />}{moreLinks ? "Fewer links" : "Add more links"}</button>
                   </div>
                 </div>
-              </details>
+              </Disclosure>
             </section>
 
             <section className={styles.formSection} id="engine-modules">
@@ -169,7 +171,7 @@ export function ModuleEngineBuilder({ availability: raw, client: suppliedClient,
                 <div><strong>{definition.title}</strong><p>{definition.summary}</p></div>
                 <button type="button" className={engineStyles.changeModule} disabled={!hydrated || busy || imageBusy || blocked} onClick={() => setPickerOpen(true)} aria-haspopup="dialog">Change</button>
               </div>
-              <details className={engineStyles.moduleSettings} key={`settings-${definition.id}`}>
+              <Disclosure className={engineStyles.moduleSettings} key={`settings-${definition.id}`}>
                 <summary><span>Module settings</span><ChevronDown size={16} aria-hidden="true" /></summary>
                 <div className={engineStyles.detailsBody}>
                 <div className={styles.field}>
@@ -181,19 +183,19 @@ export function ModuleEngineBuilder({ availability: raw, client: suppliedClient,
                   <button type="button" className={styles.secondaryButton} disabled={step !== "prepare"} onClick={() => void checkQuote()}>{quoteVerified ? <Check size={16} aria-hidden="true" /> : null}{busy ? "Checking token…" : quoteVerified ? "Check again" : "Check token"}</button>
                   {quoteVerified && quoteState ? <span className={engineStyles.assetBalance}><Check size={14} aria-hidden="true" />{formatUnits(quoteState.balance, quoteState.decimals)} available</span> : null}
                 </div>
-                {fixedConfiguration(definition.schema) ? <details className={engineStyles.optionalDetails}>
+                {fixedConfiguration(definition.schema) ? <Disclosure className={engineStyles.optionalDetails}>
                   <summary><span>Fixed module settings</span><ChevronDown size={16} aria-hidden="true" /></summary>
                   <div className={engineStyles.detailsBody}><ModuleSchemaField schema={definition.schema} value={form} onChange={() => {}} path="/engine/fixed-configuration" fields={definition.fields} context={{ roles: wallet.account ? { launchWallet: wallet.account as Address } : {}, assets: quoteVerified && quoteState ? { quote: { chainId: "4663", address: quoteState.address, decimals: quoteState.decimals } } : {} }} /></div>
-                </details> : <div className={engineStyles.configuration}><ModuleSchemaField schema={definition.schema} value={form} onChange={value => edit(() => setForms(current => ({ ...current, [definition.id]: value })))} path="/engine/configuration" fields={definition.fields} context={{ roles: wallet.account ? { launchWallet: wallet.account as Address } : {}, assets: quoteVerified && quoteState ? { quote: { chainId: "4663", address: quoteState.address, decimals: quoteState.decimals } } : {} }} /></div>}
-                <details className={engineStyles.moduleAbout}>
+                </Disclosure> : <div className={engineStyles.configuration}><ModuleSchemaField schema={definition.schema} value={form} onChange={value => edit(() => setForms(current => ({ ...current, [definition.id]: value })))} path="/engine/configuration" fields={definition.fields} context={{ roles: wallet.account ? { launchWallet: wallet.account as Address } : {}, assets: quoteVerified && quoteState ? { quote: { chainId: "4663", address: quoteState.address, decimals: quoteState.decimals } } : {} }} /></div>}
+                <Disclosure className={engineStyles.moduleAbout}>
                   <summary><span>About this module</span><ChevronDown size={16} aria-hidden="true" /></summary>
                   <div className={engineStyles.detailsBody}><p>{definition.detail}</p>{versionContent}</div>
-                </details>
+                </Disclosure>
                 </div>
-              </details>
+              </Disclosure>
             </section>
 
-            <details className={`${engineStyles.launchSettings} ${engineStyles.optionalDetails}`}>
+            <Disclosure className={`${engineStyles.launchSettings} ${engineStyles.optionalDetails}`}>
               <summary><span>Launch settings</span><ChevronDown size={16} aria-hidden="true" /></summary>
               <div className={engineStyles.detailsBody}>
               {needsInitial && customInitial && initialPermission ? <div className={engineStyles.initialAction}><h3>First action</h3><ModuleEngineCustomOperationFields id="engine-initial-action" permission={initialPermission} value={customInitialForm} account={wallet.account} onChange={value => edit(() => setCustomInitialForm(value))} /></div> : null}
@@ -206,7 +208,7 @@ export function ModuleEngineBuilder({ availability: raw, client: suppliedClient,
                     <div className={styles.field}><label htmlFor="engine-min-tokens">Minimum coins received</label><input id="engine-min-tokens" inputMode="decimal" value={minimumTokens} onChange={event => edit(() => setMinimumTokens(event.target.value))} required /></div>
                     <div className={styles.field}><label htmlFor="engine-min-eth">Minimum fees in ETH</label><input id="engine-min-eth" inputMode="decimal" value={minimumEth} onChange={event => edit(() => setMinimumEth(event.target.value))} required /></div>
                   </div>
-                  <details className={engineStyles.optionalDetails}><summary><span>How fees are converted</span><ChevronDown size={16} aria-hidden="true" /></summary><div className={engineStyles.detailsBody}><p className={styles.help}>Trade fees come from your spend amount and are converted to ETH. Your minimum sets the lowest ETH return you accept.</p><div className={styles.field}><label htmlFor="engine-route">Conversion route <span>Fixed by module</span></label><input id="engine-route" readOnly value={quoteState?.routes.find(item => item.data === route)?.label ?? "Check the trading token first"} /></div></div></details>
+                  <Disclosure className={engineStyles.optionalDetails}><summary><span>How fees are converted</span><ChevronDown size={16} aria-hidden="true" /></summary><div className={engineStyles.detailsBody}><p className={styles.help}>Trade fees come from your spend amount and are converted to ETH. Your minimum sets the lowest ETH return you accept.</p><div className={styles.field}><label htmlFor="engine-route">Conversion route <span>Fixed by module</span></label><input id="engine-route" readOnly value={quoteState?.routes.find(item => item.data === route)?.label ?? "Check the trading token first"} /></div></div></Disclosure>
                 </> : null}
                 {revision?.initialOperationId === ENGINE_OPERATIONS.request ? <>
                   <div className={styles.field}><label htmlFor="engine-beneficiary">Recipient wallet</label><input id="engine-beneficiary" value={beneficiary} onChange={event => edit(() => setBeneficiary(event.target.value))} /></div>
@@ -214,14 +216,14 @@ export function ModuleEngineBuilder({ availability: raw, client: suppliedClient,
                   <div className={styles.field}><label htmlFor="engine-obligation">Payment reference</label><textarea id="engine-obligation" value={obligation} onChange={event => edit(() => setObligation(event.target.value))} /><p className={styles.help}>You confirm when this obligation is fulfilled. A fingerprint of the reference is stored with the payment.</p></div>
                 </> : null}
               </div> : null}
-              {spot || customLaunch ? <details className={engineStyles.optionalDetails}>
+              {spot || customLaunch ? <Disclosure className={engineStyles.optionalDetails}>
                 <summary><span>{customLaunch ? "Creator fee settings" : "Creator fees"}</span><span className={engineStyles.optionalLabel}>{buyFee}% buy · {sellFee}% sell</span><ChevronDown size={16} aria-hidden="true" /></summary>
                 <div className={engineStyles.detailsBody}>
                   <div className={styles.twoFields}>{[["buy", buyFee, setBuyFee], ["sell", sellFee, setSellFee]].map(([side, value, setValue]) => <div className={styles.field} key={side as string}><label htmlFor={`engine-${side}-fee`}>{side === "buy" ? "Buy" : "Sell"} fee</label><select id={`engine-${side}-fee`} value={value as string} onChange={event => edit(() => (setValue as (value: string) => void)(event.target.value))}>{Array.from({ length: 11 }, (_, i) => <option key={i} value={String(i)}>{i}%</option>)}</select></div>)}</div>
                   <p className={styles.help}>{customLaunch ? "These terms apply to actions that use the module’s fee settings. Check its description for details." : "Creator fees accrue in ETH to your connected wallet. The platform fee is shown at review."}</p>
                 </div>
-              </details> : null}
-              {customLaunch ? <details className={engineStyles.optionalDetails}>
+              </Disclosure> : null}
+              {customLaunch ? <Disclosure className={engineStyles.optionalDetails}>
                 <summary><span>Advanced launch inputs</span><ChevronDown size={16} aria-hidden="true" /></summary>
                 <div className={engineStyles.detailsBody}>
                   <p className={engineStyles.sectionNote}>Use these only when your module requires specific deployment values. Blank salts use fresh random values.</p>
@@ -231,10 +233,10 @@ export function ModuleEngineBuilder({ availability: raw, client: suppliedClient,
                     <div className={styles.field}><label htmlFor="engine-launch-data">Initialization data</label><textarea id="engine-launch-data" autoComplete="off" autoCapitalize="none" spellCheck={false} maxLength={32_770} value={launchData} onChange={event => edit(() => setLaunchData(event.target.value))} /><p className={styles.help}>Use 0x for no data. Maximum 16 KiB.</p></div>
                   </div>
                 </div>
-              </details> : null}
+              </Disclosure> : null}
               {!needsInitial && !spot && !customLaunch ? <p className={engineStyles.sectionNote}>No starting funds required.</p> : null}
               </div>
-            </details>
+            </Disclosure>
           </fieldset>
           <div className={engineStyles.launchFooter}>
             {step === "prepare" && !quoteVerified ? <p>Check the token in Module settings to continue.</p> : null}

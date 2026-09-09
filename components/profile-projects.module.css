@@ -20,11 +20,38 @@
 }
 
 .heading h2 {
+  align-items: baseline;
+  display: flex;
   font-size: 20px;
   font-weight: 640;
   letter-spacing: -0.026em;
   line-height: 1.1;
   margin: 0;
+}
+
+.launchCount {
+  color: var(--webde-muted, var(--muted));
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 400;
+  line-height: 20px;
+  margin-inline-start: 8px;
+}
+
+.paginationFooter {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: space-between;
+  margin-block-start: 12px;
+}
+
+.pageRange {
+  color: var(--webde-muted, var(--muted));
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  line-height: 16px;
 }
 
 .openingBackdrop {
@@ -205,21 +232,24 @@
 }
 
 .pagination button {
+  align-items: center;
+  display: inline-flex;
   justify-content: center;
   padding: 0;
   width: 44px;
 }
 
 .pagination > span {
-  color: var(--muted, rgb(255 255 255 / 52%));
+  color: var(--webde-muted, var(--muted, rgb(255 255 255 / 72%)));
   font-family: var(--font-plex-mono), monospace;
-  font-size: 11px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
   min-width: 34px;
   text-align: center;
 }
 
 .pagination button:disabled,
+.pagination button[aria-disabled="true"],
 .actions button:disabled {
   cursor: default;
   opacity: 0.35;
@@ -248,6 +278,10 @@
   min-width: 0;
   padding: 7px 8px;
   transition: background-color 150ms ease;
+}
+
+.project[data-reward-action="unavailable"] {
+  --project-row-min-height: 96px;
 }
 
 .art {
@@ -723,7 +757,7 @@
 
 @media (hover: hover) and (pointer: fine) {
   .refresh:not(:disabled):hover,
-  .pagination button:not(:disabled):hover,
+  .pagination button:not(:disabled):not([aria-disabled="true"]):hover,
   .actions a:hover {
     background: var(--profile-subtle, rgb(255 255 255 / 6%));
     border-color: var(--webde-line, rgb(255 255 255 / 16%));
@@ -833,16 +867,12 @@
 }
 
 @media (max-width: 360px) {
-  .heading {
-    flex-direction: column;
-    gap: 12px;
+  .refresh {
+    min-width: 44px;
+    padding-inline: 12px;
   }
 
-  .headerActions {
-    justify-content: space-between;
-    margin-inline-start: 0;
-    width: 100%;
-  }
+  .refreshLabel { display: none; }
 }
 
 @media (prefers-reduced-motion: no-preference) {

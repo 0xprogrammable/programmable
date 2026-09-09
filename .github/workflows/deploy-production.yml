@@ -225,6 +225,8 @@ jobs:
       public_routes_checked: ${{ steps.index-reset-smoke.outputs.public_routes_checked }}
       retired_operations_checked: ${{ steps.index-reset-smoke.outputs.retired_operations_checked }}
       provider_calls_expected: ${{ steps.index-reset-smoke.outputs.provider_calls_expected }}
+      website_read_mode: ${{ steps.indexed-website-smoke.outputs.mode }}
+      website_read_evidence_sha256: ${{ steps.indexed-website-smoke.outputs.evidence_sha256 }}
     env:
       VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
       VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
@@ -305,10 +307,18 @@ jobs:
               --metadata-file "$metadata_file" \
               --vercel-project-id "$VERCEL_PROJECT_ID"
 
-      - name: Validate staged Explore index-reset policy
+      - name: Validate staged legacy Explore API reset policy
         id: read-model-policy
         run: >-
           npm run perf:read-model:deploy-policy --
+          --env-file .vercel/.env.production.local
+          --sensitive-env-metadata "$RUNNER_TEMP/vercel-production-env-metadata.json"
+          --github-output "$GITHUB_OUTPUT"
+
+      - name: Validate indexed website read policy
+        id: indexed-website-policy
+        run: >-
+          npm run perf:indexed-website:deploy-policy --
           --env-file .vercel/.env.production.local
           --sensitive-env-metadata "$RUNNER_TEMP/vercel-production-env-metadata.json"
           --github-output "$GITHUB_OUTPUT"
@@ -1315,13 +1325,33 @@ jobs:
             --retry 12 --retry-all-errors --retry-delay 5 \
             --max-time 30 "$DEPLOYMENT_URL/" > /dev/null
 
-      - name: Smoke exact staged Explore index reset
+      - name: Smoke exact staged legacy Explore API reset
         id: index-reset-smoke
         env:
           STAGED_TARGET_URL: ${{ steps.staged-deployment.outputs.target_url }}
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
         run: |
           node scripts/smoke-explore-index-reset-public-apis.mjs
+
+      - name: Smoke exact staged indexed website reads
+        id: indexed-website-smoke
+        env:
+          STAGED_TARGET_URL: ${{ steps.staged-deployment.outputs.target_url }}
+          STAGED_DEPLOYMENT_ID: ${{ steps.staged-deployment.outputs.deployment_id }}
+          VERIFIED_SHA: ${{ needs.release-gate.outputs.verified_sha }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+          INDEXED_WEBSITE_POLICY_MODE: ${{ steps.indexed-website-policy.outputs.mode }}
+          INDEXED_WEBSITE_EVIDENCE_OUTPUT: ${{ runner.temp }}/indexed-website-read-evidence.json
+        run: npm run smoke:indexed-website-reads
+
+      - name: Preserve exact indexed website read evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: indexed-website-reads-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.indexed-website-smoke.outputs.evidence_path }}
+          if-no-files-found: error
+          retention-days: 90
 
       - name: Reverify staged candidate binding
         env:
@@ -1396,6 +1426,12 @@ jobs:
           PUBLIC_ROUTES_CHECKED: ${{ steps.index-reset-smoke.outputs.public_routes_checked }}
           RETIRED_OPERATIONS_CHECKED: ${{ steps.index-reset-smoke.outputs.retired_operations_checked }}
           PROVIDER_CALLS_EXPECTED: ${{ steps.index-reset-smoke.outputs.provider_calls_expected }}
+          WEBSITE_READ_MODE: ${{ steps.indexed-website-smoke.outputs.mode }}
+          WEBSITE_READ_EVIDENCE_SHA256: ${{ steps.indexed-website-smoke.outputs.evidence_sha256 }}
+          ETHEREUM_READ_STATUS: ${{ steps.indexed-website-smoke.outputs.ethereum_status }}
+          ETHEREUM_READ_COUNT: ${{ steps.indexed-website-smoke.outputs.ethereum_count }}
+          ROBINHOOD_READ_STATUS: ${{ steps.indexed-website-smoke.outputs.robinhood_status }}
+          ROBINHOOD_READ_COUNT: ${{ steps.indexed-website-smoke.outputs.robinhood_count }}
           CUSTOM_V2_REQUIRED: ${{ needs.release-gate.outputs.verified_custom_v2 }}
           CUSTOM_LAUNCH_V3_RELEASE: ${{ inputs.custom_launch_v3_release }}
         run: |
@@ -1409,13 +1445,19 @@ jobs:
             echo "- Previous production deployment: \`$PREVIOUS_DEPLOYMENT_ID\`"
             echo "- Previous production deployment URL: $PREVIOUS_DEPLOYMENT_URL"
             echo "- Previous production commit: \`$PREVIOUS_GIT_HEAD\`"
-            echo "- Read-model policy mode: \`$READ_MODEL_POLICY_MODE\`"
-            echo "- Read-model evidence required: \`$READ_MODEL_EVIDENCE_REQUIRED\`"
-            echo "- Provider credentials required: \`$PROVIDER_CREDENTIALS_REQUIRED\`"
-            echo "- Explore indexing status: \`$INDEXING_STATUS\`"
+            echo "- Legacy full-schema API policy mode: \`$READ_MODEL_POLICY_MODE\`"
+            echo "- Legacy reset evidence required: \`$READ_MODEL_EVIDENCE_REQUIRED\`"
+            echo "- Legacy reset probe provider credentials required: \`$PROVIDER_CREDENTIALS_REQUIRED\`"
+            echo "- Legacy Explore API indexing status: \`$INDEXING_STATUS\`"
             echo "- Public reset routes checked: \`$PUBLIC_ROUTES_CHECKED\`"
             echo "- Retired operations checked: \`$RETIRED_OPERATIONS_CHECKED\`"
-            echo "- Expected external indexing calls: \`$PROVIDER_CALLS_EXPECTED\`"
+            echo "- Expected external indexing calls from legacy reset probes: \`$PROVIDER_CALLS_EXPECTED\`"
+            echo "- Website read mode: \`$WEBSITE_READ_MODE\`"
+            echo "- Indexed website read evidence: \`$WEBSITE_READ_EVIDENCE_SHA256\`"
+            echo "- Ethereum website catalog: \`$ETHEREUM_READ_STATUS\`, $ETHEREUM_READ_COUNT verified launch identities"
+            echo "- Robinhood website catalog: \`$ROBINHOOD_READ_STATUS\`, $ROBINHOOD_READ_COUNT verified launch identities"
+            echo "- Website read scope: catalog source/checkpoint observations and token pages without application authentication"
+            echo "- Website reads retain current and last-known-good source states; this is not market, trading or worker activation evidence"
             echo "- Custom V2 verification required by this commit: \`$CUSTOM_V2_REQUIRED\`"
             if [ "$CUSTOM_V2_REQUIRED" = true ]; then
               echo "- Custom V2 evidence: \`${{ steps.custom-v2-stage.outputs.evidence_sha256 }}\`"
