@@ -48,7 +48,7 @@ export const PROGRAMMABLE_AGENT_ENTRY = Object.freeze({
       reviewCapabilities: "https://api.programmable.market/v1/modules/review-capabilities",
       submissions: "https://api.programmable.market/v1/modules/submissions",
       reviewStatus: "https://api.programmable.market/v1/modules/submissions/{submissionId}/review",
-      cliManifest: "https://programmable.market/developers/module-mode-cli/v1.0.0-development.5/manifest.json",
+      cliManifest: "https://programmable.market/developers/module-mode-cli/v1.0.0-development.6/manifest.json",
       engineStarterManifest: "https://programmable.market/developers/module-mode-starters/engine-program/v0.1.0-development.1/manifest.json",
       sourceBuildProfiles: ["programmable.native-solidity@1", "programmable.module-engine-solidity@1"],
       reviewBoundary: "The operator selects the executable profile after source intake. Check live capabilities; a profile or starter link grants no review, registry or availability approval.",

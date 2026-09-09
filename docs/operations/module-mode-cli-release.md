@@ -18,14 +18,14 @@ Download into a new directory, verify the bytes, then run the file:
 set -eu
 mkdir programmable-module-cli
 cd programmable-module-cli
-module_cli_base='https://programmable.market/developers/module-mode-cli/v1.0.0-development.5'
-curl --fail --proto '=https' --tlsv1.2 --output programmable-module-mode-1.0.0-development.5.mjs "$module_cli_base/programmable-module-mode-1.0.0-development.5.mjs"
+module_cli_base='https://programmable.market/developers/module-mode-cli/v1.0.0-development.6'
+curl --fail --proto '=https' --tlsv1.2 --output programmable-module-mode-1.0.0-development.6.mjs "$module_cli_base/programmable-module-mode-1.0.0-development.6.mjs"
 curl --fail --proto '=https' --tlsv1.2 --output SHA256SUMS "$module_cli_base/SHA256SUMS"
 curl --fail --proto '=https' --tlsv1.2 --output LICENSES.txt "$module_cli_base/LICENSES.txt"
 curl --fail --proto '=https' --tlsv1.2 --output manifest.json "$module_cli_base/manifest.json"
 shasum -a 256 -c SHA256SUMS
-node programmable-module-mode-1.0.0-development.5.mjs --version
-node programmable-module-mode-1.0.0-development.5.mjs --help
+node programmable-module-mode-1.0.0-development.6.mjs --version
+node programmable-module-mode-1.0.0-development.6.mjs --help
 ```
 
 On Linux, `sha256sum -c SHA256SUMS` is equivalent. The manifest names the exact
