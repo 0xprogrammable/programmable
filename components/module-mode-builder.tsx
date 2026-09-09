@@ -135,13 +135,17 @@ export function ModuleModeBuilder({ catalog = PREVIEW_MODULE_CATALOG, engine = N
     setImageResource(resource); update("tokenImage", image);
   }
   function add(entry: ModuleModeCatalogEntry) {
+    const fromUndo = document.activeElement instanceof HTMLElement && Boolean(document.activeElement.closest("[data-module-undo]"));
     setChosenEntries((current) => ({ ...current, [entry.id]: entry }));
     setState((current) => setModuleSelected(current, entry, true)); setRemoved(null);
     setAnnouncement(`${entry.title} added to your coin.`);
+    if (fromUndo) requestAnimationFrame(() => document.getElementById(`module-selection-${entry.id}`)?.querySelector<HTMLButtonElement>("button")?.focus());
   }
   function remove(entry: ModuleModeCatalogEntry) {
+    const fromEditor = form.current?.contains(document.activeElement);
     setState((current) => setModuleSelected(current, entry, false)); setRemoved(entry);
     setAnnouncement(`${entry.title} removed. Your settings are kept.`);
+    if (fromEditor) requestAnimationFrame(() => form.current?.querySelector<HTMLButtonElement>("[data-module-add]")?.focus());
   }
   function showModules(id?: string) {
     if (id) setConfigurationId(id);
@@ -207,15 +211,15 @@ export function ModuleModeBuilder({ catalog = PREVIEW_MODULE_CATALOG, engine = N
         ) : (
           <form ref={form} onSubmit={submit} noValidate className={styles.formPanel}>
             <header className={styles.heading}><h1>Create a coin</h1></header>
-            <fieldset className={styles.formFields} disabled={contextLocked} aria-label="Token configuration">
+            <fieldset className={styles.formFields} disabled={contextLocked || !hydrated} aria-busy={!hydrated} aria-label="Token configuration">
             <section className={styles.formSection} aria-labelledby="module-token-title">
               <h2 id="module-token-title" className={styles.liveRegion}>Coin details</h2>
               <div className={styles.identityEditor}>
-              <ModuleModeImagePicker compact image={state.tokenImage} resource={imageResource} onChange={changeImage} onBusyChange={setImageBusy} error={fieldIssue("tokenImage")?.message} onUndo={previousImage ? () => { const previous = previousImage; setPreviousImage(null); changeImage(previous.image, previous.resource, false); } : undefined} />
               <div className={styles.tokenFields}>
                 <TextField label="Name" name="name" value={state.name} placeholder="Coin name" required issue={fieldIssue("name")} onChange={(value) => update("name", value)} />
                 <TextField label="Symbol" name="symbol" value={state.symbol} placeholder="COIN" required issue={fieldIssue("symbol")} onChange={(value) => update("symbol", value)} />
               </div>
+              <ModuleModeImagePicker compact="row" image={state.tokenImage} resource={imageResource} onChange={changeImage} onBusyChange={setImageBusy} error={fieldIssue("tokenImage")?.message} onUndo={previousImage ? () => { const previous = previousImage; setPreviousImage(null); changeImage(previous.image, previous.resource, false); } : undefined} />
               </div>
               <button type="button" className={styles.detailsToggle} aria-expanded={detailsOpen} aria-controls="module-coin-details" onClick={() => setDetailsOpen(value => !value)}>
                 Description and links<ChevronDown size={16} aria-hidden="true" className={detailsOpen ? styles.chevronOpen : undefined} />
@@ -234,13 +238,13 @@ export function ModuleModeBuilder({ catalog = PREVIEW_MODULE_CATALOG, engine = N
             <section className={styles.modulesSection} aria-labelledby="module-advanced-title">
               <div className={styles.moduleSectionHeading}><div><h2 id="module-advanced-title">Modules</h2><p>Add features to your coin.</p></div><Puzzle size={24} strokeWidth={1.6} aria-hidden="true" /></div>
               <div id="module-advanced-content">
-                {selected.length ? <ul className={styles.selectedModules}>{selected.map(entry => <li key={entry.id}>
+                {selected.length ? <ul className={styles.selectedModules}>{selected.map(entry => <li key={entry.id} id={`module-selection-${entry.id}`}>
                   <ModuleCategoryIcon category={moduleCategory(entry).id} size={20} />
                   <button type="button" className={styles.configureModule} onClick={() => showModules(entry.id)} aria-label={`Configure ${entry.title}`}><span>{entry.title}</span><Settings2 size={16} aria-hidden="true" /></button>
                   <button type="button" className={styles.removeModule} onClick={() => remove(entry)} aria-label={`Remove ${entry.title}`}><X size={17} aria-hidden="true" /></button>
                 </li>)}</ul> : null}
-                <button type="button" className={styles.addModulesButton} onClick={() => showModules()}><Plus size={18} aria-hidden="true" />Add modules</button>
-                {removed ? <div className={styles.undo}><span>{removed.title} removed.</span><button type="button" onClick={() => add(removed)}>Undo</button></div> : null}
+                <button type="button" className={styles.addModulesButton} data-module-add onClick={() => showModules()}><Plus size={18} aria-hidden="true" />Add modules</button>
+                {removed ? <div className={styles.undo} data-module-undo><span>{removed.title} removed.</span><button type="button" onClick={() => add(removed)}>Undo</button></div> : null}
                 {missingSelected.map((entry) => <div className={styles.unavailableModule} key={entry.id}><p><strong>{entry.title}</strong> is no longer in the current catalog. Your settings are kept; remove it to continue with another configuration.</p><button className={styles.textButton} type="button" onClick={() => remove(entry)}>Remove {entry.title}</button></div>)}
 
               </div>

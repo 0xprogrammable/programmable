@@ -6,7 +6,7 @@
   --module-accent: #e786b2;
   color: var(--module-ink);
   margin: 0 auto;
-  max-width: 1040px;
+  max-width: 880px;
   min-width: 0;
   padding: 24px 0 64px;
   width: calc(100% - 48px);
@@ -19,12 +19,12 @@
 .header p { color: var(--module-muted); font-size: 14px; line-height: 20px; margin: 8px 0 24px; max-width: 580px; text-wrap: pretty; }
 .ideaField { display: grid; gap: 8px; }
 .ideaField > span { color: var(--module-muted); font-size: 14px; line-height: 20px; }
-.ideaField textarea { background: #181818; border: 1px solid var(--module-line); border-radius: 12px; color: var(--module-ink); font: inherit; font-size: 14px; line-height: 24px; min-height: 136px; padding: 12px 16px; resize: vertical; width: 100%; }
+.ideaField textarea { background: #181818; border: 1px solid #76716b; border-radius: 12px; color: var(--module-ink); font: inherit; font-size: 14px; line-height: 24px; min-height: 136px; padding: 12px 16px; resize: vertical; width: 100%; }
 .ideaField textarea::placeholder { color: #888884; }
 .actions { display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); margin-top: 16px; max-width: 400px; }
 .primaryAction, .secondaryAction { align-items: center; border: 1px solid var(--module-line); border-radius: 12px; display: inline-flex; font: inherit; font-size: 14px; font-weight: 500; gap: 8px; justify-content: center; line-height: 20px; min-height: 48px; padding: 12px 16px; text-decoration: none; white-space: nowrap; }
 .primaryAction { background: var(--module-accent); border-color: var(--module-accent); color: #1c1217; }
-.secondaryAction { background: transparent; color: var(--module-ink); }
+.secondaryAction { background: transparent; border-color: #76716b; color: var(--module-ink); }
 .primaryAction svg, .secondaryAction svg { flex: 0 0 16px; }
 .copyStatus { color: var(--module-muted); font-size: 14px; line-height: 20px; margin: 12px 0 0; min-height: 40px; max-width: 600px; text-wrap: pretty; }
 .copyStatus[role="alert"] { color: #f3a4a4; }
@@ -35,17 +35,19 @@
 .promptDetails pre { background: #000; border: 1px solid var(--module-line); border-radius: 12px; color: var(--module-muted); font-family: var(--font-instrument), sans-serif; font-size: 14px; line-height: 24px; margin: 8px 0 16px; overflow-wrap: anywhere; padding: 16px; white-space: pre-wrap; }
 .reviewNote { color: var(--module-muted); font-size: 14px; line-height: 20px; margin: 16px 0 0; text-wrap: pretty; }
 .resources { display: flex; flex-wrap: wrap; gap: 24px; margin-top: 16px; }
-.page :is(a, button, summary) { cursor: pointer; transition: color 120ms ease, background-color 120ms ease, border-color 120ms ease; }
+.page :is(a, button, summary) { cursor: pointer; touch-action: manipulation; transition: color 120ms ease, background-color 120ms ease, border-color 120ms ease; }
 .page :is(a, button, summary, textarea):focus-visible { outline: 2px solid var(--module-accent); outline-offset: 3px; }
+@media (hover: hover) and (pointer: fine) {
 .page :is(.back, .textLink, .resources a, .promptDetails summary):hover { color: var(--module-ink); }
 .primaryAction:hover { background: #ee9fc2; border-color: #ee9fc2; }
 .secondaryAction:hover { background: #202020; border-color: #484846; }
+}
 .page :is(a, button):active { filter: brightness(0.94); }
 
 @media (max-width: 600px) {
   .page { padding-block: 16px 48px; width: calc(100% - 32px); }
   .workspace { padding: 24px 16px; }
-  .header h1 { font-size: 32px; line-height: 40px; }
+  .header h1 { font-size: 28px; line-height: 36px; }
   .ideaField textarea { font-size: 16px; min-height: 160px; }
   .actions { gap: 8px; max-width: none; }
   .primaryAction, .secondaryAction { padding-inline: 8px; }

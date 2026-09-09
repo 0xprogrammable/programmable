@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { formatUnits, keccak256, toHex, type Address, type Hex } from "viem";
 import { ArrowLeft, ArrowUpRight, Check, ChevronDown, Plus, Puzzle } from "lucide-react";
@@ -142,13 +143,13 @@ export function ModuleEngineBuilder({ availability: raw, client: suppliedClient,
           <header className={engineStyles.heading}><h1>Create a coin</h1></header>
           <fieldset className={styles.formFields} disabled={!hydrated || busy || imageBusy || Boolean(prepared)} aria-busy={!hydrated}>
             <section className={styles.formSection}>
-              <div className={styles.tokenFields}>
+              <div className={`${styles.tokenFields} ${engineStyles.identityFields}`}>
                 <div className={styles.field}><label htmlFor="engine-name">Name</label><input id="engine-name" autoComplete="off" placeholder="Your coin name" value={name} onChange={event => edit(() => setName(event.target.value))} required /></div>
                 <div className={styles.field}><label htmlFor="engine-symbol">Ticker</label><input id="engine-symbol" autoComplete="off" placeholder="COIN" value={symbol} maxLength={11} onChange={event => edit(() => setSymbol(event.target.value))} required /></div>
               </div>
-              {onUploadImage ? <ModuleModeImagePicker image={image} resource={imageResource} onChange={changeImage} onBusyChange={setImageBusy} /> : <div className={styles.field}><label htmlFor="engine-image">Image link <span>Optional</span></label><input id="engine-image" type="url" placeholder="https://…" value={imageUri} onChange={event => edit(() => setImageUri(event.target.value))} /><p className={styles.help}>Leave blank to use the Programmable token image.</p></div>}
+              {onUploadImage ? <ModuleModeImagePicker compact="row" image={image} resource={imageResource} onChange={changeImage} onBusyChange={setImageBusy} /> : <div className={styles.field}><label htmlFor="engine-image">Image link <span>Optional</span></label><input id="engine-image" type="url" placeholder="https://…" value={imageUri} onChange={event => edit(() => setImageUri(event.target.value))} /><p className={styles.help}>Leave blank to use the Programmable token image.</p></div>}
               <details ref={coinDetails} className={engineStyles.optionalDetails}>
-                <summary><span>Description and links</span><span className={engineStyles.optionalLabel}>Optional</span><ChevronDown size={16} aria-hidden="true" /></summary>
+                <summary><span>Description and links</span><ChevronDown size={16} aria-hidden="true" /></summary>
                 <div className={engineStyles.detailsBody}>
                   <div className={styles.field}><label htmlFor="engine-description">Description</label><textarea id="engine-description" placeholder="A few words about your coin" value={description} onChange={event => edit(() => setDescription(event.target.value))} /></div>
                   <div className={styles.socialFields} role="group" aria-labelledby="engine-socials-title">
@@ -236,7 +237,7 @@ export function ModuleEngineBuilder({ availability: raw, client: suppliedClient,
             </details>
           </fieldset>
           <div className={engineStyles.launchFooter}>
-            <p>{step === "prepare" && !quoteVerified ? "Check the token in Module settings to continue." : "You review the transaction before signing."}</p>
+            {step === "prepare" && !quoteVerified ? <p>Check the token in Module settings to continue.</p> : null}
             {connectedAction ? <button type="button" className={styles.primaryButton} disabled={!hydrated} onClick={() => void connectedAction()}>{step === "connect" ? "Connect wallet" : "Switch to Robinhood Chain"}<ArrowUpRight size={18} aria-hidden="true" /></button> : <button type="submit" className={styles.primaryButton} id="engine-launch-review" disabled={!hydrated || busy || imageBusy || blocked || !quoteVerified}>{imageBusy ? "Preparing image…" : busy ? "Checking launch…" : "Review launch"}<ArrowUpRight size={18} aria-hidden="true" /></button>}
           </div>
         </form>
@@ -260,6 +261,7 @@ export function ModuleEngineBuilder({ availability: raw, client: suppliedClient,
             {needsInitial && !customInitial ? <div><dt>{spot ? "First buy" : "Starting funds"}</dt><dd>{amount.trim() ? `${amount} tokens` : "Not set"}</dd></div> : null}
           </dl>
           </div>
+          <Link href="/developers/modules" className={engineStyles.buildLink}><Puzzle size={16} aria-hidden="true" />Build your own module<ArrowUpRight size={16} aria-hidden="true" /></Link>
         </aside>
       </div>
       <ModuleEnginePicker open={pickerOpen} templates={availability.templates} selectedId={definition.id} disabled={!hydrated || busy || imageBusy || blocked} onClose={() => setPickerOpen(false)} onSelect={item => { edit(() => { setSelected(item.manifest.manifest.catalogDefinition.id); setQuoteState(null); salts.current = null; setCustomInitialForm(emptyModuleEngineCustomOperation()); setCreatorSaltInput(""); setEngineSaltInput(""); setLaunchData("0x"); setBuyFee("0"); setSellFee("0"); }); setPickerOpen(false); }} />

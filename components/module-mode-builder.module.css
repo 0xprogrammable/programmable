@@ -319,19 +319,23 @@
 .studio .layout { align-items: stretch; background: var(--mm-surface); border: 1px solid #353433; border-radius: 24px; gap: 0; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); overflow: clip; }
 .studio .formPanel { background: transparent; border: 0; border-radius: 0; padding: 32px; }
 .studio .heading { margin: 0 0 28px; }
-.studio .heading h1 { font-size: 32px; font-weight: 500; letter-spacing: -.035em; line-height: 1.2; margin: 0; }
+.studio .heading h1 { font-size: 30px; font-weight: 500; letter-spacing: -.035em; line-height: 1.2; margin: 0; }
 .studio .sectionHeading :is(h1,h2) { font-size: 24px; font-weight: 500; line-height: 1.25; margin: 0; }
 .studio .formSection + .formSection { border: 0; margin: 0; padding: 0; }
-.identityEditor { align-items: start; display: grid; gap: 20px; grid-template-columns: 96px minmax(0,1fr); }
-.studio .identityEditor .tokenFields { gap: 12px; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); }
-.studio .identityEditor .imageField { margin: 0; }
-.studio .identityEditor .imageFieldLabel { display: none; }
-.studio .identityEditor .imagePicker { align-items: flex-start; flex-direction: column; gap: 0; margin: 0; position: relative; }
-.studio .identityEditor .imageThumbnail { background: #222221; border: 1px dashed #78746f; border-radius: 16px; color: #c1bcb7; flex-basis: 96px; height: 96px; width: 96px; }
-.studio .identityEditor .imagePickerContent > .help { display: none; }
-.studio .identityEditor .imagePickerActions > button[hidden] { display: none; }
-.studio .identityEditor .imagePickerActions .iconButton { background: #262626; border: 1px solid #78746f; border-radius: 50%; height: 44px; position: absolute; right: -8px; top: -8px; width: 44px; }
-.studio .identityEditor .imageField > .textButton { color: var(--mm-muted); font-size: 13px; gap: 6px; min-height: 44px; white-space: nowrap; }
+.identityEditor { display: grid; gap: 0; grid-template-columns: minmax(0,1fr); }
+.studio .identityEditor .tokenFields { gap: 14px; grid-template-columns: repeat(2,minmax(0,1fr)); }
+.studio .identityEditor .imageField { margin: 0 0 12px; }
+.imagePicker.imagePickerRow { align-items: center; background: #20201f; border: 1px dashed #76716b; border-radius: 12px; display: flex; gap: 8px; margin-bottom: 0; padding: 8px; position: relative; }
+.imageUploadRow { align-items: center; background: transparent; border: 0; border-radius: 8px; color: #e1ddd7; cursor: pointer; display: flex; flex: 1; font: inherit; font-size: 14px; gap: 14px; min-height: 60px; min-width: 0; padding: 4px; text-align: left; }
+.imageRowThumbnail { align-items: center; background: #2a2928; border-radius: 10px; color: #c5bfb9; display: inline-flex; flex: 0 0 48px; height: 48px; justify-content: center; overflow: hidden; position: relative; width: 48px; }
+.imageRowThumbnail img { object-fit: cover; }
+.imagePickerRow .imagePickerContent { flex: 0 0 44px; min-width: 0; }
+.imagePickerRow .imagePickerContent > .help { display: none; }
+.imagePickerRow .imagePickerActions > button[hidden] { display: none; }
+.imagePickerRow .iconButton { border-radius: 8px; position: static; }
+.imageField:has(.imagePickerRow) > .textButton + .textButton { margin-left: 16px; }
+.imageField:has(.imagePickerRow) > .textButton { color: #b4b1ad; font-size: 13px; min-height: 44px; }
+.studio .imageFieldLabel { color: #c5c1bc; font-size: 13px; }
 .imageUploadTile { cursor: pointer; flex-direction: column; font: inherit; gap: 8px; padding: 0; }
 .imageUploadTile > span { font-size: 13px; line-height: 16px; }
 .studio .field label { color: #c5c1bc; font-size: 13px; }
@@ -396,11 +400,6 @@
 .studio .moduleConfiguration .field { margin-bottom: 0; }
 .studio .moduleDetails { margin: 0 0 20px; }
 .studio .moduleDetails summary { font-size: 14px; min-height: 44px; padding-block: 12px; }
-.studio .identityEditor:has(.imageField input[type="url"]) { grid-template-columns: minmax(0, 1fr); }
-.studio .identityEditor .imageField:has(input[type="url"]) { display: grid; gap: 12px 20px; grid-template-columns: 96px minmax(0, 1fr); }
-.studio .identityEditor .imageField:has(input[type="url"]) > .imagePicker { grid-column: 1; grid-row: 1 / span 2; }
-.studio .identityEditor .imageField:has(input[type="url"]) > .field { align-self: center; grid-column: 2; margin: 0; }
-.studio .identityEditor .imageField:has(input[type="url"]) > :is(.textButton, .fieldError) { grid-column: 1 / -1; }
 .studio :is(button,a,input,textarea,select,summary):focus-visible { outline: 2px solid var(--mm-pink); outline-offset: 3px; }
 .studio :is(button, a, summary) { touch-action: manipulation; }
 @media (hover: hover) and (pointer: fine) {
@@ -412,7 +411,7 @@
   .studio .buildModuleLink:hover { color: #f0bfd6; }
   .imageUploadTile:hover:not(:disabled) { background: #2a2528; border-color: #e786b2; color: #f0bfd6; }
 }
-@media (max-width: 900px) { .studio .formPanel, .studio .previewPanel { padding: 24px; } .identityEditor { gap: 12px; grid-template-columns: 80px minmax(0, 1fr); } .studio .identityEditor .imageThumbnail { flex-basis: 80px; height: 80px; width: 80px; } }
+@media (max-width: 900px) { .studio .formPanel, .studio .previewPanel { padding: 24px; } }
 @media (max-width: 760px) {
   .studio { padding: 16px 16px 48px; }
   .studio .layout { grid-template-columns: minmax(0,1fr); }
@@ -421,9 +420,8 @@
   .studio .coinCard { max-width: 440px; }
   .studio .heading { margin-bottom: 24px; }
   .studio .heading h1 { font-size: 28px; }
-  .studio .identityEditor .tokenFields { gap: 0; grid-template-columns: minmax(0,1fr); }
+  .studio .identityEditor .tokenFields { gap: 12px; grid-template-columns: repeat(2,minmax(0,1fr)); }
   .studio .field input, .studio .field select, .studio .field textarea { font-size: 16px; }
-  .studio .identityEditor .imageField:has(input[type="url"]) { gap: 12px; grid-template-columns: 80px minmax(0,1fr); }
   .studio .twoFields { grid-template-columns: repeat(2, minmax(0,1fr)); gap: 12px; }
   .feesToggle { flex-wrap: wrap; gap: 8px; }
   .studio .moduleConfiguration > .recordFields { grid-template-columns: minmax(0,1fr); }

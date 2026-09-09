@@ -59,12 +59,12 @@
 .formFields > .primaryButton { grid-column: 1 / -1; justify-self: end; min-width: 224px; width: 224px; }
 .field, .accessField, .optionsField { display: grid; gap: 8px; margin: 0; min-width: 0; }
 .field > span, .accessField > span, .optionsField > span { color: var(--webde-muted); font-size: 14px; line-height: 20px; }
-.field input, .accessField select { background: var(--webde-control); border: 1px solid var(--api-line); border-radius: 12px; color: var(--webde-ink); font: inherit; font-size: 14px; line-height: 20px; min-height: 48px; min-width: 0; padding: 12px 16px; width: 100%; }
+.field input, .accessField select { background: var(--webde-control); border: 1px solid #76716b; border-radius: 12px; color: var(--webde-ink); font: inherit; font-size: 14px; line-height: 20px; min-height: 48px; min-width: 0; padding: 12px 16px; width: 100%; }
 .field input::placeholder { color: #888884; }
 .field input[aria-invalid="true"] { border-color: var(--danger); }
 .accessField select { padding-right: 32px; }
 
-.connectionOptions { border: 1px solid var(--api-line); border-radius: 12px; min-width: 0; }
+.connectionOptions { border: 1px solid #76716b; border-radius: 12px; min-width: 0; }
 .connectionOptions > summary { align-items: center; color: var(--webde-ink); cursor: pointer; display: flex; font-size: 14px; gap: 8px; line-height: 20px; list-style: none; min-height: 46px; padding: 12px 16px; }
 .connectionOptions > summary > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .connectionOptions > summary small { color: var(--webde-muted); flex: none; font-size: 14px; line-height: 20px; }
@@ -74,7 +74,7 @@
 
 .expirySelect { min-width: 0; position: relative; }
 .expirySelect:has(.expiryTrigger[aria-expanded="true"]) { z-index: 4; }
-.expiryTrigger { align-items: center; background: var(--webde-control); border: 1px solid var(--api-line); border-radius: 12px; color: var(--webde-ink); display: flex; font: inherit; font-size: 14px; gap: 8px; justify-content: space-between; line-height: 20px; min-height: 48px; padding: 12px 16px; text-align: start; width: 100%; }
+.expiryTrigger { align-items: center; background: var(--webde-control); border: 1px solid #76716b; border-radius: 12px; color: var(--webde-ink); display: flex; font: inherit; font-size: 14px; gap: 8px; justify-content: space-between; line-height: 20px; min-height: 48px; padding: 12px 16px; text-align: start; width: 100%; }
 .expiryTrigger > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .expiryTrigger > svg { color: var(--webde-muted); flex: none; }
 .expiryTrigger[aria-expanded="true"] { border-color: #666660; }
@@ -86,7 +86,7 @@
 
 .primaryButton, .secondaryButton, .dangerButton, .revokeButton, .textButton { align-items: center; border: 1px solid transparent; border-radius: 12px; display: inline-flex; font: inherit; font-size: 14px; font-weight: 500; gap: 8px; justify-content: center; line-height: 20px; min-height: 48px; padding: 12px 16px; white-space: nowrap; }
 .primaryButton { background: var(--api-accent); border-color: var(--api-accent); color: #1c1217; }
-.secondaryButton { background: transparent; border-color: var(--api-line); color: var(--webde-ink); }
+.secondaryButton { background: transparent; border-color: #76716b; color: var(--webde-ink); }
 .dangerButton { background: #df7777; border-color: #df7777; color: #1f0f0f; min-width: 120px; }
 .revokeButton, .textButton { background: transparent; color: var(--webde-muted); }
 .revokeButton { min-width: 96px; }
@@ -166,13 +166,15 @@
 .visuallyHidden { clip: rect(0 0 0 0); clip-path: inset(50%); height: 1px; overflow: hidden; position: absolute; white-space: nowrap; width: 1px; }
 .purposeOptions input { appearance: auto; accent-color: var(--api-accent); }
 .page summary::-webkit-details-marker { display: none; }
-.page :is(button, a, summary) { cursor: pointer; transition: color 120ms ease, background-color 120ms ease, border-color 120ms ease; }
+.page :is(button, a, summary) { cursor: pointer; touch-action: manipulation; transition: color 120ms ease, background-color 120ms ease, border-color 120ms ease; }
 .page :is(button, a, input, select, summary):focus-visible { outline: 2px solid var(--api-accent); outline-offset: 3px; }
 .keyItem:focus-visible, .keyReveal:focus-visible { outline: 2px solid var(--api-accent); outline-offset: -3px; }
+@media (hover: hover) and (pointer: fine) {
 .page :is(.backLink, .textLink, .guideAction, .resourceLinks a, .scopeLedger summary, .keyDetails > summary):hover { color: var(--webde-ink); }
 .primaryButton:not(:disabled):hover { background: #ee9fc2; border-color: #ee9fc2; }
 .page :is(.secondaryButton, .textButton, .revokeButton, .expiryOption, .keyPagination button):not(:disabled):hover { background: #242422; color: var(--webde-ink); }
 .sectionSwitch button:not([aria-pressed="true"]):hover { color: var(--webde-ink); }
+}
 .page :is(button, a):not(:disabled):active { filter: brightness(0.94); }
 
 @container api-key-list (max-width: 720px) {
@@ -221,3 +223,5 @@
 @media (prefers-reduced-motion: no-preference) { .refreshIcon[data-spinning="true"] { animation: refreshSpin 720ms linear infinite; } }
 @media (prefers-reduced-motion: reduce) { .page *, .page *::before, .page *::after { animation: none; transition: none; } }
 @media (forced-colors: active) { .primaryButton, .secondaryButton, .dangerButton, .keyList, .mutationConfirmation, .createPanel, .keyReveal, .walletGate, .sectionSwitch button, .expiryTrigger, .expiryMenu, .expiryOption, .connectionOptions { border: 1px solid CanvasText; } .keyStatus::before { forced-color-adjust: none; } }
+
+@media (max-width: 600px) { .hero h1 { font-size: 28px; line-height: 36px; } }

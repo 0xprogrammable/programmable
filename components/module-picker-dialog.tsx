@@ -36,6 +36,14 @@ export function ModulePickerDialog({ title, description, children, onClose, foot
 
   return <dialog ref={dialog} className={styles.dialog} aria-labelledby={`${id}-title`} aria-describedby={description ? `${id}-description` : undefined}
     onCancel={event => { event.preventDefault(); onClose(); }}
+    onKeyDown={event => {
+      if (event.key !== "Tab") return;
+      const controls = Array.from(event.currentTarget.querySelectorAll<HTMLElement>(':is(button, a[href], input, select, textarea, summary, [tabindex]):not(:disabled):not([tabindex="-1"])')).filter(element => element.getClientRects().length > 0);
+      const first = controls[0];
+      const last = controls.at(-1);
+      if (event.shiftKey && (document.activeElement === first || document.activeElement === heading.current)) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    }}
     onClick={event => { if (event.target === event.currentTarget) onClose(); }}>
     <div className={styles.surface}>
       <header className={styles.header}>
