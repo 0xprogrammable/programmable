@@ -42,7 +42,7 @@ describe("Robinhood view-chain scope gate", () => {
     expect(transition).not.toContain("<ViewChainUnavailable />");
     expect(transition).toContain("routeUsesChainBoundary");
     expect(navigation).not.toContain("HeaderChainToggle");
-    expect(tokenPage).toContain("<TokenIndexResetView />");
+    expect(tokenPage).toContain("<EthereumTokenView address={address}");
     expect(tokenPage).toContain("<TokenRouteChainSync");
     expect(transition).toContain(
       "const resolvedInitialChain = !previousHydrated.current && hydrated",

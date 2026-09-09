@@ -4,7 +4,7 @@ import { DEFAULT_EXPLORE_FILTERS, type RobinhoodExploreFilters } from "@/lib/rob
 import { isVisibleRobinhoodToken } from "@/lib/robinhood-explore-policy";
 import { readRobinhoodMarkets, readRobinhoodPresentations } from "@/lib/server/robinhood-presentation";
 import type { RobinhoodCoinMarket, RobinhoodCoinPresentation } from "@/lib/robinhood-presentation";
-import { launchList, profileLaunchList, snapshotLaunches } from "./model";
+import { launchList, moduleModeSnapshots, profileLaunchList, snapshotLaunches } from "./model";
 import { indexStore } from "./store";
 
 // A page reads the saved list only. Failures never fall through to an RPC.
@@ -19,8 +19,14 @@ export async function readRobinhoodLaunches(page = 1, query = "", filters: Robin
     const caps = new Map(Array.from(markets).flatMap(([address, market]) => market.marketCapUsd === null ? [] : [[address, market.marketCapUsd] as const]));
     const list = launchList(snapshot, page, query, Date.now(), filters, caps, pageSize);
     // Ranking and card values use the same full-catalog market observation.
-    return { ...list, presentations: await readRobinhoodPresentations(list.items, markets).catch(() => [] as RobinhoodCoinPresentation[]) };
-  } catch { return { ...launchList(null, page, query, Date.now(), filters, undefined, pageSize), presentations: [] as RobinhoodCoinPresentation[] }; }
+    return { ...list, sourceEvidence: snapshot ? {
+      router: { source: "canonical-launch-stamp-router", sourceAddress: snapshot.routerAddress, binding: snapshot.binding,
+        startBlock: snapshot.startBlock, cursor: snapshot.cursor, finalizedBlock: snapshot.finalizedBlock, updatedAt: snapshot.updatedAt },
+      modules: moduleModeSnapshots(snapshot).map(source => ({ source: source.sourceKind, sourceAddress: source.sourceAddress,
+        releaseDigest: source.releaseDigest, startBlock: source.startBlock, cursor: source.cursor,
+        finalizedBlock: source.finalizedBlock, updatedAt: source.updatedAt })),
+    } : null, presentations: await readRobinhoodPresentations(list.items, markets).catch(() => [] as RobinhoodCoinPresentation[]) };
+  } catch { return { ...launchList(null, page, query, Date.now(), filters, undefined, pageSize), sourceEvidence: null, presentations: [] as RobinhoodCoinPresentation[] }; }
 }
 
 export async function readRobinhoodToken(address: string) {

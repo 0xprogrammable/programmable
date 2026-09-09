@@ -15,12 +15,13 @@ describe("token detail index reset", () => {
     expect(tokenDetailPageChainId(["1", "4663"])).toBeNull();
   });
 
-  it("reads saved Robinhood details while keeping Ethereum and market data reset", () => {
+  it("reads verified details for each explicit chain while keeping live market data separate", () => {
     const page = read("app/token/[address]/page.tsx");
     const resetView = read("components/token-index-reset-view.tsx");
 
     expect(page).toContain("genericTokenDetailMetadata(address, true");
-    expect(page).toContain("<TokenIndexResetView />");
+    expect(page).toContain("<EthereumTokenView");
+    expect(read("lib/server/token-page.ts")).toContain("readEthereumToken(address)");
     expect(page).toContain("=== 4663");
     expect(page).toContain("resolveTokenPage(address, resolvedSearchParams.chain)");
     expect(read("lib/server/token-page.ts")).toContain("readRobinhoodToken(address)");

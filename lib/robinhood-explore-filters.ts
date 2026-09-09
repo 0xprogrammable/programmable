@@ -15,7 +15,7 @@ export const ROBINHOOD_EXPLORE_PAGE_SIZE = 10;
 
 export type RobinhoodExploreFilters = {
   sort: typeof LAUNCH_SORT_OPTIONS[number]["value"];
-  mode?: typeof LAUNCH_MODE_OPTIONS[number]["value"];
+  mode?: typeof LAUNCH_MODE_OPTIONS[number]["value"] | "classic";
 };
 
 export const DEFAULT_EXPLORE_FILTERS: RobinhoodExploreFilters = { sort: "highest", mode: "all" };

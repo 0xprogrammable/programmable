@@ -7,7 +7,7 @@ import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { ExploreChainSelector } from "@/components/explore-chain-selector";
 import { ExploreFilters } from "@/components/explore-filters";
 import { AnimatedMarketCap } from "@/components/animated-market-cap";
-import { ExploreIndexResetView } from "@/components/explore-index-reset-view";
+import { ETHEREUM_EXPLORE_FILTERS, ETHEREUM_EXPLORE_MODES } from "@/lib/ethereum-explore";
 import { useViewChain, type ViewChainId } from "@/components/view-chain";
 import { MODULE_TOKEN_FALLBACK_IMAGE, RobinhoodCoinArtwork } from "@/components/robinhood-coin-artwork";
 import { RobinhoodProjectLinks } from "@/components/robinhood-project-links";
@@ -21,7 +21,8 @@ import styles from "@/components/robinhood-launches-view.module.css";
 type Launch = {
   launchId: string;
   tokenAddress: string;
-  hookAddress: string;
+  hookAddress: string | null;
+  category?: "classic" | "custom";
   creator: string;
   transactionHash: string;
   blockNumber: string;
@@ -32,8 +33,9 @@ type Launch = {
 };
 
 type LaunchResponse = {
-  chainId: 4663;
-  status: "ready" | "syncing" | "stale" | "unavailable";
+  chainId: ViewChainId;
+  status: "ready" | "syncing" | "stale" | "partial" | "unavailable";
+  sources?: { classic: string; custom: string };
   updatedAt: string | null;
   items: Launch[];
   presentations: RobinhoodCoinPresentation[];
@@ -55,8 +57,9 @@ const REFRESH_MS = 30_000;
 const REQUEST_TIMEOUT_MS = 15_000;
 
 // Public, browser-only navigation state. Nothing is written during server rendering.
-let rememberedSnapshot: { value: Snapshot; savedAt: number } | null = null;
-function readRememberedSnapshot() {
+const rememberedSnapshots = new Map<ViewChainId, { value: Snapshot; savedAt: number }>();
+function readRememberedSnapshot(chainId: ViewChainId) {
+  const rememberedSnapshot = rememberedSnapshots.get(chainId);
   if (typeof window === "undefined" || !rememberedSnapshot || Date.now() - rememberedSnapshot.savedAt >= 300_000) return null;
   const value = rememberedSnapshot.value;
   return { ...value, data: { ...value.data,
@@ -64,7 +67,7 @@ function readRememberedSnapshot() {
   } };
 }
 function rememberSnapshot(value: Snapshot) {
-  if (typeof window !== "undefined") rememberedSnapshot = { value, savedAt: Date.now() };
+  if (typeof window !== "undefined") rememberedSnapshots.set(value.data.chainId, { value, savedAt: Date.now() });
   return value;
 }
 
@@ -80,9 +83,10 @@ function isText(value: unknown): value is string | null {
   return value === null || (typeof value === "string" && value.length <= 4_096);
 }
 
-function isLaunch(value: unknown): value is Launch {
+function isLaunch(value: unknown, chainId: ViewChainId): value is Launch {
   if (!isObject(value)) return false;
-  return typeof value.launchId === "string" && HASH.test(value.launchId)
+  return typeof value.launchId === "string" && (chainId === 4663 ? HASH.test(value.launchId) : value.launchId.length > 0 && value.launchId.length <= 256)
+    && (chainId !== 1 || value.category === "classic" || value.category === "custom")
     && (value.sourceKind === undefined || isRobinhoodModuleLaunch(value))
     && typeof value.tokenAddress === "string" && ADDRESS.test(value.tokenAddress)
     && ((typeof value.hookAddress === "string" && ADDRESS.test(value.hookAddress)) || (value.sourceKind === "module-engine-v1" && value.hookAddress === null))
@@ -94,11 +98,11 @@ function isLaunch(value: unknown): value is Launch {
       && Number(value.decimals) >= 0 && Number(value.decimals) <= 255));
 }
 
-function readResponse(value: unknown): LaunchResponse {
-  if (!isObject(value) || value.chainId !== 4663
-    || !["ready", "syncing", "stale", "unavailable"].includes(String(value.status))
+function readResponse(value: unknown, chainId: ViewChainId): LaunchResponse {
+  if (!isObject(value) || value.chainId !== chainId
+    || !["ready", "syncing", "stale", "partial", "unavailable"].includes(String(value.status))
     || !isDate(value.updatedAt) || !Array.isArray(value.items)
-    || value.items.length > 50 || !value.items.every(isLaunch) || !isObject(value.page)
+    || value.items.length > 50 || !value.items.every(item => isLaunch(item, chainId)) || !isObject(value.page)
     || !Array.isArray(value.presentations) || value.presentations.length > 50
     || !value.presentations.every((item) => isObject(item) && typeof item.tokenAddress === "string" && ADDRESS.test(item.tokenAddress))) {
     throw new Error("Invalid launch response");
@@ -126,20 +130,21 @@ export function RobinhoodLaunchesView({
     return () => window.clearTimeout(timer);
   }, [chainId, hydrated, setViewChainId]);
 
-  if ((chainId ?? viewChainId) !== 4663) return <ExploreIndexResetView embedded={embedded} />;
-
-  return <RobinhoodLaunchList embedded={embedded} enabled={hydrated} />;
+  const selectedChain = chainId ?? viewChainId;
+  return <IndexedLaunchList key={selectedChain} chainId={selectedChain} embedded={embedded} enabled={hydrated} />;
 }
 
-function RobinhoodLaunchList({ embedded, enabled }: { embedded: boolean; enabled: boolean }) {
+function IndexedLaunchList({ embedded, enabled, chainId }: { embedded: boolean; enabled: boolean; chainId: ViewChainId }) {
+  const chainName = chainId === 4663 ? "Robinhood" : "Ethereum";
+  const defaultFilters = chainId === 4663 ? DEFAULT_EXPLORE_FILTERS : ETHEREUM_EXPLORE_FILTERS;
   const headingId = useId();
   const searchId = useId();
   const statusId = useId();
   const listId = useId();
   const searchRef = useRef<HTMLInputElement>(null);
-  const [initial] = useState(readRememberedSnapshot);
+  const [initial] = useState(() => readRememberedSnapshot(chainId));
   const [search, setSearch] = useState(initial?.request.q ?? "");
-  const [request, setRequest] = useState<Request>(initial?.request ?? { page: 1, q: "", ...DEFAULT_EXPLORE_FILTERS });
+  const [request, setRequest] = useState<Request>(initial?.request ?? { page: 1, q: "", ...defaultFilters });
   const [snapshot, setSnapshot] = useState<Snapshot | null>(initial);
   const [loading, setLoading] = useState(true);
   const [failedRequest, setFailedRequest] = useState<Request | null>(null);
@@ -171,24 +176,24 @@ function RobinhoodLaunchList({ embedded, enabled }: { embedded: boolean; enabled
       try {
         const query = new URLSearchParams({ page: String(request.page), pageSize: String(ROBINHOOD_EXPLORE_PAGE_SIZE),
           q: request.q, sort: request.sort, mode: request.mode ?? "all" });
-        const response = await fetch(`/api/explore/robinhood?${query}`, {
+        const response = await fetch(`/api/explore/${chainId === 4663 ? "robinhood" : "ethereum"}?${query}`, {
           signal: activeController.signal,
           cache: "no-store",
           headers: { accept: "application/json" },
         });
         if (!response.ok) throw new Error("Launch request failed");
-        const data = readResponse(await response.json());
+        const data = readResponse(await response.json(), chainId);
         if (disposed || activeController.signal.aborted) return;
         setSnapshot((current) => {
           const sameRequest = sameRobinhoodExploreRequest(current?.request, request);
           if (sameRequest && current && current.data.items.length > 0
             && data.items.length === 0 && data.status !== "ready") {
-            return rememberSnapshot({ request, data: { ...current.data, status: data.status,
+            return rememberSnapshot({ request, data: { ...current.data, status: data.status, sources: data.sources,
               presentations: mergeRobinhoodPresentations(current.data.presentations, null).items,
             } });
           }
           const presentations = mergeRobinhoodPresentations(current?.data.presentations ?? [], data.presentations).items;
-          rememberRobinhoodTokenPresentations(presentations);
+          if (chainId === 4663) rememberRobinhoodTokenPresentations(presentations);
           return rememberSnapshot({ request, data: { ...data,
             presentations,
           } });
@@ -226,7 +231,7 @@ function RobinhoodLaunchList({ embedded, enabled }: { embedded: boolean; enabled
       window.clearTimeout(refreshTimer);
       document.removeEventListener("visibilitychange", visibilityChanged);
     };
-  }, [enabled, request]);
+  }, [chainId, enabled, request]);
 
   function submitSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -252,11 +257,12 @@ function RobinhoodLaunchList({ embedded, enabled }: { embedded: boolean; enabled
   const sameRequest = sameRobinhoodExploreRequest(snapshot?.request, request);
   const pending = !sameRequest && !failed;
   const data = sameRequest ? snapshot?.data : undefined;
-  const pinned = snapshot?.data.items.find(launch => isPinnedRobinhoodToken(launch.tokenAddress));
+  const pinned = chainId === 4663 ? snapshot?.data.items.find(launch => isPinnedRobinhoodToken(launch.tokenAddress)) : null;
   const items = data?.items ?? (pending && pinned ? [pinned] : []);
   const hasRows = items.length > 0;
   const updatingSearch = search.trim() !== request.q;
-  const hasFilters = activeExploreFilterCount(request) > 0;
+  const hasFilters = chainId === 4663 ? activeExploreFilterCount(request) > 0
+    : request.sort !== defaultFilters.sort || (request.mode ?? "all") !== "all";
   const slots = pending || (data && data.page.totalPages > 1) ? Math.max(0, ROBINHOOD_EXPLORE_PAGE_SIZE - items.length) : 0;
   const canPrevious = enabled && !pending && !updatingSearch && Boolean(data && data.page.number > 1);
   const canNext = enabled && !pending && !updatingSearch && Boolean(data?.page.hasMore);
@@ -266,16 +272,22 @@ function RobinhoodLaunchList({ embedded, enabled }: { embedded: boolean; enabled
   const statusText = pending || loading ? hasRows ? "Updating launches…" : "Loading launches…" : failed
     ? hasRows ? "Could not refresh. Showing the last loaded results." : "Launches are temporarily unavailable."
     : data?.status === "stale" || data?.status === "unavailable"
-      ? hasRows ? "Showing saved launches. Updates are temporarily unavailable." : "Launches are temporarily unavailable."
+      ? hasRows ? chainId === 1 ? "Showing saved Ethereum launches." : "Showing saved launches. Updates are temporarily unavailable." : "Launches are temporarily unavailable."
+      : data?.status === "partial"
+        ? `${data.sources?.classic === "unavailable" ? "Classic" : "Custom"} launches are unavailable. Showing the available verified launches.`
       : data?.status === "syncing"
         ? "New launches are being checked."
         : updatingSearch ? "Loading launches…" : "";
   const emptyTitle = loading
-    ? "Loading Robinhood launches"
-    : failed || data?.status === "unavailable" || data?.status === "stale"
+    ? `Loading ${chainName} launches`
+    : failed || data?.status === "unavailable"
       ? "Launches are temporarily unavailable"
+      : (snapshot?.request.q || hasFilters) && (data?.status === "stale" || data?.status === "partial")
+        ? "No matching launches in the available index"
+      : data?.status === "stale" || data?.status === "partial"
+        ? "Launches are temporarily unavailable"
       : data?.status === "syncing"
-        ? "Checking Robinhood launches"
+        ? `Checking ${chainName} launches`
         : snapshot?.request.q || hasFilters ? "No matching launches" : "No finalized launches yet";
 
   return (
@@ -288,7 +300,7 @@ function RobinhoodLaunchList({ embedded, enabled }: { embedded: boolean; enabled
         <div className={styles.toolbar}>
           <form className={styles.search} role="search" onSubmit={submitSearch}>
             <Search aria-hidden="true" size={18} />
-            <label className="sr-only" htmlFor={searchId}>Search Robinhood launches by name, symbol or address</label>
+            <label className="sr-only" htmlFor={searchId}>Search {chainName} launches by name, symbol or address</label>
             <input
               id={searchId}
               ref={searchRef}
@@ -309,8 +321,9 @@ function RobinhoodLaunchList({ embedded, enabled }: { embedded: boolean; enabled
               </button>
             ) : null}
           </form>
-          <ExploreChainSelector chainId={4663} />
-          <ExploreFilters value={request} onApply={applyFilters} />
+          <ExploreChainSelector chainId={chainId} />
+          <ExploreFilters value={request} onApply={applyFilters} defaultValue={defaultFilters}
+            modeOptions={chainId === 1 ? ETHEREUM_EXPLORE_MODES : undefined} marketCapAvailable={chainId === 4663} />
           <nav className={styles.pagination} aria-label="Launch pages">
             <button type="button" aria-disabled={!canPrevious} aria-label="Previous page" title="Previous page" aria-controls={listId}
               onClick={() => { if (canPrevious && data) changePage(data.page.number - 1); }}>
@@ -323,18 +336,22 @@ function RobinhoodLaunchList({ embedded, enabled }: { embedded: boolean; enabled
           </nav>
         </div>
 
-        <p className="sr-only" id={statusId} role="status">
+        <p className={hasRows && !loading && statusText ? styles.status : "sr-only"} id={statusId} role="status">
           {statusText || (data ? `${count} ${count === 1 ? "token" : "tokens"}. Page ${data.page.number} of ${Math.max(1, data.page.totalPages)}.` : null)}
+          {hasRows && !loading && statusText && data?.updatedAt ? <> Updated <time dateTime={data.updatedAt} title={new Date(data.updatedAt).toUTCString()}>{coinAge(data.updatedAt, now).replace("Just launched", "just now")}</time>.</> : null}
         </p>
+        {hasRows && !loading && (failed || data?.status === "partial" || data?.status === "stale") ? <button className={styles.retry} type="button" onClick={() => {
+          setFailedRequest(null); setRequest(current => ({ ...current }));
+        }}>Try again</button> : null}
 
         {hasRows || pending ? (
-          <ul className={styles.list} id={listId} aria-label="Robinhood token launches" aria-busy={pending || loading}>
+          <ul className={styles.list} id={listId} aria-label={`${chainName} token launches`} aria-busy={pending || loading}>
             {items.map((launch, index) => {
               const details = presentations.get(launch.tokenAddress.toLowerCase());
               return (
               <li key={launch.tokenAddress.toLowerCase()} className={styles.item}>
                 <article className={styles.row}>
-                <Link className={styles.cardLink} href={`/token/${launch.tokenAddress}`} prefetch={false}>
+                <Link className={styles.cardLink} href={`/token/${launch.tokenAddress}${chainId === 1 ? "?chain=1" : ""}`} prefetch={false}>
                   <RobinhoodCoinArtwork
                     eager={index < 5}
                     imageUrl={details?.imageUrl} loading={loading && !details}
@@ -346,15 +363,15 @@ function RobinhoodLaunchList({ embedded, enabled }: { embedded: boolean; enabled
                       <strong className={styles.name} title={launch.name?.trim() || "Unnamed token"}>{launch.name?.trim() || "Unnamed token"}</strong>
                     </div>
                     <span className={styles.symbol} title={launch.symbol || undefined}>{coinTicker(launch.symbol)}</span>
-                    <span className={styles.mode}>{isRobinhoodModuleLaunch(launch) ? "Module" : "Custom"}</span>
+                    <span className={styles.mode}>{launch.category === "classic" ? "Classic" : isRobinhoodModuleLaunch(launch) ? "Module" : "Custom"}</span>
                   </div>
                   <div className={styles.cardFooter}>
-                    <div className={styles.marketCap} title={details?.market ? `Observed ${new Date(details.market.observedAt).toUTCString()}` : "Market data is not available yet"}>
+                    {chainId === 4663 || details?.market?.marketCapUsd != null ? <div className={styles.marketCap} title={details?.market ? `Observed ${new Date(details.market.observedAt).toUTCString()}` : "Market data is not available yet"}>
                       <span>Market cap</span>
                       {details?.market?.marketCapUsd != null && Number.isFinite(details.market.marketCapUsd) && details.market.marketCapUsd >= 0
-                        ? <AnimatedMarketCap metric={{ kind: "usd", value: details.market.marketCapUsd }} replayKey={`4663:${launch.tokenAddress.toLowerCase()}:${details.market.poolId.toLowerCase()}:market-cap`} />
+                        ? <AnimatedMarketCap metric={{ kind: "usd", value: details.market.marketCapUsd }} replayKey={`${chainId}:${launch.tokenAddress.toLowerCase()}:${details.market.poolId.toLowerCase()}:market-cap`} />
                         : <strong>—</strong>}
-                    </div>
+                    </div> : null}
                     {launch.launchedAt ? <time className={styles.launched} dateTime={launch.launchedAt} title={`Launched ${new Date(launch.launchedAt).toUTCString()}`}>{coinAge(launch.launchedAt, now)}</time> : null}
                   </div>
                 </Link>
@@ -372,20 +389,20 @@ function RobinhoodLaunchList({ embedded, enabled }: { embedded: boolean; enabled
                   <span className={`${styles.skeletonLine} ${styles.skeletonSymbol}`} />
                   <span className={`${styles.skeletonLine} ${styles.skeletonMode}`} />
                 </div>
-                <div className={styles.cardFooter}><div className={styles.marketCap}>
+                <div className={styles.cardFooter}>{chainId === 4663 ? <div className={styles.marketCap}>
                   <span className={`${styles.skeletonLine} ${styles.skeletonCaption}`} />
                   <span className={`${styles.skeletonLine} ${styles.skeletonNumber}`} />
-                </div><span className={`${styles.skeletonLine} ${styles.skeletonAge}`} /></div>
+                </div> : null}<span className={`${styles.skeletonLine} ${styles.skeletonAge}`} /></div>
               </div>
             </li>)}
           </ul>
         ) : (
           <div className={styles.empty} id={listId} aria-busy={loading}>
             <StateHeading>{emptyTitle}</StateHeading>
-            <p>{loading || data?.status === "syncing" ? "Verified launches will appear here." : failed || data?.status === "unavailable" || data?.status === "stale" ? "Updates will resume automatically." : snapshot?.request.q || hasFilters ? "Try another search or change the filters." : "New Robinhood launches appear after verification."}</p>
+            <p>{loading || data?.status === "syncing" ? "Verified launches will appear here." : !failed && (snapshot?.request.q || hasFilters) && data?.status !== "unavailable" ? "Try another search or change the filters." : failed || data?.status === "unavailable" || data?.status === "stale" || data?.status === "partial" ? "Try again shortly." : `New ${chainName} launches appear after verification.`}</p>
             {!loading && snapshot?.request.q ? <button className={styles.textButton} type="button" onClick={clearSearch}>Clear search</button> : null}
-            {!loading && hasFilters ? <button className={styles.textButton} type="button" onClick={() => applyFilters(DEFAULT_EXPLORE_FILTERS)}>Clear filters</button> : null}
-            {!loading && failed ? <button className={styles.textButton} type="button" onClick={() => {
+            {!loading && hasFilters ? <button className={styles.textButton} type="button" onClick={() => applyFilters(defaultFilters)}>Clear filters</button> : null}
+            {!loading && (failed || data?.status === "unavailable" || data?.status === "partial" || data?.status === "stale") ? <button className={styles.textButton} type="button" onClick={() => {
               setFailedRequest(null); setRequest(current => ({ ...current }));
             }}>Try again</button> : null}
           </div>

@@ -4,6 +4,7 @@ import { isAddress } from "viem";
 
 import { TokenIndexResetView } from "@/components/token-index-reset-view";
 import { RobinhoodTokenView } from "@/components/robinhood-token-view";
+import { EthereumTokenView } from "@/components/ethereum-token-view";
 import { TokenRouteChainSync } from "@/components/token-route-chain-sync";
 import { resolveTokenPage } from "@/lib/server/token-page";
 import { genericTokenDetailMetadata } from "@/lib/token-detail-metadata";
@@ -27,6 +28,11 @@ export async function generateMetadata({
   ]);
   if (isAddress(address) && tokenDetailPageChainId(resolvedSearchParams.chain) !== null) {
     const resolved = await resolveTokenPage(address, resolvedSearchParams.chain);
+    if (resolved?.chainId === 1 && resolved.token) return {
+      title: `${resolved.token.name || address} · Programmable`,
+      description: resolved.token.description || "Verified Programmable launch on Ethereum.",
+      alternates: { canonical: `/token/${resolved.token.tokenAddress}?chain=1` },
+    };
     const token = resolved?.chainId === 4663 ? resolved.token : null;
     if (token) return {
       title: `${token.name || address} · Programmable`,
@@ -62,7 +68,7 @@ export default async function TokenPage({
     </TokenRouteChainSync>;
   }
   if (resolved.chainId === 1) {
-    return <TokenRouteChainSync key={1} chainId={1}><TokenIndexResetView /></TokenRouteChainSync>;
+    return <TokenRouteChainSync key={1} chainId={1}><EthereumTokenView address={address} token={resolved.token} status={resolved.status} updatedAt={resolved.updatedAt} /></TokenRouteChainSync>;
   }
   return <TokenIndexResetView unresolved />;
 }

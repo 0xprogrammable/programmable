@@ -439,6 +439,19 @@ async function readDurableRouterCustomIdentitySnapshotV1() {
   return (await readDurableRouterCustomIdentitySnapshotRecordV1()).snapshot;
 }
 
+/** Public reads consume the verified saved identities without running the updater. */
+export async function readSavedRouterCustomIdentitySnapshotV1() {
+  const snapshot = await withinDuration(
+    readDurableRouterCustomIdentitySnapshotV1,
+    ROUTER_CUSTOM_SNAPSHOT_DURABLE_READ_TIMEOUT_MS,
+  );
+  const age = Date.now() - Date.parse(snapshot.generatedAt);
+  if (!Number.isFinite(age) || age < -ROUTER_CUSTOM_SNAPSHOT_MAXIMUM_FUTURE_SKEW_MS) {
+    throw new Error("Router Custom durable snapshot timestamp is invalid");
+  }
+  return snapshot;
+}
+
 async function persistDurableRouterCustomIdentitySnapshotV1(
   snapshot: RouterCustomIdentitySnapshotV1,
   options: Readonly<{ replaceAfterReorg?: boolean }> = {},
@@ -750,6 +763,29 @@ export async function readFinalizedRouterCustomIdentitySnapshotCoreV1(
   options: RouterCustomReadOptionsV1 = {},
 ) {
   return await readProductionRouterCustomIdentitySnapshotV1(options);
+}
+
+/** Reuse fresh saved bytes; the shared refresher owns deduplication and persistence. */
+export async function readWebsiteRouterCustomIdentitySnapshotV1(
+  dependencies: Readonly<{
+    now?: () => number;
+    readSaved?: () => Promise<RouterCustomIdentitySnapshotV1>;
+    refresh?: () => Promise<RouterCustomIdentitySnapshotV1>;
+  }> = {},
+) {
+  const refresh = dependencies.refresh ?? readFinalizedRouterCustomIdentitySnapshotCoreV1;
+  let saved: RouterCustomIdentitySnapshotV1;
+  try {
+    saved = await (dependencies.readSaved ?? readSavedRouterCustomIdentitySnapshotV1)();
+  } catch {
+    return refresh();
+  }
+  const age = (dependencies.now ?? Date.now)() - Date.parse(saved.generatedAt);
+  if (age >= -ROUTER_CUSTOM_SNAPSHOT_MAXIMUM_FUTURE_SKEW_MS && age <= ROUTER_CUSTOM_SNAPSHOT_CACHE_TTL_MS) {
+    return saved;
+  }
+  // The core preserves saved identities on provider failure and rejects conflicts.
+  return refresh();
 }
 
 export async function readFinalizedRouterCustomIdentitySnapshotV1(
