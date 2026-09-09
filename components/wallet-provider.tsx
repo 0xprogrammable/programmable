@@ -104,6 +104,7 @@ import {
   type BrowserWalletLoginLease,
 } from "../lib/wallet-login-lock";
 import { errorIsExplicitWalletRejection, runWithBrowserWalletRequestLock, WalletRequestNotSubmittedError } from "../lib/wallet-request-lock";
+import { useWalletAddressCopy } from "../lib/wallet-address-copy";
 import type {
   PrivyPolicyOwnerOperation,
   PrivyPolicyOwnerReview,
@@ -1258,7 +1259,6 @@ function PrivyWalletBridge({
   const { generateAuthorizationSignature } = useAuthorizationSignature();
   const { ready: walletsReady, wallets } = useWallets();
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [copied, setCopied] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const [loginPending, setLoginPending] = useState(false);
   const [walletLoginStatus, setWalletLoginStatus] = useState("");
@@ -1298,6 +1298,14 @@ function PrivyWalletBridge({
       setDialogOpen(false);
     },
     onError: (errorCode) => {
+      const session = sdkSessionRef.current;
+      if (session.ready && session.authenticated && session.userId
+        && !session.sessionSuppressed && !session.disconnecting) {
+        // A restored SDK session is authoritative even if the old login flow
+        // reports a late error. Keep any newer connect/link attempt protected.
+        if (walletLoginIntentRef.current === "login") settleWalletLoginAttempt();
+        return;
+      }
       settleWalletLoginAttempt();
       const message = getWalletLoginErrorMessage(errorCode);
       if (!message) return;
@@ -1951,19 +1959,6 @@ function PrivyWalletBridge({
       setDisconnecting(false);
     }
   }, [applicantRefreshUserGate, authenticated, logout, settleWalletLoginAttempt, wallets]);
-
-  const copyAddress = useCallback(async () => {
-    if (!wallet) return;
-    setError("");
-
-    try {
-      await navigator.clipboard.writeText(wallet.account);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1500);
-    } catch {
-      setError("The address could not be copied");
-    }
-  }, [wallet]);
 
   const switchWalletNetwork = useCallback(async (expectedChainId?: string) => {
     if (!connectedWallet || !wallet || !ownerUserId || networkSwitchPendingRef.current) return false;
@@ -3068,7 +3063,6 @@ function PrivyWalletBridge({
           hasSession={hasSession}
           hasLinkedWallet={hasLinkedWallet}
           sessionReady={providerSettled}
-          copied={copied}
           disconnecting={disconnecting}
           error={error}
           status={walletLoginStatus}
@@ -3076,7 +3070,6 @@ function PrivyWalletBridge({
           onAddWallet={addWallet}
           onReconnectWallet={reconnectWallet}
           onClose={() => setDialogOpen(false)}
-          onCopyAddress={copyAddress}
           onLogout={disconnect}
           onRetryLogin={openWallet}
           onSelectWallet={(account) => {
@@ -3209,7 +3202,6 @@ function WalletDialog({
   hasSession,
   hasLinkedWallet,
   sessionReady,
-  copied,
   disconnecting,
   error,
   status,
@@ -3217,7 +3209,6 @@ function WalletDialog({
   onAddWallet,
   onReconnectWallet,
   onClose,
-  onCopyAddress,
   onLogout,
   onRetryLogin,
   onSelectWallet,
@@ -3227,7 +3218,6 @@ function WalletDialog({
   hasSession: boolean;
   hasLinkedWallet: boolean;
   sessionReady: boolean;
-  copied: boolean;
   disconnecting: boolean;
   error: string;
   status: string;
@@ -3235,11 +3225,11 @@ function WalletDialog({
   onAddWallet: () => void;
   onReconnectWallet: () => void;
   onClose: () => void;
-  onCopyAddress: () => void;
   onLogout: () => Promise<boolean>;
   onRetryLogin: () => void;
   onSelectWallet: (account: `0x${string}`) => void;
 }) {
+  const { copied, copyUnavailable, copyAddress } = useWalletAddressCopy(wallet?.account);
   const title = !sessionReady ? "Wallet session" : wallet ? "Wallet" : "Connect wallet";
   const connect = authenticated
     ? hasLinkedWallet ? onReconnectWallet : onAddWallet
@@ -3259,11 +3249,25 @@ function WalletDialog({
                 className={styles.iconButton}
                 type="button"
                 aria-label={copied ? "Address copied" : "Copy address"}
-                onClick={onCopyAddress}
+                onClick={() => void copyAddress()}
               >
                 {copied ? <Check aria-hidden="true" size={18} /> : <Copy aria-hidden="true" size={18} />}
               </button>
             </div>
+            {copyUnavailable ? (
+              <div className={styles.copyFallback}>
+                <p className={styles.copy} role="status">Select the address below to copy it.</p>
+                <input
+                  className={styles.addressInput}
+                  type="text"
+                  aria-label="Wallet address"
+                  value={wallet.account}
+                  readOnly
+                  onFocus={(event) => event.currentTarget.select()}
+                  onClick={(event) => event.currentTarget.select()}
+                />
+              </div>
+            ) : null}
             <dl className={styles.network}>
               <dt>Wallet network</dt>
               <dd>{getWalletNetworkLabel(wallet.chainId)}</dd>
@@ -3374,7 +3378,7 @@ function DialogFrame({
       onKeyDown={(event) => {
         if (event.key !== "Tab") return;
         const controls = event.currentTarget.querySelectorAll<HTMLElement>(
-          'button:not([disabled]), a[href], [tabindex="0"]',
+          'button:not([disabled]), a[href], input:not([disabled]), textarea:not([disabled]), [tabindex="0"]',
         );
         const first = controls[0];
         const last = controls[controls.length - 1];
@@ -3436,7 +3440,7 @@ export function WalletButton({ compact = false }: { compact?: boolean }) {
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const menuId = useId();
   const [menuOpen, setMenuOpen] = useState(false);
-  const [menuCopied, setMenuCopied] = useState(false);
+  const { copied: menuCopied, copyUnavailable, copyAddress } = useWalletAddressCopy(wallet?.account);
   const [menuError, setMenuError] = useState("");
   const hydrationPending = connecting && !openingWallet;
 
@@ -3596,19 +3600,24 @@ export function WalletButton({ compact = false }: { compact?: boolean }) {
         <button
           type="button"
           tabIndex={menuOpen ? undefined : -1}
-          onClick={async () => {
+          onClick={() => {
             setMenuError("");
-            try {
-              await navigator.clipboard.writeText(wallet.account);
-              setMenuCopied(true);
-              window.setTimeout(() => setMenuCopied(false), 1500);
-            } catch {
-              setMenuError("Could not copy address");
-            }
+            void copyAddress();
           }}
         >
           {menuCopied ? "Address copied" : "Copy address"}
         </button>
+        {copyUnavailable && menuOpen ? (
+          <input
+            className={styles.addressInput}
+            type="text"
+            aria-label="Wallet address"
+            value={wallet.account}
+            readOnly
+            onFocus={(event) => event.currentTarget.select()}
+            onClick={(event) => event.currentTarget.select()}
+          />
+        ) : null}
         <button
           className="wallet-menu-disconnect"
           type="button"
@@ -3631,12 +3640,12 @@ export function WalletButton({ compact = false }: { compact?: boolean }) {
           {disconnecting ? "Disconnecting" : "Disconnect"}
         </button>
         <p
-          className={menuError ? undefined : "sr-only"}
+          className={menuError || copyUnavailable ? undefined : "sr-only"}
           role="status"
           aria-live="polite"
           aria-atomic="true"
         >
-          {menuCopied ? "Address copied" : menuError}
+          {menuError || (menuCopied ? "Address copied" : copyUnavailable ? "Select the address above to copy it." : "")}
         </p>
       </div>
     </div>

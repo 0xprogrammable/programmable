@@ -39,6 +39,8 @@ type FixtureState = {
   providerAccountOverride: string | null;
   providerChainOverride: string | null;
   delayedLogoutReadback: boolean;
+  clipboardMode: "native" | "denied" | "delayed";
+  waitingClipboardWrites: number;
 };
 
 function user(id: string, primary: string | null, addresses: string[]): FixtureUser {
@@ -106,6 +108,7 @@ let state: FixtureState = {
   delayedNetworkSwitch: false, waitingNetworkSwitches: 0,
   providerAccountOverride: null, providerChainOverride: null,
   delayedLogoutReadback: false,
+  clipboardMode: "native", waitingClipboardWrites: 0,
 };
 
 function update(patch: Partial<FixtureState>) {
@@ -124,6 +127,25 @@ function subscribe(listener: () => void) {
 
 function snapshot() { return state; }
 function useFixtureState() { return useSyncExternalStore(subscribe, snapshot, snapshot); }
+
+const nativeClipboard = navigator.clipboard;
+const waitingClipboardWrites: (() => void)[] = [];
+Object.defineProperty(navigator, "clipboard", {
+  configurable: true,
+  value: {
+    readText: () => nativeClipboard.readText(),
+    writeText: async (text: string) => {
+      if (state.clipboardMode === "denied") throw new DOMException("Clipboard access denied", "NotAllowedError");
+      if (state.clipboardMode === "delayed") {
+        await new Promise<void>((resolve) => {
+          waitingClipboardWrites.push(resolve);
+          update({ waitingClipboardWrites: waitingClipboardWrites.length });
+        });
+      }
+      await nativeClipboard.writeText(text);
+    },
+  },
+});
 
 // The real Web Locks implementation still owns and releases the lock. A
 // fixture-only barrier delays acquisition so account changes can occur while
@@ -271,6 +293,15 @@ export function FixtureControls() {
     <button onClick={() => update({ authenticated: true, user: betaBoth })}>Change SDK user, same linked addresses</button>
     <button onClick={() => update({ authenticated: true, user: alpha, wallets: [wallet(accountA)] })}>Restore SDK session</button>
     <button onClick={() => update({ authenticated: true, user: alpha, wallets: [wallet(accountA)], isOpen: false })}>Restore session without login callback</button>
+    <button onClick={() => loginCallbacks.onError("unknown_auth_error")}>Report prior login failure</button>
+    <button onClick={() => update({ clipboardMode: "denied" })}>Disable clipboard</button>
+    <button onClick={() => update({ clipboardMode: "delayed" })}>Delay clipboard</button>
+    <button onClick={() => {
+      const pending = waitingClipboardWrites.splice(0);
+      update({ waitingClipboardWrites: 0, clipboardMode: "native" });
+      pending.forEach((resolve) => resolve());
+    }}>Resolve clipboard</button>
+    <output aria-label="Pending clipboard writes">{current.waitingClipboardWrites}</output>
     <button onClick={() => update({ delayedLogoutReadback: true })}>Delay logout readback</button>
     <button onClick={() => update({ authenticated: false, user: null, delayedLogoutReadback: false })}>Finish logout readback</button>
     <button onClick={() => update({ wallets: state.wallets.map((candidate) => wallet(

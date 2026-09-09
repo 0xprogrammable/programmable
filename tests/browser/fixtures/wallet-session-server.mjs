@@ -13,6 +13,10 @@ export async function createWalletSessionServer() {
         import {createRoot} from 'react-dom/client';
         import {WalletProvider, WalletButton, useWallet} from './components/wallet-provider';
         import {SiteHeader} from './components/site-navigation';
+        import {ViewChainProvider, useViewChain} from './components/view-chain';
+        import {ModuleModeBuilder} from './components/module-mode-builder';
+        import {moduleModeWalletStep} from './components/module-mode-wallet-state';
+        import {TokenRouteChainSync} from './components/token-route-chain-sync';
         import {FixtureControls} from './tests/browser/fixtures/wallet-session-runtime';
         import './app/globals.css';
         import './app/interface.css';
@@ -20,6 +24,11 @@ export async function createWalletSessionServer() {
         import './app/webde-final-ui.css';
         function Consumer() {
           const value = useWallet();
+          const view = useViewChain();
+          const [savedChain, setSavedChain] = useState('');
+          const [moduleContinuations, setModuleContinuations] = useState(0);
+          const moduleWalletStep = moduleModeWalletStep({account:value.wallet?.account, chainId:value.wallet?.chainId,
+            authenticated:value.authenticated, sessionReady:value.sessionReady});
           const [networkResults, setNetworkResults] = useState([]);
           const switchNetwork = () => {
             void value.switchNetwork('1').then(
@@ -39,13 +48,24 @@ export async function createWalletSessionServer() {
             <output aria-label="Wallet busy">{String(value.connecting)}</output>
             <output aria-label="Network switch busy">{String(value.switchingNetwork)}</output>
             <output aria-label="Network switch results">{JSON.stringify(networkResults)}</output>
+            <output aria-label="Selected browsing chain">{view.viewChainId}</output>
+            <button onClick={() => view.setViewChainId(1)}>Browse Ethereum</button>
+            <button onClick={() => view.setViewChainId(4663)}>Browse Robinhood</button>
+            <button onClick={() => setSavedChain(localStorage.getItem('programmable:view-chain:v2') ?? '')}>Read saved browsing chain</button>
+            <output aria-label="Saved browsing chain">{savedChain}</output>
+            <output aria-label="Module continue calls">{moduleContinuations}</output>
+            <output aria-label="Module wallet step">{moduleWalletStep}</output>
             <button onClick={value.openWallet}>Open account</button>
             <button onClick={switchNetwork}>Request Ethereum wallet network</button>
             <button onClick={() => void value.disconnect({showDialogOnFailure:false})}>Sign out of app</button>
             <FixtureControls/>
+            {location.pathname === '/launch/modules' ? <ModuleModeBuilder launchAction={{label:'Continue module fixture',
+              description:'Local UI callback only. No transaction is prepared or sent.',
+              onContinue:async () => setModuleContinuations(previous => previous + 1)}}/> : null}
+            {location.pathname === '/token/ethereum' ? <TokenRouteChainSync chainId={1}><p>Ethereum token route</p></TokenRouteChainSync> : null}
           </main>;
         }
-        createRoot(document.getElementById('root')).render(<WalletProvider><SiteHeader/><Consumer/></WalletProvider>);
+        createRoot(document.getElementById('root')).render(<ViewChainProvider><WalletProvider><SiteHeader/><Consumer/></WalletProvider></ViewChainProvider>);
       `,
       loader: "tsx", resolveDir: root,
     },
@@ -88,7 +108,7 @@ export async function createWalletSessionServer() {
       } catch { response.writeHead(404); response.end(); }
       return;
     }
-    if (!["/profile", "/developers/api-keys"].includes(url.pathname)) {
+    if (!["/profile", "/developers/api-keys", "/launch/modules", "/token/ethereum"].includes(url.pathname)) {
       response.writeHead(404); response.end(); return;
     }
     response.setHeader("Content-Type", "text/html");
