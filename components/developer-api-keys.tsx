@@ -158,7 +158,6 @@ const apiKeySecretPattern =
   /^pm_live_[A-Za-z0-9_-]{22}_[A-Za-z0-9_-]{43}$/u;
 const idempotencyKeyPattern = /^[A-Za-z0-9._:-]{16,128}$/u;
 const API_KEY_PAGE_SIZE = 3;
-const moduleApiOrigin = new URL(PROGRAMMABLE_AGENT_SETUP_LINKS_V1.capabilities).origin;
 export const PROGRAMMABLE_READ_ONLY_AGENT_SETUP_TEXT = [
   "Use this Programmable API key only to read launch history and status. It cannot prepare or submit launches, sign transactions or move funds.",
   "Read the key from $PROGRAMMABLE_API_KEY in the environment or secret store. Never paste, print or copy the secret into chat, source code, logs or command history.",
