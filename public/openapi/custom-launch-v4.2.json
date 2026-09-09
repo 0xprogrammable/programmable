@@ -1194,7 +1194,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_e4dbee84a9"
+                  "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_98fd6764c8"
                 }
               }
             }
@@ -85236,7 +85236,7 @@
         ],
         "additionalProperties": false
       },
-      "MultiRoleV2_MultiRoleV2_Shape_3dcdf2be75": {
+      "MultiRoleV2_MultiRoleV2_Shape_4c6ae82fd8": {
         "type": "object",
         "properties": {
           "path": {
@@ -85246,7 +85246,7 @@
             "const": "text/markdown; charset=utf-8"
           },
           "contentSha256": {
-            "const": "sha256:d8f62c0600c5273ebc5e443528a2f6840b1fe01560f24f6849eda4fafb81407c"
+            "const": "sha256:37743df905f5d1381f7706d6df3d37fd9c429e611f7f082a64f1c02b6e0ff981"
           },
           "byteLength": {
             "const": 45083
@@ -85356,7 +85356,7 @@
         ],
         "additionalProperties": false
       },
-      "MultiRoleV2_MultiRoleV2_Shape_aea7f919c6": {
+      "MultiRoleV2_MultiRoleV2_Shape_232d84b947": {
         "type": "object",
         "properties": {
           "path": {
@@ -85366,7 +85366,7 @@
             "const": "application/json; charset=utf-8"
           },
           "contentSha256": {
-            "const": "sha256:4e73d59c31e01a3fc357aa64b1f06403357abd6449ec496e05fc6cf680c5fa1d"
+            "const": "sha256:5110dce2fab9482e4d5f3c12a5197ba48d9a292c96ce6bc05c1921099858327d"
           },
           "byteLength": {
             "const": 18422
@@ -85412,14 +85412,14 @@
         ],
         "additionalProperties": false
       },
-      "MultiRoleV2_MultiRoleV2_Shape_9e6d01aeeb": {
+      "MultiRoleV2_MultiRoleV2_Shape_b1200eed1e": {
         "type": "object",
         "properties": {
           "schemaVersion": {
             "const": "programmable.multi-role-public-documentation.v2"
           },
           "guide": {
-            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_3dcdf2be75"
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_4c6ae82fd8"
           },
           "client": {
             "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_88c22132fd"
@@ -85431,7 +85431,7 @@
             "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_305933b467"
           },
           "buildManifest": {
-            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_aea7f919c6"
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_232d84b947"
           },
           "requestPackaging": {
             "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_3b4cfe6320"
@@ -85730,7 +85730,7 @@
         ],
         "additionalProperties": false
       },
-      "MultiRoleV2_MultiRoleV2_Shape_e4dbee84a9": {
+      "MultiRoleV2_MultiRoleV2_Shape_98fd6764c8": {
         "type": "object",
         "properties": {
           "schemaVersion": {
@@ -85756,7 +85756,7 @@
             ]
           },
           "documentation": {
-            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_9e6d01aeeb"
+            "$ref": "#/components/schemas/MultiRoleV2_MultiRoleV2_Shape_b1200eed1e"
           },
           "runtimeInstructionPolicy": {
             "anyOf": [
