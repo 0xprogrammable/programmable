@@ -2357,10 +2357,56 @@
   }
 }
 
-/* Keep the modules entry steady under a pointer or thumb. */
-.modelCard.modelCard[data-launch-model-option="modules"],
-.modelCard.modelCard[data-launch-model-option="modules"]:is(:hover, :active) { transform: none; }
+/* Keep entry choices steady while their border shows interaction. */
+.modelCard.modelCard[data-launch-model-option],
+.modelCard.modelCard[data-launch-model-option]:is(:hover, :active) {
+  box-shadow: none;
+  transform: none;
+}
 
-.modelCard .modelHeading strong { font-size: 30px; font-weight: 500; letter-spacing: -.025em; line-height: 1.2; }
-.modelCard .modelAction { background: #272524; border: 1px solid #77716a; border-radius: 12px; color: #f5f1eb; display: inline-flex; font-size: 14px; font-weight: 500; min-height: 44px; padding: 10px 14px; width: fit-content; }
-@media (max-width: 600px) { .modelCard .modelHeading strong { font-size: 26px; } }
+.modelCard.modelCard:focus-visible {
+  border-radius: var(--webde-radius-card);
+  outline: 2px solid #e786b2;
+  outline-offset: 4px;
+}
+
+.modelCard .modelBody.modelBody {
+  min-height: 0;
+  padding: 20px;
+}
+
+.modelCard .modelHeading {
+  min-height: 29px;
+}
+
+.modelCard .modelHeading strong {
+  font-size: 24px;
+  font-weight: 500;
+  letter-spacing: -0.025em;
+  line-height: 1.2;
+}
+
+.modelCard .modelDescription {
+  margin-block: 6px 16px;
+  min-height: 0;
+}
+
+.modelCard .modelAction {
+  background: #272524;
+  border: 1px solid #77716a;
+  border-radius: var(--webde-radius-control);
+  color: #f5f1eb;
+  display: inline-flex;
+  font-size: 14px;
+  font-weight: 500;
+  margin-top: auto;
+  min-height: 44px;
+  padding: 10px 14px;
+  width: fit-content;
+}
+
+@media (max-width: 760px) {
+  .modelCard .modelBody.modelBody {
+    padding: 18px;
+  }
+}

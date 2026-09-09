@@ -210,13 +210,13 @@ describe("unreleased launch model gating", () => {
     );
     expect(customCard).not.toContain("disabled");
     expect(html).toContain(
-      'id="launch-model-custom-title">Custom V4 Hook</strong>',
+      'id="launch-model-custom-title">Custom hook</strong>',
     );
-    expect(html).toContain("Launch a Classic Coin");
+    expect(html).toContain("Create a coin");
     expect(html).toContain(
-      "Build your own Uniswap v4 hook and submit it with an API key. Your wallet reviews and signs the launch.",
+      "Create a Uniswap v4 hook with your own logic.",
     );
-    expect(html).toContain("Open Custom V4 Hook");
+    expect(html).toContain("Build a hook");
     expect(html).not.toContain("approved GitHub revision");
     expect(html.indexOf('data-launch-model-option="classic"')).toBeLessThan(
       html.indexOf('data-launch-model-option="custom"'),
@@ -262,7 +262,7 @@ describe("unreleased launch model gating", () => {
     expect(html).toContain(
       'href="/developers/api-keys"',
     );
-    expect(html).toContain("Open Custom V4 Hook");
+    expect(html).toContain("Build a hook");
     expect(html).not.toContain("approved GitHub revision");
     expect(html).not.toContain("Build or resume");
   });

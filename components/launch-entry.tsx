@@ -174,19 +174,18 @@ export function LaunchModelPicker({
         <span
           className={`launch-model-card-heading ${launchExperience.modelHeading}`}
         >
-          <strong id="launch-model-custom-title">Custom V4 Hook</strong>
+          <strong id="launch-model-custom-title">Custom hook</strong>
         </span>
         <span
           className={`launch-model-description ${launchExperience.modelDescription}`}
           id="launch-model-custom-description"
         >
-          Build your own Uniswap v4 hook and submit it with an API key.
-          Your wallet reviews and signs the launch.
+          Create a Uniswap v4 hook with your own logic.
         </span>
         <span
           className={`launch-model-action ${launchExperience.modelAction}`}
         >
-          Open Custom V4 Hook
+          Build a hook
           <ArrowRight aria-hidden="true" size={16} />
         </span>
       </span>
@@ -268,9 +267,8 @@ export function LaunchModelPicker({
                 className={`launch-model-description ${launchExperience.modelDescription}`}
                 id="launch-model-classic-description"
               >
-                Launch a fixed-supply token with permanently locked, one-sided
-                Uniswap v4 liquidity. Set buy and sell fees, reward recipients,
-                and the initial buy before you sign.
+                Create a fixed-supply token with locked liquidity and optional
+                trading fees.
               </span>
               {classicV3LaunchAvailable ? (
                 <span
@@ -278,7 +276,7 @@ export function LaunchModelPicker({
                 >
                   {preparingModel === "classic-v3"
                     ? "Opening Classic"
-                    : "Launch a Classic Coin"}
+                    : "Create a coin"}
                   <ArrowRight aria-hidden="true" size={16} />
                 </span>
               ) : null}
@@ -301,7 +299,7 @@ export function LaunchModelPicker({
                 <strong id="launch-model-modules-title">Modules</strong>
               </span>
               <span className={`launch-model-description ${launchExperience.modelDescription}`} id="launch-model-modules-description">
-                Your coin, with upgrades. Add modules to give it new features.
+                Create a coin and choose its features.
               </span>
               <span className={`launch-model-action ${launchExperience.modelAction}`}>
                 Create a coin <ArrowRight aria-hidden="true" size={16} />
