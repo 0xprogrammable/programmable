@@ -1,40 +1,13 @@
 // Pure validation of the protected backend engine profile. No source compilation or execution occurs here.
 import { bytesToHex, encodeAbiParameters, getContractAddress, hexToBytes, keccak256, parseAbi, toFunctionSelector, type Hex } from "viem";
-import { validateModuleSubmissionRequest } from "../../packages/classic-modules/src/open-transport.mjs";
-import { compileOpenConfig } from "../../packages/classic-modules/src/open-config.mjs";
 import { nativeCanonicalJson, nativeJson } from "./native-catalog";
-import { encodeModuleEngineConfiguration, parseModuleEngineConfigurationAbi } from "../module-engine/configuration";
+import { parseModuleEngineConfigurationAbi } from "../module-engine/configuration";
 import { reviewDigest as moduleReviewDigestV1, parseReviewSubject, type ReviewSubject as ModuleReviewSubjectV1 } from "./review-contract";
 import { MODULE_ENGINE_QUOTE_ENVIRONMENT_V1, MODULE_ENGINE_QUOTE_NVDA_ENVIRONMENT_V1 } from "./review-engine-types";
-import { MODULE_ENGINE_BUILD_SCHEMA_V1, MODULE_ENGINE_PLAN_SCHEMA_V1, MODULE_ENGINE_PROFILE_V1, MODULE_ENGINE_CONFIGURATION_CODEC_V1, MODULE_ENGINE_CONTEXT_ABI_V1, MODULE_ENGINE_CONSTRUCTOR_ABI_V1, type ModuleEngineBuildArtifactV1, type ModuleEngineBuildPlanV1, type ModuleEngineContractArtifactV1, type ModuleEngineCompiledCaseV1, type ModuleEngineTestResultV1 } from "./review-engine-types";
+import { MODULE_ENGINE_BUILD_SCHEMA_V1, MODULE_ENGINE_PLAN_SCHEMA_V1, MODULE_ENGINE_CONFIGURATION_CODEC_V1, MODULE_ENGINE_CONTEXT_ABI_V1, MODULE_ENGINE_CONSTRUCTOR_ABI_V1, type ModuleEngineBuildArtifactV1, type ModuleEngineBuildPlanV1, type ModuleEngineContractArtifactV1, type ModuleEngineCompiledCaseV1, type ModuleEngineTestResultV1 } from "./review-engine-types";
 type ModuleDigestV1 = Hex;
 export const ENGINE_REVIEW_COMPILER = Object.freeze({version:"0.8.26+commit.8a97fa7a",binarySha256:"sha256:35ba6661f3bdaed995fc7af14c405502290cf681b3fd062fe8738cfdf6db14ed",imageDigest:"sha256:d8e448a56fc63242f70026718378bd4b00f8c82e78d20eefb199224a4d8e33d8"});
-const NATIVE_SETTINGS_V1 = {optimizer:{enabled:true,runs:1000},evmVersion:"cancun",viaIR:true,metadata:{bytecodeHash:"none"}};
-const MODULE_REVIEW_LIMITS_V1 = {sourceBytes:4*1024*1024,standardJsonBytes:5242880,creationBytes:49152,runtimeBytes:24576,configBytes:16384,artifactBytes:2*1024*1024};
-const ENGINE_SOURCE_ALIASES = [
-  ["dependencies/scoped/openzeppelin/contracts/", "@openzeppelin/contracts/"],
-  ["dependencies/scoped/openzeppelin/uniswap-hooks/", "@openzeppelin/uniswap-hooks/"],
-  ["dependencies/scoped/uniswap/blocknumberish/", "@uniswap/blocknumberish/"],
-  ["dependencies/scoped/uniswap/liquidity-launcher/", "@uniswap/liquidity-launcher/"],
-  ["dependencies/scoped/uniswap/uerc20-factory/", "@uniswap/uerc20-factory/"],
-  ["dependencies/scoped/uniswap/v4-core/", "@uniswap/v4-core/"],
-  ["dependencies/scoped/uniswap/v4-periphery/", "@uniswap/v4-periphery/"],
-  ["dependencies/scoped/solady/src/", "@solady/src/"],
-] as const;
-function soliditySources(files: readonly {path:string;bytes:string}[]): Record<string,{content:string}> {
-  const sources: Record<string,{content:string}> = Object.create(null);
-  for (const f of files) if (f.path.endsWith(".sol")) sources[f.path]={content:new TextDecoder("utf-8",{fatal:true}).decode(Uint8Array.from(atob(f.bytes),c=>c.charCodeAt(0)))};
-  const prefix="dependencies/openzeppelin-contracts/contracts/";
-  for(const [path,source] of Object.entries(sources)) if(path.startsWith(prefix)) {const alias=`@openzeppelin/contracts/${path.slice(prefix.length)}`;need(!Object.hasOwn(sources,alias),"MODULE_BUILD_SOURCE_ALIAS_COLLISION");sources[alias]=source;}
-  for(const [path,source] of Object.entries(sources)) {
-    const match=ENGINE_SOURCE_ALIASES.find(([prefix])=>path.startsWith(prefix));
-    if(!match) continue;
-    const alias=`${match[1]}${path.slice(match[0].length)}`;
-    need(!Object.hasOwn(sources,alias),"MODULE_BUILD_SOURCE_ALIAS_COLLISION");
-    sources[alias]=source; delete sources[path];
-  }
-  return sources;
-}
+export const MODULE_REVIEW_LIMITS_V1 = {sourceBytes:4*1024*1024,standardJsonBytes:5242880,creationBytes:49152,runtimeBytes:24576,configBytes:16384,artifactBytes:2*1024*1024};
 export const MODULE_ENGINE_INTERFACE_V1 = parseAbi([
   "function contextHash() view returns(bytes32)",
   "function initialize(bytes launchData) returns(bytes32 resourcesHash)",
@@ -166,29 +139,11 @@ export function validateModuleEngineBuildPlanV1(value: unknown, subject: ModuleR
   return JSON.parse(json(value)) as ModuleEngineBuildPlanV1;
 }
 
-function sourceInput(source: unknown, subject: ModuleReviewSubjectV1, plan: ModuleEngineBuildPlanV1) {
-  need(new TextEncoder().encode(json(source)).length <= 24 * 1024 * 1024, "MODULE_BUILD_SOURCE_UNAVAILABLE");
-  const checked = validateModuleSubmissionRequest(source);
-  need(checked.ok && checked.requestDigest === subject.requestDigest && checked.request.descriptor.author.toLowerCase() === subject.author, "MODULE_BUILD_SOURCE_BINDING_INVALID");
-  need(checked.totalSourceBytes <= MODULE_REVIEW_LIMITS_V1.sourceBytes, "MODULE_BUILD_PROFILE_CAPACITY_EXCEEDED");
-  const target = checked.request.descriptor.components.find(c => c.id === plan.engineComponentId);
-  need(target && target.runtime === MODULE_ENGINE_PROFILE_V1, "MODULE_BUILD_ADAPTER_UNSUPPORTED");
-  need(/^[A-Za-z_$][A-Za-z0-9_$]{0,255}$/u.test(target.entrypoint), "MODULE_BUILD_ENTRYPOINT_INVALID");
-  const sources = soliditySources(checked.request.files);
-  need(Object.hasOwn(sources, target.sourcePath), "MODULE_BUILD_TARGET_MISSING");
-  const standard = { language: "Solidity", sources, settings: NATIVE_SETTINGS_V1 };
-  need(new TextEncoder().encode(json(standard)).length <= MODULE_REVIEW_LIMITS_V1.standardJsonBytes, "MODULE_BUILD_PROFILE_CAPACITY_EXCEEDED");
-  return { checked, target, standard };
-}
-/** Reuses the reviewed source closure/settings for source publication; grants no build or review authority. */
-export function moduleEngineStandardInputV1(source: unknown, subject: ModuleReviewSubjectV1, rawPlan: unknown) {
-  return sourceInput(source, subject, validateModuleEngineBuildPlanV1(rawPlan, subject)).standard;
-}
 function abiTypes(parameters: unknown): unknown {
   need(Array.isArray(parameters), "MODULE_ENGINE_ABI_INVALID");
   return parameters.map(p => { const item = object(p); return { type: item.type, ...(item.components === undefined ? {} : { components: abiTypes(item.components) }) }; });
 }
-function contractArtifact(raw: unknown, target: { id: string; sourcePath: string; entrypoint: string }, plan: ModuleEngineBuildPlanV1): ModuleEngineContractArtifactV1 {
+export function parseModuleEngineContractArtifactV1(raw: unknown, target: { id: string; sourcePath: string; entrypoint: string }, plan: ModuleEngineBuildPlanV1): ModuleEngineContractArtifactV1 {
   const output = object(raw);
   need(output.errors === undefined || Array.isArray(output.errors) && !output.errors.some(e => object(e).severity === "error"), "MODULE_BUILD_COMPILATION_FAILED");
   const contract = object(object(object(output.contracts)[target.sourcePath])[target.entrypoint]);
@@ -243,40 +198,6 @@ export function materializeModuleEngineRuntimeV1(engine: ModuleEngineContractArt
   }
   return bytesToHex(runtime);
 }
-function compiledCases(plan: ModuleEngineBuildPlanV1, source: ReturnType<typeof sourceInput>, engine: ModuleEngineContractArtifactV1): ModuleEngineCompiledCaseV1[] {
-  const descriptor = source.checked.request.descriptor;
-  return plan.cases.map(c => {
-    const configBytes = c.rawConfigBytes ?? encodeModuleEngineConfiguration(plan.configurationAbi, compileOpenConfig(descriptor.configuration, c.parameters, { roles: { author: descriptor.author, reward: descriptor.rewardWallet } }), descriptor.configuration);
-    const context = {
-      host: MODULE_ENGINE_REVIEW_HOST_V1,
-      launchId: moduleReviewDigestV1("programmable.modules.engine-review-launch.v1", { requestDigest: plan.requestDigest, caseId: c.id }),
-      token: c.token, creator: MODULE_ENGINE_REVIEW_ACTOR_V1, quoteAsset: c.quoteAsset, feeCollector: MODULE_ENGINE_REVIEW_HOST_V1,
-    };
-    const constructorArgs = encodeAbiParameters(MODULE_ENGINE_CONSTRUCTOR_ABI_V1, [context, configBytes]);
-    const runtimeBytecode = materializeModuleEngineRuntimeV1(engine, constructorArgs);
-    const initCode = `${engine.creationBytecode}${constructorArgs.slice(2)}` as `0x${string}`;
-    need((initCode.length - 2) / 2 <= MODULE_REVIEW_LIMITS_V1.creationBytes, "MODULE_ENGINE_INITCODE_TOO_LARGE");
-    return { ...c, context, contextHash: keccak256(encodeAbiParameters([{ type: "tuple", components: MODULE_ENGINE_CONTEXT_ABI_V1 }], [context])), configBytes, configHash: keccak256(configBytes), constructorArgs, constructorHash: keccak256(constructorArgs), initCodeHash: keccak256(initCode), runtimeBytecode, runtimeCodeHash: keccak256(runtimeBytecode) };
-  });
-}
-function compilerIdentity(standard: unknown) {
-  return { version: ENGINE_REVIEW_COMPILER.version, binarySha256: ENGINE_REVIEW_COMPILER.binarySha256, imageDigest: ENGINE_REVIEW_COMPILER.imageDigest, settingsHash: moduleReviewDigestV1("programmable.modules.compiler-settings.v1", NATIVE_SETTINGS_V1), completeInputHash: moduleReviewDigestV1("programmable.modules.compiler-input.v1", standard), reproducible: true as const };
-}
-function artifactContents(subject: ModuleReviewSubjectV1, plan: ModuleEngineBuildPlanV1, source: ReturnType<typeof sourceInput>, engine: ModuleEngineContractArtifactV1, tests: ModuleEngineTestResultV1) {
-  const descriptor = source.checked.request.descriptor;
-  const planDigest = moduleReviewDigestV1(MODULE_ENGINE_PLAN_SCHEMA_V1, plan), cases = compiledCases(plan, source, engine);
-  validateModuleEngineTestResultsV1(tests, subject.requestDigest, planDigest, cases);
-  return {
-    schemaVersion: MODULE_ENGINE_BUILD_SCHEMA_V1, authority: "programmable.module-review.engine-build.v1" as const, subject,
-    packageId: source.checked.packageId, familyId: source.checked.familyId, rewardWallet: descriptor.rewardWallet.toLowerCase(),
-    sourceManifestHash: moduleReviewDigestV1("programmable.modules.source-manifest.v1", descriptor), planDigest,
-    configurationSchemaHash: moduleReviewDigestV1("programmable.modules.configuration-schema.v1", descriptor.configuration),
-    configurationCodec: plan.configurationCodec, configurationAbi: plan.configurationAbi,
-    ...(plan.testEnvironment === undefined ? {} : { testEnvironment: plan.testEnvironment }),
-    compiler: compilerIdentity(source.standard), engine, executionGas: plan.executionGas, operationPermissions: plan.operationPermissions, moneyRights: plan.moneyRights, coinRights: plan.coinRights, testEconomics: plan.testEconomics, cases, tests,
-    reviewRequired: MODULE_ENGINE_REVIEW_AREAS_V1, approved: false as const, registryApproved: false as const, available: false as const,
-  };
-}
 export function validateModuleEngineTestResultsV1(results: ModuleEngineTestResultV1, requestDigest: ModuleDigestV1, planDigest: ModuleDigestV1, cases: readonly ModuleEngineCompiledCaseV1[]) {
   exact(results, ["schemaVersion", "requestDigest", "planDigest", "harnessDigest", "execution", "cases", "allRequiredChecksPassed"]);
   need(results.schemaVersion === "programmable.modules.engine-test-results.v1" && results.execution === "isolated-docker-anvil" && results.requestDigest === requestDigest && results.planDigest === planDigest && DIGEST.test(results.harnessDigest), "MODULE_ENGINE_TEST_SUBJECT_MISMATCH");
@@ -293,15 +214,6 @@ export function validateModuleEngineTestResultsV1(results: ModuleEngineTestResul
       need(o.id === c.operations[j]!.id && o.outcomeMatched === true && o.resultMatched === true && o.stateMatched === true && o.inputOutputBound === true && o.replayReverted === true && o.feesBacked === true, "MODULE_ENGINE_OPERATIONS_FAILED");
     });
   });
-}
-
-/** API-side reconstruction binds the authenticated worker result; no contributor code executes here. */
-export function verifyModuleEngineBuildArtifactV1(artifact: ModuleEngineBuildArtifactV1, subject: ModuleReviewSubjectV1, rawPlan: unknown, sourceRequest: unknown): void {
-  const plan = validateModuleEngineBuildPlanV1(rawPlan, subject), source = sourceInput(sourceRequest, subject, plan), value = artifact.engine;
-  const engine = contractArtifact({ contracts: { [source.target.sourcePath]: { [source.target.entrypoint]: { abi: value.abi, evm: { bytecode: { object: value.creationBytecode.slice(2) }, deployedBytecode: { object: value.runtimeTemplate.slice(2), immutableReferences: Object.fromEntries(value.immutableReferences.map(r => [r.id, r.ranges])) } } } } } }, source.target, plan);
-  const contents = artifactContents(subject, plan, source, engine, artifact.tests);
-  const expected = { ...contents, artifactDigest: moduleReviewDigestV1(MODULE_ENGINE_BUILD_SCHEMA_V1, contents) };
-  need(json(artifact) === json(expected) && new TextEncoder().encode(json(artifact)).length <= MODULE_REVIEW_LIMITS_V1.artifactBytes, "MODULE_REVIEW_BUILD_BINDING_INVALID");
 }
 
 /** DTO reader: byte identities and case evidence are checked before any UI or publisher consumes the build. */
@@ -324,7 +236,7 @@ export function parseEngineReviewArtifact(value: unknown, subject: ModuleReviewS
   if(plan) {
     need(json(artifact.testEnvironment ?? null)===json(plan.testEnvironment ?? null),"MODULE_ENGINE_BUILD_PLAN_MISMATCH");
     need(artifact.planDigest===moduleReviewDigestV1(MODULE_ENGINE_PLAN_SCHEMA_V1,plan) && artifact.executionGas===plan.executionGas && artifact.moneyRights===plan.moneyRights && artifact.coinRights===plan.coinRights && json(artifact.operationPermissions)===json(plan.operationPermissions) && json(artifact.testEconomics)===json(plan.testEconomics) && json(artifact.configurationAbi)===json(plan.configurationAbi),"MODULE_ENGINE_BUILD_PLAN_MISMATCH");
-    const rebuilt=contractArtifact({contracts:{[engine.sourcePath]:{[engine.contractName]:{abi:engine.abi,evm:{bytecode:{object:engine.creationBytecode.slice(2)},deployedBytecode:{object:engine.runtimeTemplate.slice(2),immutableReferences:Object.fromEntries(engine.immutableReferences.map(r=>[r.id,r.ranges]))}}}}}},{id:plan.engineComponentId,sourcePath:engine.sourcePath,entrypoint:engine.contractName},plan);
+    const rebuilt=parseModuleEngineContractArtifactV1({contracts:{[engine.sourcePath]:{[engine.contractName]:{abi:engine.abi,evm:{bytecode:{object:engine.creationBytecode.slice(2)},deployedBytecode:{object:engine.runtimeTemplate.slice(2),immutableReferences:Object.fromEntries(engine.immutableReferences.map(r=>[r.id,r.ranges]))}}}}}},{id:plan.engineComponentId,sourcePath:engine.sourcePath,entrypoint:engine.contractName},plan);
     need(json(engine)===json(rebuilt) && artifact.cases.length===plan.cases.length,"MODULE_ENGINE_BUILD_CONTRACT_MISMATCH");
   }
   for(const [i,c] of artifact.cases.entries()) {

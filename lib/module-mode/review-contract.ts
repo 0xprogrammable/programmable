@@ -23,7 +23,7 @@ export interface ReviewBuildArtifact {
   reviewRequired: string[]; approved: false; registryApproved: false; available: false; artifactDigest: Hex;
 }
 export interface ReviewJob { subject: ReviewSubject; state: ModuleReviewState; reviewRevision: number; plan: AnyReviewPlan | null; planDigest: Hex | null; artifact: AnyReviewBuildArtifact | null; attempt: number; lastError: string | null; createdAt: string; updatedAt: string }
-export interface ReviewQueueItem extends Omit<ReviewJob, "artifact" | "plan" | "planDigest"> { build: { artifactDigest: Hex; programName: string; testsPassed: boolean; caseCount: number } | null }
+export interface ReviewQueueItem extends Omit<ReviewJob, "artifact" | "plan" | "planDigest"> { sourceSummary?: { name: string; version: string } | null; build: { artifactDigest: Hex; programName: string; testsPassed: boolean; caseCount: number } | null }
 export interface ReviewQueue { schemaVersion: "programmable.modules.website-review-queue.v1"; jobs: ReviewQueueItem[]; nextCursor: string | null }
 export interface ReviewSourceInfo { descriptor: OpenSourcePackage; packageId: Hex; familyId: Hex; files: { path: string; sha256: string; bytes: number }[] }
 export interface ReviewAttempt { attempt: number; event: "claimed" | "completed" | "failed" | "expired"; requestDigest: Hex; planDigest: Hex; workerIdentity: null | { sourceCommit: string; runId: string; runAttempt: string; workflowRef: string; identityDigest: Hex }; artifactDigest: Hex | null; errorCode: string | null; createdAt: string }
@@ -163,10 +163,19 @@ export function summarizeReviewJob(job: ReviewJob): ReviewQueueItem {
   return { subject: job.subject, state: job.state, reviewRevision: job.reviewRevision, attempt: job.attempt, lastError: job.lastError, createdAt: job.createdAt, updatedAt: job.updatedAt, build: job.artifact ? { artifactDigest: job.artifact.artifactDigest, programName: job.artifact.schemaVersion === "programmable.modules.engine-build.v1" ? job.artifact.engine.contractName : job.artifact.program.contractName, testsPassed: job.artifact.tests.allRequiredChecksPassed, caseCount: job.artifact.tests.cases.length } : null };
 }
 export function parseReviewQueueItem(value: unknown): ReviewQueueItem {
-  const r = reviewRecord(value, JOB_KEYS); jobState(r);
+  const raw = reviewRecord(value);
+  const r = reviewRecord(raw, Object.hasOwn(raw, "sourceSummary") ? [...JOB_KEYS, "sourceSummary"] : JOB_KEYS); jobState(r);
   const subject = parseReviewSubject(r.subject);
   requireValue(r.plan === null && r.artifact === null && (r.planDigest === null || isReviewDigest(r.planDigest)), "lightweight queue entry");
-  return summarizeReviewJob({ ...r, subject } as unknown as ReviewJob);
+  const result = summarizeReviewJob({ ...r, subject } as unknown as ReviewJob);
+  if (r.sourceSummary !== undefined && r.sourceSummary !== null) {
+    const summary = reviewRecord(r.sourceSummary, ["name", "version"]);
+    const bytes = new TextEncoder();
+    requireValue(typeof summary.name === "string" && bytes.encode(summary.name).length >= 1 && bytes.encode(summary.name).length <= 512 &&
+      typeof summary.version === "string" && bytes.encode(summary.version).length >= 1 && bytes.encode(summary.version).length <= 128, "source summary");
+    result.sourceSummary = { name: summary.name, version: summary.version };
+  }
+  return result;
 }
 export function reviewStateLabel(state: ModuleReviewState) {
   return ({ awaiting_plan: "Needs build plan", queued: "Queued", running: "Building", built: "Ready for review", build_failed: "Build failed", changes_requested: "Changes requested", accepted: "Review approved", rejected: "Rejected" })[state];
