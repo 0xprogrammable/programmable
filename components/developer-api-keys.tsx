@@ -1554,10 +1554,43 @@ export function DeveloperApiKeysView({
 
       <header className={styles.hero}>
         <div className={styles.heroCopy}>
-          <h1>API keys</h1>
-          <p className={styles.intro}>Connect your AI builder.</p>
+          <h1>{activeSection === "keys" ? "API keys" : activeSection === "launch" ? "Launch a hook" : "Your launches"}</h1>
+          <p className={styles.intro}>
+            {activeSection === "keys"
+              ? "Connect your AI builder."
+              : activeSection === "launch"
+                ? "Upload the launch file from your builder."
+                : "Track progress and complete your wallet steps."}
+          </p>
         </div>
       </header>
+
+      <nav
+        className={styles.sectionSwitch}
+        aria-label="Developer access view"
+      >
+        <button
+          aria-pressed={activeSection === "keys"}
+          type="button"
+          onClick={() => showSection("keys")}
+        >
+          API keys
+        </button>
+        <button
+          aria-pressed={activeSection === "launch"}
+          type="button"
+          onClick={() => showSection("launch")}
+        >
+          Launch
+        </button>
+        <button
+          aria-pressed={activeSection === "history"}
+          type="button"
+          onClick={() => showSection("history")}
+        >
+          History
+        </button>
+      </nav>
 
       {activeSection === "launch" ? (
         <RobinhoodFeePolicyDisclosure />
@@ -1593,7 +1626,13 @@ export function DeveloperApiKeysView({
         <section className={styles.walletGate} aria-labelledby="connect-title">
           <div className={styles.walletGateCopy}>
             <h2 id="connect-title">Connect your wallet</h2>
-            <p>Create and manage keys for this account.</p>
+            <p>
+              {activeSection === "keys"
+                ? "Create and manage keys for this account."
+                : activeSection === "launch"
+                  ? "Continue your hook launch with this wallet."
+                  : "See launches linked to this wallet."}
+            </p>
           </div>
           <button
             className={styles.primaryButton}
@@ -1694,33 +1733,6 @@ export function DeveloperApiKeysView({
               )}
             </div>
           ) : null}
-
-          <nav
-            className={styles.sectionSwitch}
-            aria-label="Developer access view"
-          >
-            <button
-              aria-pressed={activeSection === "keys"}
-              type="button"
-              onClick={() => showSection("keys")}
-            >
-              API keys
-            </button>
-            <button
-              aria-pressed={activeSection === "launch"}
-              type="button"
-              onClick={() => showSection("launch")}
-            >
-              Launch
-            </button>
-            <button
-              aria-pressed={activeSection === "history"}
-              type="button"
-              onClick={() => showSection("history")}
-            >
-              History
-            </button>
-          </nav>
 
           {activeSection === "keys" ? (
             <div className={styles.workspace}>
