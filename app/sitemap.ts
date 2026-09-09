@@ -6,7 +6,11 @@ const PUBLIC_ROUTES = [
   "",
   "/explore",
   "/launch",
+  "/launch/modules",
+  "/developers/modules",
+  "/developers/hooks",
   "/developers/api-keys",
+  "/privacy",
   "/docs",
   "/docs/economics",
   "/docs/v4-token",
@@ -31,7 +35,7 @@ const PUBLIC_ROUTES = [
   "/docs/launch-stamps",
   "/docs/models/classic",
   "/docs/models/custom",
-  "/docs/models/stock-paired",
+  "/developer-reference/stock-paired",
   "/profile",
 ] as const;
 

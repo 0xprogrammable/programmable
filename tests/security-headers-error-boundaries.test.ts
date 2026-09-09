@@ -125,7 +125,7 @@ describe("application error boundaries", () => {
     const styles = read("app/error-boundary.module.css");
 
     expect(styles).toContain(":focus-visible");
-    expect(styles).toContain("min-height: 50px");
+    expect(styles).toContain("min-height: 48px");
     expect(styles).toContain("@media (prefers-reduced-motion: reduce)");
     expect(styles).toContain("@media (forced-colors: active)");
   });

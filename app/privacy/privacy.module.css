@@ -1,0 +1,131 @@
+.page {
+  max-width: 64rem;
+  padding-block: 64px 32px;
+}
+
+.header {
+  max-width: 42rem;
+}
+
+.header h1 {
+  color: var(--webde-ink);
+  font-size: 48px;
+  font-weight: 600;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  margin: 0;
+  text-wrap: balance;
+}
+
+.header p,
+.section p {
+  color: var(--webde-muted);
+  font-size: 16px;
+  line-height: 1.5;
+  margin: 16px 0 0;
+  text-wrap: pretty;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 24px;
+}
+
+.primaryAction,
+.secondaryAction {
+  align-items: center;
+  border: 1px solid var(--webde-line);
+  border-radius: var(--webde-radius-control);
+  display: inline-flex;
+  font-size: 16px;
+  font-weight: 600;
+  justify-content: center;
+  min-height: 48px;
+  padding: 8px 16px;
+  transition: background-color 160ms var(--webde-ease);
+}
+
+.primaryAction {
+  background: var(--webde-ink);
+  border-color: var(--webde-ink);
+  color: var(--webde-canvas);
+}
+
+.secondaryAction {
+  background: var(--webde-surface);
+  color: var(--webde-ink);
+}
+
+.sections {
+  display: grid;
+  gap: 40px;
+  margin-top: 64px;
+}
+
+.section {
+  display: grid;
+  gap: 24px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  scroll-margin-top: calc(var(--header-height) + 24px);
+}
+
+.section h2 {
+  color: var(--webde-ink);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.5;
+  margin: 0;
+  text-wrap: balance;
+}
+
+.section p:first-child {
+  margin-top: 0;
+}
+
+.section p a {
+  color: var(--webde-ink);
+  text-decoration: underline;
+  text-decoration-color: var(--webde-muted);
+  text-underline-offset: 4px;
+}
+
+.serviceLinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 24px;
+  margin-top: 8px;
+}
+
+.serviceLinks a {
+  align-items: center;
+  color: var(--webde-ink);
+  display: inline-flex;
+  font-size: 14px;
+  gap: 8px;
+  min-height: 44px;
+}
+
+.page a:focus-visible {
+  outline: 2px solid var(--brand-ivory);
+  outline-offset: 4px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .primaryAction:hover { background: #e5e5e5; }
+  .secondaryAction:hover { background: var(--webde-control); }
+  .serviceLinks a:hover { text-decoration: underline; text-underline-offset: 4px; }
+}
+
+@media (max-width: 40rem) {
+  .page { padding-block: 40px 24px; }
+  .header h1 { font-size: 36px; line-height: 1.1; }
+  .sections { gap: 32px; margin-top: 40px; }
+  .section { gap: 12px; grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .primaryAction,
+  .secondaryAction { transition: none; }
+}

@@ -57,6 +57,19 @@ function homeMarkdownResponse(): NextResponse {
 }
 
 export function proxy(request: NextRequest) {
+  // Keep the conventional uppercase entry on the canonical public guide.
+  // Check the actual pathname because matchers can be case insensitive.
+  if (request.nextUrl.pathname.toLowerCase() === "/agents.md") {
+    if (
+      request.nextUrl.pathname !== "/agents.md" &&
+      (request.method === "GET" || request.method === "HEAD")
+    ) {
+      const destination = request.nextUrl.clone();
+      destination.pathname = "/agents.md";
+      return NextResponse.redirect(destination, 308);
+    }
+    return NextResponse.next();
+  }
   if (isRetiredPredictionApi(request.nextUrl.pathname)) {
     return retiredPredictionApiResponse();
   }
@@ -96,5 +109,5 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/", "/docs/developers", "/api/prediction/:path*"],
+  matcher: ["/", "/AGENTS.md", "/docs/developers", "/api/prediction/:path*"],
 };

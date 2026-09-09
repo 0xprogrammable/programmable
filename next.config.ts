@@ -98,6 +98,11 @@ const nextConfig: NextConfig = {
   async redirects() {
     return [
       {
+        source: "/docs/models/stock-paired",
+        destination: "/developer-reference/stock-paired",
+        permanent: true,
+      },
+      {
         source: "/docs/developers/module-mode-indexing.md",
         destination: "/developers/module-mode-indexing-v1.md",
         permanent: false,

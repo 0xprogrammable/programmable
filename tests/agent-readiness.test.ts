@@ -32,6 +32,20 @@ const ORIGIN = "https://programmable.market";
 const CUSTOM_LAUNCH_API_ORIGIN = "https://api.programmable.market";
 
 describe("agent-readable public surface", () => {
+  it("redirects the conventional uppercase agent guide without looping or negotiating away Markdown", () => {
+    const alias = proxy(new NextRequest(`${ORIGIN}/AGENTS.md`, {
+      headers: { Accept: "text/markdown" },
+    }));
+    expect(alias.status).toBe(308);
+    expect(alias.headers.get("location")).toBe(`${ORIGIN}/agents.md`);
+
+    const canonical = proxy(new NextRequest(`${ORIGIN}/agents.md`, {
+      headers: { Accept: "text/plain" },
+    }));
+    expect(canonical.headers.get("location")).toBeNull();
+    expect(canonical.headers.get("x-middleware-next")).toBe("1");
+  });
+
   it("routes shared token/hook projects from official entries to the separate MultiRole contract", async () => {
     const response = getAgentDiscovery();
     expect(response.status).toBe(200);

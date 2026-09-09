@@ -23,7 +23,7 @@ describe("Site footer", () => {
   });
 
   it("does not prefetch internal footer destinations, including the analytics redirect", () => {
-    expect(footerSource.match(/prefetch=\{false\}/gu)).toHaveLength(3);
+    expect(footerSource.match(/prefetch=\{false\}/gu)).toHaveLength(4);
     expect(footerSource).toMatch(
       /className=\{styles\.brandLink\}[\s\S]{0,100}prefetch=\{false\}/u,
     );
@@ -46,20 +46,13 @@ describe("Site footer", () => {
     expect(footerSource).toContain('label: "X"');
   });
 
-  it("places Dune analytics between DEX Screener and Discord", () => {
-    const dexscreener = footerSource.indexOf("https://dexscreener.com/");
-    const dune = footerSource.indexOf(
-      "https://dune.com/programmablehq/analytics",
-    );
-    const discord = footerSource.indexOf(
-      "https://discord.com/invite/programmable",
-    );
-
-    expect(dexscreener).toBeGreaterThan(-1);
-    expect(dune).toBeGreaterThan(dexscreener);
-    expect(discord).toBeGreaterThan(dune);
-    expect(footerSource).toContain('label: "DEX Screener"');
-    expect(footerSource).toContain('label: "Dune analytics"');
+  it("offers module and hook building beside one analytics destination", () => {
+    expect(footerSource).toContain('href: "/developers/modules"');
+    expect(footerSource).toContain('href: "/developers/hooks"');
+    expect(footerSource).toContain('href: "/analytics"');
+    expect(footerSource).not.toContain('href: "https://dune.com/programmablehq/analytics"');
+    expect(footerSource).toContain('href: "/privacy"');
+    expect(footerSource).toContain('href: "/agents.md"');
   });
 
   it("stacks evenly aligned link groups on narrow screens", () => {
