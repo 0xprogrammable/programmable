@@ -90,9 +90,11 @@ export function ProfileModules({ account, ownProfile = false, initialSection = "
     <header className={styles.heading}>
       <div>
         <h2 id="profile-modules-title">Modules{!ownProfile && scoped && (!partial || scoped.page.totalItems > 0) ? <span className={styles.count}> {scoped.page.totalItems}{partial ? "+" : ""}</span> : null}</h2>
-        <p className={styles.subtitle}>{ownProfile ? "Coin features you’ve made." : "Coin features by this creator."}</p>
       </div>
-      {ownProfile ? <Link className={styles.buildLink} href="/developers/modules">Build a module<ArrowUpRight aria-hidden="true" size={16} strokeWidth={1.8} /></Link>
+      {ownProfile ? <div className={styles.headingActions}>
+        <Link className={styles.buildLink} href="/developers/modules">Build a module<ArrowUpRight aria-hidden="true" size={16} strokeWidth={1.8} /></Link>
+        {section === "published" ? <button type="button" className={styles.refresh} onClick={() => setRetry(value => value + 1)} disabled={loading} aria-label="Refresh modules" title="Refresh modules" aria-busy={loading}><RefreshCw aria-hidden="true" size={16} strokeWidth={1.8} /></button> : <span className={styles.refreshPlaceholder} aria-hidden="true" />}
+      </div>
         : <button type="button" className={styles.refresh} onClick={() => setRetry(value => value + 1)} disabled={loading} aria-label="Refresh modules" aria-busy={loading}>
           <RefreshCw aria-hidden="true" size={16} strokeWidth={1.8} />
         </button>}
@@ -104,7 +106,6 @@ export function ProfileModules({ account, ownProfile = false, initialSection = "
         </button>
         <button type="button" role="tab" id={`${tabId}-submissions`} aria-controls={`${tabId}-panel`} aria-selected={section === "submissions"} tabIndex={section === "submissions" ? 0 : -1} data-section="submissions" onClick={() => setSelectedSection("submissions")}>Submissions</button>
       </div>
-      {section === "published" ? <button type="button" className={styles.refresh} onClick={() => setRetry(value => value + 1)} disabled={loading} aria-label="Refresh modules" aria-busy={loading}><RefreshCw aria-hidden="true" size={16} strokeWidth={1.8} /></button> : null}
     </div> : null}
     <div className={styles.content} id={ownProfile ? `${tabId}-panel` : undefined} role={ownProfile ? "tabpanel" : undefined} aria-labelledby={ownProfile ? `${tabId}-${section}` : undefined} tabIndex={ownProfile ? 0 : undefined}>
       {section === "submissions" ? <ProfileModuleSubmissions /> : <>
@@ -112,7 +113,7 @@ export function ProfileModules({ account, ownProfile = false, initialSection = "
       <div aria-busy={loading}>
       {items.length ? <ProfileModuleCards items={items} onSelect={setSelected} />
         : loading && !scoped ? <div className={styles.loading} aria-hidden="true">{[0, 1].map(row => <div className={styles.skeleton} key={row}><span /><div><span /><span /><span /></div></div>)}</div>
-          : !failed && !partial ? <div className={styles.empty}><span className={styles.emptyIcon} aria-hidden="true"><Puzzle size={28} strokeWidth={1.4} /></span><h3>No published modules yet.</h3><p>{ownProfile ? "Share a feature that others can add to their coins." : "This creator’s modules will appear here once published."}</p></div> : null}
+          : !failed && !partial ? <div className={styles.empty}><span className={styles.emptyIcon} aria-hidden="true"><Puzzle size={28} strokeWidth={1.4} /></span><h3>No published modules yet.</h3></div> : null}
       </div>
     {(scoped?.page.totalPages ?? 1) > 1 ? <nav className={styles.pagination} aria-label="Module pages">
       <button type="button" aria-label="Previous module page" disabled={loading || shownPage === 1} onClick={() => setPage(Math.max(1, shownPage - 1))}><ChevronLeft aria-hidden="true" size={18} /></button>

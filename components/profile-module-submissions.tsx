@@ -55,12 +55,12 @@ export function ProfileModuleSubmissions({ data = unavailable, onRetry }: { data
             <span className={styles.moduleIcon} aria-hidden="true"><Puzzle size={22} strokeWidth={1.6} /></span>
             <span className={styles.copy}>
               <span className={styles.title}><strong>{item.title}</strong><span className={styles.version}>v{item.version}</span></span>
-              {item.description ? <span className={styles.description}>{item.description}</span> : null}
             </span>
             <span className={`${styles.status} ${styles[status.tone]}`}><span className={styles.statusDot} aria-hidden="true" />{status.label}</span>
             <span className={styles.open}><span>Details</span><ChevronRight size={16} strokeWidth={1.8} aria-hidden="true" /></span>
           </summary>
           <div className={styles.detail}>
+            {item.description ? <p className={styles.description}>{item.description}</p> : null}
             {submittedAt || updatedAt ? <dl className={styles.dates}>
               {submittedAt ? <div><dt>Submitted</dt><dd><time dateTime={item.submittedAt}>{submittedAt}</time></dd></div> : null}
               {updatedAt ? <div><dt>Last update</dt><dd><time dateTime={item.updatedAt}>{updatedAt}</time></dd></div> : null}
@@ -76,21 +76,18 @@ export function ProfileModuleSubmissions({ data = unavailable, onRetry }: { data
   if (data.status === "ready") return <div className={styles.state}>
     <span className={styles.icon} aria-hidden="true"><Puzzle size={28} strokeWidth={1.4} /></span>
     <h3>No submissions yet.</h3>
-    <p>Build a module and send it for review.</p>
-    <Link className={styles.guide} href="/developers/modules">Build a module<ArrowUpRight size={16} aria-hidden="true" strokeWidth={1.8} /></Link>
   </div>;
 
   if (data.status === "error") return <div className={styles.state} role="status">
     <span className={styles.icon} aria-hidden="true"><Inbox size={28} strokeWidth={1.4} /></span>
     <h3>Couldn’t load your submissions.</h3>
-    <p>Try again in a moment.</p>
     {onRetry ? <button type="button" className={styles.guide} onClick={onRetry}><RefreshCw size={16} aria-hidden="true" strokeWidth={1.8} />Try again</button> : null}
   </div>;
 
   return <div className={styles.state}>
     <span className={styles.icon} aria-hidden="true"><Inbox size={28} strokeWidth={1.4} /></span>
-    <h3>Submission history isn’t available here yet.</h3>
-    <p>Your agent can check the latest review status of each module you’ve sent.</p>
+    <h3>History isn’t available here yet.</h3>
+    <p>Check the status with your agent.</p>
     <Link className={styles.guide} href="/developer-reference/module-mode">Module guide<ArrowUpRight size={16} aria-hidden="true" strokeWidth={1.8} /></Link>
   </div>;
 }
