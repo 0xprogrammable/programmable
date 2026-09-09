@@ -8,6 +8,7 @@ import { MODULE_TOKEN_FALLBACK_IMAGE, RobinhoodCoinArtwork } from "@/components/
 import { RobinhoodProjectLinks } from "@/components/robinhood-project-links";
 import { TokenLaunchModules } from "@/components/token-launch-modules";
 import { LaunchProjectionDetails } from "@/components/launch-projection-details";
+import { LaunchProjectionTrade } from "@/components/launch-projection-trade";
 import { useRobinhoodPresentation } from "@/components/use-robinhood-presentation";
 import { isRobinhoodModuleLaunch, robinhoodModuleManageHref, type RobinhoodLaunch } from "@/lib/robinhood-launches";
 import { coinDollars, coinTicker } from "@/lib/robinhood-presentation";
@@ -85,6 +86,7 @@ export function RobinhoodTokenView({ address, token, status }: {
         </section>
         {moduleLaunch ? <TokenLaunchModules launch={moduleLaunch} /> : null}
         {token.launchProjection ? <LaunchProjectionDetails projection={token.launchProjection} /> : null}
+        {token.launchProjection ? <LaunchProjectionTrade key={token.launchProjection.launchId} projection={token.launchProjection} /> : null}
         {token && status !== "ready" ? <p className={styles.notice} role="status">{status === "syncing"
           ? "New launches are still being checked. This coin comes from the verified launch index."
           : "Showing the last verified launch record. Index updates are temporarily unavailable."}</p> : null}
