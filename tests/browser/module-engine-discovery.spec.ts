@@ -11,16 +11,16 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
   test(`template selection and bound public operations at ${viewport.width}px`, async ({ page }, testInfo) => {
     const errors: string[] = []; page.on("pageerror", e => errors.push(e.message)); page.on("console", e => { if (e.type() === "error") errors.push(e.text()); });
     await page.setViewportSize(viewport); await page.goto(origin);
-    const select = page.getByRole("button", { name: "Use template Conditional payment", exact: true });
+    const select = page.getByRole("button", { name: "Choose module Conditional payment", exact: true });
     await expect(select).toBeVisible(); expect((await select.boundingBox())!.height).toBeGreaterThanOrEqual(44);
     await page.screenshot({ path: testInfo.outputPath(`library-${viewport.width}.png`), fullPage: true });
     await select.focus(); expect(await select.evaluate(e => getComputedStyle(e).outlineStyle)).not.toBe("none");
     await page.keyboard.press("Enter"); await expect(select).toHaveAttribute("aria-pressed", "true");
-    await page.getByRole("searchbox", { name: "Search templates" }).fill("refund");
-    await expect(page.getByRole("button", { name: "Use template Quote escrow", exact: true })).toHaveCount(0);
+    await page.getByRole("searchbox", { name: "Search modules" }).fill("refund");
+    await expect(page.getByRole("button", { name: "Choose module Quote escrow", exact: true })).toHaveCount(0);
     await expect(select).toBeVisible();
-    await page.getByRole("searchbox", { name: "Search templates" }).fill("unmatched");
-    await expect(page.getByText("No matching templates", { exact: true })).toBeVisible();
+    await page.getByRole("searchbox", { name: "Search modules" }).fill("unmatched");
+    await expect(page.getByText("No matching modules", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Clear filters", exact: true }).click();
     const profile = page.getByRole("button", { name: "View module Quote escrow, version 1.0.0", exact: true });
     await profile.focus(); await page.keyboard.press("Enter");
