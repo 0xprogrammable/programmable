@@ -134,7 +134,7 @@ export function ModuleEngineBuilder({ availability: raw, client: suppliedClient,
   const quoteShort = quoteAsset ? `${quoteAsset.slice(0, 6)}…${quoteAsset.slice(-4)}` : "Not chosen";
 
   return <div className={`${styles.page} ${engineStyles.root} ${engineStyles.builderRoot}`}>
-    <div className={engineStyles.pageTop}><a href="/launch"><ArrowLeft size={16} aria-hidden="true" />Back</a><span>Robinhood Chain</span></div>
+    <div className={engineStyles.pageTop}><a href="/launch"><ArrowLeft size={16} aria-hidden="true" />Back</a></div>
     {statusContent}
     {!template || !definition || !availability?.release ? <section className={engineStyles.emptyState}><h1>Create a coin</h1><p role="status">No modules available yet.{parsed.error || availability?.reason ? ` ${parsed.error ?? availability?.reason}` : ""}</p></section> : <>
       {availability.reason ? <p className={engineStyles.notice} role="status">{availability.reason}</p> : null}

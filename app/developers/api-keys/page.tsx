@@ -25,6 +25,7 @@ export default async function DeveloperApiKeysPage({
   return (
     <DeveloperApiKeys
       initialSection={developerApiKeysInitialSection(resolvedSearchParams)}
+      moduleBuilder={resolvedSearchParams.purpose === "modules"}
       agentSetupText={buildProgrammableAgentSetupTextV1(V4_API_PROFILE_VERSION)}
     />
   );

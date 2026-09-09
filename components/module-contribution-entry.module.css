@@ -16,12 +16,14 @@
 .back, .textLink, .resources a { align-items: center; border-radius: 8px; color: var(--module-muted); display: inline-flex; font-size: 14px; gap: 8px; line-height: 20px; min-height: 44px; text-decoration: none; }
 .workspace { background: var(--module-surface); border: 1px solid var(--module-line); border-radius: 16px; padding: 32px; }
 .header h1 { color: var(--module-ink); font-size: 32px; font-weight: 500; letter-spacing: -0.035em; line-height: 40px; margin: 0; text-wrap: balance; }
+.header h2 { color: var(--module-ink); font-size: 24px; font-weight: 500; letter-spacing: -0.025em; line-height: 32px; margin: 0; }
+.promptWorkspace { --module-ink: #f5f3ef; --module-muted: #aaa9a5; --module-line: #30302e; --module-surface: #151515; --module-accent: #e786b2; margin-block: 24px; }
 .header p { color: var(--module-muted); font-size: 14px; line-height: 20px; margin: 8px 0 24px; max-width: 580px; text-wrap: pretty; }
 .ideaField { display: grid; gap: 8px; }
 .ideaField > span { color: var(--module-muted); font-size: 14px; line-height: 20px; }
 .ideaField textarea { background: #181818; border: 1px solid #76716b; border-radius: 12px; color: var(--module-ink); font: inherit; font-size: 14px; line-height: 24px; min-height: 136px; padding: 12px 16px; resize: vertical; width: 100%; }
 .ideaField textarea::placeholder { color: #888884; }
-.actions { display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); margin-top: 16px; max-width: 400px; }
+.actions { display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr); margin-top: 16px; max-width: 200px; }
 .primaryAction, .secondaryAction { align-items: center; border: 1px solid var(--module-line); border-radius: 12px; display: inline-flex; font: inherit; font-size: 14px; font-weight: 500; gap: 8px; justify-content: center; line-height: 20px; min-height: 48px; padding: 12px 16px; text-decoration: none; white-space: nowrap; }
 .primaryAction { background: var(--module-accent); border-color: var(--module-accent); color: #1c1217; }
 .secondaryAction { background: transparent; border-color: #76716b; color: var(--module-ink); }
@@ -35,8 +37,8 @@
 .promptDetails pre { background: #000; border: 1px solid var(--module-line); border-radius: 12px; color: var(--module-muted); font-family: var(--font-instrument), sans-serif; font-size: 14px; line-height: 24px; margin: 8px 0 16px; overflow-wrap: anywhere; padding: 16px; white-space: pre-wrap; }
 .reviewNote { color: var(--module-muted); font-size: 14px; line-height: 20px; margin: 16px 0 0; text-wrap: pretty; }
 .resources { display: flex; flex-wrap: wrap; gap: 24px; margin-top: 16px; }
-.page :is(a, button, summary) { cursor: pointer; touch-action: manipulation; transition: color 120ms ease, background-color 120ms ease, border-color 120ms ease; }
-.page :is(a, button, summary, textarea):focus-visible { outline: 2px solid var(--module-accent); outline-offset: 3px; }
+:is(.page, .promptWorkspace) :is(a, button, summary) { cursor: pointer; touch-action: manipulation; transition: color 120ms ease, background-color 120ms ease, border-color 120ms ease; }
+:is(.page, .promptWorkspace) :is(a, button, summary, textarea):focus-visible { outline: 2px solid var(--module-accent); outline-offset: 3px; }
 @media (hover: hover) and (pointer: fine) {
 .page :is(.back, .textLink, .resources a, .promptDetails summary):hover { color: var(--module-ink); }
 .primaryAction:hover { background: #ee9fc2; border-color: #ee9fc2; }
@@ -54,5 +56,5 @@
   .copyStatus { min-height: 60px; }
 }
 
-@media (prefers-reduced-motion: reduce) { .page *, .page *::before, .page *::after { transition: none; } }
+@media (prefers-reduced-motion: reduce) { :is(.page, .promptWorkspace) *, :is(.page, .promptWorkspace) *::before, :is(.page, .promptWorkspace) *::after { transition: none; } }
 @media (forced-colors: active) { .workspace, .primaryAction, .secondaryAction, .ideaField textarea, .promptDetails pre { border: 1px solid CanvasText; } }

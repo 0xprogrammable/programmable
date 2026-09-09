@@ -25,6 +25,7 @@ import {
 import styles from "@/components/developer-api-keys.module.css";
 import { AGENT_KEY_SCHEMA, AGENT_SCOPES, buildAgentConnection, buildAgentInstructions } from "@/lib/agent-connection";
 import { DeveloperLaunchHistory } from "@/components/developer-launch-history";
+import { ModuleBuilderPrompt } from "@/components/module-contribution-entry";
 import {
   DeveloperRobinhoodLaunch,
   RobinhoodFeePolicyDisclosure,
@@ -108,11 +109,13 @@ const readHydrated = () => true;
 const readServerHydrated = () => false;
 type ApiKeyLoadMode = "initial" | "refresh" | "mutation";
 type DeveloperApiKeysProps = Readonly<{
+  moduleBuilder?: boolean;
   initialSection?: ActiveSection;
   agentSetupText?: string;
   moduleAgentSetupText?: string;
 }>;
 type DeveloperApiKeysViewProps = Readonly<{
+  moduleBuilder?: boolean;
   account: `0x${string}` | null;
   authReady: boolean;
   connecting: boolean;
@@ -839,6 +842,7 @@ function ExpirySelect({
 }
 
 export function DeveloperApiKeys({
+  moduleBuilder = false,
   initialSection = "keys",
   agentSetupText,
   moduleAgentSetupText,
@@ -866,6 +870,7 @@ export function DeveloperApiKeys({
       getAccessToken={getAccessToken}
       getIdentityToken={getIdentityToken}
       initialSection={initialSection}
+      moduleBuilder={moduleBuilder}
       agentSetupText={agentSetupText}
       moduleAgentSetupText={moduleAgentSetupText}
       openWallet={openWallet}
@@ -879,6 +884,7 @@ export function DeveloperApiKeys({
 }
 
 export function DeveloperApiKeysView({
+  moduleBuilder = false,
   account,
   authReady,
   connecting,
@@ -959,6 +965,8 @@ export function DeveloperApiKeysView({
     (activeKeyPage - 1) * API_KEY_PAGE_SIZE,
     activeKeyPage * API_KEY_PAGE_SIZE,
   );
+  const moduleKey = moduleBuilder ? apiKeys.find((key) => keyStatus(key) === "Active" && moduleScopes.every((scope) => key.scopes.includes(scope))) : undefined;
+  const KeyWorkspace = moduleKey ? "details" : "div";
 
   const getAuthHeaders = useCallback(
     async (json = false) => {
@@ -1561,10 +1569,10 @@ export function DeveloperApiKeysView({
 
       <header className={styles.hero}>
         <div className={styles.heroCopy}>
-          <h1>{activeSection === "keys" ? "API keys" : activeSection === "launch" ? "Launch a hook" : "Your launches"}</h1>
+          <h1>{activeSection === "keys" ? moduleBuilder ? "Build a module" : "API keys" : activeSection === "launch" ? "Launch a hook" : "Your launches"}</h1>
           <p className={styles.intro}>
             {activeSection === "keys"
-              ? "Connect your AI builder."
+              ? moduleBuilder ? "Set up your API key, then copy your module prompt." : "Connect your AI builder."
               : activeSection === "launch"
                 ? "Upload the launch file from your builder."
                 : "Track progress and complete your wallet steps."}
@@ -1691,16 +1699,16 @@ export function DeveloperApiKeysView({
               {mutationResult.result.secretState === "delivered-once" ? (
                 <>
                   <p className={styles.revealWarning}>
-                    Copy the connection for your agent. It includes this secret key and the full guide. Save it privately; the key is shown once.
+                    {moduleBuilder ? "Save this key in your AI builder’s secure setup, then copy the prompt below. The key is shown once." : "Copy the connection for your agent. It includes this secret key and the full guide. Save it privately; the key is shown once."}
                     {mutationResult.operation === "rotate" ? " The previous key is revoked." : ""}
                   </p>
                   <div className={styles.secretRow}>
                     <code>{mutationResult.result.apiKeySecret}</code>
                     <div className={styles.secretActions}>
-                      <button className={styles.primaryButton} type="button" onClick={() => void copyConnection()}>
+                      {!moduleBuilder ? <button className={styles.primaryButton} type="button" onClick={() => void copyConnection()}>
                         {connectionCopyState === "copied" ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />}
                         Copy connection
-                      </button>
+                      </button> : null}
                       <button
                         className={styles.secondaryButton}
                         type="button"
@@ -1744,8 +1752,11 @@ export function DeveloperApiKeysView({
             </div>
           ) : null}
 
+          {activeSection === "keys" && moduleKey && account ? <ModuleBuilderPrompt scopes={moduleKey.scopes} wallet={account} /> : null}
+
           {activeSection === "keys" ? (
-            <div className={styles.workspace}>
+            <KeyWorkspace className={styles.workspace}>
+              {moduleKey ? <summary className={styles.keySettingsSummary}>Manage API keys <ChevronDown size={16} aria-hidden="true" /></summary> : null}
               <section
                 className={`${styles.panel} ${styles.createPanel}`}
                 aria-labelledby="create-key-title"
@@ -2179,7 +2190,7 @@ export function DeveloperApiKeysView({
                   </p>
                 ) : null}
               </section>
-            </div>
+            </KeyWorkspace>
           ) : activeSection === "launch" ? (
             <DeveloperRobinhoodLaunch
               onOpenLaunch={openRobinhoodLaunchHistory}
@@ -2202,10 +2213,10 @@ export function DeveloperApiKeysView({
       )}
 
       <nav className={styles.resourceLinks} aria-label="Developer resources">
-        <button className={styles.guideAction} type="button" onClick={() => void copyAgentSetup()}>
+        {!moduleBuilder ? <button className={styles.guideAction} type="button" onClick={() => void copyAgentSetup()}>
           {setupCopyState === "copied" ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />}
           Copy instructions
-        </button>
+        </button> : null}
         <Link href="/developers/modules">Build a module <ArrowRight size={16} aria-hidden="true" /></Link>
         <a href="/agents.md" target="_blank" rel="noreferrer">Agent guide <ExternalLink size={14} aria-hidden="true" /></a>
       </nav>
