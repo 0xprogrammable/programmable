@@ -1921,7 +1921,7 @@ export function DeveloperApiKeysView({
                 </form>
               </section>
 
-              <section
+              {!builderKind || apiKeys.length > 0 || listState !== "ready" || listError ? <section
                 className={`${styles.panel} ${styles.listPanel}`}
                 aria-labelledby="api-keys-title"
                 aria-busy={
@@ -2229,7 +2229,7 @@ export function DeveloperApiKeysView({
                     {listError}
                   </p>
                 ) : null}
-              </section>
+              </section> : null}
             </KeyWorkspace>
           ) : activeSection === "launch" ? (
             <DeveloperRobinhoodLaunch

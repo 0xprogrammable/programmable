@@ -1,4 +1,4 @@
-.page {
+.page:global(.page-width) {
   --webde-canvas: #000;
   --webde-surface: #151515;
   --webde-surface-raised: #202020;
@@ -35,7 +35,7 @@
 .topNavigation { align-items: center; display: flex; gap: 16px; justify-content: space-between; margin-bottom: 16px; }
 .hero { align-items: flex-end; display: flex; flex-wrap: wrap; gap: 12px 24px; justify-content: space-between; margin-bottom: 24px; }
 .heroCopy { min-width: 0; }
-.builderPage { max-width: 880px; }
+.page.builderPage { max-width: 880px; }
 .hero h1 { color: var(--webde-ink); font-size: 32px; font-weight: 500; letter-spacing: -0.035em; line-height: 40px; margin: 0; text-wrap: balance; }
 .intro { color: var(--webde-muted); font-size: 14px; line-height: 20px; margin: 8px 0 0; max-width: 64ch; min-height: 20px; text-wrap: pretty; }
 

@@ -13,7 +13,7 @@ it("keeps the module host guide outside the externally managed docs namespace", 
   expect(page).toContain("default reward wallet");
   expect(page).toContain("PROGRAMMABLE_API_KEY");
   expect(page).toContain("Launches + modules");
-  expect(readFileSync("components/module-contribution-entry.tsx", "utf8")).toContain(`href="${path}"`);
+  expect(readFileSync("components/developer-api-keys.tsx", "utf8")).toContain(`href={moduleBuilder ? "${path}" : "/developer-reference/custom-launch"}`);
   const config = JSON.parse(readFileSync("vercel.json", "utf8"));
   expect(config.redirects).not.toContainEqual({ source: "/docs/developers/module-mode", destination: path, permanent: false });
 });
