@@ -8,7 +8,7 @@ import { V4_API_PROFILE_VERSION } from "@/lib/custom-launch/v4-api-discovery";
 export const metadata: Metadata = {
   title: "API keys · Programmable",
   description:
-    "Manage Programmable API keys for launch agents on Ethereum and Robinhood.",
+    "Create and manage API keys for custom hooks and module submissions.",
   alternates: {
     canonical: "/developers/api-keys",
   },

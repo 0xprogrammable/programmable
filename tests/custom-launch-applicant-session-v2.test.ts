@@ -867,7 +867,7 @@ describe("custom launch applicant session currentness", () => {
 
     expect(componentSource).not.toContain("Approval valid until");
     expect(componentSource).not.toContain("Ready to launch");
-    expect(componentSource).toContain("Approved — launch anytime");
+    expect(componentSource).toContain("Approved for launch");
     expect(componentSource).toContain("Launch access expired");
     expect(componentSource).toContain("ref={boundaryRef}");
     expect(componentSource).toContain("const commitSessionBoundary =");
