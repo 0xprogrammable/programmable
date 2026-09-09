@@ -11,6 +11,7 @@ import {
 } from "react";
 import {
   ArrowLeft,
+  ArrowRight,
   Check,
   Copy,
   ChevronDown,
@@ -18,6 +19,9 @@ import {
   ChevronLeft,
   ChevronRight,
   RefreshCw,
+  KeyRound,
+  Puzzle,
+  Wallet,
 } from "lucide-react";
 
 import styles from "@/components/developer-api-keys.module.css";
@@ -1550,17 +1554,22 @@ export function DeveloperApiKeysView({
 
       <header className={styles.hero}>
         <div className={styles.heroCopy}>
+          <p className={styles.eyebrow}>Developer tools</p>
           <h1>API keys</h1>
+          <p className={styles.intro}>Connect your builder to Programmable.</p>
         </div>
         <div className={styles.headerActions}>
-          <Link className={styles.textLink} href="/developers/modules">Build a module</Link>
-          <a className={styles.textLink} href="/agents.md" target="_blank" rel="noreferrer">Agent guide <ExternalLink size={14} aria-hidden="true" /></a>
-          <button className={styles.secondaryButton} type="button" onClick={() => void copyAgentSetup()}>
-            <Copy size={15} aria-hidden="true" /> {setupCopyState === "copied" ? "Copied" : "Copy instructions"}
-          </button>
+          <Link className={styles.textLink} href="/profile?section=submissions#profile-modules-title">Your submissions <ArrowRight size={16} aria-hidden="true" /></Link>
         </div>
       </header>
-      {setupCopyState === "error" ? <p className={styles.inlineError} role="alert">Copy failed. Open the agent guide to read the instructions.</p> : null}
+
+      {activeSection === "keys" ? (
+        <ol className={styles.connectionSteps} aria-label="Connect your builder">
+          <li><span>1</span>Create a key</li>
+          <li><span>2</span>Copy connection</li>
+          <li><span>3</span>Start building</li>
+        </ol>
+      ) : null}
 
       {activeSection === "launch" ? (
         <RobinhoodFeePolicyDisclosure />
@@ -1595,7 +1604,9 @@ export function DeveloperApiKeysView({
       ) : !account ? (
         <section className={styles.walletGate} aria-labelledby="connect-title">
           <div className={styles.walletGateCopy}>
+            <Wallet className={styles.walletIcon} size={24} aria-hidden="true" />
             <h2 id="connect-title">Connect your wallet</h2>
+            <p>Create and manage keys for this account.</p>
           </div>
           <button
             className={styles.primaryButton}
@@ -1729,28 +1740,14 @@ export function DeveloperApiKeysView({
                 aria-busy={mutationState.kind === "issue"}
               >
                 <div className={styles.panelHeading}>
-                  <h2 id="create-key-title">Create key</h2>
+                  <div>
+                    <h2 id="create-key-title">Create key</h2>
+                    <p className={styles.panelIntro}>Give your connection a name.</p>
+                  </div>
+                  <KeyRound className={styles.panelIcon} size={22} aria-hidden="true" />
                 </div>
 
                 <form className={styles.createForm} onSubmit={createApiKey}>
-                  <ApiKeyPurposeChoice
-                    value={purpose}
-                    onChange={(value) => {
-                      setPurpose(value);
-                      setCreateError("");
-                      setSetupCopyState("idle");
-                    }}
-                    moduleContributionsAvailable={moduleContributionsAvailable}
-                    unifiedAvailable={capabilities?.unifiedKeys === true}
-                    checking={listState === "loading"}
-                    disabled={mutationState.kind !== "idle"
-                      || mutationResult?.result.secretState === "delivered-once" || pendingMutationAttempt !== null}
-                  />
-                  {purpose === "custom-launches" ? (
-                    <ApiKeyAccessChoice value={access} onChange={setAccess} available={canIssueReadOnly}
-                      disabled={mutationState.kind !== "idle" || pendingMutationAttempt !== null
-                        || mutationResult?.result.secretState === "delivered-once"} />
-                  ) : null}
                   <div className={styles.formFields}>
                     <div>
                       <label className={styles.field} htmlFor="api-key-label">
@@ -1765,7 +1762,7 @@ export function DeveloperApiKeysView({
                           autoComplete="off"
                           maxLength={64}
                           name="label"
-                          placeholder="My agent"
+                          placeholder="My builder"
                           spellCheck={false}
                           type="text"
                           value={label}
@@ -1786,11 +1783,37 @@ export function DeveloperApiKeysView({
                       ) : null}
                     </div>
 
-                    <ExpirySelect
-                      value={expiresInDays}
-                      disabled={pendingMutationAttempt !== null}
-                      onChange={setExpiresInDays}
-                    />
+                    <details className={styles.connectionOptions}>
+                      <summary>
+                        <span>Access and expiry<small>{apiKeyPurposeLabel(selectedScopes)} · {expiresInDays} days</small></span>
+                        <ChevronDown size={16} aria-hidden="true" />
+                      </summary>
+                      <div className={styles.connectionOptionsBody}>
+                        <ApiKeyPurposeChoice
+                          value={purpose}
+                          onChange={(value) => {
+                            setPurpose(value);
+                            setCreateError("");
+                            setSetupCopyState("idle");
+                          }}
+                          moduleContributionsAvailable={moduleContributionsAvailable}
+                          unifiedAvailable={capabilities?.unifiedKeys === true}
+                          checking={listState === "loading"}
+                          disabled={mutationState.kind !== "idle"
+                            || mutationResult?.result.secretState === "delivered-once" || pendingMutationAttempt !== null}
+                        />
+                        {purpose === "custom-launches" ? (
+                          <ApiKeyAccessChoice value={access} onChange={setAccess} available={canIssueReadOnly}
+                            disabled={mutationState.kind !== "idle" || pendingMutationAttempt !== null
+                              || mutationResult?.result.secretState === "delivered-once"} />
+                        ) : null}
+                        <ExpirySelect
+                          value={expiresInDays}
+                          disabled={pendingMutationAttempt !== null}
+                          onChange={setExpiresInDays}
+                        />
+                      </div>
+                    </details>
 
                     <button
                       ref={createButtonRef}
@@ -1810,8 +1833,17 @@ export function DeveloperApiKeysView({
                         : mutationResult?.result.secretState === "delivered-once"
                           ? "Save current key first"
                           : pendingMutationAttempt?.kind === "issue" ? "Retry create key" : "Create key"}
+                      <ArrowRight size={17} aria-hidden="true" />
                     </button>
                   </div>
+
+                  {listState !== "loading" && pendingMutationAttempt?.kind !== "issue" && (
+                    (purpose === "all" && !capabilities?.unifiedKeys)
+                    || (purpose === "module-contributions" && !moduleContributionsAvailable)
+                    || (purpose === "custom-launches" && access === "read-only" && !canIssueReadOnly)
+                  ) ? (
+                    <p className={styles.securityNote}>This access is unavailable. Open access and expiry to choose another option, or refresh your keys.</p>
+                  ) : null}
 
                   {pendingMutationAttempt?.kind === "issue" ? (
                     <p className={styles.securityNote}>Retry uses the same name, access and expiry. Refreshing will not create another key.</p>
@@ -1824,6 +1856,17 @@ export function DeveloperApiKeysView({
                   ) : null}
                 </form>
               </section>
+
+              <aside className={styles.connectionGuide} aria-labelledby="connection-guide-title">
+                <div className={styles.connectionGraphic} aria-hidden="true">
+                  <span><KeyRound size={22} strokeWidth={1.5} /></span>
+                  <span className={styles.connectionLine} />
+                  <span className={styles.connectionDestination}><Puzzle size={22} strokeWidth={1.5} /></span>
+                </div>
+                <h2 id="connection-guide-title">Copy the connection.</h2>
+                <p>After creating a key, copy the connection to your builder&apos;s secure setup. It includes the key and instructions.</p>
+                <p className={styles.guideNote}><Wallet size={16} aria-hidden="true" /> Transactions still need your wallet.</p>
+              </aside>
 
               <section
                 className={`${styles.panel} ${styles.listPanel}`}
@@ -2005,6 +2048,11 @@ export function DeveloperApiKeysView({
                             ) : null}
                           </dl>
 
+                          <div className={styles.keyDetails}>
+                            <ApiKeyPermissions scopes={apiKey.scopes} />
+                            <ApiKeyChainPolicy apiKey={apiKey} />
+                          </div>
+
                           {confirmingRotate ? (
                             <div
                               className={styles.mutationConfirmation}
@@ -2147,6 +2195,16 @@ export function DeveloperApiKeysView({
           )}
         </>
       )}
+
+      <nav className={styles.resourceLinks} aria-label="Developer resources">
+        <button className={styles.guideAction} type="button" onClick={() => void copyAgentSetup()}>
+          {setupCopyState === "copied" ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />}
+          {setupCopyState === "copied" ? "Instructions copied" : "Copy instructions"}
+        </button>
+        <Link href="/developers/modules">Build a module <ArrowRight size={16} aria-hidden="true" /></Link>
+        <a href="/agents.md" target="_blank" rel="noreferrer">Agent guide <ExternalLink size={14} aria-hidden="true" /></a>
+      </nav>
+      {setupCopyState === "error" ? <p className={styles.inlineError} role="alert">Copy failed. Open the agent guide to read the instructions.</p> : null}
 
     </div>
   );

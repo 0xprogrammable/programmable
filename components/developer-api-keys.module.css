@@ -1,7 +1,17 @@
 .page {
+  --webde-canvas: #000;
+  --webde-surface: #151515;
+  --webde-surface-raised: #181818;
+  --webde-control: #181818;
+  --webde-ink: #f5f3ef;
+  --webde-muted: #aaa9a5;
+  --webde-dim: #aaa9a5;
+  --webde-line: #30302e;
+  --api-accent: #e786b2;
   --api-panel: var(--webde-surface);
   --api-panel-strong: var(--webde-surface-raised);
   --api-line: var(--webde-line);
+  color: var(--webde-ink);
   max-width: 1120px;
   min-height: calc(100svh - var(--header-height));
   min-width: 0;
@@ -23,19 +33,20 @@
 }
 
 .hero {
-  align-items: center;
+  align-items: flex-end;
   display: flex;
   flex-wrap: wrap;
   gap: 16px;
   justify-content: space-between;
-  margin-bottom: 24px;
+  margin-bottom: 32px;
+  padding-top: 24px;
 }
 .headerActions { align-items: center; display: flex; flex-wrap: wrap; gap: 8px 16px; }
-.textLink { align-items: center; color: var(--webde-muted); display: inline-flex; gap: 6px; min-height: 44px; font-size: 13px; text-decoration: none; }
+.textLink { align-items: center; color: var(--webde-muted); display: inline-flex; gap: 8px; min-height: 44px; font-size: 14px; text-decoration: none; }
 .textLink:hover { color: var(--webde-ink); }
 .textLink:focus-visible, .accessField select:focus-visible { outline: 2px solid var(--webde-ink); outline-offset: 3px; }
-.accessField { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; color: var(--webde-muted); font-size: 13px; }
-.accessField select { background: var(--webde-control); border: 1px solid var(--api-line); border-radius: 8px; color: var(--webde-ink); font: inherit; min-height: 44px; max-width: 100%; padding: 8px 32px 8px 12px; }
+.accessField { display: grid; gap: 8px; color: var(--webde-muted); font-size: 14px; min-width: 0; }
+.accessField select { background: var(--webde-control); border: 1px solid var(--api-line); border-radius: 8px; color: var(--webde-ink); font: inherit; font-size: 16px; min-height: 48px; min-width: 0; max-width: 100%; padding: 8px 32px 8px 12px; width: 100%; }
 
 
 .heroCopy {
@@ -44,33 +55,141 @@
 
 .hero h1 {
   color: var(--webde-ink);
-  font-size: 30px;
-  font-weight: 600;
-  letter-spacing: -0.025em;
-  line-height: 36px;
+  font-size: 48px;
+  font-weight: 500;
+  letter-spacing: -0.045em;
+  line-height: 1;
   margin: 0;
   text-wrap: balance;
 }
 
 .intro {
   color: var(--webde-muted);
-  font-size: 14px;
-  line-height: 20px;
-  margin-top: 8px;
+  font-size: 18px;
+  line-height: 28px;
+  margin-top: 16px;
   max-width: 680px;
   text-wrap: pretty;
 }
+
+.eyebrow {
+  color: var(--webde-muted);
+  font-size: 14px;
+  line-height: 20px;
+  margin-bottom: 12px;
+}
+
+.connectionSteps {
+  display: flex;
+  gap: 32px;
+  list-style: none;
+  margin: 0 0 40px;
+  padding: 0;
+}
+
+.connectionSteps li {
+  align-items: center;
+  color: var(--webde-muted);
+  display: flex;
+  font-size: 14px;
+  gap: 8px;
+  line-height: 20px;
+}
+
+.connectionSteps span {
+  align-items: center;
+  border: 1px solid var(--api-line);
+  border-radius: 50%;
+  display: inline-flex;
+  flex: 0 0 24px;
+  font-size: 12px;
+  height: 24px;
+  justify-content: center;
+}
+
+.walletIcon { color: var(--api-accent); margin-bottom: 16px; }
+.panelIcon { color: var(--webde-muted); flex: none; }
+.panelIntro { color: var(--webde-muted); font-size: 14px; line-height: 20px; margin-top: 4px; }
+
+.connectionOptions {
+  border: 1px solid var(--api-line);
+  border-radius: 12px;
+  min-width: 0;
+}
+
+.connectionOptions summary {
+  align-items: center;
+  color: var(--webde-ink);
+  cursor: pointer;
+  display: flex;
+  font-size: 14px;
+  gap: 16px;
+  justify-content: space-between;
+  line-height: 20px;
+  list-style: none;
+  min-height: 64px;
+  padding: 12px 16px;
+}
+
+.connectionOptions summary::-webkit-details-marker { display: none; }
+.connectionOptions summary small { color: var(--webde-muted); display: block; font-size: 14px; line-height: 20px; margin-top: 4px; }
+.connectionOptions summary svg { color: var(--webde-muted); flex: none; }
+.connectionOptions[open] summary svg { transform: rotate(180deg); }
+.connectionOptions summary:focus-visible { outline: 2px solid var(--api-accent); outline-offset: 3px; }
+
+.connectionOptionsBody {
+  display: grid;
+  gap: 16px;
+  padding: 8px 16px 16px;
+}
+
+.connectionGuide {
+  align-self: center;
+  min-width: 0;
+  padding: 24px 16px;
+}
+
+.connectionGraphic { align-items: center; display: flex; margin-bottom: 24px; }
+.connectionGraphic > span:not(.connectionLine) { align-items: center; background: var(--webde-surface); border: 1px solid var(--api-line); border-radius: 16px; color: var(--webde-muted); display: inline-flex; height: 64px; justify-content: center; width: 64px; }
+.connectionGraphic > .connectionDestination { background: var(--api-accent); border-color: var(--api-accent); color: #1c1217; transform: rotate(5deg); }
+.connectionLine { background: var(--api-line); height: 1px; width: 32px; }
+.connectionGuide h2 { color: var(--webde-ink); font-size: 24px; font-weight: 500; letter-spacing: -0.025em; line-height: 32px; margin: 0 0 12px; }
+.connectionGuide p { color: var(--webde-muted); font-size: 14px; line-height: 20px; margin: 0; max-width: 320px; text-wrap: pretty; }
+.connectionGuide .guideNote { align-items: center; display: flex; gap: 8px; margin-top: 24px; }
+.guideNote svg { flex: none; }
+.guideAction { align-items: center; background: transparent; border: 0; border-radius: 8px; color: var(--webde-ink); cursor: pointer; display: inline-flex; font-size: 14px; gap: 8px; margin-top: 16px; min-height: 44px; padding: 8px 0; }
+.guideAction:focus-visible { outline: 2px solid var(--api-accent); outline-offset: 4px; }
+.guideAction:hover { color: var(--api-accent); }
+
+.keyDetails { display: flex; flex-wrap: wrap; gap: 0 24px; grid-column: 1 / -1; min-width: 0; }
+.keyDetails .scopeLedger { flex: 0 1 auto; }
+.keyDetails .scopeLedger[open] { flex-basis: 100%; }
+.keyDetails summary { flex-wrap: wrap; }
+
+.resourceLinks {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  margin-top: 32px;
+}
+
+.resourceLinks .guideAction { margin-top: 0; }
+
+.resourceLinks a { align-items: center; border-radius: 4px; color: var(--webde-muted); display: inline-flex; font-size: 14px; gap: 8px; min-height: 44px; text-decoration: none; }
+.resourceLinks a:hover { color: var(--webde-ink); }
+.resourceLinks a:focus-visible { outline: 2px solid var(--api-accent); outline-offset: 4px; }
 
 .walletGate {
   align-items: center;
   background: var(--api-panel);
   border: 1px solid var(--api-line);
-  border-radius: 12px;
+  border-radius: 16px;
   display: flex;
   gap: 24px;
   justify-content: space-between;
-  min-height: 144px;
-  padding: 24px;
+  min-height: 176px;
+  padding: 32px;
 }
 
 .walletGateCopy {
@@ -127,6 +246,7 @@
   display: flex;
   gap: 4px;
   margin-bottom: 24px;
+  width: fit-content;
 }
 
 .sectionSwitch button {
@@ -158,18 +278,18 @@
 .panel {
   background: var(--api-panel);
   border: 1px solid var(--api-line);
-  border-radius: 12px;
+  border-radius: 16px;
   display: flex;
   flex-direction: column;
   min-width: 0;
-  padding: 24px;
+  padding: 32px;
 }
 
 .createPanel {
   background: var(--api-panel);
   border: 1px solid var(--api-line);
-  border-radius: 12px;
-  padding: 24px;
+  border-radius: 16px;
+  padding: 32px;
 }
 
 .listPanel {
@@ -178,6 +298,8 @@
   border: 0;
   container-name: api-key-list;
   container-type: inline-size;
+  grid-column: 1 / -1;
+  margin-top: 16px;
   padding: 0;
 }
 
@@ -191,8 +313,8 @@
 
 .panelHeading h2 {
   color: var(--webde-ink);
-  font-size: 18px;
-  font-weight: 600;
+  font-size: 20px;
+  font-weight: 500;
   letter-spacing: -0.02em;
   line-height: 28px;
 }
@@ -206,7 +328,7 @@
 }
 
 .createForm {
-  margin-top: 16px;
+  margin-top: 24px;
 }
 
 .purposeField {
@@ -272,7 +394,7 @@
   align-items: start;
   display: grid;
   gap: 16px;
-  grid-template-columns: minmax(0, 1fr) 160px auto;
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .formFields > div {
@@ -280,7 +402,8 @@
 }
 
 .formFields > .primaryButton {
-  margin-top: 28px;
+  justify-content: space-between;
+  margin-top: 0;
   min-height: 48px;
   min-width: 136px;
 }
@@ -408,7 +531,8 @@
 }
 
 .scopeLedger {
-  margin-top: 12px;
+  margin-top: 0;
+  min-width: 0;
 }
 
 .scopeLedger summary {
@@ -432,12 +556,12 @@
 
 .scopeLedger summary span,
 .scopeLedger summary strong {
-  font-size: 12px;
-  line-height: 16px;
+  font-size: 14px;
+  line-height: 20px;
 }
 
 .scopeLedger summary span {
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .scopeLedger summary strong {
@@ -487,10 +611,11 @@
 .revokeButton,
 .textButton {
   align-items: center;
-  border-radius: 8px;
+  border-radius: 12px;
   display: inline-flex;
   font-size: 14px;
   font-weight: 600;
+  gap: 8px;
   justify-content: center;
   min-height: 44px;
   padding: 8px 12px;
@@ -502,9 +627,10 @@
 }
 
 .primaryButton {
-  background: var(--webde-ink);
-  border: 1px solid var(--webde-ink);
-  color: var(--webde-canvas);
+  background: var(--api-accent);
+  border: 1px solid var(--api-accent);
+  color: #1c1217;
+  font-size: 16px;
 }
 
 .secondaryButton {
@@ -546,7 +672,7 @@
 .skeletonList {
   background: var(--api-panel);
   border: 1px solid var(--api-line);
-  border-radius: 12px;
+  border-radius: 16px;
   display: grid;
   margin-top: 12px;
   overflow: hidden;
@@ -556,10 +682,10 @@
 .skeletonRow {
   align-content: center;
   display: grid;
-  gap: 16px;
+  gap: 8px 16px;
   min-height: var(--api-key-row-min-height);
   min-width: 0;
-  padding: 16px;
+  padding: 24px;
 }
 
 .keyItem + .keyItem,
@@ -583,9 +709,9 @@
 .keyIdentity h3,
 .statePanel h3 {
   color: var(--webde-ink);
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 20px;
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 24px;
   min-width: 0;
 }
 
@@ -646,9 +772,9 @@
 
 .keyMetadata dd {
   color: var(--webde-ink);
-  font-size: 12px;
+  font-size: 14px;
   font-variant-numeric: tabular-nums;
-  line-height: 16px;
+  line-height: 20px;
   margin: 4px 0 0;
   overflow-wrap: anywhere;
 }
@@ -753,7 +879,7 @@
 .keyReveal {
   background: var(--api-panel-strong);
   border: 1px solid color-mix(in srgb, var(--success) 42%, var(--api-line));
-  border-radius: 12px;
+  border-radius: 16px;
   margin-bottom: 24px;
   padding: 24px;
 }
@@ -823,6 +949,7 @@
 .secretActions {
   align-content: start;
   display: grid;
+  gap: 8px;
 }
 
 .dismissButton {
@@ -938,8 +1065,12 @@
     justify-content: flex-end;
   }
 
-  .mutationConfirmation {
+  .keyDetails {
     grid-row: 2;
+  }
+
+  .mutationConfirmation {
+    grid-row: 3;
   }
 }
 
@@ -955,14 +1086,26 @@
   }
 }
 
+@media (min-width: 900px) {
+  .workspace { grid-template-columns: minmax(0, 1.35fr) minmax(0, 0.85fr); gap: 32px; }
+  .connectionGuide { padding-inline: 24px 8px; }
+}
+
+@media (max-width: 899px) {
+  .connectionGuide { padding: 0 8px 8px; }
+  .connectionGuide h2 { font-size: 20px; line-height: 28px; }
+  .connectionGuide p { max-width: 520px; }
+  .connectionGraphic { display: none; }
+}
+
 @media (max-width: 760px) {
   .formFields {
-    grid-template-columns: minmax(0, 1fr) 160px;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .formFields > .primaryButton {
     grid-column: 1 / -1;
-    justify-self: start;
+    justify-self: stretch;
     margin-top: 0;
   }
 }
@@ -971,6 +1114,13 @@
   .page {
     padding-block: 16px 64px;
   }
+
+  .hero { gap: 12px; padding-top: 16px; }
+  .intro { font-size: 16px; line-height: 24px; margin-top: 12px; }
+  .connectionSteps { display: grid; gap: 8px; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-bottom: 24px; }
+  .connectionSteps li { align-items: flex-start; flex-direction: column; gap: 8px; }
+  .connectionSteps span { flex-basis: 24px; width: 24px; }
+  .connectionOptionsBody { padding-inline: 12px; }
 
   .walletGate {
     align-items: flex-start;
@@ -987,6 +1137,7 @@
   .sectionSwitch {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%;
   }
 
   .sectionSwitch button {
@@ -1158,7 +1309,7 @@
 @media (max-width: 600px) {
   .headerActions { gap: 4px 12px; }
   .headerActions .secondaryButton { min-height: 44px; }
-  .hero h1 { font-size: 28px; }
+  .hero h1 { font-size: 36px; line-height: 40px; }
   .secretActions { align-items: stretch; flex-direction: column; }
   .accessField { align-items: flex-start; flex-direction: column; gap: 8px; }
   .accessField select { width: 100%; }
