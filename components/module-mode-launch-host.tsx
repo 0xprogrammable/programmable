@@ -7,6 +7,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExtern
 import { formatUnits, toHex, type Address, type Hex } from "viem";
 
 import { ModuleModeBuilder, type ModuleModeLaunchAction } from "@/components/module-mode-builder";
+import { ModuleBuilderLoading } from "@/components/module-builder-loading";
 import { assertModuleModeWalletUnchanged, isModuleModeWalletRejection, moduleModeSubmissionIsUncertain, moduleModeWalletStep, switchModuleModeNetwork, uploadModuleModeImage, useModuleModeOperation, type ModuleModeWalletSnapshot } from "@/components/module-mode-wallet-state";
 import { useWallet } from "@/components/wallet-provider";
 import styles from "@/components/module-mode-builder.module.css";
@@ -228,6 +229,8 @@ export function ModuleModeLaunchHost({ releaseDigest, versions = [] }: { release
   function refreshAvailability() {
     setAvailabilityLoading(true); setAvailabilityError(false); setRefreshKey((key) => key + 1);
   }
+
+  if (loadedSelection === null && !hasSubmission) return <ModuleBuilderLoading />;
 
   return <ModuleModeBuilder
     release={release}

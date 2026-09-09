@@ -1,0 +1,13 @@
+.fields { display: grid; gap: 28px; padding-top: 4px; }
+.pair { display: grid; gap: 14px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.label, .control, .avatar { background: #282727; display: block; }
+.label { border-radius: 4px; height: 14px; margin-bottom: 12px; width: 72px; }
+.control { border: 1px solid #343332; border-radius: 12px; height: 48px; }
+.image { height: 78px; }
+.preview { align-items: center; background: #222221; display: flex; min-width: 0; padding: 32px; }
+.card { border: 1px solid #3b3937; border-radius: 20px; padding: 24px; width: 100%; }
+.avatar { border-radius: 16px; height: 64px; margin-bottom: 24px; width: 64px; }
+.rows { border-top: 1px solid #343332; display: grid; gap: 16px; margin-top: 24px; padding-top: 24px; }
+.rows .label { margin: 0; width: 100%; }
+@media (max-width: 800px) { .preview { padding: 24px; } }
+@media (max-width: 600px) { .fields { gap: 24px; } .preview { padding: 20px; } }
