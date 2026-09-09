@@ -299,7 +299,7 @@ export function LaunchModelPicker({
                 <strong id="launch-model-modules-title">Modules</strong>
               </span>
               <span className={`launch-model-description ${launchExperience.modelDescription}`} id="launch-model-modules-description">
-                Create a coin and choose its features.
+                Create a coin and add upgrades with modules.
               </span>
               <span className={`launch-model-action ${launchExperience.modelAction}`}>
                 Create a coin <ArrowRight aria-hidden="true" size={16} />
@@ -314,7 +314,7 @@ export function LaunchModelPicker({
           data-launch-model-available="true"
           data-launch-model-entry="api-key-launch"
           data-launch-model-launchable="false"
-          href="/developers/api-keys"
+          href="/developers/hooks"
           aria-labelledby="launch-model-custom-title"
           aria-describedby="launch-model-custom-description"
         >

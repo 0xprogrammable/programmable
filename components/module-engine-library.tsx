@@ -19,6 +19,8 @@ const categoryLabels = { "quote-v1": "Trading", "escrow-v1": "Deposits", "settle
 export function ModuleEngineLibrary({ templates, selectedId, onSelect, disabled = false }: ModuleEngineLibraryProps) {
   const [query, setQuery] = useState(""), [kind, setKind] = useState("all"), [page, setPage] = useState(1);
   const deferred = useDeferredValue(query), id = useId();
+  const categories = useMemo(() => (Object.keys(categoryLabels) as (keyof typeof categoryLabels)[])
+    .filter(value => templates.some(template => template.manifest.manifest.catalogDefinition.interface === value)), [templates]);
   const results = useMemo(() => {
     const words = deferred.trim().toLocaleLowerCase().split(/\s+/u).filter(Boolean);
     return templates.filter(template => {
@@ -31,17 +33,17 @@ export function ModuleEngineLibrary({ templates, selectedId, onSelect, disabled 
   }, [templates, deferred, kind]);
   const pages = Math.max(1, Math.ceil(results.length / MODULE_LIBRARY_PAGE_SIZE)), currentPage = Math.min(page, pages);
   return <div className={styles.library}>
-    <div className={styles.toolbar}>
+    <div className={styles.toolbar} hidden={templates.length < 2 && !query && kind === "all"}>
       <div className={styles.search}><label className={styles.srOnly} htmlFor={`${id}-search`}>Search modules</label><Search size={18} aria-hidden="true" />
         <input id={`${id}-search`} type="search" placeholder="Find a module" value={query} disabled={disabled}
           onChange={event => { setQuery(event.target.value); setPage(1); }} autoComplete="off" /></div>
-      <label className={styles.categorySelect}><span className={styles.srOnly}>Module category</span>
+      <label className={styles.categorySelect} hidden={categories.length < 2 && kind === "all"}><span className={styles.srOnly}>Module category</span>
         <select value={kind} disabled={disabled} onChange={event => { setKind(event.target.value); setPage(1); }}>
-          <option value="all">All modules</option>{(["quote-v1", "escrow-v1", "settlement-v1", "custom-v1"] as const).map(value =>
+          <option value="all">All modules</option>{categories.map(value =>
             <option key={value} value={value}>{categoryLabels[value]}</option>)}
         </select></label>
     </div>
-    <div className={styles.resultCount} role="status" aria-live="polite">{results.length} {results.length === 1 ? "module" : "modules"}{query.trim() ? ` for “${query.trim()}”` : ""}</div>
+    <div className={styles.resultCount} hidden={!query.trim() && kind === "all"} role="status" aria-live="polite">{results.length} {results.length === 1 ? "module" : "modules"}{query.trim() ? ` for “${query.trim()}”` : ""}</div>
     <div className={styles.results} aria-label="Module library">
       {results.slice((currentPage - 1) * MODULE_LIBRARY_PAGE_SIZE, currentPage * MODULE_LIBRARY_PAGE_SIZE).map(template => {
         const { catalogDefinition: definition } = template.manifest.manifest, selected = definition.id === selectedId;

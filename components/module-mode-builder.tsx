@@ -84,11 +84,11 @@ export interface ModuleModeBuilderProps {
 export function ModuleModeBuilder({ catalog = PREVIEW_MODULE_CATALOG, engine = NATIVE_ENGINE_PROFILE, configurationContext = {}, launchAction, minimumInitialBuyWei, release, previewDescription, statusContent, reviewContent, resultContent, onEdit }: Readonly<ModuleModeBuilderProps>) {
   const { hydrated, viewChainId, setViewChainId } = useViewChain();
   useEffect(() => {
-    if (!hydrated || viewChainId === 4663) return;
-    // Run after the provider restores its persisted preference, as other fixed-chain routes do.
+    if (!hydrated) return;
+    // Set the route preference once after hydration; other tabs may change it later.
     const timer = window.setTimeout(() => setViewChainId(4663), 0);
     return () => window.clearTimeout(timer);
-  }, [hydrated, viewChainId, setViewChainId]);
+  }, [hydrated, setViewChainId]);
   const [state, setState] = useState(createModuleModeState);
   const { expanded: detailsOpen, setExpanded: setDetailsOpen, toggle: toggleDetails, panelProps: detailsPanel } = useDisclosureState();
   const { expanded: feesOpen, setExpanded: setFeesOpen, toggle: toggleFees, panelProps: feesPanel } = useDisclosureState();
@@ -289,7 +289,8 @@ export function ModuleModeBuilder({ catalog = PREVIEW_MODULE_CATALOG, engine = N
         </aside> : null}
       </div>
       {pickerOpen ? <ModulePickerDialog animateOpen={pickerPointer} title="Add modules" description="Modules are upgrades for your coin. Pick the features you want." onClose={() => setPickerOpen(false)}>
-        <ModuleLibrary catalog={catalog} selectedIds={state.selectedModules} onAdd={add} onRemove={remove} />
+        <ModuleLibrary catalog={catalog} selectedIds={state.selectedModules} onAdd={add} onRemove={remove}
+          feePolicyFor={release ? entry => moduleModeFeePolicy(release, state.selectedModules.includes(entry.id) ? selected : [...selected, entry]) : undefined} />
       </ModulePickerDialog> : null}
       {configuredEntry ? <ModulePickerDialog animateOpen={pickerPointer} title={configuredEntry.title} description={configuredEntry.summary} onClose={() => setConfigurationId(null)}>
         <fieldset className={styles.formFields} disabled={contextLocked}>{renderModuleConfiguration(configuredEntry)}</fieldset>

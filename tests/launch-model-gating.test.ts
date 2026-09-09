@@ -206,7 +206,7 @@ describe("unreleased launch model gating", () => {
     expect(customCard).toContain('data-launch-model-entry="api-key-launch"');
     expect(customCard).toContain('data-launch-model-launchable="false"');
     expect(customCard).toContain(
-      'href="/developers/api-keys"',
+      'href="/developers/hooks"',
     );
     expect(customCard).not.toContain("disabled");
     expect(html).toContain(
@@ -260,7 +260,7 @@ describe("unreleased launch model gating", () => {
     expect(html).toContain('data-launch-model-launchable="false"');
     expect(html).not.toContain("Preflight required");
     expect(html).toContain(
-      'href="/developers/api-keys"',
+      'href="/developers/hooks"',
     );
     expect(html).toContain("Build a hook");
     expect(html).not.toContain("approved GitHub revision");
