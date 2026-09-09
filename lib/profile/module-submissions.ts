@@ -49,6 +49,7 @@ export type WalletModuleSubmissions = Readonly<{
 }>;
 
 const address = /^0x[0-9a-f]{40}$/u;
+const rewardAddress = /^0x[0-9a-fA-F]{40}$/u;
 const digest = /^0x[0-9a-f]{64}$/u;
 const unsafeText = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u;
 
@@ -88,7 +89,7 @@ export function readWalletModuleSubmissions(value: unknown, ownerWallet: string)
       || typeof item.packageId !== "string" || !digest.test(item.packageId)
       || typeof item.familySalt !== "string" || !digest.test(item.familySalt)
       || !text(item.name, 160) || !text(item.version, 128) || item.author !== owner
-      || typeof item.rewardWallet !== "string" || !address.test(item.rewardWallet)
+      || typeof item.rewardWallet !== "string" || !rewardAddress.test(item.rewardWallet)
       || !timestamp(item.createdAt) || item.registryApproved !== false || item.available !== false) {
       throw new Error("Invalid module submission ownership or fields.");
     }

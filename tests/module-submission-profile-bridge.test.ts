@@ -65,6 +65,13 @@ describe("private module submission profile", () => {
     expect(fetchBackend).not.toHaveBeenCalled();
   });
 
+  it("preserves a valid checksummed reward wallet from the contributor receipt", async () => {
+    const rewardWallet = "0x79879fe6f00c0986Ca521eA6F5b276b5E28b1b9C";
+    const response = await setup(page([{ ...submission(), rewardWallet }])).bridge.list(request());
+    expect(response.status).toBe(200);
+    expect((await response.json()).submissions[0].rewardWallet).toBe(rewardWallet);
+  });
+
   it("rejects backend records owned by someone else even when the reward wallet matches", async () => {
     const body = page([{ ...submission(), author: other, rewardWallet: owner }]);
     const response = await setup(body).bridge.list(request());
