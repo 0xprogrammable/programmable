@@ -79,6 +79,11 @@ test("only the admin wallet gets one dashboard entry, including keyboard and acc
   await expect(link).toHaveCount(1);
   await expect(link).toHaveAttribute("href", "/admin/modules");
   await page.keyboard.press("Tab");
+  await expect(header.getByRole("link", { name: "Profile", exact: true })).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(header.getByRole("link", { name: "API keys", exact: true })).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(header.getByRole("link", { name: "Privacy & settings", exact: true })).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(link).toBeFocused();
   await page.keyboard.press("Escape");
