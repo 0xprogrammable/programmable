@@ -11,7 +11,8 @@ import { computeModuleEngineHostManifestHash, computeModuleEngineReleaseDigest, 
 import { createReviewedModuleEngineManifest } from "../lib/module-mode/review-engine-manifest";
 import type { ModuleEngineBuildArtifactV1, ModuleEngineBuildPlanV1 } from "../lib/module-mode/review-engine-types";
 import { MODULE_ENGINE_QUOTE_ENVIRONMENT_V1, MODULE_ENGINE_QUOTE_NVDA_ENVIRONMENT_V1 } from "../lib/module-mode/review-engine-types";
-import { moduleEngineStandardInputV1, parseEngineReviewArtifact, validateModuleEngineBuildPlanV1, verifyModuleEngineBuildArtifactV1 } from "../lib/module-mode/review-engine-contract";
+import { parseEngineReviewArtifact, validateModuleEngineBuildPlanV1 } from "../lib/module-mode/review-engine-contract";
+import { moduleEngineStandardInputV1, verifyModuleEngineBuildArtifactV1 } from "../lib/server/module-mode/review-engine-source";
 import { parseReviewSubject, reviewDigest, type ReviewJob } from "../lib/module-mode/review-contract";
 import { computeModuleModeHostManifestHash, createModuleModeHostManifest, type ModuleModeHostReleaseIdentity } from "../lib/server/module-mode/catalog";
 import { computeModuleReviewDecisionDigestV1, type ModuleReviewDecisionCommandV1, type ModuleReviewDecisionRecordV1 } from "../lib/server/module-mode/review-decision-wire-v1";

@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createReviewedModuleEngineManifest } from "@/lib/module-mode/review-engine-manifest";
-import { verifyModuleEngineBuildArtifactV1 } from "@/lib/module-mode/review-engine-contract";
+import { verifyModuleEngineBuildArtifactV1 } from "@/lib/server/module-mode/review-engine-source";
 import { bindModuleEngineReleaseIdentity, computeModuleEngineHostManifestHash, type ModuleEngineCatalogDefinition, type ModuleEngineRevisionDefinition } from "@/lib/module-engine/catalog";
 import { randomBytes } from "node:crypto";
 import { getAddress, isAddress } from "viem";

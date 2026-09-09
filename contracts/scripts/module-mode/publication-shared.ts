@@ -12,7 +12,7 @@ export { moduleEngineReleaseIdentity, computeModuleEngineHostManifestHash, MODUL
 export { compileModuleEngineLaunch, moduleEngineOperation } from '../../../lib/module-engine/operation-plan';
 export { createReviewedModuleEngineManifest } from '../../../lib/module-mode/review-engine-manifest';
 export { parseReviewSubject, parseReviewPlan, parseReviewArtifact } from '../../../lib/module-mode/review-contract';
-export { verifyModuleEngineBuildArtifactV1 } from '../../../lib/module-mode/review-engine-contract';
+export { verifyModuleEngineBuildArtifactV1 } from '../../../lib/server/module-mode/review-engine-source';
 export { validateModuleReviewDecisionRecordV1 } from '../../../lib/server/module-mode/review-decision-wire-v1';
 export { createEngineHostPreparation, prepareEnginePublication, engineRegistryRevision } from '../../../ops/module-mode-publication/core-engine';
 export { computeModuleEngineReleaseDigest } from '../../../lib/module-engine/catalog';

@@ -3,7 +3,8 @@ import { bindModuleEngineTemplate, computeModuleEngineHostManifestHash, type Mod
 import { nativeJson } from "@/lib/module-mode/native-catalog";
 import { moduleHash, moduleRecord } from "@/lib/module-mode/release";
 import { parseReviewSubject, type ReviewSubject } from "@/lib/module-mode/review-contract";
-import { parseEngineReviewArtifact, validateModuleEngineBuildPlanV1, verifyModuleEngineBuildArtifactV1 } from "@/lib/module-mode/review-engine-contract";
+import { parseEngineReviewArtifact, validateModuleEngineBuildPlanV1 } from "@/lib/module-mode/review-engine-contract";
+import { verifyModuleEngineBuildArtifactV1 } from "@/lib/server/module-mode/review-engine-source";
 import { createReviewedModuleEngineManifest } from "@/lib/module-mode/review-engine-manifest";
 import type { ModuleEngineBuildArtifactV1, ModuleEngineBuildPlanV1 } from "@/lib/module-mode/review-engine-types";
 import { validateModuleSubmissionRequest } from "@/packages/classic-modules/src/open-transport.mjs";
