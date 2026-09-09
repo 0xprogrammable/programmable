@@ -84,7 +84,7 @@ describe("Docs reference layout stability", () => {
     expect(docsNavigation).toContain("[data-docs-mobile-tools]");
   });
 
-  it("collapses the outline first, then replaces the rail with a bottom-sheet tree", () => {
+  it("keeps mobile navigation in the content flow and opens its tree in a bottom sheet", () => {
     expect(docsCss).toMatch(
       /@media \(max-width:\s*1279px\)[\s\S]*?\.pageNavigation\s*\{[^}]*order:\s*-1;[^}]*position:\s*static;/s,
     );
@@ -92,7 +92,7 @@ describe("Docs reference layout stability", () => {
       /@media \(min-width:\s*1024px\) and \(max-width:\s*1279px\)[\s\S]*?\.atmosphere-plant-left\),[\s\S]*?\.atmosphere-plant-right\)\s*\{[^}]*transform:\s*none;/s,
     );
     expect(docsCss).toMatch(
-      /@media \(max-width:\s*1023px\)[\s\S]*?\.sidebar\s*\{[^}]*inline-size:\s*auto;[^}]*inset-inline:\s*24px;[^}]*position:\s*fixed;[^}]*top:\s*calc\(var\(--header-height\) \+ 6px\);/s,
+      /@media \(max-width:\s*1023px\)[\s\S]*?\.sidebar\s*\{[^}]*inline-size:\s*auto;[^}]*inset-inline:\s*auto;[^}]*margin-block-end:\s*52px;[^}]*position:\s*sticky;[^}]*top:\s*calc\(var\(--header-height\) \+ 6px\);/s,
     );
     expect(docsCss).toMatch(
       /@media \(max-width:\s*1023px\)[\s\S]*?\.desktopNav\s*\{[^}]*display:\s*none;[\s\S]*?\.mobileNavDialog\[open\]\s*\{[^}]*display:\s*grid;/s,
@@ -101,7 +101,7 @@ describe("Docs reference layout stability", () => {
       /\.mobileNavPanel\s*\{[^}]*border-radius:\s*18px 18px 0 0;[^}]*max-height:\s*min\(86svh, 760px\);/s,
     );
     expect(docsCss).toMatch(
-      /@media \(max-width:\s*700px\)[\s\S]*?\.sidebar\s*\{[^}]*inset-inline:\s*14px;/s,
+      /@media \(max-width:\s*700px\)[\s\S]*?\.sidebar\s*\{[^}]*margin-block-end:\s*40px;/s,
     );
     expect(docsNavigation).toContain("dialog.showModal()");
     expect(docsNavigation).toContain(
