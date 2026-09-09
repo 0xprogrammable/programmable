@@ -119,14 +119,16 @@ export function buildLaunchPlanRoutedSwapV1(projection: LaunchProjectionV1, requ
   poolFeeProof?: ImmutablePoolFeeRuntimeProofV1): LaunchPlanTradeTransactionV1 {
   const binding = launchPlanTradeBindingV1(projection, request, poolFeeProof), amounts = launchPlanTradeAmountsV1(grossAmountOut, binding.fee.routedRateBps, request.slippageBps);
   const planner = new V4Planner();
+  // The bound Robinhood router is 2.1.1; its swap tuple includes minHopPriceX36.
+  // Keep that additional price floor neutral; amountOutMinimum enforces slippage.
   planner.addAction(Actions.SWAP_EXACT_IN_SINGLE, [{ poolKey: binding.poolKey, zeroForOne: request.zeroForOne, amountIn: request.amountIn,
-    amountOutMinimum: amounts.grossAmountOutMinimum, hookData: request.hookData }], URVersion.V2_0);
-  planner.addAction(Actions.SETTLE_ALL, [binding.inputCurrency, request.amountIn], URVersion.V2_0);
-  if (binding.fee.routedRateBps) planner.addAction(Actions.TAKE_PORTION, [binding.outputCurrency, ROUTED_FEE_RECIPIENT_V1, 20], URVersion.V2_0);
-  planner.addAction(Actions.TAKE_ALL, [binding.outputCurrency, amounts.amountOutMinimum], URVersion.V2_0);
-  const route = new RoutePlanner(); route.addCommand(CommandType.V4_SWAP, [planner.finalize()], false, UniversalRouterVersion.V2_0);
+    amountOutMinimum: amounts.grossAmountOutMinimum, minHopPriceX36: "0", hookData: request.hookData }], URVersion.V2_1_1);
+  planner.addAction(Actions.SETTLE_ALL, [binding.inputCurrency, request.amountIn], URVersion.V2_1_1);
+  if (binding.fee.routedRateBps) planner.addAction(Actions.TAKE_PORTION, [binding.outputCurrency, ROUTED_FEE_RECIPIENT_V1, 20], URVersion.V2_1_1);
+  planner.addAction(Actions.TAKE_ALL, [binding.outputCurrency, amounts.amountOutMinimum], URVersion.V2_1_1);
+  const route = new RoutePlanner(); route.addCommand(CommandType.V4_SWAP, [planner.finalize()], false, UniversalRouterVersion.V2_1_1);
   // Partial input fills must not leave native funds in the Universal Router.
-  if (binding.inputCurrency === ZERO) route.addCommand(CommandType.SWEEP, [ZERO, SENDER, 0], false, UniversalRouterVersion.V2_0);
+  if (binding.inputCurrency === ZERO) route.addCommand(CommandType.SWEEP, [ZERO, SENDER, 0], false, UniversalRouterVersion.V2_1_1);
   return { kind: "swap", chainId: "4663", from: request.owner, to: getAddress(ROUTED_TRADE_CONTRACTS_V1.universalRouter.address),
     data: encodeFunctionData({ abi: ROUTED_TRADE_ROUTER_ABI_V1, functionName: "execute", args: [route.commands as Hex, route.inputs as Hex[], BigInt(request.deadline)] }),
     value: binding.inputCurrency === ZERO ? request.amountIn : "0", gasLimit: "1" };
