@@ -8,6 +8,14 @@ A Module Mode contribution is a reusable program with a versioned source package
 
 The source API accepts contributions through open, versioned runtime and capability names. There is no business-category allowlist. Describe the actual idea and its requirements, including any new execution interface or supporting service. The platform selects a review plan for that source. A missing adapter or test environment is review work that must be resolved before approval and publication.
 
+## Check submission access
+
+Before uploading, the agent checks `moduleContributions.submissions` in public `GET /v1/modules/capabilities` and `authorization.canSubmit` in keyed `GET /v1/modules/context`. Both must be `true`. Context also exposes the deployment's intake readiness as `intake.available`.
+
+The root `reviewAvailable`, `approved` and `available` fields in `/v1/modules/capabilities` remain `false` for compatibility. They do not block uploads or mean your account needs approval. New key issuance has its own `moduleContributions.apiKeyIssuance` flag.
+
+Read review readiness separately from `/v1/modules/review-capabilities` (`reviewAvailable`, `statusReadAvailable`) or authenticated context (`review.available`, `review.statusReadAvailable`). Review readiness is not an intake gate. A source package can wait for a platform review plan after upload. The [API reference](https://programmable.market/developers/module-mode-api-v1.md#check-submission-access-first) explains the fields and the upload check.
+
 ## Connect an agent
 
 1. Connect the author's EVM wallet on [API keys](https://programmable.market/developers/api-keys?purpose=modules). Create a key with **Launches + modules** access or use an existing key with `modules:submit` and `modules:read`.
@@ -82,7 +90,7 @@ Use the [API and CLI reference](https://programmable.market/developers/module-mo
 
 Prepare and test the package locally, save the exact request and submit it with a stable idempotency key. Keep the returned submission ID. If the connection fails, retry those same bytes with the same key. Changed source requires a new revision.
 
-The intake receipt records that the package was received. Read the separate review resource for current progress and `nextAction`. `awaiting_plan` means the platform must select the build plan or establish missing review coverage. Keep the original submission while it waits for a plan. If the source changes, prepare a linked new version. Review acceptance is followed by registry admission, deployed-code verification and catalog activation. Availability is determined by the active release and catalog.
+The intake receipt is a historical record of the original upload. `status-module` and submission lists retain `draft_received`, `unreviewed`, `approved: false` and `available: false` even after the review advances. Read `review-status-module` or the separate review resource for the current `review.state` and `review.nextAction`; receipt flags do not describe account approval. `awaiting_plan` means the platform must select the build plan or establish missing review coverage. Keep the original submission while it waits for a plan. If the source changes, prepare a linked new version. Review acceptance is followed by registry admission, deployed-code verification and catalog activation. Availability is determined by the active release and catalog.
 
 Sign in with the API key's author wallet to see [Profile → Modules → Submissions](https://programmable.market/profile?section=submissions). A different reward wallet does not own the private history. Each entry shows its current review status and feedback. Use **Copy for agent** to continue that submission with your agent's existing key. The prompt asks it to read the latest review before acting and contains no API key. **Published** shows verified publications; review approval alone keeps the entry in submission history.
 
