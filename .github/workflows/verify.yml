@@ -476,6 +476,8 @@ jobs:
         run: node scripts/ci/contracts-ci.mjs verify-receipt
 
       - name: Verify the complete deterministic test partition
+        env:
+          ETHEREUM_RPC_URL: https://mainnet.gateway.tenderly.co
         run: node scripts/ci/contracts-ci.mjs test 1
 
   contracts-tests-2:
@@ -514,6 +516,8 @@ jobs:
         run: node scripts/ci/contracts-ci.mjs verify-receipt
 
       - name: Verify the complete deterministic test partition
+        env:
+          ETHEREUM_RPC_URL: https://mainnet.gateway.tenderly.co
         run: node scripts/ci/contracts-ci.mjs test 2
 
   contracts-release:
