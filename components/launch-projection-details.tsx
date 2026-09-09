@@ -13,7 +13,7 @@ export function LaunchProjectionDetails({ projection }: { projection: LaunchProj
       <div><dt>Hooklist</dt><dd>{label(projection.distribution.hooklist)}</dd></div>
     </dl>
     <details><summary>Components, markets and assurance</summary>
-      <p>{projection.components.length} components · {projection.markets.length} markets</p>
+      <p>{projection.components.length} {projection.components.length === 1 ? "component" : "components"} · {projection.markets.length} {projection.markets.length === 1 ? "market" : "markets"}</p>
       <ul>{projection.components.map(component => <li key={component.componentId}><span>{component.componentId}</span>
         <a href={`https://robinhoodchain.blockscout.com/address/${component.expectedAddress}`} target="_blank" rel="noreferrer"><code>{component.expectedAddress}</code><span className="sr-only"> (opens in a new tab)</span></a></li>)}</ul>
       {projection.markets.length ? <pre>{JSON.stringify(projection.markets, null, 2)}</pre> : <p>No market is declared in this launch.</p>}
