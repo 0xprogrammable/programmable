@@ -1,0 +1,39 @@
+.library { color: #f5f3ef; min-width: 0; }
+.toolbar { align-items: center; display: flex; gap: 8px; }
+.search { align-items: center; background: #151515; border: 1px solid #70706c; border-radius: 8px; display: flex; flex: 1; gap: 8px; min-width: 0; padding-inline: 12px; }
+.search > svg { color: #aaa9a5; flex: 0 0 auto; }
+.search input { background: none; border: 0; color: #f5f3ef; font: inherit; font-size: 14px; line-height: 20px; min-height: 44px; min-width: 0; outline: 0; padding-block: 8px; width: 100%; }
+.search input::placeholder { color: #aaa9a5; opacity: 1; }
+.search:focus-within { outline: 2px solid #e786b2; outline-offset: 2px; }
+.categorySelect select { background: #151515; border: 1px solid #70706c; border-radius: 8px; color: #f5f3ef; cursor: pointer; font: inherit; font-size: 14px; line-height: 20px; min-height: 44px; padding: 8px; }
+.resultCount { color: #aaa9a5; font-size: 12px; line-height: 20px; min-height: 20px; margin: 16px 0 4px; }
+.results { display: grid; min-width: 0; }
+.module { align-items: center; border-bottom: 1px solid #30302e; display: grid; gap: 24px; grid-template-columns: minmax(0, 1fr) 96px; min-width: 0; padding: 16px 0; }
+.moduleInfo { min-width: 0; }
+.moduleInfo h3 { color: #f5f3ef; font-size: 14px; font-weight: 500; line-height: 20px; margin: 0; overflow-wrap: anywhere; }
+.moduleInfo p { color: #aaa9a5; display: -webkit-box; font-size: 14px; line-height: 20px; margin: 4px 0; overflow: hidden; text-wrap: pretty; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.moduleInfo > span { color: #aaa9a5; font-size: 12px; line-height: 20px; }
+.add { align-items: center; background: transparent; border: 1px solid #73736c; border-radius: 8px; color: #f5f3ef; cursor: pointer; display: inline-flex; font: inherit; font-size: 14px; gap: 4px; justify-content: center; line-height: 20px; min-height: 44px; padding: 8px; width: 96px; }
+.add[aria-pressed="true"] { background: #2e2028; border-color: #e786b2; color: #e786b2; }
+.selectionIcon { display: inline-flex; flex: 0 0 14px; }
+.empty { color: #aaa9a5; font-size: 14px; line-height: 20px; padding-block: 32px; }
+.empty strong { font-weight: 400; }
+.empty button { align-items: center; background: transparent; border: 0; color: #f5f3ef; cursor: pointer; display: inline-flex; font: inherit; gap: 8px; min-height: 44px; padding: 8px 0; }
+.pagination { align-items: center; color: #aaa9a5; display: flex; font-size: 14px; gap: 16px; justify-content: center; margin-top: 16px; }
+.pagination button { align-items: center; background: #151515; border: 1px solid #73736c; border-radius: 8px; color: #f5f3ef; cursor: pointer; display: flex; height: 44px; justify-content: center; width: 44px; }
+.library button:disabled { cursor: default; opacity: .5; }
+.library :is(button, select):focus-visible, .close:focus-visible { outline: 2px solid #e786b2; outline-offset: 3px; }
+.srOnly { clip-path: inset(50%); height: 1px; overflow: hidden; position: absolute; white-space: nowrap; width: 1px; }
+.dialog { background: transparent; border: 0; color: #f5f3ef; margin: auto; max-height: calc(100dvh - 48px); max-width: min(640px, calc(100vw - 32px)); overflow: visible; padding: 0; width: 640px; }
+.dialog:not([open]) { display: none; }
+.dialog::backdrop { background: rgb(0 0 0 / .72); }
+.dialogSurface { background: #1b1b1a; border: 1px solid #3a3a37; border-radius: 16px; display: flex; flex-direction: column; max-height: calc(100dvh - 48px); overflow: hidden; }
+.dialogHeader { align-items: start; display: flex; gap: 16px; justify-content: space-between; padding: 24px 24px 16px; }
+.dialogHeader h2 { font-size: 20px; font-weight: 500; letter-spacing: -.02em; line-height: 28px; margin: 0; outline: none; }
+.dialogHeader p { color: #aaa9a5; font-size: 14px; line-height: 20px; margin: 4px 0 0; }
+.close { align-items: center; background: transparent; border: 0; border-radius: 8px; color: #aaa9a5; cursor: pointer; display: flex; flex: 0 0 44px; height: 44px; justify-content: center; margin: -8px -8px 0 0; width: 44px; }
+.dialogContent { overflow: auto; overscroll-behavior: contain; padding: 0 24px 24px; }
+@media (hover: hover) { .add:not(:disabled):hover { border-color: #e786b2; } .close:hover { background: #272726; color: #f5f3ef; } }
+@media (max-width: 600px) { .toolbar { align-items: stretch; flex-direction: column; } .categorySelect select { width: 100%; } .search input, .categorySelect select { font-size: 16px; } .module { gap: 12px; } .dialogHeader { padding: 20px 16px 16px; } .dialogContent { padding: 0 16px 16px; } }
+@media (forced-colors: active) { .search, .categorySelect select, .add, .dialogSurface, .pagination button { border-color: ButtonText; } .add[aria-pressed="true"] { outline: 1px solid Highlight; } }
+.library button:hover, .library button:active, .close:hover, .close:active { transform: none; }

@@ -1,9 +1,9 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { formatUnits, keccak256, toHex, type Address, type Hex } from "viem";
-import { ArrowUpRight, Check, ChevronDown, Plus, Puzzle } from "lucide-react";
+import { ArrowLeft, ArrowUpRight, Check, ChevronDown, Plus, Puzzle } from "lucide-react";
 import { MODULE_DEFAULT_TOKEN_IMAGE, validateModuleSocialLinks, type ModuleSocialLinks, type ModuleSocialIssue } from "@/lib/module-mode/token-metadata";
 import { ModuleModeImagePicker, moduleModeImageSource, type ModuleModeImageResource } from "@/components/module-mode-image";
 import { ModuleSchemaField } from "@/components/module-mode-fields";
@@ -12,7 +12,7 @@ import { configurationFromForm, configurationToForm, defaultSchemaValue, parseEx
 import { moduleAddress, moduleBytes } from "@/lib/module-mode/release";
 import { ENGINE_ZERO_ADDRESS, ENGINE_ZERO_HASH, moduleEngineOptionalHash, parseModuleEngineAvailability, type ModuleEngineAvailability, type ModuleEngineCatalogDefinition } from "@/lib/module-engine/catalog";
 import { createModuleEngineClient, ENGINE_OPERATIONS, moduleEngineDepositIntent, moduleEngineSettlementRequestIntent, moduleEngineTradeIntent, prepareModuleEngineApproval, prepareModuleEngineLaunch, readModuleEngineQuoteAsset, type ModuleEngineApprovalRequired, type ModuleEngineClient, type ModuleEngineOperationIntent, type PreparedModuleEngineTransaction } from "@/lib/module-engine/client";
-import { ModuleEngineLibrary } from "./module-engine-library";
+import { ModuleEnginePicker } from "./module-engine-library";
 import { ModuleEngineCustomOperationFields } from "./module-engine-custom-operation";
 import { emptyModuleEngineCustomOperation, moduleEngineCustomOperationIntent } from "@/lib/module-engine/custom-operation";
 import { ModuleEngineTransactionReview, type ModuleEngineWalletActions } from "./module-engine-transaction-review";
@@ -33,12 +33,17 @@ const socialFields = [
   { key: "github", label: "GitHub", placeholder: "https://github.com/…" },
   { key: "gitbook", label: "GitBook", placeholder: "https://…" },
 ] as const;
+const subscribeToHydration = () => () => {};
+const readHydrated = () => true;
+const readServerHydrated = () => false;
+
 function freshSalt() { return toHex(crypto.getRandomValues(new Uint8Array(32))); }
 function message(error: unknown) { return error instanceof Error ? error.message.replace(/^Module engine: /, "") : "The launch could not be prepared."; }
 function fixedConfiguration(schema: ModuleEngineCatalogDefinition["schema"]): boolean { return schema.binding?.mode === "fixed" || schema.type === "record" && Object.keys(schema.fields).length > 0 && Object.values(schema.fields).every(fixedConfiguration); }
 
 /** Configuration and wallet controls extend the existing Module Mode flow; no independent wallet is created. */
 export function ModuleEngineBuilder({ availability: raw, client: suppliedClient, wallet, onConnect, onSwitch, onSubmit, blocked, blockedReason, statusContent, versionContent, onUploadImage }: ModuleEngineBuilderProps) {
+  const hydrated = useSyncExternalStore(subscribeToHydration, readHydrated, readServerHydrated);
   const client = useMemo(() => suppliedClient ?? createModuleEngineClient(), [suppliedClient]);
   const parsed = useMemo(() => { try { return { availability: parseModuleEngineAvailability(raw), error: null }; } catch (error) { return { availability: null, error: message(error) }; } }, [raw]);
   const availability = parsed.availability;
@@ -57,6 +62,7 @@ export function ModuleEngineBuilder({ availability: raw, client: suppliedClient,
   const [error, setError] = useState<string | null>(null); const [notice, setNotice] = useState<string | null>(null); const [busy, setBusy] = useState(false);
   const salts = useRef<{ creator: Hex; engine: Hex } | null>(null);
   const coinDetails = useRef<HTMLDetailsElement>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const template = availability?.templates.find(item => item.manifest.manifest.catalogDefinition.id === selected) ?? availability?.templates[0];
   const definition = template?.manifest.manifest.catalogDefinition, revision = template?.manifest.manifest.revision;
   const fixedQuote = revision && revision.fixedQuoteAsset !== ENGINE_ZERO_ADDRESS ? revision.fixedQuoteAsset : null;
@@ -127,18 +133,15 @@ export function ModuleEngineBuilder({ availability: raw, client: suppliedClient,
   const quoteShort = quoteAsset ? `${quoteAsset.slice(0, 6)}…${quoteAsset.slice(-4)}` : "Not chosen";
 
   return <div className={`${styles.page} ${engineStyles.root} ${engineStyles.builderRoot}`}>
-    <header className={`${styles.heading} ${engineStyles.heading}`}>
-      <div className={styles.titleRow}><h1>Create a coin</h1><span className={styles.network}>Robinhood Chain</span></div>
-      <p>Choose its look. Give it a module.</p>
-    </header>
+    <div className={engineStyles.pageTop}><a href="/launch"><ArrowLeft size={16} aria-hidden="true" />Back</a><span>Robinhood Chain</span></div>
     {statusContent}
-    {parsed.error || availability?.reason ? <p className={engineStyles.notice} role="status">{parsed.error ?? availability?.reason}</p> : null}
-    {!template || !definition || !availability?.release ? <div className={engineStyles.emptyState}><Puzzle size={28} aria-hidden="true" /><h2>No modules available yet</h2><p>Published modules will appear here when they are ready to use.</p></div> : <>
+    {!template || !definition || !availability?.release ? <section className={engineStyles.emptyState}><h1>Create a coin</h1><p role="status">No modules available yet.{parsed.error || availability?.reason ? ` ${parsed.error ?? availability?.reason}` : ""}</p></section> : <>
+      {availability.reason ? <p className={engineStyles.notice} role="status">{availability.reason}</p> : null}
       <div className={engineStyles.studio} hidden={Boolean(prepared)}>
-        <form className={`${styles.formPanel} ${engineStyles.builderForm}`} aria-busy={busy || imageBusy} onSubmit={event => { event.preventDefault(); void prepare(); }}>
-          <fieldset className={styles.formFields} disabled={busy || imageBusy || Boolean(prepared)}>
+        <form className={`${styles.formPanel} ${engineStyles.builderForm}`} aria-busy={!hydrated || busy || imageBusy} onSubmit={event => { event.preventDefault(); void prepare(); }} onInvalidCapture={event => { let disclosure = event.target instanceof HTMLElement ? event.target.closest("details") : null; while (disclosure) { disclosure.open = true; disclosure = disclosure.parentElement?.closest("details") ?? null; } }}>
+          <header className={engineStyles.heading}><h1>Create a coin</h1></header>
+          <fieldset className={styles.formFields} disabled={!hydrated || busy || imageBusy || Boolean(prepared)} aria-busy={!hydrated}>
             <section className={styles.formSection}>
-              <div className={engineStyles.sectionHeading}><h2>Your coin</h2></div>
               <div className={styles.tokenFields}>
                 <div className={styles.field}><label htmlFor="engine-name">Name</label><input id="engine-name" autoComplete="off" placeholder="Your coin name" value={name} onChange={event => edit(() => setName(event.target.value))} required /></div>
                 <div className={styles.field}><label htmlFor="engine-symbol">Ticker</label><input id="engine-symbol" autoComplete="off" placeholder="COIN" value={symbol} maxLength={11} onChange={event => edit(() => setSymbol(event.target.value))} required /></div>
@@ -159,17 +162,15 @@ export function ModuleEngineBuilder({ availability: raw, client: suppliedClient,
             </section>
 
             <section className={styles.formSection} id="engine-modules">
-              <div className={engineStyles.sectionHeading}><h2>Modules</h2><p>Choose one to shape how your coin works.</p></div>
-              <div className={engineStyles.templateLibrary}>
-                <ModuleEngineLibrary templates={availability.templates} selectedId={definition.id} disabled={busy || imageBusy || blocked} onSelect={item => edit(() => { setSelected(item.manifest.manifest.catalogDefinition.id); setQuoteState(null); salts.current = null; setCustomInitialForm(emptyModuleEngineCustomOperation()); setCreatorSaltInput(""); setEngineSaltInput(""); setLaunchData("0x"); setBuyFee("0"); setSellFee("0"); })} />
+              <div className={engineStyles.sectionHeading}><h2>Modules</h2><p>Add features to your coin.</p></div>
+              <div className={engineStyles.selectedModule}>
+                <Puzzle size={20} aria-hidden="true" />
+                <div><strong>{definition.title}</strong><p>{definition.summary}</p></div>
+                <button type="button" className={engineStyles.changeModule} disabled={!hydrated || busy || imageBusy || blocked} onClick={() => setPickerOpen(true)} aria-haspopup="dialog">Change</button>
               </div>
-              <details className={engineStyles.moduleAbout} key={`about-${definition.id}`}>
-                <summary><span>About {definition.title}</span><ChevronDown size={16} aria-hidden="true" /></summary>
-                <div className={engineStyles.detailsBody}><p>{definition.detail}</p>{versionContent}</div>
-              </details>
-
-              <div className={engineStyles.moduleSettings}>
-                <div className={engineStyles.settingsHeading}><Puzzle size={18} aria-hidden="true" /><h3>{definition.title} settings</h3></div>
+              <details className={engineStyles.moduleSettings} key={`settings-${definition.id}`}>
+                <summary><span>Module settings</span><ChevronDown size={16} aria-hidden="true" /></summary>
+                <div className={engineStyles.detailsBody}>
                 <div className={styles.field}>
                   <label htmlFor="engine-quote">{quoteLabel} {fixedQuote ? <span>Fixed by module</span> : null}</label>
                   <input id="engine-quote" value={quoteAsset} readOnly={Boolean(fixedQuote)} placeholder="Token address, 0x…" spellCheck={false} autoComplete="off" onChange={event => edit(() => { setQuote(event.target.value); setQuoteState(null); })} />
@@ -183,11 +184,17 @@ export function ModuleEngineBuilder({ availability: raw, client: suppliedClient,
                   <summary><span>Fixed module settings</span><ChevronDown size={16} aria-hidden="true" /></summary>
                   <div className={engineStyles.detailsBody}><ModuleSchemaField schema={definition.schema} value={form} onChange={() => {}} path="/engine/fixed-configuration" fields={definition.fields} context={{ roles: wallet.account ? { launchWallet: wallet.account as Address } : {}, assets: quoteVerified && quoteState ? { quote: { chainId: "4663", address: quoteState.address, decimals: quoteState.decimals } } : {} }} /></div>
                 </details> : <div className={engineStyles.configuration}><ModuleSchemaField schema={definition.schema} value={form} onChange={value => edit(() => setForms(current => ({ ...current, [definition.id]: value })))} path="/engine/configuration" fields={definition.fields} context={{ roles: wallet.account ? { launchWallet: wallet.account as Address } : {}, assets: quoteVerified && quoteState ? { quote: { chainId: "4663", address: quoteState.address, decimals: quoteState.decimals } } : {} }} /></div>}
-              </div>
+                <details className={engineStyles.moduleAbout}>
+                  <summary><span>About this module</span><ChevronDown size={16} aria-hidden="true" /></summary>
+                  <div className={engineStyles.detailsBody}><p>{definition.detail}</p>{versionContent}</div>
+                </details>
+                </div>
+              </details>
             </section>
 
-            <section className={styles.formSection}>
-              <div className={engineStyles.sectionHeading}><h2>Launch settings</h2></div>
+            <details className={`${engineStyles.launchSettings} ${engineStyles.optionalDetails}`}>
+              <summary><span>Launch settings</span><ChevronDown size={16} aria-hidden="true" /></summary>
+              <div className={engineStyles.detailsBody}>
               {needsInitial && customInitial && initialPermission ? <div className={engineStyles.initialAction}><h3>First action</h3><ModuleEngineCustomOperationFields id="engine-initial-action" permission={initialPermission} value={customInitialForm} account={wallet.account} onChange={value => edit(() => setCustomInitialForm(value))} /></div> : null}
               {needsInitial && !customInitial ? <div className={engineStyles.initialAction}>
                 <h3>{spot ? "First buy" : "Starting funds"}</h3>
@@ -224,19 +231,20 @@ export function ModuleEngineBuilder({ availability: raw, client: suppliedClient,
                   </div>
                 </div>
               </details> : null}
-              {!needsInitial && !spot && !customLaunch ? <p className={engineStyles.sectionNote}>This module needs no starting funds.</p> : null}
-            </section>
+              {!needsInitial && !spot && !customLaunch ? <p className={engineStyles.sectionNote}>No starting funds required.</p> : null}
+              </div>
+            </details>
           </fieldset>
           <div className={engineStyles.launchFooter}>
-            <p>{step === "prepare" && !quoteVerified ? `Check the ${spot ? "trading" : "funding"} token to continue.` : "Review everything before your wallet opens."}</p>
-            {connectedAction ? <button type="button" className={styles.primaryButton} onClick={() => void connectedAction()}>{step === "connect" ? "Connect wallet" : "Switch to Robinhood Chain"}<ArrowUpRight size={18} aria-hidden="true" /></button> : <button type="submit" className={styles.primaryButton} id="engine-launch-review" disabled={busy || imageBusy || blocked || !quoteVerified}>{imageBusy ? "Preparing image…" : busy ? "Checking launch…" : "Review launch"}<ArrowUpRight size={18} aria-hidden="true" /></button>}
+            <p>{step === "prepare" && !quoteVerified ? "Check the token in Module settings to continue." : "You review the transaction before signing."}</p>
+            {connectedAction ? <button type="button" className={styles.primaryButton} disabled={!hydrated} onClick={() => void connectedAction()}>{step === "connect" ? "Connect wallet" : "Switch to Robinhood Chain"}<ArrowUpRight size={18} aria-hidden="true" /></button> : <button type="submit" className={styles.primaryButton} id="engine-launch-review" disabled={!hydrated || busy || imageBusy || blocked || !quoteVerified}>{imageBusy ? "Preparing image…" : busy ? "Checking launch…" : "Review launch"}<ArrowUpRight size={18} aria-hidden="true" /></button>}
           </div>
         </form>
 
-        <aside className={engineStyles.preview} aria-label="Your coin preview">
-          <div className={engineStyles.previewTop}><span>Preview</span><span>Robinhood Chain</span></div>
+        <aside className={engineStyles.preview} aria-label="Coin summary">
+          <div className={engineStyles.summaryContent}>
           <div className={engineStyles.coinIdentity}>
-            <div className={engineStyles.coinArtwork}><Image src={tokenImageSource ?? "/brand/loop/programmable-module-token-default-v1.png"} alt="" fill sizes="128px" unoptimized /></div>
+            <div className={engineStyles.coinArtwork}><Image src={tokenImageSource ?? "/brand/loop/programmable-module-token-default-v1.png"} alt="" fill sizes="64px" unoptimized /></div>
             <h2>{name.trim() || "Your coin"}</h2>
             <p>{symbol.trim() ? `$${symbol.trim()}` : "$COIN"}</p>
             {description.trim() ? <p className={engineStyles.coinDescription}>{description}</p> : null}
@@ -244,17 +252,17 @@ export function ModuleEngineBuilder({ availability: raw, client: suppliedClient,
           <div className={engineStyles.attachmentLine} aria-hidden="true"><span /></div>
           <div className={engineStyles.previewModule}>
             <span className={engineStyles.moduleIcon}><Puzzle size={20} aria-hidden="true" /></span>
-            <div><span>Module attached</span><strong>{definition.title}</strong></div>
-            <Check size={16} aria-label="Selected" />
+            <div><strong>{definition.title}</strong></div>
           </div>
           <dl className={engineStyles.previewFacts}>
             <div><dt>{quoteLabel}</dt><dd title={quoteAsset || undefined}>{quoteShort}</dd></div>
             {spot || customLaunch ? <div><dt>{customLaunch ? "Fee settings" : "Creator fees"}</dt><dd>{buyFee}% buy · {sellFee}% sell</dd></div> : null}
             {needsInitial && !customInitial ? <div><dt>{spot ? "First buy" : "Starting funds"}</dt><dd>{amount.trim() ? `${amount} tokens` : "Not set"}</dd></div> : null}
           </dl>
-          <a className={engineStyles.previewEdit} href="#engine-modules">Change module<ArrowUpRight size={16} aria-hidden="true" /></a>
+          </div>
         </aside>
       </div>
+      <ModuleEnginePicker open={pickerOpen} templates={availability.templates} selectedId={definition.id} disabled={!hydrated || busy || imageBusy || blocked} onClose={() => setPickerOpen(false)} onSelect={item => { edit(() => { setSelected(item.manifest.manifest.catalogDefinition.id); setQuoteState(null); salts.current = null; setCustomInitialForm(emptyModuleEngineCustomOperation()); setCreatorSaltInput(""); setEngineSaltInput(""); setLaunchData("0x"); setBuyFee("0"); setSellFee("0"); }); setPickerOpen(false); }} />
       {approval && !prepared ? <section className={engineStyles.notice} role="status"><p>Allow the launch contract to use exactly {quoteState ? formatUnits(approval.amount, quoteState.decimals) : approval.amount.toString()} quote tokens to fund this launch.</p><button id="engine-approval-review" className={styles.secondaryButton} type="button" disabled={busy || blocked} onClick={() => void prepareApproval()}>{approval.currentAllowance > 0n ? "Review allowance reset" : "Review exact approval"}</button></section> : null}
       {prepared ? <ModuleEngineTransactionReview prepared={prepared} busy={busy} disabled={blocked || step !== "prepare"} onEdit={backToEdit} onConfirm={() => void confirm()} quoteAsset={quoteState?.address} quoteDecimals={quoteState?.decimals} tradeFees={spot || customLaunch} genericAction={customInitial} showLaunchInputs={customLaunch}>{prepared.kind === "launch" ? <div className={engineStyles.launchSummary}><strong>{name} · {symbol}</strong><p>{description}</p><p className={styles.help}>Image: {imageUri || MODULE_DEFAULT_TOKEN_IMAGE}</p>{checkedSocial.ok ? <dl className={styles.reviewRows}>{socialFields.filter(({ key }) => checkedSocial.links[key]).map(({ key, label }) => <div key={key}><dt>{label}</dt><dd>{checkedSocial.links[key]}</dd></div>)}</dl> : null}</div> : null}</ModuleEngineTransactionReview> : null}
     </>}

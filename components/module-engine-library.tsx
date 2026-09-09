@@ -1,12 +1,11 @@
 "use client";
 
-import { useDeferredValue, useId, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { Check, ChevronLeft, ChevronRight, Search, X } from "lucide-react";
 import type { ModuleEngineTemplate } from "@/lib/module-engine/catalog";
-import { moduleEngineCategory, moduleEngineInterfaceLabel, moduleEngineOperationLabel } from "@/lib/module-engine/public-details";
+import { moduleEngineInterfaceLabel, moduleEngineOperationLabel } from "@/lib/module-engine/public-details";
 import { MODULE_LIBRARY_PAGE_SIZE } from "@/lib/module-mode/library";
-import { ModuleCategoryIcon } from "./module-library";
-import styles from "./module-library.module.css";
+import styles from "./module-engine-library.module.css";
 
 export interface ModuleEngineLibraryProps {
   templates: readonly ModuleEngineTemplate[];
@@ -47,11 +46,9 @@ export function ModuleEngineLibrary({ templates, selectedId, onSelect, disabled 
       {results.slice((currentPage - 1) * MODULE_LIBRARY_PAGE_SIZE, currentPage * MODULE_LIBRARY_PAGE_SIZE).map(template => {
         const { catalogDefinition: definition } = template.manifest.manifest, selected = definition.id === selectedId;
         return <article key={template.manifestHash} className={styles.module} data-selected={selected}>
-          <div className={styles.moduleTop}><ModuleCategoryIcon category={moduleEngineCategory(definition.interface) === "trading" ? "trading" : "experiments"} /><span>{categoryLabels[definition.interface]}</span></div>
-          <h3>{definition.title}</h3><p>{definition.summary}</p>
-          <div className={styles.moduleBottom}><span className={styles.author}>v{definition.version}</span>
-            <button type="button" className={styles.add} disabled={disabled} aria-label={`Choose module ${definition.title}`} aria-pressed={selected}
-              onClick={() => { if (!selected) onSelect(template); }}>{selected ? <Check size={16} aria-hidden="true" /> : null}{selected ? "Selected" : "Choose"}</button></div>
+          <div className={styles.moduleInfo}><h3>{definition.title}</h3><p>{definition.summary}</p><span>{categoryLabels[definition.interface]} · v{definition.version}</span></div>
+          <button type="button" className={styles.add} disabled={disabled} aria-label={`Choose module ${definition.title}`} aria-pressed={selected}
+            onClick={() => { if (!selected) onSelect(template); }}><span className={styles.selectionIcon} aria-hidden="true">{selected ? <Check size={14} /> : null}</span>{selected ? "Selected" : "Choose"}</button>
         </article>;
       })}
     </div>
@@ -63,4 +60,46 @@ export function ModuleEngineLibrary({ templates, selectedId, onSelect, disabled 
       <button type="button" disabled={disabled || currentPage === pages} onClick={() => setPage(currentPage + 1)} aria-label="Next modules"><ChevronRight size={18} /></button>
     </nav> : null}
   </div>;
+}
+
+
+function trapPickerFocus(event: KeyboardEvent<HTMLDialogElement>) {
+  if (event.key !== "Tab") return;
+  const controls = [...event.currentTarget.querySelectorAll<HTMLElement>('button, a[href], input:not([type="hidden"]), select, textarea, [tabindex]:not([tabindex="-1"])')]
+    .filter(element => !element.matches(":disabled") && element.getClientRects().length > 0);
+  const first = controls[0], last = controls.at(-1);
+  if (!first || !last) return;
+  const active = document.activeElement;
+  if (event.shiftKey && (active === first || !event.currentTarget.contains(active))) { event.preventDefault(); last.focus(); }
+  else if (!event.shiftKey && (active === last || !event.currentTarget.contains(active))) { event.preventDefault(); first.focus(); }
+}
+
+export function ModuleEnginePicker({ open, onClose, ...library }: ModuleEngineLibraryProps & { open: boolean; onClose: () => void }) {
+  const dialog = useRef<HTMLDialogElement>(null), close = useRef<HTMLButtonElement>(null);
+  const id = useId();
+  useEffect(() => {
+    const element = dialog.current;
+    if (!open || !element) return;
+    const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const root = document.documentElement;
+    const overflow = root.style.overflow, gutter = root.style.scrollbarGutter;
+    root.style.scrollbarGutter = "stable";
+    root.style.overflow = "hidden";
+    element.showModal();
+    close.current?.focus();
+    return () => {
+      element.close();
+      root.style.overflow = overflow;
+      root.style.scrollbarGutter = gutter;
+      if (trigger?.isConnected) trigger.focus({ preventScroll: true });
+    };
+  }, [open]);
+
+  return <dialog ref={dialog} className={styles.dialog} aria-labelledby={`${id}-title`}
+    onKeyDown={trapPickerFocus} onCancel={event => { event.preventDefault(); onClose(); }} onClick={event => { if (event.target === event.currentTarget) onClose(); }}>
+    <div className={styles.dialogSurface}>
+      <header className={styles.dialogHeader}><div><h2 id={`${id}-title`}>Choose a module</h2></div><button ref={close} type="button" className={styles.close} aria-label="Close modules" onClick={onClose}><X size={20} aria-hidden="true" /></button></header>
+      <div className={styles.dialogContent}><ModuleEngineLibrary {...library} /></div>
+    </div>
+  </dialog>;
 }
