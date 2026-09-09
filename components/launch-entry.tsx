@@ -302,10 +302,10 @@ export function LaunchModelPicker({
             </span>
             <span className={`launch-model-card-body ${launchExperience.modelBody}`}>
               <span className={`launch-model-card-heading ${launchExperience.modelHeading}`}>
-                <strong id="launch-model-modules-title">Module Mode</strong>
+                <strong id="launch-model-modules-title">Modules</strong>
               </span>
               <span className={`launch-model-description ${launchExperience.modelDescription}`} id="launch-model-modules-description">
-                A coin with your fees and your choice of modules.
+                Create a coin and add the features you want.
               </span>
               <span className={`launch-model-action ${launchExperience.modelAction}`}>
                 Open builder <ArrowRight aria-hidden="true" size={16} />

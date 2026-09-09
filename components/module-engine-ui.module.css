@@ -78,7 +78,7 @@
 .initialAction + .optionalDetails { margin-top: 24px; }
 .launchFooter { align-items: center; border-top: 1px solid var(--engine-line); display: flex; flex-wrap: wrap; gap: 16px; justify-content: space-between; margin-top: 24px; padding-top: 24px; }
 .launchFooter > p { color: var(--engine-muted); flex: 1 1 160px; font-size: 12px; line-height: 20px; margin: 0; }
-.launchFooter > button { gap: 24px; min-width: 176px; }
+.launchFooter > button { background: var(--engine-accent); border-color: var(--engine-accent); border-radius: 12px; color: #21151b; gap: 24px; min-width: 176px; }
 .preview { background: var(--engine-surface); border: 1px solid var(--engine-line); border-radius: 24px; min-width: 0; padding: 24px; position: sticky; top: calc(var(--header-height, 88px) + 24px); }
 .previewTop { align-items: center; color: var(--engine-muted); display: flex; flex-wrap: wrap; font-size: 12px; gap: 8px; justify-content: space-between; line-height: 20px; }
 .coinIdentity { margin-top: 32px; text-align: center; }
@@ -104,7 +104,7 @@
 .emptyState > svg { color: var(--engine-muted); margin-bottom: 16px; }
 .emptyState h2 { font-size: 24px; line-height: 32px; margin-bottom: 8px; }
 .emptyState p { color: var(--engine-muted); font-size: 16px; line-height: 24px; margin: 0; }
-.builderRoot :is(input:not([type="file"]), select, textarea):not([aria-invalid="true"]) { border-color: #6b6b65; }
+.builderRoot :is(input:not([type="file"]), select, textarea):not([aria-invalid="true"]) { border-color: #73736c; border-radius: 12px; }
 .builderRoot .templateLibrary input[type="search"] { border: 0; }
 .builderRoot button:disabled { cursor: default; opacity: .5; }
 .builderRoot [id="engine-modules"] { scroll-margin-top: calc(var(--header-height, 88px) + 24px); }

@@ -8,6 +8,7 @@
   --webde-dim: #aaa9a5;
   --webde-line: #30302e;
   --api-accent: #e786b2;
+  --success: #91cdb5;
   --api-panel: var(--webde-surface);
   --api-panel-strong: var(--webde-surface-raised);
   --api-line: var(--webde-line);
@@ -46,7 +47,7 @@
 .textLink:hover { color: var(--webde-ink); }
 .textLink:focus-visible, .accessField select:focus-visible { outline: 2px solid var(--webde-ink); outline-offset: 3px; }
 .accessField { display: grid; gap: 8px; color: var(--webde-muted); font-size: 14px; min-width: 0; }
-.accessField select { background: var(--webde-control); border: 1px solid var(--api-line); border-radius: 8px; color: var(--webde-ink); font: inherit; font-size: 16px; min-height: 48px; min-width: 0; max-width: 100%; padding: 8px 32px 8px 12px; width: 100%; }
+.accessField select { background: var(--webde-control); border: 1px solid #73736c; border-radius: 8px; color: var(--webde-ink); font: inherit; font-size: 16px; min-height: 48px; min-width: 0; max-width: 100%; padding: 8px 32px 8px 12px; width: 100%; }
 
 
 .heroCopy {
@@ -151,7 +152,7 @@
 
 .connectionGraphic { align-items: center; display: flex; margin-bottom: 24px; }
 .connectionGraphic > span:not(.connectionLine) { align-items: center; background: var(--webde-surface); border: 1px solid var(--api-line); border-radius: 16px; color: var(--webde-muted); display: inline-flex; height: 64px; justify-content: center; width: 64px; }
-.connectionGraphic > .connectionDestination { background: var(--api-accent); border-color: var(--api-accent); color: #1c1217; transform: rotate(5deg); }
+.connectionGraphic > span.connectionDestination { background: var(--api-accent); border-color: var(--api-accent); color: #1c1217; transform: rotate(5deg); }
 .connectionLine { background: var(--api-line); height: 1px; width: 32px; }
 .connectionGuide h2 { color: var(--webde-ink); font-size: 24px; font-weight: 500; letter-spacing: -0.025em; line-height: 32px; margin: 0 0 12px; }
 .connectionGuide p { color: var(--webde-muted); font-size: 14px; line-height: 20px; margin: 0; max-width: 320px; text-wrap: pretty; }
@@ -423,7 +424,7 @@
 
 .field input {
   background: var(--webde-control);
-  border: 1px solid var(--api-line);
+  border: 1px solid #73736c;
   border-radius: 8px;
   color: var(--webde-ink);
   font-size: 16px;
@@ -449,7 +450,7 @@
 .expiryTrigger {
   align-items: center;
   background: var(--webde-control);
-  border: 1px solid var(--api-line);
+  border: 1px solid #73736c;
   border-radius: 8px;
   color: var(--webde-ink);
   display: flex;

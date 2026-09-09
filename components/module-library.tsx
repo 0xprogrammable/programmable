@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useDeferredValue, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode, type Ref } from "react";
 import { ArrowsLeftRightIcon } from "@phosphor-icons/react/dist/ssr/ArrowsLeftRight";
 import { CoinsIcon } from "@phosphor-icons/react/dist/ssr/Coins";
 import { FlaskIcon } from "@phosphor-icons/react/dist/ssr/Flask";
@@ -10,7 +10,7 @@ import { LinkIcon } from "@phosphor-icons/react/dist/ssr/Link";
 import { ShieldCheckIcon } from "@phosphor-icons/react/dist/ssr/ShieldCheck";
 import { SlidersHorizontalIcon } from "@phosphor-icons/react/dist/ssr/SlidersHorizontal";
 import { WavesIcon } from "@phosphor-icons/react/dist/ssr/Waves";
-import { ArrowRight, Check, ChevronLeft, ChevronRight, Plus, Search, X } from "lucide-react";
+import { ArrowRight, ChevronLeft, ChevronRight, Plus, Search, X } from "lucide-react";
 import type { ModuleModeCatalogEntry } from "@/lib/module-mode/builder";
 import { MODULE_CATEGORIES, MODULE_LIBRARY_PAGE_SIZE, moduleAuthorLabel, moduleCategory, moduleDiscovery, searchModuleLibrary, type ModuleCategoryId } from "@/lib/module-mode/library";
 import styles from "@/components/module-library.module.css";
@@ -28,13 +28,19 @@ export function ModuleAuthor({ entry }: { entry: ModuleModeCatalogEntry }) {
   return author ? <Link href={`/profile?account=${author}&chain=4663`} className={styles.author} title={`Module author ${author}`}>By {moduleAuthorLabel(entry)}</Link> : null;
 }
 
-export function ModuleLibrary({ catalog, selectedIds, onAdd, onRemove }: {
+export interface ModuleLibraryHandle { reveal: (id: string) => void }
+
+export function ModuleLibrary({ catalog, selectedIds, onAdd, onRemove, renderConfiguration, controllerRef }: {
   catalog: readonly ModuleModeCatalogEntry[]; selectedIds: readonly string[];
   onAdd: (entry: ModuleModeCatalogEntry) => void; onRemove: (entry: ModuleModeCatalogEntry) => void;
+  renderConfiguration?: (entry: ModuleModeCatalogEntry) => ReactNode;
+  controllerRef?: Ref<ModuleLibraryHandle>;
 }) {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("all");
   const [page, setPage] = useState(1);
+  const [focusRequest, setFocusRequest] = useState(0);
+  const pendingFocus = useRef<string | null>(null);
   const deferredQuery = useDeferredValue(query);
   const results = useMemo(() => searchModuleLibrary(catalog, deferredQuery, category), [catalog, deferredQuery, category]);
   const counts = useMemo(() => new Map(MODULE_CATEGORIES.map(item => [item.id,
@@ -44,42 +50,54 @@ export function ModuleLibrary({ catalog, selectedIds, onAdd, onRemove }: {
   const visible = results.slice((currentPage - 1) * MODULE_LIBRARY_PAGE_SIZE, currentPage * MODULE_LIBRARY_PAGE_SIZE);
   const selected = new Set(selectedIds);
   const reset = () => { setQuery(""); setCategory("all"); setPage(1); };
+  useImperativeHandle(controllerRef, () => ({ reveal(id) {
+    const index = searchModuleLibrary(catalog, "", "all").findIndex(entry => entry.id === id);
+    if (index < 0) return;
+    pendingFocus.current = id;
+    setQuery(""); setCategory("all"); setPage(Math.floor(index / MODULE_LIBRARY_PAGE_SIZE) + 1);
+    setFocusRequest(value => value + 1);
+  } }), [catalog]);
+  useEffect(() => {
+    const id = pendingFocus.current;
+    if (!id || !visible.some(entry => entry.id === id)) return;
+    const target = document.getElementById(`module-${id}-title`);
+    if (!target) return;
+    target.focus({ preventScroll: true });
+    target.scrollIntoView({ block: "center", behavior: "auto" });
+    pendingFocus.current = null;
+  }, [focusRequest, visible]);
   return <div className={styles.library}>
-    <div className={styles.toolbar}>
+    <div className={styles.toolbar} hidden={catalog.length < 5 && !query && category === "all"}>
       <div className={styles.search}>
         <label className={styles.srOnly} htmlFor="module-search">Search modules</label>
         <Search size={18} aria-hidden="true" />
-        <input id="module-search" type="search" placeholder="Search modules, ideas, authors…" value={query}
+        <input id="module-search" type="search" placeholder="Find a module" value={query}
           onChange={event => { setQuery(event.target.value); setPage(1); }} autoComplete="off" />
       </div>
-      <label className={styles.categorySelect}><span className={styles.srOnly}>Module category</span>
-        <select value={category} onChange={event => { setCategory(event.target.value); setPage(1); }}>
-          <option value="all">All categories</option>
-          {MODULE_CATEGORIES.map(item => <option key={item.id} value={item.id}>{item.label} ({counts.get(item.id)})</option>)}
-        </select>
-      </label>
+
     </div>
-    <div className={styles.categories} role="group" aria-label="Browse module categories">
+    <div className={styles.categories} hidden={new Set(catalog.map(entry => moduleCategory(entry).id)).size < 2} role="group" aria-label="Browse module categories">
       <button type="button" aria-pressed={category === "all"} onClick={() => { setCategory("all"); setPage(1); }}>All <span>{catalog.length}</span></button>
       {MODULE_CATEGORIES.filter(item => counts.get(item.id) || item.id === category).map(item =>
         <button type="button" key={item.id} aria-pressed={category === item.id} onClick={() => { setCategory(item.id); setPage(1); }}>
           <ModuleCategoryIcon category={item.id} size={18} />{item.label}<span>{counts.get(item.id)}</span>
         </button>)}
     </div>
-    <div className={styles.resultCount} role="status" aria-live="polite">{results.length} {results.length === 1 ? "module" : "modules"}{query.trim() ? ` for “${query.trim()}”` : ""}</div>
+    <div className={styles.resultCount} hidden={!query.trim() && category === "all"} role="status" aria-live="polite">{results.length} {results.length === 1 ? "module" : "modules"}{query.trim() ? ` for “${query.trim()}”` : ""}</div>
     <div className={styles.results} aria-label="Module library">
       {visible.map(entry => { const added = selected.has(entry.id); const group = moduleCategory(entry); return <article key={entry.id} className={styles.module} data-selected={added}>
         <div className={styles.moduleTop}><ModuleCategoryIcon category={group.id} /><span>{group.label}</span>{entry.status === "preview" ? <span className={styles.preview}>Preview</span> : null}</div>
-        <h3>{entry.title}</h3>
+        <h3 id={`module-${entry.id}-title`} tabIndex={-1}>{entry.title}</h3>
         <p>{entry.summary}</p>
+        {added && renderConfiguration ? <div className={styles.configuration}>{renderConfiguration(entry)}</div> : null}
         <div className={styles.moduleBottom}><ModuleAuthor entry={entry} />
           <button type="button" className={styles.add} aria-label={`${added ? "Remove" : "Add"} ${entry.title}`} aria-pressed={added}
-            onClick={() => added ? onRemove(entry) : onAdd(entry)}>{added ? <Check size={16} aria-hidden="true" /> : <Plus size={16} aria-hidden="true" />}{added ? "Added" : "Add"}</button>
+            onClick={() => added ? onRemove(entry) : onAdd(entry)}>{added ? <X size={16} aria-hidden="true" /> : <Plus size={16} aria-hidden="true" />}{added ? "Remove" : "Add"}</button>
         </div>
       </article>; })}
     </div>
     {results.length === 0 ? <div className={styles.empty}>
-      <strong>{query.trim() ? "No matching modules" : "No published modules in this category yet"}</strong>
+      <strong>{query.trim() ? "No matching modules" : "No modules here yet"}</strong>
       <div><button type="button" onClick={reset}><X size={16} aria-hidden="true" />Clear filters</button><Link href="/developers/modules">Build a module<ArrowRight size={16} aria-hidden="true" /></Link></div>
     </div> : null}
     {pages > 1 ? <nav className={styles.pagination} aria-label="Module library pages">
@@ -87,6 +105,6 @@ export function ModuleLibrary({ catalog, selectedIds, onAdd, onRemove }: {
       <span>Page {currentPage} of {pages}</span>
       <button type="button" disabled={currentPage === pages} onClick={() => setPage(currentPage + 1)} aria-label="Next modules"><ChevronRight size={18} /></button>
     </nav> : null}
-    {results.length > 0 ? <Link className={styles.contribute} href="/developers/modules"><Plus size={18} aria-hidden="true" /><span>Build your own module</span><ArrowRight size={16} aria-hidden="true" /></Link> : null}
+    {results.length > 0 ? <Link className={styles.contribute} href="/developers/modules"><Plus size={18} aria-hidden="true" /><span>Create a module</span><ArrowRight size={16} aria-hidden="true" /></Link> : null}
   </div>;
 }
