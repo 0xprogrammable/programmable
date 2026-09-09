@@ -280,6 +280,10 @@
   transition: background-color 150ms ease;
 }
 
+.project[data-reward-action="unavailable"] {
+  --project-row-min-height: 96px;
+}
+
 .art {
   align-items: center;
   background: var(--surface-soft, #17171c);

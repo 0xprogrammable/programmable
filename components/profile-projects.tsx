@@ -766,7 +766,7 @@ export function ProfileProjectCard({
       : "Classic";
 
   return (
-    <article className={styles.project}>
+    <article className={styles.project} data-reward-action={rewardReceiverAvailable ? "available" : "unavailable"}>
       <div className={styles.art}>
         {project.imageUrl ? (
           <Image src={project.imageUrl} alt="" fill sizes="64px" unoptimized />
