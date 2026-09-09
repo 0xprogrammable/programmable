@@ -255,6 +255,40 @@ test("an open module launch tab cannot undo another tab's browsing network choic
   }
 });
 
+for (const phase of ["route", "provider"] as const) {
+  test(`a delayed ${phase} passive effect cannot replace a choice made after the first render`, async ({ page }) => {
+    await open(page);
+    const browse = (name: string) => page.getByRole("button", { name, exact: true }).click();
+    if (phase === "route") await browse("Browse Ethereum");
+    const delayedTab = await page.context().newPage();
+    const errors = browserErrors.get(page)!;
+    delayedTab.on("pageerror", (error) => errors.push(error.message));
+    delayedTab.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });
+    try {
+      await delayedTab.goto(origin + (phase === "route" ? "/launch/modules" : "/profile") + `?holdViewChainEffect=${phase}`);
+      await expect.poll(() => delayedTab.evaluate(() => window.__viewChainScheduling.pendingPassiveEffects())).toBe(1);
+      await expect(delayedTab.getByLabel("Selected browsing chain", { exact: true })).toHaveText(phase === "route" ? "1" : "4663");
+      if (phase === "route") await browse("Browse Robinhood");
+      await browse("Browse Ethereum");
+      await expect.poll(() => delayedTab.evaluate(() => window.__viewChainScheduling.pendingStorageEvents())).toBeGreaterThan(0);
+      expect(await delayedTab.evaluate(() => document.cookie)).toContain("programmable-view-chain-v2=1");
+      await delayedTab.evaluate(() => window.__viewChainScheduling.releasePassiveEffects());
+      if (phase === "route") {
+        await expect.poll(() => delayedTab.evaluate(() => window.__viewChainScheduling.pendingEntries())).toBe(1);
+        await delayedTab.evaluate(() => window.__viewChainScheduling.releaseEntries());
+      }
+      expect(await delayedTab.evaluate(() => localStorage.getItem("programmable:view-chain:v2"))).toBe("1");
+      await delayedTab.evaluate(() => window.__viewChainScheduling.releaseStorageEvents());
+      await expect(delayedTab.getByLabel("Selected browsing chain", { exact: true })).toHaveText("1");
+      await expect(page.getByLabel("Selected browsing chain", { exact: true })).toHaveText("1");
+      await expectMethods(page, []);
+      await expectMethods(delayedTab, []);
+    } finally {
+      await delayedTab.close();
+    }
+  });
+}
+
 for (const [path, routeChain] of [["/launch/modules", 4663], ["/token/ethereum", 1], ["/explore/robinhood", 4663]] as const) {
   for (const selection of ["one newer choice", "a newer choice returning to the initial value", "no newer choice"] as const) {
     test(`${path}: deferred route entry respects ${selection} before storage events arrive`, async ({ page }) => {

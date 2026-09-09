@@ -81,6 +81,14 @@ export async function createWalletSessionServer() {
     },
     external: ["/brand/*", "/fonts/*"],
     plugins: [{ name: "wallet-session-boundaries", setup(plugin) {
+      plugin.onResolve({ filter: /^react$/ }, (args) => args.importer === resolve(root, "components/view-chain.tsx")
+        ? { path: "view-chain-react", namespace: "view-chain-react" } : undefined);
+      plugin.onLoad({ filter: /.*/, namespace: "view-chain-react" }, () => ({
+        loader: "tsx", resolveDir: root,
+        contents: `export * from 'react'; import {useEffect as nativeEffect} from 'react';
+          import {deferViewChainEffect} from './tests/browser/fixtures/view-chain-scheduling';
+          export function useEffect(effect,deps){return nativeEffect(()=>deferViewChainEffect(effect),deps);}`,
+      }));
       plugin.onResolve({ filter: /^\.\/wallet-provider-runtime$/ }, () => ({ path: runtime }));
       plugin.onResolve({ filter: /^next\/(navigation|link|image)$/ }, (args) => ({ path: args.path, namespace: "fixture" }));
       plugin.onLoad({ filter: /.*/, namespace: "fixture" }, (args) => ({

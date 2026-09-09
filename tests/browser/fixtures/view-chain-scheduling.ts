@@ -1,12 +1,27 @@
 // Fixture-only control of the real route callbacks and native storage events.
 // Nothing imports this file from the application.
-export {};
+import type { EffectCallback } from "react";
 
 const deferredEntries = new Map<number, () => void>();
 const deferredStorage: StorageEvent[] = [];
+const deferredEffects = new Set<{ effect: EffectCallback; cleanup: ReturnType<EffectCallback> }>();
 let nextTimer = -1;
-let holdEntries = new URLSearchParams(location.search).has("holdRouteEntry");
-let holdStorage = holdEntries;
+const parameters = new URLSearchParams(location.search);
+let holdEffects = parameters.get("holdViewChainEffect");
+let holdEntries = parameters.has("holdRouteEntry") || holdEffects === "route";
+let holdStorage = holdEntries || holdEffects === "provider";
+
+export function deferViewChainEffect(effect: EffectCallback): ReturnType<EffectCallback> {
+  const source = String(effect);
+  const kind = source.includes("readViewChainRevision") ? "route" : source.includes("persistViewChain") ? "provider" : null;
+  if (!kind || kind !== holdEffects) return effect();
+  const deferred = { effect, cleanup: undefined as ReturnType<EffectCallback> };
+  deferredEffects.add(deferred);
+  return () => {
+    deferredEffects.delete(deferred);
+    deferred.cleanup?.();
+  };
+}
 
 const nativeSetTimeout = window.setTimeout.bind(window);
 const nativeClearTimeout = window.clearTimeout.bind(window);
@@ -31,6 +46,13 @@ window.addEventListener("storage", (event) => {
 }, true);
 
 const scheduling = {
+  pendingPassiveEffects: () => deferredEffects.size,
+  releasePassiveEffects: () => {
+    holdEffects = null;
+    const effects = [...deferredEffects];
+    deferredEffects.clear();
+    for (const deferred of effects) deferred.cleanup = deferred.effect();
+  },
   pendingEntries: () => deferredEntries.size,
   pendingStorageEvents: () => deferredStorage.length,
   releaseEntries: () => {

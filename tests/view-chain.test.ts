@@ -104,7 +104,8 @@ describe("view chain", () => {
       "const getServerSnapshot = useCallback((): ViewChainId | null => null",
     );
     expect(provider).toContain("const hydrated = resolvedViewChainId !== null");
-    expect(provider).toContain("persistViewChain(viewChainId)");
+    expect(provider).toContain("const currentViewChainId = getViewChainSnapshot()");
+    expect(provider).toContain("persistViewChain(currentViewChainId)");
     expect(layout).not.toContain('from "next/headers"');
     expect(layout).not.toContain("cookies()");
     expect(resolvedLayout).toContain('import { cookies } from "next/headers"');

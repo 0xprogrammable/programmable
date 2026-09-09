@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useState,
   useSyncExternalStore,
   type ReactNode,
 } from "react";
@@ -124,13 +125,16 @@ export function ViewChainProvider({
 
   useEffect(() => {
     if (!hydrated) return;
+    // Another tab may have changed the preference since this render committed.
+    const currentViewChainId = getViewChainSnapshot();
+    if (currentViewChainId === null) return;
     if (
-      readViewChainCookie() !== viewChainId ||
-      readStoredViewChain() !== viewChainId
+      readViewChainCookie() !== currentViewChainId ||
+      readStoredViewChain() !== currentViewChainId
     ) {
-      persistViewChain(viewChainId);
+      persistViewChain(currentViewChainId);
     }
-  }, [hydrated, viewChainId]);
+  }, [getViewChainSnapshot, hydrated, viewChainId]);
 
   const setViewChainId = useCallback((nextViewChainId: ViewChainId) => {
     // Publish a distinct revision before the value. Pending route entry must
@@ -165,23 +169,31 @@ export function useViewChain(): ViewChainContextValue {
   return value;
 }
 
+function captureRouteEntry(chainId: ViewChainId | undefined) {
+  if (typeof document === "undefined") return { chainId, revision: null, previousChain: null };
+  return { chainId, revision: readViewChainRevision(), previousChain: readViewChainCookie() ?? readStoredViewChain() };
+}
+
 /** Apply a route's initial preference without replacing a more recent choice. */
 export function useRouteViewChain(chainId: ViewChainId | undefined): ViewChainContextValue {
   const value = useViewChain();
   const { hydrated, setViewChainId } = value;
+  // Capture before the first passive effect, which may run after a visible
+  // background tab has already been superseded by a choice in another tab.
+  const [entry, setEntry] = useState(() => captureRouteEntry(chainId));
+  if (entry.chainId !== chainId) setEntry(captureRouteEntry(chainId));
 
   useEffect(() => {
-    if (!hydrated || chainId === undefined) return;
-    const revision = readViewChainRevision();
-    const previousChain = readViewChainCookie() ?? readStoredViewChain();
+    const { chainId: routeChainId, revision, previousChain } = entry;
+    if (!hydrated || routeChainId === undefined || revision === null) return;
     const timer = window.setTimeout(() => {
       if (readViewChainRevision() !== revision) return;
       // Also respect a numeric preference written by an already open older tab.
       if (previousChain !== null && (readViewChainCookie() ?? readStoredViewChain()) !== previousChain) return;
-      setViewChainId(chainId);
+      setViewChainId(routeChainId);
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [chainId, hydrated, setViewChainId]);
+  }, [entry, hydrated, setViewChainId]);
 
   return value;
 }
