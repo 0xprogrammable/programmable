@@ -69,13 +69,15 @@ function subscribeToViewChain(onStoreChange: () => void) {
 }
 
 function persistViewChain(viewChainId: ViewChainId) {
+  // Cross-tab subscribers read the cookie first. Make it current before the
+  // storage write can notify another browser process.
+  document.cookie = serializeViewChainCookie(viewChainId);
   try {
     window.localStorage.setItem(VIEW_CHAIN_STORAGE_KEY, String(viewChainId));
   } catch {
     // A functional cookie remains available when browser storage is blocked.
   }
 
-  document.cookie = serializeViewChainCookie(viewChainId);
   window.dispatchEvent(
     new CustomEvent<ViewChainId>(VIEW_CHAIN_CHANGE_EVENT, {
       detail: viewChainId,

@@ -214,6 +214,10 @@ test("an open module launch tab cannot undo another tab's browsing network choic
     await expect(moduleTab.getByLabel("Selected browsing chain", { exact: true })).toHaveText("4663");
     await page.bringToFront();
     await page.getByRole("button", { name: "Browse Ethereum", exact: true }).click();
+    await page.getByRole("button", { name: "Read browsing publications", exact: true }).click();
+    const publications = JSON.parse(await page.getByLabel("Browsing preference publications", { exact: true }).innerText()) as { announced: string; readableCookie: string | null }[];
+    // Even the earliest possible cross-tab reader must see the new preference.
+    expect(publications.at(-1)).toEqual({ announced: "1", readableCookie: "1" });
     await moduleTab.bringToFront();
     await expect(moduleTab.getByLabel("Selected browsing chain", { exact: true })).toHaveText("1");
     await moduleTab.getByRole("button", { name: "Read saved browsing chain", exact: true }).click();

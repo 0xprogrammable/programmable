@@ -1,4 +1,4 @@
-import { useSyncExternalStore, type ReactNode } from "react";
+import { useState, useSyncExternalStore, type ReactNode } from "react";
 import { WEBSITE_ADMIN_WALLET } from "../../../lib/admin-access";
 
 // Only the SDK boundary is substituted. Wallet ownership, selection, login
@@ -127,6 +127,19 @@ function subscribe(listener: () => void) {
 
 function snapshot() { return state; }
 function useFixtureState() { return useSyncExternalStore(subscribe, snapshot, snapshot); }
+
+// A storage event may reach another browser process before the publishing
+// function returns. Record the cookie that a reader can see at that boundary,
+// without making the production provider rerender or delaying either write.
+const browsingPublications: { announced: string; readableCookie: string | null }[] = [];
+const nativeStorageSetItem = Storage.prototype.setItem;
+Storage.prototype.setItem = function (key: string, value: string) {
+  nativeStorageSetItem.call(this, key, value);
+  if (this !== window.localStorage || key !== "programmable:view-chain:v2") return;
+  const cookie = document.cookie.split(";").map((part) => part.trim())
+    .find((part) => part.startsWith("programmable-view-chain-v2="));
+  browsingPublications.push({ announced: value, readableCookie: cookie?.split("=")[1] ?? null });
+};
 
 const nativeClipboard = navigator.clipboard;
 const waitingClipboardWrites: (() => void)[] = [];
@@ -272,7 +285,10 @@ function completeLogin() {
 
 export function FixtureControls() {
   const current = useFixtureState();
+  const [publications, setPublications] = useState<typeof browsingPublications>([]);
   return <section aria-label="SDK fixture controls">
+    <button onClick={() => setPublications([...browsingPublications])}>Read browsing publications</button>
+    <output aria-label="Browsing preference publications">{JSON.stringify(publications)}</output>
     <label>SDK scenario <select aria-label="SDK scenario" onChange={(event) => chooseScenario(event.target.value)} defaultValue="primary">
       <option value="primary">Primary wallet with unlinked recent wallet</option>
       <option value="website-admin">Website admin wallet</option>
