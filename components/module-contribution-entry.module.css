@@ -1,14 +1,58 @@
-.page { color: var(--webde-ink); margin: 0 auto; max-width: 800px; padding: 32px 24px 80px; }
-.back { align-items: center; color: var(--webde-muted); display: inline-flex; font-size: 14px; gap: 8px; margin-bottom: 24px; min-height: 44px; text-decoration: none; }
-.page h1 { font-size: 30px; font-weight: 500; letter-spacing: -.03em; line-height: 36px; margin: 0 0 24px; }
-.intro { color: var(--webde-muted); font-size: 16px; line-height: 24px; margin: 12px 0 32px; }
-.steps { border: 1px solid var(--webde-line); border-radius: 16px; display: grid; gap: 32px; list-style: none; margin: 0; padding: 32px; }
-.steps li { align-items: flex-start; display: flex; gap: 16px; }
-.steps li > span { align-items: center; background: #272727; border-radius: 8px; color: #d6ddce; display: flex; flex: 0 0 32px; font-size: 14px; height: 32px; justify-content: center; }
-.steps h2 { font-size: 18px; font-weight: 500; line-height: 28px; margin: 0; }
-.steps p { color: var(--webde-muted); font-size: 14px; line-height: 20px; margin: 8px 0; text-wrap: pretty; }
-.steps :is(a, button), .resources a { align-items: center; background: transparent; border: 0; border-radius: 8px; color: var(--webde-ink); cursor: pointer; display: inline-flex; font: inherit; font-size: 14px; gap: 8px; line-height: 20px; min-height: 44px; padding: 8px 0; text-decoration: none; }
+.page {
+  --module-ink: #f5f3ef;
+  --module-muted: #aaa9a5;
+  --module-line: #30302e;
+  --module-surface: #151515;
+  --module-accent: #e786b2;
+  color: var(--module-ink);
+  margin: 0 auto;
+  max-width: 880px;
+  min-width: 0;
+  padding: 24px 0 64px;
+  width: calc(100% - 48px);
+}
+
+.navigation { align-items: center; display: flex; gap: 16px; justify-content: space-between; margin-bottom: 16px; }
+.back, .textLink, .resources a { align-items: center; border-radius: 8px; color: var(--module-muted); display: inline-flex; font-size: 14px; gap: 8px; line-height: 20px; min-height: 44px; text-decoration: none; }
+.workspace { background: var(--module-surface); border: 1px solid var(--module-line); border-radius: 16px; padding: 32px; }
+.header h1 { color: var(--module-ink); font-size: 32px; font-weight: 500; letter-spacing: -0.035em; line-height: 40px; margin: 0; text-wrap: balance; }
+.header p { color: var(--module-muted); font-size: 14px; line-height: 20px; margin: 8px 0 24px; max-width: 580px; text-wrap: pretty; }
+.ideaField { display: grid; gap: 8px; }
+.ideaField > span { color: var(--module-muted); font-size: 14px; line-height: 20px; }
+.ideaField textarea { background: #181818; border: 1px solid #76716b; border-radius: 12px; color: var(--module-ink); font: inherit; font-size: 14px; line-height: 24px; min-height: 136px; padding: 12px 16px; resize: vertical; width: 100%; }
+.ideaField textarea::placeholder { color: #888884; }
+.actions { display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); margin-top: 16px; max-width: 400px; }
+.primaryAction, .secondaryAction { align-items: center; border: 1px solid var(--module-line); border-radius: 12px; display: inline-flex; font: inherit; font-size: 14px; font-weight: 500; gap: 8px; justify-content: center; line-height: 20px; min-height: 48px; padding: 12px 16px; text-decoration: none; white-space: nowrap; }
+.primaryAction { background: var(--module-accent); border-color: var(--module-accent); color: #1c1217; }
+.secondaryAction { background: transparent; border-color: #76716b; color: var(--module-ink); }
+.primaryAction svg, .secondaryAction svg { flex: 0 0 16px; }
+.copyStatus { color: var(--module-muted); font-size: 14px; line-height: 20px; margin: 12px 0 0; min-height: 40px; max-width: 600px; text-wrap: pretty; }
+.copyStatus[role="alert"] { color: #f3a4a4; }
+.promptDetails { margin-top: 8px; }
+.promptDetails summary { align-items: center; border-radius: 8px; color: var(--module-muted); cursor: pointer; display: inline-flex; font-size: 14px; gap: 8px; line-height: 20px; list-style: none; min-height: 44px; }
+.promptDetails summary::-webkit-details-marker { display: none; }
+.promptDetails[open] summary svg { transform: rotate(180deg); }
+.promptDetails pre { background: #000; border: 1px solid var(--module-line); border-radius: 12px; color: var(--module-muted); font-family: var(--font-instrument), sans-serif; font-size: 14px; line-height: 24px; margin: 8px 0 16px; overflow-wrap: anywhere; padding: 16px; white-space: pre-wrap; }
+.reviewNote { color: var(--module-muted); font-size: 14px; line-height: 20px; margin: 16px 0 0; text-wrap: pretty; }
 .resources { display: flex; flex-wrap: wrap; gap: 24px; margin-top: 16px; }
-.page :is(a, button):focus-visible { outline: 2px solid #dce5d2; outline-offset: 4px; }
-.page :is(a, button):hover { text-decoration: underline; text-underline-offset: 4px; }
-@media (max-width: 600px) { .page { padding: 16px 16px 64px; } .steps { padding: 24px 16px; } .steps li { gap: 12px; } }
+.page :is(a, button, summary) { cursor: pointer; touch-action: manipulation; transition: color 120ms ease, background-color 120ms ease, border-color 120ms ease; }
+.page :is(a, button, summary, textarea):focus-visible { outline: 2px solid var(--module-accent); outline-offset: 3px; }
+@media (hover: hover) and (pointer: fine) {
+.page :is(.back, .textLink, .resources a, .promptDetails summary):hover { color: var(--module-ink); }
+.primaryAction:hover { background: #ee9fc2; border-color: #ee9fc2; }
+.secondaryAction:hover { background: #202020; border-color: #484846; }
+}
+.page :is(a, button):active { filter: brightness(0.94); }
+
+@media (max-width: 600px) {
+  .page { padding-block: 16px 48px; width: calc(100% - 32px); }
+  .workspace { padding: 24px 16px; }
+  .header h1 { font-size: 28px; line-height: 36px; }
+  .ideaField textarea { font-size: 16px; min-height: 160px; }
+  .actions { gap: 8px; max-width: none; }
+  .primaryAction, .secondaryAction { padding-inline: 8px; }
+  .copyStatus { min-height: 60px; }
+}
+
+@media (prefers-reduced-motion: reduce) { .page *, .page *::before, .page *::after { transition: none; } }
+@media (forced-colors: active) { .workspace, .primaryAction, .secondaryAction, .ideaField textarea, .promptDetails pre { border: 1px solid CanvasText; } }

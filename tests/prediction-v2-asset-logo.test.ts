@@ -4,13 +4,13 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 
 import {
-  GET,
   PREDICTION_ASSET_LOGO_KNOWN_ASSET_AUTHORIZATION_REQUIRED_FOR_ACTIVATION_V2,
   PREDICTION_ASSET_LOGO_RUNTIME_CONTROL_SCOPE_V2,
   PREDICTION_ASSET_LOGO_SHARED_LIMITS_REQUIRED_FOR_ACTIVATION_V2,
   createPredictionAssetLogoHandlerV2,
 } from
-  "../app/api/prediction/asset-logo/[asset]/route";
+  "../app/api/prediction/asset-logo/[asset]/handler";
+import { GET } from "../app/api/prediction/asset-logo/[asset]/route";
 import {
   predictionAssetCardImageV2,
   predictionAssetFallbackImageV2,

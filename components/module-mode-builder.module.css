@@ -252,7 +252,6 @@
   .page button,
   .page a { transition: background-color 180ms var(--webde-ease), color 180ms var(--webde-ease), border-color 180ms var(--webde-ease); }
   .advancedToggle > svg { transition: transform 180ms var(--webde-ease); }
-  .page button:active:not(:disabled) { transform: translateY(1px); }
 }
 
 @keyframes module-mode-progress { to { transform: rotate(360deg); } }
@@ -302,3 +301,136 @@
   .page :is(button, a, input, textarea, select):focus-visible { outline-color: Highlight; }
   .page button { border: 1px solid ButtonText; }
 }
+
+/* Compact coin editor. Shared transaction and schema styles stay above. */
+.studio {
+  --mm-surface: #181818;
+  --mm-control: #20201f;
+  --mm-line: #383736;
+  --mm-muted: #b4b1ad;
+  --mm-ink: #f5f3ef;
+  --mm-pink: #e786b2;
+  max-width: 1040px;
+  padding: 24px 20px 64px;
+}
+.studio .pageTop { margin-bottom: 16px; }
+.studio .backLink { background: #1c1c1c; border: 1px solid #64615f; border-radius: 24px; color: var(--mm-ink); font-size: 14px; padding-inline: 16px; }
+.studio .network { font-size: 13px; }
+.studio .layout { align-items: stretch; background: var(--mm-surface); border: 1px solid #353433; border-radius: 24px; gap: 0; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); overflow: clip; }
+.studio .formPanel { background: transparent; border: 0; border-radius: 0; padding: 32px; }
+.studio .heading { margin: 0 0 28px; }
+.studio .heading h1 { font-size: 30px; font-weight: 500; letter-spacing: -.035em; line-height: 1.2; margin: 0; }
+.studio .sectionHeading :is(h1,h2) { font-size: 24px; font-weight: 500; line-height: 1.25; margin: 0; }
+.studio .formSection + .formSection { border: 0; margin: 0; padding: 0; }
+.identityEditor { display: grid; gap: 0; grid-template-columns: minmax(0,1fr); }
+.studio .identityEditor .tokenFields { gap: 14px; grid-template-columns: repeat(2,minmax(0,1fr)); }
+.studio .identityEditor .imageField { margin: 0 0 12px; }
+.imagePicker.imagePickerRow { align-items: center; background: #20201f; border: 1px dashed #76716b; border-radius: 12px; display: flex; gap: 8px; margin-bottom: 0; padding: 8px; position: relative; }
+.imageUploadRow { align-items: center; background: transparent; border: 0; border-radius: 8px; color: #e1ddd7; cursor: pointer; display: flex; flex: 1; font: inherit; font-size: 14px; gap: 14px; min-height: 60px; min-width: 0; padding: 4px; text-align: left; }
+.imageRowThumbnail { align-items: center; background: #2a2928; border-radius: 10px; color: #c5bfb9; display: inline-flex; flex: 0 0 48px; height: 48px; justify-content: center; overflow: hidden; position: relative; width: 48px; }
+.imageRowThumbnail img { object-fit: cover; }
+.imagePickerRow .imagePickerContent { flex: 0 0 44px; min-width: 0; }
+.imagePickerRow .imagePickerContent > .help { display: none; }
+.imagePickerRow .imagePickerActions > button[hidden] { display: none; }
+.imagePickerRow .iconButton { border-radius: 8px; position: static; }
+.imageField:has(.imagePickerRow) > .textButton + .textButton { margin-left: 16px; }
+.imageField:has(.imagePickerRow) > .textButton { color: #b4b1ad; font-size: 13px; min-height: 44px; }
+.studio .imageFieldLabel { color: #c5c1bc; font-size: 13px; }
+.imageUploadTile { cursor: pointer; flex-direction: column; font: inherit; gap: 8px; padding: 0; }
+.imageUploadTile > span { font-size: 13px; line-height: 16px; }
+.studio .field label { color: #c5c1bc; font-size: 13px; }
+.studio .field input, .studio .field select, .studio .field textarea { background: var(--mm-control); border-color: #76716b; border-radius: 12px; font-size: 14px; }
+.studio .field input::placeholder, .studio .field textarea::placeholder { color: #a8a39d; }
+.studio .field input[aria-invalid="true"], .studio .field textarea[aria-invalid="true"], .studio .field select[aria-invalid="true"] { border-color: #ed9a8a; }
+.studio .field input:focus, .studio .field textarea:focus { border-color: var(--mm-pink); }
+.detailsToggle, .feesToggle { align-items: center; background: #20201f; border: 1px solid #76716b; border-radius: 12px; color: #ddd9d4; cursor: pointer; display: flex; font: inherit; font-size: 14px; gap: 12px; min-height: 48px; padding: 12px; text-align: left; width: 100%; }
+.detailsToggle > svg:last-child { margin-left: auto; }
+.coinDetails, .feeSettings { padding-top: 20px; }
+.coinDetails[hidden], .feeSettings[hidden] { display: none; }
+.studio .socialFields { margin: 16px 0 0; }
+.studio .socialGrid { grid-template-columns: minmax(0,1fr); }
+.modulesSection { margin-block: 28px; }
+.moduleSectionHeading { align-items: center; display: flex; gap: 16px; justify-content: space-between; margin-bottom: 16px; }
+.moduleSectionHeading h2 { font-size: 16px; font-weight: 500; line-height: 24px; margin: 0; }
+.moduleSectionHeading p { color: var(--mm-muted); font-size: 14px; line-height: 20px; margin: 2px 0 0; }
+.moduleSectionHeading > svg { color: var(--mm-pink); flex-shrink: 0; }
+.addModulesButton { align-items: center; background: #252024; border: 1px solid #b17b94; border-radius: 12px; color: #f0bfd6; cursor: pointer; display: flex; font: inherit; font-size: 14px; font-weight: 500; gap: 8px; justify-content: center; min-height: 48px; padding: 12px 16px; width: 100%; }
+.selectedModules { display: grid; gap: 8px; list-style: none; margin: 0 0 12px; padding: 0; }
+.selectedModules > li { align-items: center; background: #211e20; border: 1px solid #69505d; border-radius: 12px; display: flex; gap: 8px; min-width: 0; padding: 4px 8px; }
+.selectedModules > li > span { background: transparent; color: #e9b0cd; height: 32px; width: 32px; }
+.configureModule { align-items: center; background: transparent; border: 0; color: #f0e6eb; cursor: pointer; display: flex; flex: 1; font: inherit; font-size: 14px; gap: 12px; min-height: 48px; min-width: 0; padding: 4px 0; text-align: left; }
+.configureModule > span { flex: 1; overflow-wrap: anywhere; }
+.configureModule > svg { color: #c8b4bf; flex-shrink: 0; }
+.removeModule { align-items: center; background: #30292d; border: 1px solid #886675; border-radius: 8px; color: #dec5d2; cursor: pointer; display: flex; flex: 0 0 44px; height: 44px; justify-content: center; padding: 0; }
+.setupDetails { color: var(--mm-muted); font-size: 13px; margin-top: 8px; }
+.setupDetails > summary { align-items: center; cursor: pointer; display: flex; gap: 8px; justify-content: space-between; list-style: none; min-height: 44px; }
+.setupDetails > summary::-webkit-details-marker { display: none; }
+.setupDetails > div { padding-top: 12px; }
+.setupDetails[open] > summary > svg { transform: rotate(180deg); }
+.feesToggle strong { color: var(--mm-muted); font-size: 13px; font-variant-numeric: tabular-nums; font-weight: 400; margin-left: auto; }
+.feesToggle svg { flex: 0 0 auto; }
+.feeExplanation { color: var(--mm-muted); font-size: 13px; }
+.feeExplanation summary { cursor: pointer; min-height: 44px; padding-block: 12px; }
+.feeExplanation p { font-size: 14px; line-height: 20px; margin: 0; }
+.studio .formFooter { border: 0; margin-top: 24px; padding: 0; }
+.studio .formFooter .primaryButton { width: 100%; }
+.studio .primaryButton { background: var(--mm-pink); border-color: var(--mm-pink); border-radius: 12px; color: #21151b; font-size: 14px; min-height: 48px; padding-inline: 24px; }
+.studio .secondaryButton { border-radius: 12px; font-size: 14px; }
+.studio .availabilityNote { font-size: 13px; line-height: 20px; margin-top: 12px; }
+.studio .previewPanel { align-items: center; align-self: stretch; background: #222221; display: flex; flex-direction: column; justify-content: center; padding: 32px; position: static; }
+.studio .coinCard { background: #191919; border: 1px solid #484643; border-radius: 20px; padding: 24px; width: 100%; }
+.studio .coinCardHeading { align-items: flex-start; flex-direction: column; gap: 16px; text-align: left; }
+.studio .coinAvatar { background: #30242b; border: 1px solid #775568; border-radius: 16px; color: #f0bfd6; flex-basis: 64px; height: 64px; width: 64px; }
+.studio .coinAvatar > span { align-items: center; display: flex; justify-content: center; }
+.studio .coinCardHeading h2 { font-size: 22px; font-weight: 500; letter-spacing: -.02em; line-height: 28px; }
+.studio .coinCardHeading p { font-size: 13px; margin-top: 4px; }
+.coinDescription { color: var(--mm-muted); font-size: 14px; line-height: 20px; margin: 16px 0 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.coinAttachments { display: grid; gap: 8px; list-style: none; margin: 20px 0 0; padding: 0; }
+.coinAttachments li { align-items: center; color: #dfadc6; display: flex; font-size: 13px; gap: 8px; line-height: 20px; }
+.coinAttachments li svg { flex-shrink: 0; }
+.coinAttachments li span { overflow-wrap: anywhere; }
+.studio .coinTotals { border-top: 1px solid #353330; gap: 0; margin-top: 24px; padding-top: 8px; }
+.studio .coinTotals > div { font-size: 13px; padding-block: 8px; }
+.studio .coinFeeNote { font-size: 12px; line-height: 18px; margin-top: 8px; }
+.studio .buildModuleLink { color: #c6c0bb; font-size: 13px; justify-content: center; margin-top: 12px; min-height: 44px; width: 100%; }
+.studio .buildModuleLink > svg { flex-shrink: 0; }
+.studio .moduleConfiguration { background: transparent; border: 0; border-radius: 0; margin: 0; padding: 0; }
+.studio .moduleConfiguration > .recordFields { gap: 16px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); }
+.studio .moduleConfiguration > .recordFields > .recordField:has(.optionalToggle, .collection, .recordFields) { grid-column: 1 / -1; }
+.studio .moduleConfiguration .field { margin-bottom: 0; }
+.studio .moduleDetails { margin: 0 0 20px; }
+.studio .moduleDetails summary { font-size: 14px; min-height: 44px; padding-block: 12px; }
+.studio :is(button,a,input,textarea,select,summary):focus-visible { outline: 2px solid var(--mm-pink); outline-offset: 3px; }
+.studio :is(button, a, summary) { touch-action: manipulation; }
+@media (hover: hover) and (pointer: fine) {
+  .studio .primaryButton:hover:not(:disabled) { background: #f19dc3; border-color: #f19dc3; }
+  .addModulesButton:hover { background: #362630; border-color: #e786b2; }
+  .detailsToggle:hover, .feesToggle:hover { background: #292827; }
+  .configureModule:hover > span { color: #fff; text-decoration: underline; text-underline-offset: 3px; }
+  .removeModule:hover { background: #44343d; }
+  .studio .buildModuleLink:hover { color: #f0bfd6; }
+  .imageUploadTile:hover:not(:disabled) { background: #2a2528; border-color: #e786b2; color: #f0bfd6; }
+}
+@media (max-width: 900px) { .studio .formPanel, .studio .previewPanel { padding: 24px; } }
+@media (max-width: 760px) {
+  .studio { padding: 16px 16px 48px; }
+  .studio .layout { grid-template-columns: minmax(0,1fr); }
+  .studio .formPanel { padding: 24px 20px; }
+  .studio .previewPanel { padding: 24px 20px; }
+  .studio .coinCard { max-width: 440px; }
+  .studio .heading { margin-bottom: 24px; }
+  .studio .heading h1 { font-size: 28px; }
+  .studio .identityEditor .tokenFields { gap: 12px; grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .studio .field input, .studio .field select, .studio .field textarea { font-size: 16px; }
+  .studio .twoFields { grid-template-columns: repeat(2, minmax(0,1fr)); gap: 12px; }
+  .feesToggle { flex-wrap: wrap; gap: 8px; }
+  .studio .moduleConfiguration > .recordFields { grid-template-columns: minmax(0,1fr); }
+}
+@media (max-width: 360px) {
+  .studio { padding-inline: 12px; }
+  .studio .formPanel, .studio .previewPanel { padding: 20px 16px; }
+  .studio .coinCard { padding: 20px; }
+  .feesToggle strong { font-size: 12px; }
+}
+@media (prefers-reduced-motion: reduce) { .studio *, .studio *::before { animation: none !important; transition: none !important; } }
+@media (forced-colors: active) { .studio :is(input,select,textarea,button) { border-color: ButtonText; } .studio :is(button,a,input,textarea,select,summary):focus-visible { outline-color: Highlight; } }

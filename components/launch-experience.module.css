@@ -124,49 +124,19 @@
 
 .moduleArt {
   align-items: center;
-  background: #deddd5;
+  background: #ecc3d5;
   display: flex;
   justify-content: center;
 }
 
-.moduleStack {
-  display: grid;
-  gap: 9px;
-  transform: rotate(-6deg);
-  width: min(72%, 310px);
-}
-
-.modulePiece {
-  align-items: center;
-  background: #f6f5ef;
-  border: 1px solid rgb(48 50 44 / 0.14);
-  border-radius: 12px;
-  box-shadow: 0 5px 0 #c2c2b8;
-  color: #35372f;
-  display: grid;
-  gap: 15px;
-  grid-template-columns: 24px 1fr 24px;
-  min-height: 56px;
-  padding: 9px 18px;
-}
-
-.modulePiece > span {
-  font-family: var(--font-ibm-plex-mono), monospace;
-  font-size: 12px;
-  text-align: center;
-}
-
-.modulePiece strong {
-  font-size: clamp(15px, 1.55vw, 20px);
-  font-weight: 500;
-  letter-spacing: -0.02em;
-}
-
-.modulePiece:last-child {
-  background: #292d23;
-  border-color: #292d23;
-  box-shadow: 0 5px 0 #5e6557;
-  color: #f6f5ef;
+.modulePuzzle {
+  color: #ddabbe;
+  fill: #fff7ef;
+  filter: drop-shadow(0 7px 0 #c78ba7) drop-shadow(0 24px 24px rgb(87 33 58 / 16%));
+  height: 56%;
+  max-width: 240px;
+  transform: rotate(-12deg);
+  width: 56%;
 }
 
 .artImage {
@@ -2384,5 +2354,59 @@
 
   .predictionCondition strong {
     font-size: 18px;
+  }
+}
+
+/* Keep entry choices steady while their border shows interaction. */
+.modelCard.modelCard[data-launch-model-option],
+.modelCard.modelCard[data-launch-model-option]:is(:hover, :active) {
+  box-shadow: none;
+  transform: none;
+}
+
+.modelCard.modelCard:focus-visible {
+  border-radius: var(--webde-radius-card);
+  outline: 2px solid #e786b2;
+  outline-offset: 4px;
+}
+
+.modelCard .modelBody.modelBody {
+  min-height: 0;
+  padding: 20px;
+}
+
+.modelCard .modelHeading {
+  min-height: 29px;
+}
+
+.modelCard .modelHeading strong {
+  font-size: 24px;
+  font-weight: 500;
+  letter-spacing: -0.025em;
+  line-height: 1.2;
+}
+
+.modelCard .modelDescription {
+  margin-block: 6px 16px;
+  min-height: 0;
+}
+
+.modelCard .modelAction {
+  background: #272524;
+  border: 1px solid #77716a;
+  border-radius: var(--webde-radius-control);
+  color: #f5f1eb;
+  display: inline-flex;
+  font-size: 14px;
+  font-weight: 500;
+  margin-top: auto;
+  min-height: 44px;
+  padding: 10px 14px;
+  width: fit-content;
+}
+
+@media (max-width: 760px) {
+  .modelCard .modelBody.modelBody {
+    padding: 18px;
   }
 }

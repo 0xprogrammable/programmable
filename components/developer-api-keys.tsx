@@ -6,11 +6,13 @@ import {
   useEffect,
   useRef,
   useState,
+  useSyncExternalStore,
   type FormEvent,
   type KeyboardEvent,
 } from "react";
 import {
   ArrowLeft,
+  ArrowRight,
   Check,
   Copy,
   ChevronDown,
@@ -101,6 +103,9 @@ type ApiKeyMutationState =
 
 type ListState = "idle" | "loading" | "ready" | "error";
 type ActiveSection = "keys" | "launch" | "history";
+const subscribeToHydration = () => () => {};
+const readHydrated = () => true;
+const readServerHydrated = () => false;
 type ApiKeyLoadMode = "initial" | "refresh" | "mutation";
 type DeveloperApiKeysProps = Readonly<{
   initialSection?: ActiveSection;
@@ -885,6 +890,7 @@ export function DeveloperApiKeysView({
   sendCustomLaunchWalletActionV4,
   signCustomLaunchFundingAuthorization,
 }: DeveloperApiKeysViewProps) {
+  const hydrated = useSyncExternalStore(subscribeToHydration, readHydrated, readServerHydrated);
   const [apiKeys, setApiKeys] = useState<ApiKeySummary[]>([]);
   const [listState, setListState] = useState<ListState>(() =>
     account ? "loading" : "idle",
@@ -1313,6 +1319,8 @@ export function DeveloperApiKeysView({
   const showSection = (section: ActiveSection) => {
     setActiveSection(section);
     const url = new URL(window.location.href);
+    if (section === "history") url.searchParams.set("view", "history");
+    else url.searchParams.delete("view");
     if (section === "launch") {
       url.searchParams.set("start", "custom");
       url.searchParams.set("chainId", "4663");
@@ -1543,24 +1551,56 @@ export function DeveloperApiKeysView({
         {statusMessage}
       </p>
 
-      <Link className={styles.backLink} href="/launch">
-        <ArrowLeft aria-hidden="true" size={16} strokeWidth={1.9} />
-        <span>Back</span>
-      </Link>
+      <nav className={styles.topNavigation} aria-label="Builder navigation">
+        <Link className={styles.backLink} href="/launch">
+          <ArrowLeft aria-hidden="true" size={16} strokeWidth={1.9} />
+          <span>Back</span>
+        </Link>
+        <Link className={styles.textLink} href="/profile?section=submissions#profile-modules-title">Submissions <ArrowRight size={16} aria-hidden="true" /></Link>
+      </nav>
 
       <header className={styles.hero}>
         <div className={styles.heroCopy}>
-          <h1>API keys</h1>
-        </div>
-        <div className={styles.headerActions}>
-          <Link className={styles.textLink} href="/developers/modules">Build a module</Link>
-          <a className={styles.textLink} href="/agents.md" target="_blank" rel="noreferrer">Agent guide <ExternalLink size={14} aria-hidden="true" /></a>
-          <button className={styles.secondaryButton} type="button" onClick={() => void copyAgentSetup()}>
-            <Copy size={15} aria-hidden="true" /> {setupCopyState === "copied" ? "Copied" : "Copy instructions"}
-          </button>
+          <h1>{activeSection === "keys" ? "API keys" : activeSection === "launch" ? "Launch a hook" : "Your launches"}</h1>
+          <p className={styles.intro}>
+            {activeSection === "keys"
+              ? "Connect your AI builder."
+              : activeSection === "launch"
+                ? "Upload the launch file from your builder."
+                : "Track progress and complete your wallet steps."}
+          </p>
         </div>
       </header>
-      {setupCopyState === "error" ? <p className={styles.inlineError} role="alert">Copy failed. Open the agent guide to read the instructions.</p> : null}
+
+      <nav
+        className={styles.sectionSwitch}
+        aria-label="Developer access view"
+      >
+        <button
+          aria-pressed={activeSection === "keys"}
+          disabled={!hydrated}
+          type="button"
+          onClick={() => showSection("keys")}
+        >
+          API keys
+        </button>
+        <button
+          aria-pressed={activeSection === "launch"}
+          disabled={!hydrated}
+          type="button"
+          onClick={() => showSection("launch")}
+        >
+          Launch
+        </button>
+        <button
+          aria-pressed={activeSection === "history"}
+          disabled={!hydrated}
+          type="button"
+          onClick={() => showSection("history")}
+        >
+          History
+        </button>
+      </nav>
 
       {activeSection === "launch" ? (
         <RobinhoodFeePolicyDisclosure />
@@ -1596,14 +1636,22 @@ export function DeveloperApiKeysView({
         <section className={styles.walletGate} aria-labelledby="connect-title">
           <div className={styles.walletGateCopy}>
             <h2 id="connect-title">Connect your wallet</h2>
+            <p>
+              {activeSection === "keys"
+                ? "Create and manage keys for this account."
+                : activeSection === "launch"
+                  ? "Continue your hook launch with this wallet."
+                  : "See launches linked to this wallet."}
+            </p>
           </div>
           <button
             className={styles.primaryButton}
             disabled={connecting}
+            aria-busy={connecting}
             type="button"
             onClick={openWallet}
           >
-            {connecting ? "Opening wallet" : "Connect wallet"}
+            <span>Connect wallet</span>
           </button>
         </section>
       ) : (
@@ -1650,14 +1698,16 @@ export function DeveloperApiKeysView({
                     <code>{mutationResult.result.apiKeySecret}</code>
                     <div className={styles.secretActions}>
                       <button className={styles.primaryButton} type="button" onClick={() => void copyConnection()}>
-                        {connectionCopyState === "copied" ? "Connection copied" : "Copy connection"}
+                        {connectionCopyState === "copied" ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />}
+                        Copy connection
                       </button>
                       <button
                         className={styles.secondaryButton}
                         type="button"
                         onClick={() => void copyApiKey()}
                       >
-                        {keyCopyState === "copied" ? "Copied" : "Copy key"}
+                        {keyCopyState === "copied" ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />}
+                        Copy key
                       </button>
                     </div>
                   </div>
@@ -1694,33 +1744,6 @@ export function DeveloperApiKeysView({
             </div>
           ) : null}
 
-          <nav
-            className={styles.sectionSwitch}
-            aria-label="Developer access view"
-          >
-            <button
-              aria-pressed={activeSection === "keys"}
-              type="button"
-              onClick={() => showSection("keys")}
-            >
-              API keys
-            </button>
-            <button
-              aria-pressed={activeSection === "launch"}
-              type="button"
-              onClick={() => showSection("launch")}
-            >
-              Launch
-            </button>
-            <button
-              aria-pressed={activeSection === "history"}
-              type="button"
-              onClick={() => showSection("history")}
-            >
-              Launch history
-            </button>
-          </nav>
-
           {activeSection === "keys" ? (
             <div className={styles.workspace}>
               <section
@@ -1729,28 +1752,10 @@ export function DeveloperApiKeysView({
                 aria-busy={mutationState.kind === "issue"}
               >
                 <div className={styles.panelHeading}>
-                  <h2 id="create-key-title">Create key</h2>
+                  <h2 id="create-key-title">New key</h2>
                 </div>
 
                 <form className={styles.createForm} onSubmit={createApiKey}>
-                  <ApiKeyPurposeChoice
-                    value={purpose}
-                    onChange={(value) => {
-                      setPurpose(value);
-                      setCreateError("");
-                      setSetupCopyState("idle");
-                    }}
-                    moduleContributionsAvailable={moduleContributionsAvailable}
-                    unifiedAvailable={capabilities?.unifiedKeys === true}
-                    checking={listState === "loading"}
-                    disabled={mutationState.kind !== "idle"
-                      || mutationResult?.result.secretState === "delivered-once" || pendingMutationAttempt !== null}
-                  />
-                  {purpose === "custom-launches" ? (
-                    <ApiKeyAccessChoice value={access} onChange={setAccess} available={canIssueReadOnly}
-                      disabled={mutationState.kind !== "idle" || pendingMutationAttempt !== null
-                        || mutationResult?.result.secretState === "delivered-once"} />
-                  ) : null}
                   <div className={styles.formFields}>
                     <div>
                       <label className={styles.field} htmlFor="api-key-label">
@@ -1765,7 +1770,7 @@ export function DeveloperApiKeysView({
                           autoComplete="off"
                           maxLength={64}
                           name="label"
-                          placeholder="My agent"
+                          placeholder="My builder"
                           spellCheck={false}
                           type="text"
                           value={label}
@@ -1786,11 +1791,41 @@ export function DeveloperApiKeysView({
                       ) : null}
                     </div>
 
-                    <ExpirySelect
-                      value={expiresInDays}
-                      disabled={pendingMutationAttempt !== null}
-                      onChange={setExpiresInDays}
-                    />
+                    <div className={styles.optionsField}>
+                      <span>Access and expiry</span>
+                      <details className={styles.connectionOptions}>
+                        <summary aria-label={`Access and expiry: ${apiKeyPurposeLabel(selectedScopes)}, ${expiresInDays} days`}>
+                          <span>{apiKeyPurposeLabel(selectedScopes)}</span>
+                          <small>{expiresInDays} days</small>
+                          <ChevronDown size={16} aria-hidden="true" />
+                        </summary>
+                      <div className={styles.connectionOptionsBody}>
+                        <ApiKeyPurposeChoice
+                          value={purpose}
+                          onChange={(value) => {
+                            setPurpose(value);
+                            setCreateError("");
+                            setSetupCopyState("idle");
+                          }}
+                          moduleContributionsAvailable={moduleContributionsAvailable}
+                          unifiedAvailable={capabilities?.unifiedKeys === true}
+                          checking={listState === "loading"}
+                          disabled={mutationState.kind !== "idle"
+                            || mutationResult?.result.secretState === "delivered-once" || pendingMutationAttempt !== null}
+                        />
+                        {purpose === "custom-launches" ? (
+                          <ApiKeyAccessChoice value={access} onChange={setAccess} available={canIssueReadOnly}
+                            disabled={mutationState.kind !== "idle" || pendingMutationAttempt !== null
+                              || mutationResult?.result.secretState === "delivered-once"} />
+                        ) : null}
+                        <ExpirySelect
+                          value={expiresInDays}
+                          disabled={pendingMutationAttempt !== null}
+                          onChange={setExpiresInDays}
+                        />
+                      </div>
+                      </details>
+                    </div>
 
                     <button
                       ref={createButtonRef}
@@ -1804,14 +1839,24 @@ export function DeveloperApiKeysView({
                         || (purpose === "custom-launches" && access === "read-only" && !canIssueReadOnly && !pendingMutationAttempt)
                       }
                       type="submit"
+                      aria-busy={mutationState.kind === "issue"}
                     >
-                      {mutationState.kind === "issue"
-                        ? "Creating key"
-                        : mutationResult?.result.secretState === "delivered-once"
-                          ? "Save current key first"
-                          : pendingMutationAttempt?.kind === "issue" ? "Retry create key" : "Create key"}
+                      <span>{mutationResult?.result.secretState === "delivered-once"
+                        ? "Save current key first"
+                        : pendingMutationAttempt?.kind === "issue" && mutationState.kind !== "issue" ? "Retry create key" : "Create key"}</span>
+                      <span className={styles.buttonIcon} aria-hidden="true">
+                        {mutationState.kind === "issue" ? <RefreshCw size={16} className={styles.refreshIcon} data-spinning="true" /> : <ArrowRight size={16} />}
+                      </span>
                     </button>
                   </div>
+
+                  {listState !== "loading" && pendingMutationAttempt?.kind !== "issue" && (
+                    (purpose === "all" && !capabilities?.unifiedKeys)
+                    || (purpose === "module-contributions" && !moduleContributionsAvailable)
+                    || (purpose === "custom-launches" && access === "read-only" && !canIssueReadOnly)
+                  ) ? (
+                    <p className={styles.securityNote}>This access is unavailable. Open access and expiry to choose another option, or refresh your keys.</p>
+                  ) : null}
 
                   {pendingMutationAttempt?.kind === "issue" ? (
                     <p className={styles.securityNote}>Retry uses the same name, access and expiry. Refreshing will not create another key.</p>
@@ -1903,9 +1948,7 @@ export function DeveloperApiKeysView({
                         size={16}
                         strokeWidth={1.9}
                       />
-                      {listState === "loading" || refreshingKeys
-                        ? "Refreshing"
-                        : "Refresh keys"}
+                      Refresh keys
                     </button>
                   </div>
                 </div>
@@ -1974,12 +2017,16 @@ export function DeveloperApiKeysView({
                                 {status}
                               </span>
                             </div>
-                            <code>{displayPrefix(apiKey.keyPrefix)}</code>
+                            <span className={styles.keyPurpose}>{apiKeyPurposeLabel(apiKey.scopes)}</span>
                             {status === "Active" && !rotationSupported ? (
                               <p className={styles.securityNote}>Rotation is unavailable until this key&apos;s restrictions can be preserved.</p>
                             ) : null}
                           </div>
 
+                          <details className={styles.keyDetails}>
+                            <summary>Details <ChevronDown size={14} aria-hidden="true" /></summary>
+                            <div className={styles.keyDetailBody}>
+                              <code>{displayPrefix(apiKey.keyPrefix)}</code>
                           <dl className={styles.keyMetadata}>
                             <div>
                               <dt>Access</dt>
@@ -2004,6 +2051,10 @@ export function DeveloperApiKeysView({
                               </div>
                             ) : null}
                           </dl>
+                              <ApiKeyPermissions scopes={apiKey.scopes} />
+                              <ApiKeyChainPolicy apiKey={apiKey} />
+                            </div>
+                          </details>
 
                           {confirmingRotate ? (
                             <div
@@ -2041,11 +2092,12 @@ export function DeveloperApiKeysView({
                                 <button
                                   className={styles.dangerButton}
                                   disabled={rotating}
+                                  aria-busy={rotating}
                                   type="button"
                                   data-confirm-rotate
                                   onClick={() => void rotateApiKey(apiKey)}
                                 >
-                                  {rotating ? "Rotating key" : "Rotate key"}
+                                  Rotate key
                                 </button>
                               </div>
                             </div>
@@ -2083,17 +2135,18 @@ export function DeveloperApiKeysView({
                                   ref={confirmRevokeRef}
                                   className={styles.dangerButton}
                                   disabled={revoking}
+                                  aria-busy={revoking}
                                   type="button"
                                   data-confirm-revoke
                                   onClick={() => void revokeApiKey(apiKey)}
                                 >
-                                  {revoking ? "Revoking key" : "Revoke key"}
+                                  Revoke key
                                 </button>
                               </div>
                             </div>
                           ) : status === "Active" ? (
                             <div className={styles.keyActions}>
-                              <button className={styles.secondaryButton} type="button" onClick={() => void copyAgentSetup(apiKey.scopes)}>Copy instructions</button>
+                              <button className={`${styles.secondaryButton} ${styles.iconButton}`} type="button" aria-label={`Copy instructions for ${apiKey.label}`} title="Copy instructions" onClick={() => void copyAgentSetup(apiKey.scopes)}><Copy size={16} aria-hidden="true" /></button>
                               <button
                                 className={styles.secondaryButton}
                                 disabled={mutationBusy || !rotationSupported}
@@ -2147,6 +2200,16 @@ export function DeveloperApiKeysView({
           )}
         </>
       )}
+
+      <nav className={styles.resourceLinks} aria-label="Developer resources">
+        <button className={styles.guideAction} type="button" onClick={() => void copyAgentSetup()}>
+          {setupCopyState === "copied" ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />}
+          Copy instructions
+        </button>
+        <Link href="/developers/modules">Build a module <ArrowRight size={16} aria-hidden="true" /></Link>
+        <a href="/agents.md" target="_blank" rel="noreferrer">Agent guide <ExternalLink size={14} aria-hidden="true" /></a>
+      </nav>
+      {setupCopyState === "error" ? <p className={styles.inlineError} role="alert">Copy failed. Open the agent guide to read the instructions.</p> : null}
 
     </div>
   );

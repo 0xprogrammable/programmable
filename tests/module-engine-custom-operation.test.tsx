@@ -72,7 +72,7 @@ describe("explicit reviewed Engine operations", () => {
     f.template.manifestHash = computeModuleEngineHostManifestHash(f.template.manifest);
     const html = renderToStaticMarkup(<ModuleEngineBuilder {...f} wallet={{ account: ACCOUNT, chainId: "4663", authenticated: true, sessionReady: true }} onConnect={() => {}} onSwitch={() => {}} onSubmit={async () => { throw new Error("No wallet"); }} />);
     expect(html).toContain("engine-initial-action-data"); expect(html).toContain("Advanced launch inputs"); expect(html).toContain("engine-creator-salt"); expect(html).toContain("engine-launch-data");
-    expect(html).not.toContain('id="engine-beneficiary"'); expect(html).toContain("Creator fee terms"); expect(html).toContain('id="engine-buy-fee"');
+    expect(html).not.toContain('id="engine-beneficiary"'); expect(html).toContain("Creator fee settings"); expect(html).toContain('id="engine-buy-fee"');
     const fields = renderToStaticMarkup(<ModuleEngineCustomOperationFields id="custom" permission={{ ...permission, inputRoles: 0 }} value={emptyModuleEngineCustomOperation()} account={ACCOUNT} onChange={() => {}} />);
     expect(fields).toContain('for="custom-data"'); expect(fields).toContain('aria-describedby="custom-help custom-data-help"');
     expect(fields).not.toContain('<option value="eth">');

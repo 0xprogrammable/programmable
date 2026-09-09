@@ -1,0 +1,17 @@
+.dialog { background: transparent; border: 0; color: #f5f3ef; margin: auto; max-height: calc(100dvh - 48px); max-width: calc(100vw - 32px); overflow: visible; padding: 0; width: 640px; }
+.dialog::backdrop { background: rgb(0 0 0 / 68%); }
+.surface { background: #181818; border: 1px solid #494746; border-radius: 24px; display: flex; flex-direction: column; max-height: calc(100dvh - 48px); min-height: min(480px, calc(100dvh - 48px)); overflow: hidden; }
+.header { align-items: flex-start; display: flex; flex-shrink: 0; gap: 16px; padding: 24px 24px 16px; }
+.header > div { flex: 1; min-width: 0; padding-block: 8px; }
+.header h2 { font-size: 24px; font-weight: 500; letter-spacing: -.025em; line-height: 1.25; margin: 0; overflow-wrap: anywhere; }
+.header p { color: #b9b6b2; font-size: 14px; line-height: 1.5; margin: 8px 0 0; }
+.close { align-items: center; background: #262626; border: 1px solid #6e6b69; border-radius: 50%; color: #d7d5d0; cursor: pointer; display: flex; flex: 0 0 44px; height: 44px; justify-content: center; padding: 0; }
+.content { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 0 24px 24px; scrollbar-gutter: stable; }
+.footer { align-items: center; border-top: 1px solid #343332; display: flex; flex-shrink: 0; flex-wrap: wrap; gap: 12px; padding: 16px 24px; }
+.done { background: #e786b2; border: 1px solid #e786b2; border-radius: 12px; color: #21151b; cursor: pointer; font: inherit; font-size: 14px; font-weight: 500; margin-left: auto; min-height: 48px; padding: 12px 24px; min-width: 104px; }
+.dialog :is(button, a, input, select, textarea, summary):focus-visible { outline: 2px solid #e786b2; outline-offset: 3px; }
+.header h2:focus { outline: none; }
+.dialog button { touch-action: manipulation; }
+@media (hover: hover) and (pointer: fine) { .close:hover { background: #363232; } .done:hover { background: #f19dc3; border-color: #f19dc3; } }
+@media (max-width: 600px) { .dialog { max-width: calc(100vw - 24px); max-height: calc(100dvh - 24px); } .surface { border-radius: 20px; max-height: calc(100dvh - 24px); } .header { padding: 16px 16px 12px; } .header h2 { font-size: 22px; } .content { padding: 0 16px 20px; } .footer { padding: 12px 16px max(12px, env(safe-area-inset-bottom)); } }
+@media (forced-colors: active) { .dialog :is(button, a, input, select, textarea, summary):focus-visible { outline-color: Highlight; } .surface { border-color: CanvasText; } .dialog button { border-color: ButtonText; } }

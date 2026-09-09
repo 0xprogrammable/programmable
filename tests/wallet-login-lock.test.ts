@@ -118,8 +118,7 @@ describe("wallet login lock", () => {
     expect(provider).toContain('role="status"');
     expect(provider).toContain("{walletLoginStatus}");
     expect(apiKeys).toContain("disabled={connecting}");
-    expect(apiKeys).toContain(
-      '{connecting ? "Opening wallet" : "Connect wallet"}',
-    );
+    expect(apiKeys).toContain("aria-busy={connecting}");
+    expect(apiKeys).toContain("<span>Connect wallet</span>");
   });
 });

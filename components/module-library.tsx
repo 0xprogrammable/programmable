@@ -45,32 +45,27 @@ export function ModuleLibrary({ catalog, selectedIds, onAdd, onRemove }: {
   const selected = new Set(selectedIds);
   const reset = () => { setQuery(""); setCategory("all"); setPage(1); };
   return <div className={styles.library}>
-    <div className={styles.toolbar}>
+    <div className={styles.toolbar} hidden={catalog.length < 5 && !query && category === "all"}>
       <div className={styles.search}>
         <label className={styles.srOnly} htmlFor="module-search">Search modules</label>
         <Search size={18} aria-hidden="true" />
-        <input id="module-search" type="search" placeholder="Search modules, ideas, authors…" value={query}
+        <input id="module-search" type="search" placeholder="Find a module" value={query}
           onChange={event => { setQuery(event.target.value); setPage(1); }} autoComplete="off" />
       </div>
-      <label className={styles.categorySelect}><span className={styles.srOnly}>Module category</span>
-        <select value={category} onChange={event => { setCategory(event.target.value); setPage(1); }}>
-          <option value="all">All categories</option>
-          {MODULE_CATEGORIES.map(item => <option key={item.id} value={item.id}>{item.label} ({counts.get(item.id)})</option>)}
-        </select>
-      </label>
+
     </div>
-    <div className={styles.categories} role="group" aria-label="Browse module categories">
-      <button type="button" aria-pressed={category === "all"} onClick={() => { setCategory("all"); setPage(1); }}>All <span>{catalog.length}</span></button>
+    <div className={styles.categories} hidden={new Set(catalog.map(entry => moduleCategory(entry).id)).size < 2} role="group" aria-label="Browse module categories">
+      <button type="button" aria-pressed={category === "all"} onClick={() => { setCategory("all"); setPage(1); }}>All</button>
       {MODULE_CATEGORIES.filter(item => counts.get(item.id) || item.id === category).map(item =>
         <button type="button" key={item.id} aria-pressed={category === item.id} onClick={() => { setCategory(item.id); setPage(1); }}>
-          <ModuleCategoryIcon category={item.id} size={18} />{item.label}<span>{counts.get(item.id)}</span>
+          {item.label}
         </button>)}
     </div>
-    <div className={styles.resultCount} role="status" aria-live="polite">{results.length} {results.length === 1 ? "module" : "modules"}{query.trim() ? ` for “${query.trim()}”` : ""}</div>
+    <div className={styles.resultCount} hidden={!query.trim() && category === "all"} role="status" aria-live="polite">{results.length} {results.length === 1 ? "module" : "modules"}{query.trim() ? ` for “${query.trim()}”` : ""}</div>
     <div className={styles.results} aria-label="Module library">
       {visible.map(entry => { const added = selected.has(entry.id); const group = moduleCategory(entry); return <article key={entry.id} className={styles.module} data-selected={added}>
-        <div className={styles.moduleTop}><ModuleCategoryIcon category={group.id} /><span>{group.label}</span>{entry.status === "preview" ? <span className={styles.preview}>Preview</span> : null}</div>
-        <h3>{entry.title}</h3>
+        <div className={styles.moduleTop}><ModuleCategoryIcon category={group.id} />{entry.status === "preview" ? <span className={styles.preview}>Draft only</span> : null}</div>
+        <h3 id={`module-${entry.id}-title`} tabIndex={-1}>{entry.title}</h3>
         <p>{entry.summary}</p>
         <div className={styles.moduleBottom}><ModuleAuthor entry={entry} />
           <button type="button" className={styles.add} aria-label={`${added ? "Remove" : "Add"} ${entry.title}`} aria-pressed={added}
@@ -79,7 +74,7 @@ export function ModuleLibrary({ catalog, selectedIds, onAdd, onRemove }: {
       </article>; })}
     </div>
     {results.length === 0 ? <div className={styles.empty}>
-      <strong>{query.trim() ? "No matching modules" : "No published modules in this category yet"}</strong>
+      <strong>{query.trim() ? "No matching modules" : "No modules here yet"}</strong>
       <div><button type="button" onClick={reset}><X size={16} aria-hidden="true" />Clear filters</button><Link href="/developers/modules">Build a module<ArrowRight size={16} aria-hidden="true" /></Link></div>
     </div> : null}
     {pages > 1 ? <nav className={styles.pagination} aria-label="Module library pages">
@@ -87,6 +82,6 @@ export function ModuleLibrary({ catalog, selectedIds, onAdd, onRemove }: {
       <span>Page {currentPage} of {pages}</span>
       <button type="button" disabled={currentPage === pages} onClick={() => setPage(currentPage + 1)} aria-label="Next modules"><ChevronRight size={18} /></button>
     </nav> : null}
-    {results.length > 0 ? <Link className={styles.contribute} href="/developers/modules"><Plus size={18} aria-hidden="true" /><span>Build your own module</span><ArrowRight size={16} aria-hidden="true" /></Link> : null}
+    {results.length > 0 ? <Link className={styles.contribute} href="/developers/modules"><Plus size={18} aria-hidden="true" /><span>Create a module</span><ArrowRight size={16} aria-hidden="true" /></Link> : null}
   </div>;
 }

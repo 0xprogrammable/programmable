@@ -78,7 +78,7 @@ describe("public Engine publications", () => {
   it("uses Engine templates directly in the library without a Native binding or guessed author", () => {
     const f = fixture();
     const html = renderToStaticMarkup(<ModuleEngineLibrary templates={[f.template]} selectedId={f.template.manifest.manifest.catalogDefinition.id} onSelect={() => {}} />);
-    expect(html).toContain("Template library"); expect(html).toContain("Search templates"); expect(html).toContain('aria-pressed="true"');
+    expect(html).toContain("Module library"); expect(html).toContain("Search modules"); expect(html).toContain('aria-pressed="true"');
     expect(html).toContain("Deposit"); expect(html).not.toContain("By 0x"); expect(html).not.toContain("nativeBinding");
   });
 });
