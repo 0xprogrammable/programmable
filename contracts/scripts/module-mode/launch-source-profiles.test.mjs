@@ -181,6 +181,35 @@ test('known settlement/escrow/quote resource hashes are exact; custom or extra r
   assert.throws(() => engineResourceCommitment(quote, { ...state, positionRecipient: a(1001) }), /resources hash/);
 });
 
+test('the published quote-bound settlement codec preserves its quote, fixed windows and exact source profile', async () => {
+  const catalog = JSON.parse(await readFile(new URL('../../../config/module-engine/catalog.json', import.meta.url)));
+  const definition = catalog.entries.find(entry => entry.template.manifest.manifest.catalogDefinition.id === 'quote-bound-settlement-v1')
+    .template.manifest.manifest.catalogDefinition;
+  const settlement = engineLaunchIdentity(engineLaunchFixture(), wire);
+  settlement.manifest.catalogDefinition = structuredClone(definition);
+  const abi = parseAbiParameters('address,uint256,uint256'), state = { minimumWindow: 60n, maximumWindow: 2592000n };
+  settlement.parameters.configuration = encodeAbiParameters(abi, [settlement.launch.quoteAsset, state.minimumWindow, state.maximumWindow]);
+  settlement.launch.resourcesHash = keccak256(encodeAbiParameters(parseAbiParameters('address,address,uint256,uint256'),
+    [settlement.launch.quoteAsset, settlement.launch.creator, state.minimumWindow, state.maximumWindow]));
+  assert.equal(engineResourceCommitment(settlement, state), settlement.launch.resourcesHash);
+  for (const change of [
+    value => { value.manifest.catalogDefinition.source.sha256 = '0'.repeat(64); },
+    value => { value.manifest.catalogDefinition.source.path = 'src/OtherSettlement.sol'; },
+    value => { value.manifest.catalogDefinition.configurationAbi[0].type = 'uint256'; },
+    value => { value.manifest.catalogDefinition.configurationAbi.reverse(); },
+    value => { value.parameters.configuration = encodeAbiParameters(abi, [a(999), 60n, 2592000n]); },
+    value => { value.parameters.configuration = encodeAbiParameters(abi, [value.launch.quoteAsset, 61n, 2592000n]); },
+    value => { value.parameters.configuration = encodeAbiParameters(abi, [value.launch.quoteAsset, 60n, 2592001n]); },
+    value => { value.parameters.configuration = encodeAbiParameters(parseAbiParameters('uint256,uint256'), [60n, 2592000n]); },
+    value => { value.parameters.configuration += '00'.repeat(32); },
+    value => { value.launch.resourcesHash = h(999); },
+  ]) {
+    const changed = structuredClone(settlement); change(changed);
+    assert.throws(() => engineResourceCommitment(changed, state), undefined, change.toString());
+  }
+  assert.throws(() => engineResourceCommitment(settlement, { ...state, maximumWindow: 2592001n }), /resources/);
+});
+
 test('the public Engine packet is verified by the same protected catalogue/build/manifest validators', async () => {
   const f = reviewedPublication();
   assert.equal(wire.verifyModuleEnginePublication(f).manifestHash, f.publication.template.manifestHash);
