@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { formatEther, type Hex } from "viem";
 import { projectionObject } from "@/lib/custom-launch/launch-projection-v1";
 import { readLaunchPlanResourceV1, type UniversalLaunchSource, type UniversalLaunchWalletInputV1, type UniversalLaunchWalletReviewV1 } from "@/lib/custom-launch/wallet-handoff-plan-v1";
@@ -119,6 +119,7 @@ function UniversalHistoryRow({ entry, load, sendWallet, onSubmitted }: {
   entry: Entry; load(): Promise<unknown>; sendWallet: Props["sendWallet"]; onSubmitted(step: string, hash: Hex): Promise<void>;
 }) {
   const [review, setReview] = useState<UniversalLaunchWalletReviewV1 | null>(null);
+  const reviewButton = useRef<HTMLButtonElement>(null);
   const [busy, setBusy] = useState(false); const [error, setError] = useState<string | null>(null); const [submitted, setSubmitted] = useState<Submission | null>(null);
   const resource = entry.resource;
   const plan = entry.sourceVersion === "custom_launch_plan_v1" ? readLaunchPlanResourceV1(resource) : null;
@@ -161,14 +162,17 @@ function UniversalHistoryRow({ entry, load, sendWallet, onSubmitted }: {
       <details className={styles.transaction}><summary>Exact components, markets and fee obligations</summary><pre>{JSON.stringify({ components: plan.plan.components, markets: plan.plan.markets, feeObligations: plan.plan.feeObligations }, null, 2)}</pre></details></> : null}
     {submission ? <p className={styles.transactionHash}>{submissionFinal ? "Step final." : "Submitted; finality is pending."} <a href={`https://robinhoodchain.blockscout.com/tx/${submission.transactionHash}`} target="_blank" rel="noreferrer"><code>{submission.transactionHash}</code></a></p> : null}
     {pendingSubmission ? <button className={shared.secondaryButton} type="button" disabled={busy} onClick={() => { setBusy(true); void onSubmitted(pendingSubmission.stepId, pendingSubmission.transactionHash).catch(() => setError("Tracking is still unavailable. Keep this receipt and retry later.")).finally(() => setBusy(false)); }}>Retry transaction tracking</button> : null}
-    {walletReady && !pendingSubmission ? <button className={shared.secondaryButton} type="button" disabled={busy} onClick={() => void action("review")}>{busy ? "Checking wallet…" : "Review wallet transaction"}</button> : null}
+    {walletReady && !pendingSubmission ? <button ref={reviewButton} className={shared.secondaryButton} type="button" disabled={busy} onClick={() => void action("review")}>{busy ? "Checking wallet…" : "Review wallet transaction"}</button> : null}
     {review && walletReady && !pendingSubmission && review.stepId === (step?.stepId ?? "multi-role-v2") ? <div className={styles.projectReview}><h4>Exact wallet transaction</h4><dl className={styles.reviewGrid}>
       <div><dt>Chain / controller type</dt><dd>Robinhood 4663 · {review.controllerKind}</dd></div><div><dt>Target</dt><dd><code>{review.transaction.to}</code></dd></div>
       <div><dt>Transaction value</dt><dd>{formatEther(BigInt(review.valueWei))} ETH</dd></div><div><dt>Gas estimate at the current rate</dt><dd>{formatEther(BigInt(review.maxGasCostWei))} ETH</dd></div>
       <div><dt>Expires</dt><dd>{new Date(Number(review.deadline) * 1000).toISOString()}</dd></div><div><dt>Transaction binding</dt><dd><code>{review.binding}</code></dd></div></dl>
       {review.controllerAuthorization ? <p>Confirm the bound Safe nonce and owner threshold in the controller wallet. Its exact SafeTx uses zero gas refunds; signature collection and finality remain pending.</p> : null}
       <details className={styles.transaction}><summary>Calldata and exact effects</summary><pre>{JSON.stringify({ decodedOperation: review.decodedOperation, controllerAuthorization: review.controllerAuthorization, transaction: review.transaction, preconditions: review.preconditions, postconditions: review.postconditions }, null, 2)}</pre></details>
-      <button className={shared.primaryButton} type="button" disabled={busy} onClick={() => void action("send")}>Confirm in controller wallet</button>
+      <div className={styles.walletReviewActions}>
+        <button className={shared.primaryButton} type="button" disabled={busy} onClick={() => void action("send")}>Confirm in controller wallet</button>
+        <button className={shared.secondaryButton} type="button" disabled={busy} onClick={() => { setReview(null); setError(null); reviewButton.current?.focus(); }}>Cancel review</button>
+      </div>
     </div> : null}
     <p className={styles.inlineError} role="status">{error ?? ""}</p>
   </li>;

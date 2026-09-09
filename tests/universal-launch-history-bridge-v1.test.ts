@@ -17,6 +17,15 @@ const request = (source = "custom_launch_plan_v1", body?: unknown, wallet = cont
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
 describe("additive controller history bridge", () => {
+  it("retains full owner evidence above the old cap and rejects a response beyond the published bound", async () => {
+    const record = { ...recordFixture(), admissionEvidence: { proof: "x".repeat(33 * 1024 * 1024) } };
+    const { bridge, fetchBackend } = context({ plans: [record], nextCursor: null });
+    const response = await bridge.universal(request());
+    expect(response.status).toBe(200);
+    expect((await response.json()).launches[0].resource.admissionEvidence.proof.length).toBe(33 * 1024 * 1024);
+    fetchBackend.mockImplementationOnce(async () => new Response("{}", { headers: { "content-type": "application/json", "content-length": String(65 * 1024 * 1024 + 1) } }));
+    expect((await bridge.universal(request())).status).toBe(503);
+  });
   it("preserves plan resource bytes and reuses signed wallet-admin authority", async () => {
     const record = recordFixture();
     const { bridge, fetchBackend } = context({ schemaVersion: "programmable.custom-launch-plan-list.v1", plans: [record], nextCursor: null });

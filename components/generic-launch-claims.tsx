@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { formatEther, type Hex } from "viem";
 import { isBoundLaunchClaimDescriptorV1, projectionObject, projectionUint } from "@/lib/custom-launch/launch-projection-v1";
 import type { LaunchClaimReadV1, LaunchClaimWalletInputV1, LaunchClaimWalletReviewV1 } from "@/lib/custom-launch/claim-handoff-v1";
@@ -55,6 +55,7 @@ export function GenericLaunchClaims({ account, sendWallet }: Props) {
 }
 function Claim({ claim, sendWallet, fresh }: { claim: LaunchClaimReadV1; sendWallet: Props["sendWallet"]; fresh(): Promise<LaunchClaimReadV1> }) {
   const [review, setReview] = useState<LaunchClaimWalletReviewV1 | null>(null);
+  const reviewButton = useRef<HTMLButtonElement>(null);
   const [busy, setBusy] = useState(false); const [message, setMessage] = useState(""); const [submitted, setSubmitted] = useState<Hex | null>(null);
   const descriptor = claim.descriptor;
   async function act(action: "review" | "send") {
@@ -72,10 +73,13 @@ function Claim({ claim, sendWallet, fresh }: { claim: LaunchClaimReadV1; sendWal
     <div><dt>Asset</dt><dd><code>{descriptor.asset}</code></dd></div><div><dt>Accrual contract</dt><dd><code>{descriptor.accrualContract}</code></dd></div>
     <div><dt>Recipient</dt><dd><code>{descriptor.immutableRecipient ?? descriptor.beneficiary}</code><small>{descriptor.immutableRecipient ? "Immutable recipient" : "Bound beneficiary snapshot"}</small></dd></div>
     <div><dt>Required controller</dt><dd><code>{descriptor.requiredController}</code></dd></div></dl>
-    {sendWallet && !submitted ? <button type="button" disabled={busy || claim.status !== "ready" || claim.claimableRaw === "0"} onClick={() => void act("review")}>Review claim</button> : null}
+    {sendWallet && !submitted ? <button ref={reviewButton} type="button" disabled={busy || claim.status !== "ready" || claim.claimableRaw === "0"} onClick={() => void act("review")}>Review claim</button> : null}
     {review ? <><p>Transaction value: 0 ETH. Gas estimate at the current rate: {formatEther(BigInt(review.maxGasCostWei))} ETH.</p>
       <details><summary>Exact claim call and proof</summary><pre>{JSON.stringify({ transaction: review.transaction, descriptor: review.descriptor }, null, 2)}</pre></details>
-      <button type="button" disabled={busy} onClick={() => void act("send")}>Confirm claim in wallet</button></> : null}
+      <div className={styles.reviewActions}>
+        <button type="button" disabled={busy} onClick={() => void act("send")}>Confirm claim in wallet</button>
+        <button type="button" disabled={busy} onClick={() => { setReview(null); setMessage(""); reviewButton.current?.focus(); }}>Cancel review</button>
+      </div></> : null}
     <p role="status">{message}</p>{submitted ? <a href={`https://robinhoodchain.blockscout.com/tx/${submitted}`} target="_blank" rel="noreferrer">View claim receipt<span className="sr-only"> (opens in a new tab)</span></a> : null}
   </article>;
 }

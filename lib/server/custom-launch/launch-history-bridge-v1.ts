@@ -51,6 +51,9 @@ export const CUSTOM_LAUNCH_SUBMISSION_HINT_SCHEMA_V1 =
 const MAXIMUM_BACKEND_LIST_BODY_BYTES = 262_144;
 const MAXIMUM_BACKEND_RESOURCE_BODY_BYTES = 8_388_608;
 const MAXIMUM_BACKEND_V4_BODY_BYTES = 16_777_216;
+// Complete protected vNext resources are bounded to 64 MiB; reserve one MiB
+// for the signed history/page envelope without truncating source or evidence.
+const MAXIMUM_BACKEND_PLAN_BODY_BYTES = 65 * 1024 * 1024;
 const MAXIMUM_BROWSER_FUNDING_BODY_BYTES = 1_024;
 const DEFAULT_BACKEND_TIMEOUT_MS = 5_000;
 const DEFAULT_PAGE_SIZE = 5;
@@ -381,7 +384,7 @@ export function createDeveloperLaunchHistoryBridgeV1(input: Readonly<{
           ...(write ? { body } : {}), cache: "no-store", redirect: "error",
           signal: AbortSignal.any([request.signal, AbortSignal.timeout(timeoutMs)]) });
         if (!backend.ok) return mappedBackendError(backend).then(mappedError);
-        const resource = jsonRecord(await readBoundedBackendJson(backend, source === "custom_launch_plan_v1" ? 2 * MAXIMUM_BACKEND_V4_BODY_BYTES : MAXIMUM_BACKEND_V4_BODY_BYTES));
+        const resource = jsonRecord(await readBoundedBackendJson(backend, source === "custom_launch_plan_v1" ? MAXIMUM_BACKEND_PLAN_BODY_BYTES : MAXIMUM_BACKEND_V4_BODY_BYTES));
         if (write) return jsonResponse(backend.status, resource);
         const resources = launchId ? [resource] : source === "custom_launch_plan_v1" ? resource.plans : resource.launches;
         if (!Array.isArray(resources) || resources.length > (launchId ? 1 : 5)) throw new BackendContractErrorV1();
