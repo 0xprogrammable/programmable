@@ -51,13 +51,13 @@ function readViewChainCookie(): ViewChainId | null {
 }
 
 function readViewChainRevision(): string {
-  let stored: string | null = null;
   try {
-    stored = window.localStorage.getItem(VIEW_CHAIN_REVISION_STORAGE_KEY);
+    const stored = window.localStorage.getItem(VIEW_CHAIN_REVISION_STORAGE_KEY);
+    if (stored !== null) return stored;
   } catch {
     // The cookie still detects choices when browser storage is blocked.
   }
-  return JSON.stringify([readCookie(VIEW_CHAIN_REVISION_COOKIE_NAME), stored]);
+  return readCookie(VIEW_CHAIN_REVISION_COOKIE_NAME) ?? "";
 }
 
 function readStoredViewChain(): ViewChainId | null {
@@ -67,6 +67,21 @@ function readStoredViewChain(): ViewChainId | null {
     );
   } catch {
     return null;
+  }
+}
+
+function readBrowserViewChain(): ViewChainId | null {
+  // Storage events and their backing value share one publication source.
+  // Another renderer's cookie cache may still contain the previous choice.
+  return readStoredViewChain() ?? readViewChainCookie();
+}
+
+function storeViewChainValue(key: string, value: string) {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // A failed write must not leave an old value ahead of the updated cookie.
+    try { window.localStorage.removeItem(key); } catch { /* Storage is unavailable. */ }
   }
 }
 
@@ -86,14 +101,9 @@ function subscribeToViewChain(onStoreChange: () => void) {
 }
 
 function persistViewChain(viewChainId: ViewChainId) {
-  // Cross-tab subscribers read the cookie first. Make it current before the
-  // storage write can notify another browser process.
+  // Keep the cookie available for server rendering and blocked browser storage.
   document.cookie = serializeViewChainCookie(viewChainId);
-  try {
-    window.localStorage.setItem(VIEW_CHAIN_STORAGE_KEY, String(viewChainId));
-  } catch {
-    // A functional cookie remains available when browser storage is blocked.
-  }
+  storeViewChainValue(VIEW_CHAIN_STORAGE_KEY, String(viewChainId));
 
   window.dispatchEvent(
     new CustomEvent<ViewChainId>(VIEW_CHAIN_CHANGE_EVENT, {
@@ -111,7 +121,7 @@ export function ViewChainProvider({
 }>) {
   const getViewChainSnapshot = useCallback(
     (): ViewChainId | null =>
-      readViewChainCookie() ?? readStoredViewChain() ?? initialViewChainId,
+      readBrowserViewChain() ?? initialViewChainId,
     [initialViewChainId],
   );
   const getServerSnapshot = useCallback((): ViewChainId | null => null, []);
@@ -141,11 +151,7 @@ export function ViewChainProvider({
     // detect a newer choice even before its storage event or after a round trip.
     const revision = window.crypto.randomUUID();
     document.cookie = `${VIEW_CHAIN_REVISION_COOKIE_NAME}=${revision}; Path=/; SameSite=Lax`;
-    try {
-      window.localStorage.setItem(VIEW_CHAIN_REVISION_STORAGE_KEY, revision);
-    } catch {
-      // Keep the same cookie fallback as the browsing preference itself.
-    }
+    storeViewChainValue(VIEW_CHAIN_REVISION_STORAGE_KEY, revision);
     persistViewChain(nextViewChainId);
   }, []);
 
@@ -171,7 +177,7 @@ export function useViewChain(): ViewChainContextValue {
 
 function captureRouteEntry(chainId: ViewChainId | undefined) {
   if (typeof document === "undefined") return { chainId, revision: null, previousChain: null };
-  return { chainId, revision: readViewChainRevision(), previousChain: readViewChainCookie() ?? readStoredViewChain() };
+  return { chainId, revision: readViewChainRevision(), previousChain: readBrowserViewChain() };
 }
 
 /** Apply a route's initial preference without replacing a more recent choice. */
@@ -189,7 +195,7 @@ export function useRouteViewChain(chainId: ViewChainId | undefined): ViewChainCo
     const timer = window.setTimeout(() => {
       if (readViewChainRevision() !== revision) return;
       // Also respect a numeric preference written by an already open older tab.
-      if (previousChain !== null && (readViewChainCookie() ?? readStoredViewChain()) !== previousChain) return;
+      if (previousChain !== null && readBrowserViewChain() !== previousChain) return;
       setViewChainId(routeChainId);
     }, 0);
     return () => window.clearTimeout(timer);
