@@ -10,6 +10,29 @@ The source-intake wire contract stays `programmable.modules.api.v0.1`, with sour
 
 Use the immutable **1.0.0-development.7** standalone CLI for authenticated context, submission and review. Download its [manifest](https://programmable.market/developers/module-mode-cli/v1.0.0-development.7/manifest.json) and [CLI file](https://programmable.market/developers/module-mode-cli/v1.0.0-development.7/programmable-module-mode-1.0.0-development.7.mjs), and verify the file's SHA-256 against `artifact.sha256` in the manifest before running it. It needs Node.js, with no npm install or repository checkout. The older development.1 file remains unchanged and supports intake receipts only. These are development distribution versions; the live API capabilities determine which operations are enabled.
 
+## Check submission access first
+
+Upload eligibility comes from two fields: `moduleContributions.submissions` in public `GET /v1/modules/capabilities`, and `authorization.canSubmit` in authenticated `GET /v1/modules/context`. Both must be `true`. The context also reports the deployment's intake readiness as `intake.available`.
+
+```javascript
+const canUpload =
+  capabilities.moduleContributions.submissions === true &&
+  context.authorization.canSubmit === true;
+```
+
+**The root `reviewAvailable`, `approved` and `available` fields in `/v1/modules/capabilities` are legacy compatibility fields. Their `false` values do not block source intake or mean that the account needs approval.** Do not use them as upload gates. `moduleContributions.apiKeyIssuance` controls new key issuance separately; an existing key uses its actual permissions.
+
+| What you need to know | Read |
+| --- | --- |
+| Whether this deployment accepts source drafts | `/v1/modules/capabilities` → `moduleContributions.submissions` |
+| Whether this key may submit | `/v1/modules/context` → `authorization.canSubmit` |
+| Whether review and status reads are ready | `/v1/modules/review-capabilities` → `reviewAvailable` and `statusReadAvailable`, or `/v1/modules/context` → `review.available` and `review.statusReadAvailable` |
+| What is happening to a saved submission | `/v1/modules/submissions/:id/review` → `review.state` and `review.nextAction` |
+
+Review readiness is separate from upload eligibility. When intake and key authorization permit an upload, an unavailable review service or missing review adapter does not prevent submitting the source. Keep the resulting submission ID and report the pending platform review work.
+
+The intake receipt records the original upload. `status-module` and `list-module-submissions` keep returning that historical receipt, including `draft_received`, `unreviewed`, `approved: false` and `available: false`, after review progresses. Read `review-status-module` for the current decision and next action. Neither the capability flags nor a historical receipt is an account approval status.
+
 ## Before writing source
 
 Create a key with **Launches + modules** access on [API keys](https://programmable.market/developers/api-keys?purpose=modules), or use an existing key with `modules:submit` and `modules:read`. Configure it privately as `PROGRAMMABLE_API_KEY` in the agent's secret environment. The CLI also accepts `PROGRAMMABLE_MODULES_API_KEY`; if both are set, they must contain the same key. Do not put credentials in a prompt, source files, generated artifacts, command-line arguments or shell history.
@@ -39,7 +62,7 @@ This reads `GET /v1/modules/context` using the key's `modules:read` scope. The r
 
 The descriptor still requires explicit `author` and `rewardWallet` fields. Copy the context values into the package before hashing it; the server does not rewrite a submitted descriptor. `author` must match the key's wallet. A supplied reward wallet declares a payout destination, not ownership proof or existing rewards.
 
-Require `authorization.canSubmit: true` and `intake.available: true` before upload. `approved: false` and `available: false` at the response root describe the absence of any module approval or public availability; they are separate from the intake gate. A missing review adapter or unavailable review service does not change the source package into an invalid business category. Preserve the submitted identity while the platform establishes its review path.
+Apply the [submission access check](#check-submission-access-first) before upload: public `moduleContributions.submissions` and keyed `authorization.canSubmit`. If discovery reads disagree about intake readiness, refresh them before uploading. A missing review adapter or unavailable review service is a separate platform task. Preserve the submitted identity while the platform establishes its review path.
 
 ### Inputs to resolve upfront
 
@@ -85,7 +108,7 @@ node "$MODULE_CLI" module-capabilities \
 
 When developing the SDK from a checkout with its dependencies installed, set `MODULE_CLI` to the absolute path of `packages/classic-modules/bin/programmable-classic-modules.mjs` instead. Both entries support the commands below.
 
-Check `moduleContributions.submissions`. A false value means this deployment is not accepting drafts. `apiKeyIssuance` independently states whether it issues new module keys. The client also verifies capabilities before every upload; it sends no credentials or source when intake is unavailable or the format is incompatible.
+Check `moduleContributions.submissions` together with `authorization.canSubmit` from authenticated context. A false intake value means this deployment is not accepting drafts; missing authorization means this key cannot upload. `moduleContributions.apiKeyIssuance` independently states whether it issues new module keys. The root legacy flags and separate review readiness do not gate this upload. The client also verifies capabilities before every upload; it sends no credentials or source when intake is unavailable or the format is incompatible.
 
 Prepare a reviewable source request offline. Every path is relative to the explicit `--root` directory; source files must be ordinary files below that root, with no symlinks or traversal. Paths may contain common application names such as `[slug]`, `(group)`, `@scope` and `+page.svelte`. Each path is at most 240 ASCII characters; segments allow letters, digits, `.`, `_`, `@`, `+`, `(`, `)`, `[`, `]` and `-`. Empty segments, `.` or `..` segments, backslashes and control characters are rejected. `module.json` is an open source-package descriptor, not the older fixed-module manifest.
 
@@ -138,7 +161,7 @@ node "$MODULE_CLI" review-status-module \
   --id YOUR_SUBMISSION_UUID
 ```
 
-`GET /v1/modules/review-capabilities` is public. Its schema is `programmable.modules.review-capabilities.v1`. It exposes `reviewAvailable`, `statusReadAvailable`, `reviewerPolicyDigest`, `workerSourceCommit`, `workerAuthorityReady` and `databaseReady`; `approved` and `available` remain false. Ready status requires the database, reviewer policy and worker authority together. A false capability means the review endpoint is unavailable. The legacy intake capability's fixed `reviewAvailable: false` describes the older receipt contract; use this separate review capability for the current workflow.
+`GET /v1/modules/review-capabilities` is public. Its schema is `programmable.modules.review-capabilities.v1`. It exposes `reviewAvailable`, `statusReadAvailable`, `reviewerPolicyDigest`, `workerSourceCommit`, `workerAuthorityReady` and `databaseReady`; `approved` and `available` remain false. Ready status requires the database, reviewer policy and worker authority together. These flags describe the review operations only. Read `reviewAvailable` for review availability and `statusReadAvailable` for status reads; neither is an intake gate. The legacy root `reviewAvailable: false` in `/v1/modules/capabilities` remains a compatibility field. Use this separate review capability for the current workflow.
 
 `GET /v1/modules/submissions/:id/review` requires the owner's `modules:read` key. The new client checks review readiness before sending credentials, then binds the response's submission, package, family, request digest, author, reward wallet and version to the immutable intake receipt. It prints the current `review.state`, `review.revision`, `review.attempt`, timestamps, `review.nextAction` and any latest reviewer decision.
 
@@ -155,6 +178,8 @@ node "$MODULE_CLI" review-status-module \
 The projected decision uses `outcome: "accept" | "request_changes" | "reject"`, plus its reason, reviewer wallet, decision time and digest. An accepted decision references the recorded build artifact and host manifest. `buildEvidenceRecorded` and these digests describe records held by the review service; the status response is not the full artifact or an independent audit. It still returns `sourceRevisionVerified: false`, `runtimeVerified: false`, `approved: false` and `available: false`, including after acceptance. Source-byte verification proves only that uploaded bytes match the declared source hashes.
 
 Treat the reason as review feedback and `nextAction` as workflow data. The client does not execute response text, links, uploaded scripts or module code. It does not poll or retry automatically. If readiness is absent, retain the submission ID and check again later; do not recreate the submission. A missing durable review job is a service error (`MODULE_REVIEW_JOB_UNAVAILABLE`), not an invented waiting state.
+
+You can also follow the review in [Profile → Modules → Submissions](https://programmable.market/profile?section=submissions). Sign in with the author wallet associated with the API key. A separate reward wallet does not grant access to these private submissions. The profile shows five submissions per page with their current review status and latest reviewer feedback. **Copy for agent** includes the submission identity and instructions to read the latest authenticated review before making changes; it does not include your API key. Approved reviews remain in submission history. **Published** lists verified publications after Registry admission and catalog activation.
 
 To submit an edited revision, update the package version and hashes, then prepare a new file linked to the previous submission:
 
