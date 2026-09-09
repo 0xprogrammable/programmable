@@ -15,7 +15,7 @@ import { buildLaunchPlanRoutedSwapV1, launchPlanTradeAmountsV1, launchPlanTradeB
 import { prepareLaunchPlanTradeV1 } from "@/lib/server/custom-launch/routed-trade-plan-v1";
 import { productionTradeRpcsV1, tradePostStateV1, type TradeRpcV1 } from "@/lib/server/custom-launch/routed-trade-rpc-v1";
 import { prepareLaunchPlanTradeWalletV1 } from "@/lib/custom-launch/routed-trade-wallet-v1";
-import sdkVector from "@/contracts/spec/routed-trade-fee-vnext-vector.json";
+import sdkVector from "@/contracts/spec/routed-trade-fee-vnext-vector-v211.json";
 import feeVectors from "@/contracts/spec/immutable-pool-fee-runtime-vectors-v1.json";
 import { rebuildImmutablePoolFeeRuntimeProofV1, materializeImmutableFeeRuntimeWordsV1,
   type ImmutablePoolFeeRuntimeProofV1 } from "@/lib/custom-launch/immutable-pool-fee-runtime-custom-launch-plan-v1";
