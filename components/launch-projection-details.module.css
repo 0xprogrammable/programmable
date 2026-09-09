@@ -1,0 +1,18 @@
+.details { border-top: 1px solid var(--border, #333); margin-block: 24px; padding-top: 20px; min-width: 0; font-size: 14px; line-height: 1.5; }
+.states { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; margin: 0; }
+.states div, .claims div { min-width: 0; }
+.states dt { color: var(--muted-foreground, #aaa); font-size: 12px; }
+.states dd, .claims dd { margin: 4px 0 0; overflow-wrap: anywhere; }
+.details summary { min-height: 44px; cursor: pointer; display: flex; align-items: center; margin-top: 16px; text-decoration: underline; text-underline-offset: 4px; }
+.details summary:focus-visible, .details a:focus-visible { outline: 2px solid #e786b2; outline-offset: 4px; }
+.details ul { padding: 0; list-style: none; }
+.details li { display: grid; padding-block: 8px; }
+.details a { min-height: 44px; display: inline-flex; align-items: center; overflow-wrap: anywhere; }
+.details code, .details pre { overflow-wrap: anywhere; word-break: break-word; font-size: 12px; }
+.details pre { max-height: 320px; overflow: auto; white-space: pre-wrap; padding: 12px; background: #151515; }
+.claims { display: grid; gap: 16px; }
+.claims dt { overflow-wrap: anywhere; }
+.claims small { display: block; color: #aaa; margin-top: 4px; }
+.details p { overflow-wrap: anywhere; }
+@media (max-width: 600px) { .states { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; } }
+@media (forced-colors: active) { .details summary:focus-visible, .details a:focus-visible { outline-color: Highlight; } }

@@ -4,10 +4,15 @@ import { parseSnapshot, type RobinhoodSnapshot } from "../lib/server/robinhood-i
 import type { IndexSource, ModuleModeIndexSource } from "../lib/server/robinhood-index/sync";
 import { a, h } from "./fixtures/module-mode-evidence";
 
-const mocks = vi.hoisted(() => ({ store: vi.fn(), custom: vi.fn(), module: vi.fn() }));
+const mocks = vi.hoisted(() => ({ store: vi.fn(), custom: vi.fn(), module: vi.fn(), projection: vi.fn() }));
 vi.mock("../lib/server/robinhood-index/store", () => ({ indexStore: mocks.store }));
 vi.mock("../lib/server/robinhood-index/source", () => ({ robinhoodSource: mocks.custom }));
 vi.mock("../lib/server/robinhood-index/module-source", () => ({ configuredModuleModeSources: mocks.module }));
+// Keep these Module-lane assertions independent of the real public projection
+// feed; projection storage and provenance are exercised in their dedicated suite.
+vi.mock("../lib/server/robinhood-index/launch-projection-source", () => ({
+  launchProjectionSourceV1: () => ({}), syncLaunchProjectionIndex: mocks.projection,
+}));
 import { GET } from "../app/api/ops/robinhood-index/route";
 
 const point = (n: number) => ({ number: String(n), hash: h(n) });
@@ -24,6 +29,7 @@ function fixture() {
   const nativeSource: ModuleModeIndexSource = { sourceKind: "module-native-v1", sourceAddress: a(800), releaseDigest: h(801), startBlock: 50n,
     finalized: point(100), block: async n => point(Number(n)), launches: async () => [] };
   mocks.store.mockReturnValue(store); mocks.custom.mockResolvedValue(custom);
+  mocks.projection.mockResolvedValue({ status: "ready", indexed: 0, nextCursor: null });
   mocks.module.mockResolvedValue({ lanes: [{ releaseDigest: nativeSource.releaseDigest, source: async () => nativeSource }], unavailableSources: [] });
   return { read: () => saved, write, remove: () => { saved = null; } };
 }
@@ -63,6 +69,14 @@ describe("Independent canonical Robinhood index lanes", () => {
     expect((await GET(new Request("https://programmable.market/api/ops/robinhood-index"))).status).toBe(401);
     expect((await GET(new Request("https://programmable.market/api/ops/robinhood-index?source=module", request()))).status).toBe(400);
     expect(mocks.store).not.toHaveBeenCalled();
+  });
+  it("retains Custom and Module progress when the independent projection feed is unavailable", async () => {
+    const f = fixture(); mocks.projection.mockRejectedValue(new Error("Private projection provider details"));
+    const response = await GET(request()); const body = await response.json();
+    expect(response.status).toBe(503);
+    expect(body).toMatchObject({ custom: { status: "ready" }, moduleMode: { status: "ready" }, launchProjections: { status: "unavailable" } });
+    expect(f.read()?.cursor).toEqual(point(100)); expect(f.read()?.moduleMode?.cursor).toEqual(point(100));
+    expect(JSON.stringify(body)).not.toContain("Private");
   });
   it("advances a historical source when the current release is unavailable", async () => {
     const f = fixture();

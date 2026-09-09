@@ -1,0 +1,16 @@
+.claims { min-width: 0; font-size: 14px; line-height: 1.5; }
+.reviewActions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.claims article { border-top: 1px solid #333; padding-block: 20px; }
+.claims h3 { margin: 0 0 16px; font-size: 16px; font-weight: 500; }
+.claims dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.claims dt, .claims small { color: #aaa; font-size: 12px; }
+.claims dd { margin: 4px 0 0; }
+.claims small { display: block; margin-top: 4px; }
+.claims code { font-size: 12px; overflow-wrap: anywhere; }
+.claims button { min-height: 44px; padding: 10px 16px; background: transparent; color: inherit; border: 1px solid #76716b; border-radius: 8px; cursor: pointer; margin-block: 8px; }
+.claims button:disabled { opacity: .5; cursor: not-allowed; }
+.claims button:focus-visible, .claims summary:focus-visible, .claims a:focus-visible { outline: 2px solid #e786b2; outline-offset: 4px; }
+.claims summary, .claims a { min-height: 44px; display: flex; align-items: center; cursor: pointer; }
+.claims pre { max-height: 280px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+@media (max-width: 480px) { .claims dl { grid-template-columns: minmax(0, 1fr); } }
+@media (forced-colors: active) { .claims button:focus-visible, .claims summary:focus-visible, .claims a:focus-visible { outline-color: Highlight; } }

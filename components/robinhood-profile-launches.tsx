@@ -94,13 +94,14 @@ function RobinhoodAccountLaunches({ account }: { account: string }) {
     {items.length ? <ul className={styles.list} aria-busy={loading}>
       {items.map((launch) => {
         const detail = details.get(launch.tokenAddress.toLowerCase());
+        const hasAsset = !launch.launchProjection || launch.launchProjection.primaryComponentId !== null;
         return <li key={launch.launchId}>
           <Link className={styles.row} href={`/token/${launch.tokenAddress}`} prefetch={false}>
             <RobinhoodCoinArtwork className={styles.artwork} imageUrl={detail?.imageUrl} loading={presentation.loading && !detail}
               fallbackImageUrl={isRobinhoodModuleLaunch(launch) ? MODULE_TOKEN_FALLBACK_IMAGE : undefined} />
-            <span className={styles.identity}><strong>{launch.name?.trim() || "Unnamed token"}</strong><small>{coinTicker(launch.symbol)}</small><small>{isRobinhoodModuleLaunch(launch) ? "Module" : "Custom"}</small></span>
+            <span className={styles.identity}><strong>{launch.name?.trim() || (launch.launchProjection ? "Unnamed contract" : "Unnamed token")}</strong>{hasAsset ? <small>{coinTicker(launch.symbol)}</small> : null}<small>{isRobinhoodModuleLaunch(launch) ? "Module" : "Custom"}</small></span>
             <span className={styles.metrics}>
-              {detail?.market?.marketCapUsd != null ? <><small>Market cap</small><AnimatedMarketCap metric={{ kind: "usd", value: detail.market.marketCapUsd }} replayKey={`profile:4663:${launch.tokenAddress.toLowerCase()}`} /></> : null}
+              {hasAsset && detail?.market?.marketCapUsd != null ? <><small>Market cap</small><AnimatedMarketCap metric={{ kind: "usd", value: detail.market.marketCapUsd }} replayKey={`profile:4663:${launch.tokenAddress.toLowerCase()}`} /></> : null}
               {launch.launchedAt ? <time dateTime={launch.launchedAt}>{coinAge(launch.launchedAt, now)}</time> : null}
             </span>
           </Link>

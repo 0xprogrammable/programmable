@@ -18,6 +18,7 @@ afterEach(() => {
   vi.doUnmock("../lib/custom-launch/v4-api-discovery");
   vi.doUnmock("../components/developer-api-keys");
   vi.doUnmock("../components/docs-shell");
+  vi.doUnmock("../lib/server/custom-launch/launch-contract-setup-v1");
   vi.resetModules();
 });
 
@@ -108,10 +109,14 @@ describe("active Robinhood agent setup and generated documentation", () => {
   it("passes the active setup from the server page to the client component", async () => {
     await activeDocs("4.1.0");
     vi.doMock("../components/developer-api-keys", () => ({ DeveloperApiKeys: () => null }));
+    // This test owns historical setup wiring; the generated setup has its own
+    // manifest-bound reader tests and must not perform a live server request here.
+    vi.doMock("../lib/server/custom-launch/launch-contract-setup-v1", () => ({ readLaunchContractSetupV1: async () => null }));
     const { default: Page } = await import("../app/developers/api-keys/page");
     const page = await Page({ searchParams: Promise.resolve({}) });
     expect(page.props.agentSetupText).toBe(buildProgrammableAgentSetupTextV1("4.1.0"));
     expect(page.props.initialSection).toBe("keys");
+    expect(page.props.launchContractSetup).toBeUndefined();
   });
 
   it("selects 4.1 install links and funding rules on the human guide while retaining the historical view", async () => {

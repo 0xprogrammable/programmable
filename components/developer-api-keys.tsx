@@ -26,6 +26,9 @@ import {
 
 import styles from "@/components/developer-api-keys.module.css";
 import { AGENT_KEY_SCHEMA, AGENT_SCOPES, buildAgentConnection, buildAgentInstructions } from "@/lib/agent-connection";
+import { DeveloperUniversalLaunchHistory } from "@/components/developer-universal-launch-history";
+import type { LaunchContractSetupV1 } from "@/lib/server/custom-launch/launch-contract-setup-v1";
+import type { UniversalLaunchWalletInputV1, UniversalLaunchWalletReviewV1 } from "@/lib/custom-launch/wallet-handoff-plan-v1";
 import { DeveloperLaunchHistory } from "@/components/developer-launch-history";
 import { BuilderIdeaPrompt, BuilderSetupSteps, type BuilderKind } from "@/components/module-contribution-entry";
 import {
@@ -115,6 +118,7 @@ type DeveloperApiKeysProps = Readonly<{
   hookBuilder?: boolean;
   initialSection?: ActiveSection;
   agentSetupText?: string;
+  launchContractSetup?: LaunchContractSetupV1;
   moduleAgentSetupText?: string;
 }>;
 type DeveloperApiKeysViewProps = Readonly<{
@@ -127,11 +131,13 @@ type DeveloperApiKeysViewProps = Readonly<{
   getIdentityToken: () => Promise<string | null>;
   initialSection: ActiveSection;
   agentSetupText?: string;
+  launchContractSetup?: LaunchContractSetupV1;
   moduleAgentSetupText?: string;
   openWallet: () => void;
   sendCustomLaunchWalletAction: (
     input: CustomLaunchWalletActionV1,
   ) => Promise<`0x${string}`>;
+  sendUniversalLaunchWalletAction?: (input: UniversalLaunchWalletInputV1) => Promise<UniversalLaunchWalletReviewV1 | `0x${string}`>;
   sendCustomLaunchWalletActionV4: (
     input: CustomLaunchWalletActionInputV4,
   ) => Promise<CustomLaunchWalletActionResultV4>;
@@ -849,6 +855,7 @@ export function DeveloperApiKeys({
   hookBuilder = false,
   initialSection = "keys",
   agentSetupText,
+  launchContractSetup,
   moduleAgentSetupText,
 }: DeveloperApiKeysProps) {
   const {
@@ -859,6 +866,7 @@ export function DeveloperApiKeys({
     openWallet,
     sendCustomLaunchWalletAction,
     sendCustomLaunchWalletActionV4,
+    sendUniversalLaunchWalletAction,
     signCustomLaunchFundingAuthorization,
     wallet,
   } = useWallet();
@@ -878,10 +886,12 @@ export function DeveloperApiKeys({
       moduleBuilder={moduleBuilder}
       hookBuilder={hookBuilder}
       agentSetupText={agentSetupText}
+      launchContractSetup={launchContractSetup}
       moduleAgentSetupText={moduleAgentSetupText}
       openWallet={openWallet}
       sendCustomLaunchWalletAction={sendCustomLaunchWalletAction}
       sendCustomLaunchWalletActionV4={sendCustomLaunchWalletActionV4}
+      sendUniversalLaunchWalletAction={sendUniversalLaunchWalletAction}
       signCustomLaunchFundingAuthorization={
         signCustomLaunchFundingAuthorization
       }
@@ -898,9 +908,11 @@ export function DeveloperApiKeysView({
   getAccessToken,
   getIdentityToken,
   initialSection,
+  launchContractSetup,
   openWallet,
   sendCustomLaunchWalletAction,
   sendCustomLaunchWalletActionV4,
+  sendUniversalLaunchWalletAction,
   signCustomLaunchFundingAuthorization,
 }: DeveloperApiKeysViewProps) {
   const builderKind: BuilderKind | null = moduleBuilder ? "module" : hookBuilder ? "hook" : null;
@@ -1296,6 +1308,7 @@ export function DeveloperApiKeysView({
     try {
       await copyToClipboard(buildAgentConnection(mutationResult.result.apiKeySecret, {
         scopes: mutationResult.result.apiKey.scopes, wallet: account ?? undefined,
+        ...(launchContractSetup ? { launchContract: launchContractSetup } : {}),
       }));
       setConnectionCopyState("copied");
       setStatusMessage("Connection copied with the API key and agent instructions.");
@@ -1307,7 +1320,7 @@ export function DeveloperApiKeysView({
 
   const copyAgentSetup = async (scopes?: readonly string[]) => {
     try {
-      await copyToClipboard(buildAgentInstructions({ scopes, wallet: account ?? undefined }));
+      await copyToClipboard([buildAgentInstructions({ scopes, wallet: account ?? undefined }), launchContractSetup?.text].filter(Boolean).join("\n\n"));
       setSetupCopyState("copied");
       setStatusMessage("Agent instructions copied. These instructions contain no API key.");
     } catch {
@@ -2236,6 +2249,9 @@ export function DeveloperApiKeysView({
               onOpenLaunch={openRobinhoodLaunchHistory}
             />
           ) : (
+            <>
+            {account && sendUniversalLaunchWalletAction ? <DeveloperUniversalLaunchHistory key={account.toLowerCase()} account={account} initialLaunchId={initialLaunchId}
+              getAccessToken={getAccessToken} getIdentityToken={getIdentityToken} sendWallet={sendUniversalLaunchWalletAction} /> : null}
             <DeveloperLaunchHistory
               account={account}
               initialLaunchId={initialLaunchId}
@@ -2248,10 +2264,16 @@ export function DeveloperApiKeysView({
                 signCustomLaunchFundingAuthorization
               }
             />
+            </>
           )}
         </>
       )}
 
+      {launchContractSetup ? <details className={styles.connectionOptions} data-manifest-digest={launchContractSetup.manifestDigest}>
+        <summary>Custom Launch Plan instructions</summary>
+        <div className={styles.connectionOptionsBody}><p>Manifest <code style={{ overflowWrap: "anywhere" }}>{launchContractSetup.manifestDigest}</code></p>
+          <pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", maxWidth: "100%" }}>{launchContractSetup.text}</pre></div>
+      </details> : null}
       <nav className={styles.resourceLinks} aria-label="Developer resources">
         {!builderKind && activeKey ? <button className={styles.guideAction} type="button" onClick={() => void copyAgentSetup(activeKey.scopes)}>
           {setupCopyState === "copied" ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />}

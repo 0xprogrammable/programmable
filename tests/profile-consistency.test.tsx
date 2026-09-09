@@ -52,7 +52,10 @@ describe("shared wallet profile", () => {
     expect(html).toContain('href="/profile">My profile</a>');
     expect(html).toContain("another wallet");
     expect(html).not.toContain("Edit profile");
-    expect(html).not.toContain("Claim rewards");
+    if (viewChainId === 4663) expect(html).toContain("Claim rewards");
+    else expect(html).not.toContain("Claim rewards");
+    expect(html).not.toContain("Review claim");
+    expect(html).not.toContain("Confirm claim in wallet");
   });
 
   it("keeps username, avatar and banner under one wallet identity", () => {

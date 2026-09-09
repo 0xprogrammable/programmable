@@ -1,5 +1,6 @@
 import Ajv2020 from "ajv/dist/2020";
 import addFormats from "ajv-formats";
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ snapshot: vi.fn() }));
@@ -18,10 +19,15 @@ import { readRobinhoodLaunches } from "../lib/server/robinhood-index/read";
 import { parseEthereumExploreQuery } from "../lib/ethereum-explore";
 import { parseRobinhoodExploreQuery } from "../lib/robinhood-explore-filters";
 import { customGraphExploreEntry } from "./launch-stamp-surface-fixture";
+import { LAUNCH_PROJECTION_FEED_V1, projectionToRobinhoodLaunch } from "../lib/custom-launch/launch-projection-v1";
+import { projectionFixture } from "./fixtures/universal-launch-v1";
+
+const launchContract = JSON.parse(readFileSync(new URL("../public/openapi/custom-launch-v4.2.json", import.meta.url), "utf8"));
 
 function validator(name: "ExploreIndexResetError" | "EthereumExplorePage" | "RobinhoodExplorePage") {
   const ajv = new Ajv2020({ allErrors: true, strict: false });
   addFormats(ajv);
+  ajv.addSchema(launchContract, "https://programmable.market/openapi/custom-launch-v4.2.json");
   return ajv.compile({
     $schema: programmablePublicOpenApi.jsonSchemaDialect,
     ...programmablePublicOpenApi.components.schemas[name],
@@ -227,6 +233,35 @@ describe("public Explore OpenAPI contract", () => {
       expect(validate({ ...value, chainId: 1 })).toBe(false);
       expect(validate({ ...value, status: "partial" })).toBe(false);
     }
+  });
+
+  it.each([
+    ["custom_launch_plan_v1", null],
+    ["custom_launch_plan_v1", "settlement"],
+    ["multi_role_v2", "settlement"],
+  ] as const)("validates saved %s projections with primary component %s", async (sourceVersion, primaryComponentId) => {
+    const validate = validator("RobinhoodExplorePage");
+    const projection = { ...projectionFixture(), sourceVersion, primaryComponentId };
+    const row = projectionToRobinhoodLaunch(projection, projection.finalizedAt);
+    const updatedAt = new Date().toISOString();
+    mocks.snapshot.mockResolvedValue({ snapshot: {
+      version: 1, chainId: 4663, routerAddress: row.tokenAddress, binding: row.blockHash,
+      startBlock: "1", cursor: { number: row.blockNumber, hash: row.blockHash },
+      finalizedBlock: row.blockNumber, updatedAt, items: [],
+      launchProjections: { version: 1, sourceUrl: LAUNCH_PROJECTION_FEED_V1, updatedAt, nextCursor: null, items: [row] },
+    } });
+    const value = await readRobinhoodLaunches();
+    expect(value.items).toEqual([row]);
+    expect(value.items[0].primaryAssetAddress).toBe(primaryComponentId ? row.tokenAddress : null);
+    expect(value.items[0].poolId).toBeNull();
+    expect(validate(JSON.parse(JSON.stringify(value))), JSON.stringify(validate.errors)).toBe(true);
+    expect(validate({ ...value, items: [{ ...row, launchProjection: {
+      ...projection, distribution: { ...projection.distribution, uniswapLabsRouting: "guaranteed" },
+    } }] })).toBe(false);
+    expect(validate({ ...value, items: [{ ...row, primaryAssetAddress: "invalid" }] })).toBe(false);
+    expect(validate({ ...value, sourceEvidence: { ...value.sourceEvidence, launchProjections: {
+      ...value.sourceEvidence!.launchProjections, sourceUrl: "https://untrusted.invalid/feed",
+    } } })).toBe(false);
   });
 
   it("keeps Custom Launch and API-key contracts intact", () => {

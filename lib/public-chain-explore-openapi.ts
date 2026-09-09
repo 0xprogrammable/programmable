@@ -41,11 +41,15 @@ const ethereumItem = object({ launchId: text, tokenAddress: address, hookAddress
   category: { enum: ["classic", "custom"] }, provenance: ethereumProvenance },
 ["launchId", "tokenAddress", "hookAddress", "launchedAt", "name", "symbol", "decimals", "category", "provenance"]);
 const robinhoodItem = object({
-  routerAddress: nullable(address), launchId: text, tokenAddress: address, hookAddress: nullable(address),
+  routerAddress: nullable(address), launchId: text,
+  tokenAddress: { ...address, description: "Address used by the Coin route. For a projected launch without a primary asset, this identifies the first declared component and does not imply an ERC-20 role." },
+  hookAddress: nullable(address),
   creator: address, poolManager: nullable(address), poolId: nullable(hash), stampHash: nullable(hash),
   transactionHash: hash, blockNumber: block, blockHash: hash, logIndex: integer,
   launchedAt: nullable(timestamp), name: nullable(text), symbol: nullable(text), decimals: nullable({ type: "integer" }),
-  sourceKind: { enum: ["module-native-v1", "module-native-v2", "module-engine-v1"] },
+  sourceKind: { enum: ["module-native-v1", "module-native-v2", "module-engine-v1", "multi-role-v2", "custom-launch-plan-v1"] },
+  primaryAssetAddress: nullable(address),
+  launchProjection: { $ref: "https://programmable.market/openapi/custom-launch-v4.2.json#/components/schemas/LaunchProjectionV1" },
   sourceAddress: address, sourceReleaseDigest: hash, recipeHash: hash, runtime: address,
   launchKey: hash, verificationDigest: hash, modulePackageIds: array(hash), moduleFamilyIds: array(hash),
   economicsPolicyId: text, protocolFeeBps: { const: 10 }, authorPoolFeeBps: { enum: [0, 20] },
@@ -62,6 +66,10 @@ const robinhoodSource = object({ source: { const: "canonical-launch-stamp-router
   binding: text, startBlock: block, cursor: checkpoint, finalizedBlock: block, updatedAt: timestamp });
 const moduleSource = object({ source: { enum: ["module-native-v1", "module-native-v2", "module-engine-v1"] },
   sourceAddress: address, releaseDigest: hash, startBlock: block, cursor: checkpoint, finalizedBlock: block, updatedAt: timestamp });
+const launchProjectionSource = nullable(object({
+  sourceUrl: { const: "https://api.programmable.market/v4/chains/4663/finalized-launch-projections" },
+  updatedAt: timestamp, nextCursor: nullable(text),
+}));
 
 export const chainExploreSchemas = {
   EthereumExplorePage: object({ chainId: { const: 1 }, status: { enum: ["ready", "partial", "stale", "unavailable"] },
@@ -70,7 +78,7 @@ export const chainExploreSchemas = {
     items: { ...array(ethereumItem), maxItems: 50 }, presentations: { ...array(presentation({ type: "null" })), maxItems: 50 }, page }),
   RobinhoodExplorePage: object({ chainId: { const: 4663 }, status: { enum: ["ready", "syncing", "stale", "unavailable"] },
     updatedAt: nullable(timestamp), items: { ...array(robinhoodItem), maxItems: 50 }, page,
-    sourceEvidence: nullable(object({ router: robinhoodSource, modules: array(moduleSource) })),
+    sourceEvidence: nullable(object({ router: robinhoodSource, modules: array(moduleSource), launchProjections: launchProjectionSource })),
     presentations: { ...array(presentation(market)), maxItems: 50 } }),
   ChainExploreInvalidQuery: object({ error: { const: "invalid_query" } }),
   EthereumExploreUnavailable: object({ error: { const: "Launches are temporarily unavailable" }, status: { const: "unavailable" } }),
@@ -106,7 +114,7 @@ export const chainExplorePaths = {
   } },
   "/api/explore/robinhood": { get: {
     operationId: "listRobinhoodExploreLaunches", summary: "Read Robinhood Chain launch pages",
-    description: "Reads the saved verified Custom Router and exact Module Mode release indexes. ready means each saved source has reached its finalized cursor; syncing means an admitted source is still catching up; stale means an observation is over five minutes old; unavailable means the snapshot cannot be read. updatedAt is the oldest source observation. Optional market observations drive highest/lowest sorting; missing values sort after known values. The verified main token retains the first slot on every page, independently of the query and mode. Public reads do not fall through to RPC indexing. Unknown or repeated query parameters are rejected; no chain override is accepted. This presentation feed is not a complete archive or a publication authority.",
+    description: "Reads the saved verified Custom Router, exact Module Mode release indexes and finalized launch projections. Projected launches may have no primary asset or market; their original source, assurance and provider states remain separate. ready means each saved source has reached its finalized cursor; syncing means an admitted source is still catching up; stale means an observation is over five minutes old; unavailable means the snapshot cannot be read. updatedAt is the oldest source observation. Optional market observations drive highest/lowest sorting; missing values sort after known values. The verified main token retains the first slot on every page, independently of the query and mode. Public reads do not fall through to RPC indexing. Unknown or repeated query parameters are rejected; no chain override is accepted. This presentation feed is not a complete archive or a publication authority.",
     tags: ["Discovery"], security: [], parameters: parameters("robinhood"), responses: {
       "200": { ...response(statusPage("RobinhoodExplorePage", ["ready", "syncing", "stale"]), "Verified saved launch identities with optional presentations and markets."),
         headers: headers(["ready", "syncing", "stale"], ["public, max-age=0, s-maxage=15, stale-while-revalidate=30", "no-store"]) },

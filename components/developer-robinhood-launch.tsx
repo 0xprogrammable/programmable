@@ -8,6 +8,7 @@ import {
   type FormEvent,
 } from "react";
 import { Check, FileJson, RefreshCw, Trash2 } from "lucide-react";
+import { fileSha256V2, canonicalBrowserSha256V2 } from "@/lib/custom-launch/browser-authority-v2";
 
 import sharedStyles from "@/components/developer-api-keys.module.css";
 import styles from "@/components/developer-robinhood-launch.module.css";
@@ -44,6 +45,8 @@ type PackedLaunch = Readonly<{
 }>;
 
 export type RobinhoodPreflightProof = Readonly<{
+  lane?: "multi_role_v2" | "custom_launch_plan_v1";
+  findings?: readonly unknown[];
   deployable: boolean;
   disposition: string;
   hardBlockFindingCodes: readonly string[];
@@ -120,6 +123,12 @@ function parsePreflight(
 }
 
 function parseCreated(value: unknown): RobinhoodLaunchCreated | null {
+  if (isRecord(value) && ["programmable.multi-role-custom-launch-resource.v2", "programmable.custom-launch-plan-resource.v1"].includes(String(value.schemaVersion))) {
+    const id = value.schemaVersion === "programmable.custom-launch-plan-resource.v1" ? value.planId : value.launchId;
+    if (typeof id !== "string" || !launchIdPattern.test(id) || typeof value.requestId !== "string" || !launchIdPattern.test(value.requestId)
+      || typeof value.status !== "string") return null;
+    return { launchId: id, requestId: value.requestId, status: value.status };
+  }
   if (
     !isRecord(value)
     || value.schemaVersion !== "programmable.custom-launch.v4"
@@ -244,10 +253,15 @@ export async function preflightRobinhoodLaunch(
     );
   }
 
+  const packed = (() => { try { return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(requestBytes)) as unknown; } catch { return null; } })();
+  const lane = isRecord(packed) && packed.schemaVersion === "programmable.custom-launch-plan.v1" ? "custom_launch_plan_v1" as const
+    : isRecord(packed) && packed.schemaVersion === "programmable.multi-role-custom-launch-create-request.v2" ? "multi_role_v2" as const : null;
+  const preflightUrl = lane === "custom_launch_plan_v1" ? "https://api.programmable.market/v4/chains/4663/custom-launch-plans:preflight"
+    : lane === "multi_role_v2" ? "https://api.programmable.market/v4/chains/4663/multi-role-custom-launches/preflight" : ROBINHOOD_PREFLIGHT_URL;
   let response: Response;
   try {
     response = await fetcher(
-      ROBINHOOD_PREFLIGHT_URL,
+      preflightUrl,
       directRequestInit(apiKey, requestBytes, signal),
     );
   } catch (error) {
@@ -265,6 +279,26 @@ export async function preflightRobinhoodLaunch(
       body,
       "Robinhood preflight is unavailable or rejected this request.",
     ));
+  }
+  if (lane && isRecord(body)) {
+    const rawRequestSha256 = fileSha256V2(new Uint8Array(requestBytes));
+    if (lane === "custom_launch_plan_v1" && body.schemaVersion === "programmable.custom-launch-plan-preflight.v1"
+      && isRecord(body.launchEligibility) && Array.isArray(body.findings) && Array.isArray(body.launchEligibility.hardBlockers)
+      && isRecord(packed) && body.manifestDigest === packed.manifestDigest
+      && body.planHash === canonicalBrowserSha256V2("programmable.custom-launch-plan.v1", packed)) {
+      const codes = (values: unknown[]) => values.flatMap(value => isRecord(value) && typeof value.code === "string" ? [value.code] : []);
+      return { lane, deployable: body.launchEligibility.status === "ready" && body.launchEligibility.hardBlockers.length === 0,
+        disposition: String(body.launchEligibility.status), hardBlockFindingCodes: codes(body.launchEligibility.hardBlockers),
+        needsEvidenceFindingCodes: [], warningFindingCodes: [], findings: body.findings, rawRequestSha256, requestBytes, requestHash: body.planHash as string };
+    }
+    if (lane === "multi_role_v2" && body.schemaVersion === "programmable.multi-role-custom-launch-preflight.v2"
+      && isRecord(body.source) && typeof body.source.disposition === "string" && Array.isArray(body.source.findingCodes)
+      && body.permitSigned === false && body.walletTransactionProduced === false && body.transactionBroadcast === false) {
+      const codes = stringArray(body.source.findingCodes); if (!codes) throw new Error("Invalid MultiRole findings.");
+      return { lane, deployable: body.source.disposition === "source_supported", disposition: body.source.disposition,
+        hardBlockFindingCodes: [], needsEvidenceFindingCodes: codes, warningFindingCodes: [], rawRequestSha256, requestBytes, requestHash: rawRequestSha256 };
+    }
+    throw new Error("The launch preflight response does not match the packed request.");
   }
   const proof = parsePreflight(body, requestBytes);
   if (!proof) {
@@ -300,7 +334,9 @@ export async function createRobinhoodLaunch(
   headers.set("Idempotency-Key", idempotencyKey);
   let response: Response;
   try {
-    response = await fetcher(ROBINHOOD_CREATE_URL, {
+    const createUrl = proof.lane === "custom_launch_plan_v1" ? "https://api.programmable.market/v4/chains/4663/custom-launch-plans"
+      : proof.lane === "multi_role_v2" ? "https://api.programmable.market/v4/chains/4663/multi-role-custom-launches" : ROBINHOOD_CREATE_URL;
+    response = await fetcher(createUrl, {
       ...directRequestInit(apiKey, proof.requestBytes, signal),
       headers,
     });
@@ -626,7 +662,7 @@ export function DeveloperRobinhoodLaunch({
               <strong>
                 {proof.deployable
                   ? "Ready to create a request"
-                  : "This launch needs changes"}
+                  : proof.disposition === "analysis_pending" ? "Analysis is still pending" : "This launch needs changes"}
               </strong>
               <span>{proof.disposition.replaceAll("_", " ")}</span>
             </div>
@@ -642,6 +678,7 @@ export function DeveloperRobinhoodLaunch({
                 <dd><code>{proof.requestHash}</code></dd>
               </div>
             </dl>
+            {proof.findings?.length ? <pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{JSON.stringify(proof.findings, null, 2)}</pre> : null}
             </details>
             {findingCodes.length > 0 ? (
               <p>Findings: {findingCodes.join(", ")}</p>

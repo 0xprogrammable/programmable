@@ -2,6 +2,7 @@ import type { RobinhoodLaunch, RobinhoodModuleLaunch, RobinhoodLaunchList, Robin
 import { isRobinhoodModuleLaunch, isRobinhoodModuleSourceKind } from "@/lib/robinhood-launches";
 import { DEFAULT_EXPLORE_FILTERS, type RobinhoodExploreFilters } from "@/lib/robinhood-explore-filters";
 import { isPinnedRobinhoodToken, isVisibleRobinhoodToken } from "@/lib/robinhood-explore-policy";
+import { isRobinhoodProjectedLaunch } from "@/lib/custom-launch/launch-projection-v1";
 
 export type Checkpoint = { number: string; hash: string };
 export type RobinhoodSnapshot = {
@@ -19,6 +20,15 @@ export type RobinhoodSnapshot = {
   moduleMode?: ModuleModeSnapshot | null;
   /** Additional exact releases. The original lane keeps its stored identity and checkpoint. */
   moduleModeSources?: ModuleModeSnapshot[];
+  launchProjections?: LaunchProjectionSnapshot | null;
+};
+
+export type LaunchProjectionSnapshot = {
+  version: 1;
+  sourceUrl: string;
+  updatedAt: string;
+  nextCursor: string | null;
+  items: RobinhoodLaunch[];
 };
 
 export type ModuleModeSnapshot = {
@@ -108,6 +118,17 @@ export function parseSnapshot(value: unknown): RobinhoodSnapshot {
       tokens.add(row.tokenAddress.toLowerCase()); if (pool) pools.add(pool);
     }
   }
+  if (value.launchProjections != null) {
+    const lane = value.launchProjections;
+    if (!isObject(lane) || lane.version !== 1
+      || lane.sourceUrl !== "https://api.programmable.market/v4/chains/4663/finalized-launch-projections"
+      || !date(lane.updatedAt) || !(lane.nextCursor === null || typeof lane.nextCursor === "string" && lane.nextCursor.length <= 4096)
+      || !Array.isArray(lane.items) || lane.items.length > 10000 || !lane.items.every(isRobinhoodProjectedLaunch)) {
+      throw new Error("Invalid launch projection index");
+    }
+    const identities = lane.items.map(row => `${row.sourceKind}:${row.launchId}`);
+    if (new Set(identities).size !== identities.length) throw new Error("Duplicate launch projection identity");
+  }
   return value as RobinhoodSnapshot;
 }
 
@@ -144,7 +165,7 @@ export function parseModuleModeSnapshot(value: unknown): ModuleModeSnapshot {
 }
 
 export function snapshotLaunches(snapshot: RobinhoodSnapshot | null): readonly RobinhoodLaunch[] {
-  return [...(snapshot?.items ?? []), ...moduleModeSnapshots(snapshot).flatMap(source => source.items)];
+  return [...(snapshot?.items ?? []), ...moduleModeSnapshots(snapshot).flatMap(source => source.items), ...(snapshot?.launchProjections?.items ?? [])];
 }
 export function moduleModeSnapshots(snapshot: RobinhoodSnapshot | null): readonly ModuleModeSnapshot[] {
   return [...(snapshot?.moduleMode ? [snapshot.moduleMode] : []), ...(snapshot?.moduleModeSources ?? [])];
@@ -153,11 +174,13 @@ function snapshotStatus(snapshot: RobinhoodSnapshot | null, now: number): Robinh
   if (!snapshot) return "unavailable";
   const sources = [snapshot, ...moduleModeSnapshots(snapshot)];
   if (sources.some(source => now - Date.parse(source.updatedAt) > 300_000)) return "stale";
+  if (snapshot.launchProjections && now - Date.parse(snapshot.launchProjections.updatedAt) > 300_000) return "stale";
+  if (snapshot.launchProjections?.nextCursor) return "syncing";
   return sources.some(source => source.pending || source.cursor?.number !== source.finalizedBlock) ? "syncing" : "ready";
 }
 function snapshotUpdatedAt(snapshot: RobinhoodSnapshot | null): string | null {
   if (!snapshot) return null;
-  return moduleModeSnapshots(snapshot).reduce((oldest, source) =>
+  return [...moduleModeSnapshots(snapshot), ...(snapshot.launchProjections ? [snapshot.launchProjections] : [])].reduce((oldest, source) =>
     Date.parse(source.updatedAt) < Date.parse(oldest) ? source.updatedAt : oldest, snapshot.updatedAt);
 }
 
@@ -170,7 +193,8 @@ function asPending(value: unknown) {
 
 export function launchList(snapshot: RobinhoodSnapshot | null, page = 1, query = "", now = Date.now(), filters: RobinhoodExploreFilters = DEFAULT_EXPLORE_FILTERS, marketCaps: ReadonlyMap<string, number> = new Map(), size: 10 | 50 = 50): RobinhoodLaunchList {
   const q = query.trim().toLowerCase();
-  const visible = snapshotLaunches(snapshot).filter((row) => isVisibleRobinhoodToken(row.tokenAddress));
+  const visible = snapshotLaunches(snapshot).filter((row) => isVisibleRobinhoodToken(row.tokenAddress)
+    && row.launchProjection?.publication?.visibility !== "unlisted");
   const pinned = visible.find((row) => isPinnedRobinhoodToken(row.tokenAddress));
   const cap = (address: string) => {
     const value = marketCaps.get(address.toLowerCase());
@@ -178,7 +202,7 @@ export function launchList(snapshot: RobinhoodSnapshot | null, page = 1, query =
   };
   const items = visible.filter((row) => row !== pinned
     && (filters.mode === "module" ? isRobinhoodModuleSourceKind(row.sourceKind)
-      : filters.mode === "custom" ? row.sourceKind === undefined : true) && (!q
+      : filters.mode === "custom" ? row.sourceKind === undefined || isRobinhoodProjectedLaunch(row) : true) && (!q
     || [row.name, row.symbol, row.tokenAddress, row.hookAddress].some((value) => value?.toLowerCase().includes(q))))
     .toSorted((a, b) => {
     if (filters.sort === "highest" || filters.sort === "lowest") {
@@ -213,7 +237,7 @@ export function profileLaunchList(snapshot: RobinhoodSnapshot | null, account: s
   const normalizedAccount = account.toLowerCase();
   if (!ADDRESS.test(normalizedAccount)) throw new Error("Invalid Robinhood profile account");
   const items = snapshotLaunches(snapshot)
-    .filter((row) => row.creator.toLowerCase() === normalizedAccount)
+    .filter((row) => row.creator.toLowerCase() === normalizedAccount && row.launchProjection?.publication?.visibility !== "unlisted")
     .toSorted((a, b) => {
       const newest = BigInt(a.blockNumber) === BigInt(b.blockNumber)
         ? b.logIndex - a.logIndex : BigInt(a.blockNumber) > BigInt(b.blockNumber) ? -1 : 1;

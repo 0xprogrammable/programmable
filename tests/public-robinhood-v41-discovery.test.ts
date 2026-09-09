@@ -25,11 +25,11 @@ describe("profile selected public Robinhood API contract", () => {
     expect(robinhoodV4PublicPolicyDescription("4.0.0", legacy)).toBe(legacy);
   });
 
-  it("preserves the historical launch profile in the complete website OpenAPI 1.11 snapshot", async () => {
+  it("preserves the historical launch profile in the complete website OpenAPI 1.12 snapshot", async () => {
     const actual = await document("4.0.0");
-    // Website 1.11 adds chain Explore discovery; historical launch rules and these pending inputs are unchanged.
-    // The original 1.10 snapshot remains retained in public-openapi-v40-before-discovery.sha256.
-    const expectedDigest = readFileSync(new URL("./fixtures/public-openapi-v40-website-v111.sha256", import.meta.url), "utf8").trim();
+    // Website 1.12 documents universal Explore projections; historical launch rules and these pending inputs are unchanged.
+    // The original 1.10 and 1.11 snapshot digests remain retained in their separate fixture files.
+    const expectedDigest = readFileSync(new URL("./fixtures/public-openapi-v40-website-v112.sha256", import.meta.url), "utf8").trim();
     expect(createHash("sha256").update(JSON.stringify(actual)).digest("hex")).toBe(expectedDigest);
   });
 

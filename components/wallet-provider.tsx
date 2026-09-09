@@ -1,5 +1,8 @@
 "use client";
 
+import type { LaunchPlanTradeWalletInputV1, LaunchPlanTradeWalletReviewV1 } from "@/lib/custom-launch/routed-trade-wallet-v1";
+import type { LaunchClaimWalletInputV1, LaunchClaimWalletReviewV1 } from "@/lib/custom-launch/claim-handoff-v1";
+import type { UniversalLaunchWalletInputV1, UniversalLaunchWalletReviewV1 } from "@/lib/custom-launch/wallet-handoff-plan-v1";
 import Image from "next/image";
 import Link from "next/link";
 import { AdminDashboardLink } from "@/components/admin-dashboard-link";
@@ -231,6 +234,9 @@ type WalletContextValue = {
   sendCustomLaunchWalletAction: (
     input: CustomLaunchWalletActionV1,
   ) => Promise<Hex>;
+  sendLaunchPlanTradeWalletAction: (input: LaunchPlanTradeWalletInputV1) => Promise<LaunchPlanTradeWalletReviewV1 | Hex>;
+  sendLaunchClaimWalletAction: (input: LaunchClaimWalletInputV1) => Promise<LaunchClaimWalletReviewV1 | Hex>;
+  sendUniversalLaunchWalletAction: (input: UniversalLaunchWalletInputV1) => Promise<UniversalLaunchWalletReviewV1 | Hex>;
   sendCustomLaunchWalletActionV4: (
     input: CustomLaunchWalletActionInputV4,
   ) => Promise<CustomLaunchWalletActionResultV4>;
@@ -1104,6 +1110,9 @@ function DeferredWalletProvider({
       sendCustomLaunchWalletAction: async () => {
         throw new Error("Wallet sign-in is still loading");
       },
+      sendLaunchPlanTradeWalletAction: async () => { throw new Error("Connect your trading wallet before continuing"); },
+      sendLaunchClaimWalletAction: async () => { throw new Error("Connect your controller wallet before continuing"); },
+      sendUniversalLaunchWalletAction: async () => { throw new Error("Connect your controller wallet before continuing"); },
       sendCustomLaunchWalletActionV4: async () => {
         throw new Error("Wallet sign-in is still loading");
       },
@@ -2682,6 +2691,87 @@ function PrivyWalletBridge({
     return sendBrowserWalletAction(checked);
   }, [sendBrowserWalletAction, wallet]);
 
+  const sendLaunchPlanTradeWalletAction = useCallback(async (input: LaunchPlanTradeWalletInputV1) => {
+    if (!connectedWallet || !wallet || !user?.id) throw new Error("Connect your trading wallet before continuing");
+    const account = wallet.account; const sessionSubject = user.id;
+    const assertCurrentSession = () => {
+      const current = walletRequestSessionRef.current;
+      if (!current.authenticated || current.privyUserId !== sessionSubject || current.account?.toLowerCase() !== account.toLowerCase()) throw new Error("The wallet session changed");
+    };
+    if (wallet.chainId !== robinhoodChainHex) { await connectedWallet.switchChain(robinhoodChain.id); assertCurrentSession(); }
+    const provider = await connectedWallet.getEthereumProvider();
+    const { prepareLaunchPlanTradeWalletV1 } = await import("@/lib/custom-launch/routed-trade-wallet-v1");
+    const review = await prepareLaunchPlanTradeWalletV1(provider, account, input); assertCurrentSession();
+    if (input.action === "review") return review;
+    if (!input.reviewed || input.reviewed.binding !== review.binding || BigInt(review.maxGasCostWei) > BigInt(input.reviewed.maxGasCostWei)) throw new Error("The exact trade or gas cost changed. Review it again.");
+    return runWithBrowserWalletRequestLock({ sessionSubject, account, chainId: "4663",
+      requestSubject: JSON.stringify(["launch-plan-trade-wallet-v1", review.binding]), assertCurrentSession,
+      execute: async () => {
+        const fresh = await prepareLaunchPlanTradeWalletV1(provider, account, input); assertCurrentSession();
+        if (fresh.binding !== review.binding || BigInt(fresh.maxGasCostWei) > BigInt(review.maxGasCostWei)) throw new Error("The exact trade changed. Refresh the review.");
+        return parseSubmittedTransactionHash(await provider.request({ method: "eth_sendTransaction", params: [fresh.transaction] }));
+      } });
+  }, [connectedWallet, user, wallet]);
+
+  const sendLaunchClaimWalletAction = useCallback(async (input: LaunchClaimWalletInputV1) => {
+    if (!connectedWallet || !wallet || !user?.id) throw new Error("Connect the claim controller wallet before continuing");
+    const controller = wallet.account; const sessionSubject = user.id;
+    const assertCurrentSession = () => {
+      const current = walletRequestSessionRef.current;
+      if (!current.authenticated || current.privyUserId !== sessionSubject || current.account?.toLowerCase() !== controller.toLowerCase()) throw new Error("The wallet session changed");
+    };
+    if (wallet.chainId !== robinhoodChainHex) { await connectedWallet.switchChain(robinhoodChain.id); assertCurrentSession(); }
+    const provider = await connectedWallet.getEthereumProvider();
+    const { prepareLaunchClaimWalletV1 } = await import("@/lib/custom-launch/claim-handoff-v1");
+    const review = await prepareLaunchClaimWalletV1(provider, controller, input);
+    assertCurrentSession();
+    if (input.action === "review") return review;
+    if (!input.reviewed || review.binding !== input.reviewed.binding || BigInt(review.maxGasCostWei) > BigInt(input.reviewed.maxGasCostWei)) throw new Error("The claim or gas estimate changed. Review it again.");
+    return runWithBrowserWalletRequestLock({ sessionSubject, account: controller, chainId: "4663",
+      requestSubject: JSON.stringify(["launch-claim-wallet-v1", review.binding]), assertCurrentSession,
+      execute: async () => {
+        const fresh = await prepareLaunchClaimWalletV1(provider, controller, input); assertCurrentSession();
+        if (fresh.binding !== review.binding || BigInt(fresh.maxGasCostWei) > BigInt(review.maxGasCostWei)) throw new Error("The claim changed. Refresh the exact wallet review.");
+        return parseSubmittedTransactionHash(await provider.request({ method: "eth_sendTransaction", params: [fresh.transaction] }));
+      } });
+  }, [connectedWallet, user, wallet]);
+
+  const sendUniversalLaunchWalletAction = useCallback(async (input: UniversalLaunchWalletInputV1) => {
+    if (!connectedWallet || !wallet || !user?.id) throw new Error("Connect your controller wallet before continuing");
+    const sessionSubject = user.id;
+    const controller = wallet.account;
+    const assertCurrentSession = () => {
+      const current = walletRequestSessionRef.current;
+      if (!current.authenticated || current.privyUserId !== sessionSubject || current.account?.toLowerCase() !== controller.toLowerCase()) {
+        throw new Error("The wallet session changed. Refresh the wallet review.");
+      }
+    };
+    if (wallet.chainId !== robinhoodChainHex) {
+      await connectedWallet.switchChain(robinhoodChain.id);
+      assertCurrentSession();
+    }
+    const provider = await connectedWallet.getEthereumProvider();
+    const { prepareUniversalLaunchWalletV1 } = await import("@/lib/custom-launch/wallet-handoff-plan-v1");
+    const review = await prepareUniversalLaunchWalletV1(provider, controller, input);
+    assertCurrentSession();
+    if (input.action === "review") return review;
+    if (!input.reviewed || input.reviewed.binding !== review.binding
+      || JSON.stringify(input.reviewed.transaction) !== JSON.stringify(review.transaction)
+      || BigInt(review.maxGasCostWei) > BigInt(input.reviewed.maxGasCostWei)) {
+      throw new Error("The transaction or gas estimate changed. Review the current cost before sending.");
+    }
+    return runWithBrowserWalletRequestLock({ sessionSubject, account: controller, chainId: "4663",
+      requestSubject: JSON.stringify(["custom-launch-plan-wallet-v1", review.binding]), assertCurrentSession,
+      execute: async () => {
+        const fresh = await prepareUniversalLaunchWalletV1(provider, controller, input);
+        assertCurrentSession();
+        if (fresh.binding !== review.binding || JSON.stringify(fresh.transaction) !== JSON.stringify(review.transaction)
+          || BigInt(fresh.maxGasCostWei) > BigInt(review.maxGasCostWei)) throw new Error("The wallet review changed. Refresh before sending.");
+        return parseSubmittedTransactionHash(await provider.request({ method: "eth_sendTransaction", params: [fresh.transaction] }));
+      },
+    });
+  }, [connectedWallet, user, wallet]);
+
   const sendCustomLaunchWalletActionV4 = useCallback(async (
     input: CustomLaunchWalletActionInputV4,
   ) => {
@@ -2987,6 +3077,9 @@ function PrivyWalletBridge({
       sendBrowserWalletAction,
       sendCustomLaunchWalletAction,
       sendCustomLaunchWalletActionV4,
+      sendUniversalLaunchWalletAction,
+      sendLaunchPlanTradeWalletAction,
+      sendLaunchClaimWalletAction,
       signCustomLaunchFundingAuthorization,
       sendTransaction,
       sendPredictionV2Transaction,
@@ -3022,6 +3115,9 @@ function PrivyWalletBridge({
       sendBrowserWalletAction,
       sendCustomLaunchWalletAction,
       sendCustomLaunchWalletActionV4,
+      sendUniversalLaunchWalletAction,
+      sendLaunchPlanTradeWalletAction,
+      sendLaunchClaimWalletAction,
       signCustomLaunchFundingAuthorization,
       sendPredictionV2Transaction,
       sendModuleModeTransaction,
@@ -3144,6 +3240,9 @@ function UnconfiguredWalletProvider({ children }: { children: ReactNode }) {
       sendCustomLaunchWalletAction: async () => {
         throw new Error("Wallet sign-in is unavailable");
       },
+      sendLaunchPlanTradeWalletAction: async () => { throw new Error("Connect your trading wallet before continuing"); },
+      sendLaunchClaimWalletAction: async () => { throw new Error("Connect your controller wallet before continuing"); },
+      sendUniversalLaunchWalletAction: async () => { throw new Error("Connect your controller wallet before continuing"); },
       sendCustomLaunchWalletActionV4: async () => {
         throw new Error("Wallet sign-in is unavailable");
       },

@@ -7,6 +7,8 @@ import { AnimatedMarketCap } from "@/components/animated-market-cap";
 import { MODULE_TOKEN_FALLBACK_IMAGE, RobinhoodCoinArtwork } from "@/components/robinhood-coin-artwork";
 import { RobinhoodProjectLinks } from "@/components/robinhood-project-links";
 import { TokenLaunchModules } from "@/components/token-launch-modules";
+import { LaunchProjectionDetails } from "@/components/launch-projection-details";
+import { LaunchProjectionTrade } from "@/components/launch-projection-trade";
 import { useRobinhoodPresentation } from "@/components/use-robinhood-presentation";
 import { isRobinhoodModuleLaunch, robinhoodModuleManageHref, type RobinhoodLaunch } from "@/lib/robinhood-launches";
 import { coinDollars, coinTicker } from "@/lib/robinhood-presentation";
@@ -22,7 +24,8 @@ export function RobinhoodTokenView({ address, token, status }: {
   const presentation = useRobinhoodPresentation(`token=${encodeURIComponent(address)}`, token !== null);
   const details = presentation.items.find((item) => item.tokenAddress.toLowerCase() === address.toLowerCase());
   const market = details?.market;
-  const name = token?.name?.trim() || "Unnamed token";
+  const hasAsset = !token?.launchProjection || token.launchProjection.primaryComponentId !== null;
+  const name = token?.name?.trim() || (token?.launchProjection ? "Unnamed contract" : "Unnamed token");
   const change = market?.change24hPercent;
   const moduleLaunch = isRobinhoodModuleLaunch(token) ? token : null;
   const manageHref = moduleLaunch ? robinhoodModuleManageHref(moduleLaunch) : null;
@@ -48,7 +51,7 @@ export function RobinhoodTokenView({ address, token, status }: {
     <div className={`${styles.page} page-width`}>
       <Link className={styles.back} href="/explore/robinhood"><ArrowLeft aria-hidden="true" size={16} /> Explore</Link>
       {token ? <>
-        <section className={styles.market} aria-label={`${name} market`}>
+        <section className={styles.market} aria-label={`${name} ${hasAsset ? "market" : "launch"}`}>
         <header className={styles.header}>
           <div className={styles.identity}>
             <RobinhoodCoinArtwork className={styles.avatar} imageUrl={details?.imageUrl} loading={presentation.loading} eager={true}
@@ -58,7 +61,7 @@ export function RobinhoodTokenView({ address, token, status }: {
                 <h1>{name}</h1>
                 {details?.links.length ? <RobinhoodProjectLinks links={details.links} name={name} /> : null}
               </div>
-              <p className={styles.subtitle}><span>{coinTicker(token.symbol)}</span><span>Robinhood</span></p>
+              <p className={styles.subtitle}>{hasAsset ? <span>{coinTicker(token.symbol)}</span> : null}<span>Robinhood</span></p>
               {details?.description ? <p className={styles.bio}>{details.description}</p> : null}
             </div>
           </div>
@@ -68,11 +71,11 @@ export function RobinhoodTokenView({ address, token, status }: {
               {copyState === "copied" ? "Copied" : "Copy address"}
             </button>
             {/^0x(?!0{40}$)[\da-f]{40}$/i.test(token.creator) ? <Link className={styles.secondaryButton} href={`/profile?account=${token.creator}&chain=4663`} prefetch={false} title={`Dev wallet: ${token.creator}`}>Dev wallet</Link> : null}
-            <a className={styles.secondaryButton} href={`${EXPLORER}/token/${address}`} target="_blank" rel="noreferrer">Explorer <ArrowUpRight aria-hidden="true" size={16} /><span className="sr-only"> (opens in a new tab)</span></a>
+            <a className={styles.secondaryButton} href={`${EXPLORER}/${token?.launchProjection ? "address" : "token"}/${address}`} target="_blank" rel="noreferrer">Explorer <ArrowUpRight aria-hidden="true" size={16} /><span className="sr-only"> (opens in a new tab)</span></a>
           </div>
         </header>
-        <p className="sr-only" role="status">{copyState === "copied" ? "Token address copied" : ""}</p>
-        {copyState === "failed" ? <p className={styles.notice} role="status">Could not copy. <a href={`${EXPLORER}/token/${address}`} target="_blank" rel="noreferrer">View the address on Explorer.</a></p> : null}
+        <p className="sr-only" role="status">{copyState === "copied" ? "Contract address copied" : ""}</p>
+        {copyState === "failed" ? <p className={styles.notice} role="status">Could not copy. <a href={`${EXPLORER}/${token?.launchProjection ? "address" : "token"}/${address}`} target="_blank" rel="noreferrer">View the address on Explorer.</a></p> : null}
 
         <section className={styles.launchContext} aria-label="Programmable launch">
           <div>
@@ -83,10 +86,13 @@ export function RobinhoodTokenView({ address, token, status }: {
           </div> : null}
         </section>
         {moduleLaunch ? <TokenLaunchModules launch={moduleLaunch} /> : null}
+        {token.launchProjection ? <LaunchProjectionDetails projection={token.launchProjection} /> : null}
+        {token.launchProjection ? <LaunchProjectionTrade key={token.launchProjection.launchId} projection={token.launchProjection} /> : null}
         {token && status !== "ready" ? <p className={styles.notice} role="status">{status === "syncing"
-          ? "New launches are still being checked. This coin comes from the verified launch index."
+          ? `New launches are still being checked. This ${hasAsset ? "coin" : "launch"} comes from the verified launch index.`
           : "Showing the last verified launch record. Index updates are temporarily unavailable."}</p> : null}
 
+            {hasAsset ? <>
             <dl className={styles.metrics}>
               <Metric label="Price" value={coinDollars(market?.priceUsd, true)} />
               <Metric label="Market cap" value={market?.marketCapUsd != null && Number.isFinite(market.marketCapUsd) && market.marketCapUsd >= 0
@@ -102,6 +108,7 @@ export function RobinhoodTokenView({ address, token, status }: {
               </div>
             </dl>
             {token.poolId ? <RobinhoodChart poolId={token.poolId} name={name} /> : <p className={styles.notice}>No trading market is verified for this coin.</p>}
+            </> : <p className={styles.notice}>No primary asset is declared for this launch.</p>}
           </section>
       </> : <section className={styles.empty}>
         <h1>Token details</h1>

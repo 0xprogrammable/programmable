@@ -23,6 +23,8 @@ import { ProfileChainSelector } from "@/components/profile-chain-selector";
 import { ProfileLoadingSkeleton } from "@/components/profile-skeleton";
 export { ProfileLoadingSkeleton } from "@/components/profile-skeleton";
 import { RobinhoodProfileLaunches } from "@/components/robinhood-profile-launches";
+import { GenericLaunchClaims } from "@/components/generic-launch-claims";
+import type { LaunchClaimWalletInputV1, LaunchClaimWalletReviewV1 } from "@/lib/custom-launch/claim-handoff-v1";
 import { ProfileModules } from "@/components/profile-modules";
 import {
   ProfileProjects,
@@ -1413,6 +1415,7 @@ export function ProfileView({ onchainData, viewChainId = 4663, onChangeChain }: 
     wallet,
     openWallet,
     sendTransaction,
+    sendLaunchClaimWalletAction,
     connecting,
     hasSession,
   } = useWallet();
@@ -3872,7 +3875,7 @@ export function ProfileView({ onchainData, viewChainId = 4663, onChangeChain }: 
       />
       </> : <>
         <RobinhoodProfileLaunches key={account.toLowerCase()} account={account} />
-        <RobinhoodProfileRewards />
+        <RobinhoodProfileRewards account={account} sendWallet={sendLaunchClaimWalletAction} />
       </>}
       <ProfileModules key={`modules:${account.toLowerCase()}:${searchParams?.get("section") ?? "published"}`} account={account} ownProfile initialSection={searchParams?.get("section") === "submissions" ? "submissions" : "published"} />
     </div>
@@ -4764,7 +4767,7 @@ export function PublicCreatorProfile({
       </section>
 
       <ProfileChainSelector value={viewChainId} onChange={onChangeChain} />
-      {viewChainId === 4663 ? <><RobinhoodProfileLaunches key={account.toLowerCase()} account={account} /><ProfileModules key={`modules:${account.toLowerCase()}`} account={account} /></> : scopedData.status === "loading" ? (
+      {viewChainId === 4663 ? <><RobinhoodProfileLaunches key={account.toLowerCase()} account={account} /><ProfileModules key={`modules:${account.toLowerCase()}`} account={account} /><RobinhoodProfileRewards account={account} /></> : scopedData.status === "loading" ? (
         <ProfileProjectsLoadingState />
       ) : scopedData.status === "error" ? (
         <section
@@ -4801,7 +4804,8 @@ export function PublicCreatorProfile({
   );
 }
 
-export function RobinhoodProfileRewards() {
+export function RobinhoodProfileRewards({ account, sendWallet }: { account?: string;
+  sendWallet?: (input: LaunchClaimWalletInputV1) => Promise<LaunchClaimWalletReviewV1 | Hex> } = {}) {
   return <section className={styles.portfolio} aria-label="Profile overview">
     <div className={`${styles.profileWorkspace} liquid-glass-surface`}>
       <FeeEarningsPanel nativeEarned={null} nativeClaimable={null} nativeClaimed={null} />
@@ -4809,10 +4813,10 @@ export function RobinhoodProfileRewards() {
         <header className={styles.panelHeader}>
           <h2 id="profile-claimable-title">Claim rewards</h2>
         </header>
-        <div className={styles.claimEmpty}>
+        {account ? <GenericLaunchClaims key={account.toLowerCase()} account={account} sendWallet={sendWallet} /> : <div className={styles.claimEmpty}>
           <strong>Rewards depend on the hook</strong>
           <p>Custom hooks manage their own fees and claims.</p>
-        </div>
+        </div>}
       </section>
     </div>
   </section>;

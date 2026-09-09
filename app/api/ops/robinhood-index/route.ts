@@ -4,6 +4,7 @@ import { indexStore } from "@/lib/server/robinhood-index/store";
 import { configuredModuleModeSources, type ModuleModeUnavailableSource } from "@/lib/server/robinhood-index/module-source";
 import { moduleModeSnapshots } from "@/lib/server/robinhood-index/model";
 import { syncRobinhoodIndex, syncModuleModeIndex } from "@/lib/server/robinhood-index/sync";
+import { launchProjectionSourceV1, syncLaunchProjectionIndex } from "@/lib/server/robinhood-index/launch-projection-source";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,6 +28,10 @@ export async function GET(request: Request) {
     let result: Awaited<ReturnType<typeof syncRobinhoodIndex>> | null = null;
     try { result = await syncRobinhoodIndex(await robinhoodSource(), store); }
     catch { /* A failed Custom source must not suppress independent Module Mode verification. */ }
+    let launchProjections: Awaited<ReturnType<typeof syncLaunchProjectionIndex>> | { status: "unavailable" } = { status: "unavailable" };
+    const projectionBudget = Math.min(45000, Math.max(1, 165000 - (Date.now() - startedAt)));
+    try { launchProjections = await syncLaunchProjectionIndex(launchProjectionSourceV1(AbortSignal.timeout(projectionBudget)), store); }
+    catch { /* Keep the previous verified rows and retry this source on the next scheduled pass. */ }
     // Keep a genuine rollup proof inside the job's wall-clock budget. A deadline is an error,
     // never permission to publish a partial proof or skip the final canonical checkpoint read.
     const remaining = 165_000 - (Date.now() - startedAt);
@@ -61,9 +66,9 @@ export async function GET(request: Request) {
         moduleMode = primary ? moduleSources[primary] : { status: "disabled" };
       } catch { /* Preserve each lane's last verified state; never report a failed source as an empty success. */ }
     }
-    const failed = result === null || result.status === "partial" || moduleMode.status === "partial" || moduleMode.status === "unavailable"
+    const failed = result === null || result.status === "partial" || launchProjections.status === "unavailable" || launchProjections.status === "partial" || moduleMode.status === "partial" || moduleMode.status === "unavailable"
       || moduleUnavailableSources.length > 0 || Object.values(moduleSources).some(source => source.status === "partial" || source.status === "unavailable");
     return reply({ ...(result ?? { error: "index_update_unavailable" }),
-      custom: result ?? { status: "unavailable" }, moduleMode, moduleSources, moduleUnavailableSources }, failed ? 503 : 200);
+      custom: result ?? { status: "unavailable" }, launchProjections, moduleMode, moduleSources, moduleUnavailableSources }, failed ? 503 : 200);
   } catch { return reply({ error: "index_update_unavailable" }, 503); }
 }

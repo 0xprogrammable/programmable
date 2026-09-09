@@ -7,6 +7,7 @@ import { PROGRAMMABLE_MAIN_TOKEN_PRESENTATION } from "@/lib/programmable-main-to
 import { safePublicImageUrl } from "@/lib/safe-public-image-url";
 import { MODULE_DEFAULT_TOKEN_IMAGE } from "@/lib/module-mode/token-metadata";
 import { readModuleTokenMetadata } from "@/lib/server/module-mode/token-presentation";
+import { projectionPublicUrl } from "@/lib/custom-launch/launch-projection-v1";
 // @ts-expect-error -- the canonical launch package is ESM JavaScript.
 import { hashProjectMetadata, validateProjectMetadata } from "@/packages/launch/src/project-metadata.mjs";
 
@@ -275,7 +276,7 @@ export async function readRobinhoodPresentations(tokens: readonly RobinhoodLaunc
     throw new Error("Invalid presentation request");
   }
   const ordered = tokens.toSorted((a, b) => a.tokenAddress.toLowerCase().localeCompare(b.tokenAddress.toLowerCase()));
-  const custom = ordered.filter(token => !isRobinhoodModuleSourceKind(token.sourceKind));
+  const custom = ordered.filter(token => !isRobinhoodModuleSourceKind(token.sourceKind) && !token.launchProjection);
   const native = ordered.filter(token => isRobinhoodModuleSourceKind(token.sourceKind));
   const [metadata, moduleMetadata, markets] = await Promise.allSettled([
     custom.length ? cachedMetadata(custom).then((entries) => new Map(entries)) : Promise.resolve(new Map<string, Metadata>()),
@@ -285,7 +286,12 @@ export async function readRobinhoodPresentations(tokens: readonly RobinhoodLaunc
   return tokens.map((token): RobinhoodCoinPresentation => {
     const key = token.tokenAddress.toLowerCase();
     const source = isRobinhoodModuleSourceKind(token.sourceKind) ? moduleMetadata : metadata;
-    const presentation = source.status === "fulfilled" ? source.value.get(key) : undefined;
+    const publication = token.launchProjection?.publication;
+    const presentation = token.launchProjection ? {
+      imageUrl: projectionPublicUrl(publication?.imageUrl),
+      description: typeof publication?.description === "string" ? publication.description.slice(0, 4096) : null,
+      links: Array.isArray(publication?.links) ? publication.links.flatMap(link => { const url = projectionPublicUrl(link); return url ? [{ label: "Project link", url }] : []; }) : [],
+    } : source.status === "fulfilled" ? source.value.get(key) : undefined;
     const main = key === MAIN_TOKEN;
     const links = [...(presentation?.links ?? [])];
     if (main) {

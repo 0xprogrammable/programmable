@@ -15,10 +15,12 @@ import { rememberRobinhoodTokenPresentations } from "@/components/robinhood-pres
 import { coinAge, coinTicker, mergeRobinhoodPresentations, type RobinhoodCoinPresentation } from "@/lib/robinhood-presentation";
 import { activeExploreFilterCount, DEFAULT_EXPLORE_FILTERS, ROBINHOOD_EXPLORE_PAGE_SIZE, sameRobinhoodExploreRequest, type RobinhoodExploreFilters, type RobinhoodExploreRequest } from "@/lib/robinhood-explore-filters";
 import { isRobinhoodModuleLaunch } from "@/lib/robinhood-launches";
+import { isRobinhoodProjectedLaunch } from "@/lib/custom-launch/launch-projection-v1";
 import { isPinnedRobinhoodToken } from "@/lib/robinhood-explore-policy";
 import styles from "@/components/robinhood-launches-view.module.css";
 
 type Launch = {
+  launchProjection?: import("@/lib/custom-launch/launch-plan-v1").LaunchProjectionV1;
   launchId: string;
   tokenAddress: string;
   hookAddress: string | null;
@@ -85,6 +87,7 @@ function isText(value: unknown): value is string | null {
 
 function isLaunch(value: unknown, chainId: ViewChainId): value is Launch {
   if (!isObject(value)) return false;
+  if (chainId === 4663 && isRobinhoodProjectedLaunch(value)) return true;
   return typeof value.launchId === "string" && (chainId === 4663 ? HASH.test(value.launchId) : value.launchId.length > 0 && value.launchId.length <= 256)
     && (chainId !== 1 || value.category === "classic" || value.category === "custom")
     && (value.sourceKind === undefined || isRobinhoodModuleLaunch(value))
@@ -330,7 +333,7 @@ function IndexedLaunchList({ embedded, enabled, chainId }: { embedded: boolean; 
         </div>
 
         <p className={hasRows && !loading && statusText ? styles.status : "sr-only"} id={statusId} role="status">
-          {statusText || (data ? `${count} ${count === 1 ? "token" : "tokens"}. Page ${data.page.number} of ${Math.max(1, data.page.totalPages)}.` : null)}
+          {statusText || (data ? `${count} ${count === 1 ? "launch" : "launches"}. Page ${data.page.number} of ${Math.max(1, data.page.totalPages)}.` : null)}
           {hasRows && !loading && statusText && data?.updatedAt ? <> Updated <time dateTime={data.updatedAt} title={new Date(data.updatedAt).toUTCString()}>{coinAge(data.updatedAt, now).replace("Just launched", "just now")}</time>.</> : null}
         </p>
         {hasRows && !loading && (failed || data?.status === "partial" || data?.status === "stale") ? <button className={styles.retry} type="button" onClick={() => {
@@ -338,9 +341,10 @@ function IndexedLaunchList({ embedded, enabled, chainId }: { embedded: boolean; 
         }}>Try again</button> : null}
 
         {hasRows || pending ? (
-          <ul className={styles.list} id={listId} aria-label={`${chainName} token launches`} aria-busy={pending || loading}>
+          <ul className={styles.list} id={listId} aria-label={`${chainName} launches`} aria-busy={pending || loading}>
             {items.map((launch, index) => {
               const details = presentations.get(launch.tokenAddress.toLowerCase());
+              const hasAsset = !launch.launchProjection || launch.launchProjection.primaryComponentId !== null;
               return (
               <li key={launch.tokenAddress.toLowerCase()} className={styles.item}>
                 <article className={styles.row}>
@@ -353,13 +357,13 @@ function IndexedLaunchList({ embedded, enabled, chainId }: { embedded: boolean; 
                   />
                   <div className={styles.identity}>
                     <div className={styles.nameRow}>
-                      <strong className={styles.name} title={launch.name?.trim() || "Unnamed token"}>{launch.name?.trim() || "Unnamed token"}</strong>
+                      <strong className={styles.name} title={launch.name?.trim() || (launch.launchProjection ? "Unnamed contract" : "Unnamed token")}>{launch.name?.trim() || (launch.launchProjection ? "Unnamed contract" : "Unnamed token")}</strong>
                     </div>
-                    <span className={styles.symbol} title={launch.symbol || undefined}>{coinTicker(launch.symbol)}</span>
+                    {hasAsset ? <span className={styles.symbol} title={launch.symbol || undefined}>{coinTicker(launch.symbol)}</span> : null}
                     <span className={styles.mode}>{launch.category === "classic" ? "Classic" : isRobinhoodModuleLaunch(launch) ? "Module" : "Custom"}</span>
                   </div>
                   <div className={styles.cardFooter}>
-                    {chainId === 4663 || details?.market?.marketCapUsd != null ? <div className={styles.marketCap} title={details?.market ? `Observed ${new Date(details.market.observedAt).toUTCString()}` : "Market data is not available yet"}>
+                    {hasAsset && (chainId === 4663 || details?.market?.marketCapUsd != null) ? <div className={styles.marketCap} title={details?.market ? `Observed ${new Date(details.market.observedAt).toUTCString()}` : "Market data is not available yet"}>
                       <span>Market cap</span>
                       {details?.market?.marketCapUsd != null && Number.isFinite(details.market.marketCapUsd) && details.market.marketCapUsd >= 0
                         ? <AnimatedMarketCap metric={{ kind: "usd", value: details.market.marketCapUsd }} replayKey={`${chainId}:${launch.tokenAddress.toLowerCase()}:${details.market.poolId.toLowerCase()}:market-cap`} />
@@ -369,7 +373,7 @@ function IndexedLaunchList({ embedded, enabled, chainId }: { embedded: boolean; 
                   </div>
                 </Link>
                 {details?.links.length ? <RobinhoodProjectLinks links={details.links}
-                  name={launch.name?.trim() || "Token"} className={styles.socials} /> : null}
+                  name={launch.name?.trim() || (hasAsset ? "Token" : "Project")} className={styles.socials} /> : null}
                 </article>
               </li>
             );})}

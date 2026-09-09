@@ -1,4 +1,5 @@
 import { isRobinhoodModuleLaunch, ROBINHOOD_PROFILE_PAGE_SIZE, type RobinhoodProfileLaunchList } from "@/lib/robinhood-launches";
+import { isRobinhoodProjectedLaunch } from "@/lib/custom-launch/launch-projection-v1";
 
 const ADDRESS = /^0x[\da-f]{40}$/i;
 const HASH = /^0x[\da-f]{64}$/i;
@@ -18,12 +19,12 @@ export function readRobinhoodProfileResponse(value: unknown, account: string): R
   for (const row of value.items) {
     if (!record(row) || typeof row.creator !== "string" || row.creator.toLowerCase() !== account.toLowerCase()
       || typeof row.tokenAddress !== "string" || !ADDRESS.test(row.tokenAddress)
-      || typeof row.launchId !== "string" || !HASH.test(row.launchId)
+      || typeof row.launchId !== "string" || (!HASH.test(row.launchId) && !isRobinhoodProjectedLaunch(row))
       || !text(row.name) || !text(row.symbol)
       || !(row.launchedAt === null || (typeof row.launchedAt === "string" && Number.isFinite(Date.parse(row.launchedAt))))
-      || (row.sourceKind !== undefined && !isRobinhoodModuleLaunch(row))
-      || tokens.has(row.tokenAddress.toLowerCase())) throw new Error("Invalid profile launch");
-    tokens.add(row.tokenAddress.toLowerCase());
+      || (row.sourceKind !== undefined && !isRobinhoodModuleLaunch(row) && !isRobinhoodProjectedLaunch(row))
+      || tokens.has(row.launchProjection ? `${row.sourceKind}:${row.launchId}` : row.tokenAddress.toLowerCase())) throw new Error("Invalid profile launch");
+    tokens.add(row.launchProjection ? `${row.sourceKind}:${row.launchId}` : row.tokenAddress.toLowerCase());
   }
   const page = value.page;
   if (!Number.isSafeInteger(page.number) || Number(page.number) < 1 || page.size !== ROBINHOOD_PROFILE_PAGE_SIZE

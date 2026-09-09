@@ -1,9 +1,12 @@
 #!/usr/bin/env node
 
 import { createHash } from "node:crypto";
-import { appendFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import Ajv2020 from "ajv/dist/2020.js";
+import addFormats from "ajv-formats";
+import { encodeAbiParameters, keccak256 } from "viem";
 
 import { readBoundedResponseText } from "./read-bounded-response.mjs";
 import { verifyLiveVercelBinding } from "./perf/read-model-live-verifier.mjs";
@@ -22,6 +25,12 @@ const MAXIMUM_ITEMS = 10_000;
 const MAXIMUM_RESPONSE_BYTES = 2 * 1024 * 1024;
 const REQUEST_TIMEOUT_MS = 30_000;
 const PRODUCTION_ORIGIN = "https://programmable.market";
+const LAUNCH_PROJECTION_SOURCE = "https://api.programmable.market/v4/chains/4663/finalized-launch-projections";
+const LAUNCH_CONTRACT_URL = "https://programmable.market/openapi/custom-launch-v4.2.json";
+const projectionValidator = new Ajv2020({ strict: false });
+addFormats(projectionValidator);
+projectionValidator.addSchema(JSON.parse(readFileSync(new URL("../public/openapi/custom-launch-v4.2.json", import.meta.url), "utf8")), LAUNCH_CONTRACT_URL);
+const validateProjection = projectionValidator.compile({ $ref: `${LAUNCH_CONTRACT_URL}#/components/schemas/LaunchProjectionV1` });
 const same = (left, right) => typeof left === "string" && typeof right === "string" && left.toLowerCase() === right.toLowerCase();
 const record = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 const check = (condition, label) => { if (!condition) throw new Error(`indexed website ${label} is invalid`); };
@@ -81,10 +90,56 @@ function validateSources(body, route, expectations, nowMs) {
           expected.startBlock === source.startBlock), "Robinhood module release binding");
       }
     }
-    check(body.updatedAt === sources.map(source => source.updatedAt).sort()[0], "Robinhood oldest source timestamp");
+    const projection = evidence.launchProjections;
+    if (projection != null) check(record(projection) && projection.sourceUrl === LAUNCH_PROJECTION_SOURCE &&
+      timestamp(projection.updatedAt, nowMs) && (projection.nextCursor === null ||
+        typeof projection.nextCursor === "string" && projection.nextCursor.length <= 4096), "Robinhood projection source");
+    check(body.updatedAt === [...sources, ...(projection ? [projection] : [])].map(source => source.updatedAt).sort()[0], "Robinhood oldest source timestamp");
     if (body.status === "ready") check(sources.every(source => source.cursor.number === source.finalizedBlock &&
-      nowMs - Date.parse(source.updatedAt) <= 300_000), "Robinhood ready checkpoint");
+      nowMs - Date.parse(source.updatedAt) <= 300_000) && (!projection ||
+      projection.nextCursor === null && nowMs - Date.parse(projection.updatedAt) <= 300_000), "Robinhood ready checkpoint");
   }
+}
+
+function projectedItem(item) {
+  return item.sourceKind === "multi-role-v2" || item.sourceKind === "custom-launch-plan-v1";
+}
+
+function launchIdentity(item) {
+  return projectedItem(item) ? `${item.sourceKind}:${item.launchId}` : item.tokenAddress.toLowerCase();
+}
+
+function validateProjectedItem(item, sources) {
+  const projection = item.launchProjection;
+  check(sources.launchProjections?.sourceUrl === LAUNCH_PROJECTION_SOURCE && validateProjection(projection) &&
+    projection.chainId === "4663" && projection.sourceVersion === (item.sourceKind === "multi-role-v2" ? "multi_role_v2" : "custom_launch_plan_v1") &&
+    projection.finality.status === "final" && projection.finality.transactionHashes.length > 0 &&
+    projection.finality.blockNumber !== null && projection.finality.blockHash !== null && projection.finality.witness !== null &&
+    item.launchId === projection.launchId && same(item.creator, projection.controller) &&
+    item.blockNumber === projection.finality.blockNumber && same(item.blockHash, projection.finality.blockHash) &&
+    same(item.transactionHash, projection.finality.transactionHashes.at(-1)) &&
+    item.routerAddress === null && item.stampHash === null, "Robinhood projected launch provenance");
+  const primary = projection.components.find(component => component.componentId === projection.primaryComponentId);
+  const identity = primary ?? projection.components[0];
+  const componentIds = new Set(projection.components.map(component => component.componentId));
+  check(identity && componentIds.size === projection.components.length &&
+    (projection.primaryComponentId === null || primary) && same(item.tokenAddress, identity.expectedAddress) &&
+    (primary ? same(item.primaryAssetAddress, primary.expectedAddress) : item.primaryAssetAddress === null), "Robinhood projected component identity");
+  const addressFor = reference => {
+    const address = reference.address ?? projection.components.find(component => component.componentId === reference.componentId)?.expectedAddress;
+    check(/^0x[0-9a-f]{40}$/iu.test(address ?? ""), "Robinhood projected market reference");
+    return address;
+  };
+  for (const market of projection.markets) for (const reference of [market.currency0, market.currency1, market.hooks]) addressFor(reference);
+  const primaryMarket = projection.markets.find(market => market.marketId === projection.primaryMarketId);
+  check(new Set(projection.markets.map(market => market.marketId)).size === projection.markets.length &&
+    (projection.primaryMarketId === null || primaryMarket), "Robinhood projected primary market");
+  if (primaryMarket) {
+    const poolId = keccak256(encodeAbiParameters([{ type: "address" }, { type: "address" }, { type: "uint24" }, { type: "int24" }, { type: "address" }],
+      [addressFor(primaryMarket.currency0), addressFor(primaryMarket.currency1), primaryMarket.fee, primaryMarket.tickSpacing, addressFor(primaryMarket.hooks)]));
+    check(same(item.poolManager, primaryMarket.poolManager) && same(item.hookAddress, addressFor(primaryMarket.hooks)) && same(item.poolId, poolId),
+      "Robinhood projected market identity");
+  } else check(item.poolManager === null && item.hookAddress === null && item.poolId === null, "Robinhood no-market projection");
 }
 
 function validateItem(item, body, route, expectations) {
@@ -111,6 +166,10 @@ function validateItem(item, body, route, expectations) {
     }
   } else {
     const sources = body.sourceEvidence;
+    if (projectedItem(item)) {
+      validateProjectedItem(item, sources);
+      return;
+    }
     const source = item.sourceKind === undefined ? sources.router : sources.modules.find(entry =>
       entry.source === item.sourceKind && same(entry.sourceAddress, item.sourceAddress) && same(entry.releaseDigest, item.sourceReleaseDigest));
     check(source && HASH.test(item.launchId ?? "") && HASH.test(item.blockHash ?? "") &&
@@ -146,15 +205,17 @@ export function validateIndexedWebsiteList({ body, response, route, pageNumber, 
     Array.isArray(body.items) && body.items.length === Math.min(PAGE_SIZE, body.page.totalItems - (pageNumber - 1) * PAGE_SIZE), "pagination");
   validateSources(body, route, expectations, nowMs);
   const identities = new Set();
+  const addresses = new Set();
   for (const item of body.items) {
     validateItem(item, body, route, expectations);
-    check(!identities.has(item.tokenAddress.toLowerCase()), "duplicate token identity");
-    identities.add(item.tokenAddress.toLowerCase());
+    check(!identities.has(launchIdentity(item)), "duplicate launch identity");
+    identities.add(launchIdentity(item));
+    addresses.add(item.tokenAddress.toLowerCase());
   }
   check(Array.isArray(body.presentations), "presentations");
   const presented = new Set();
   for (const item of body.presentations) {
-    check(record(item) && ADDRESS.test(item.tokenAddress ?? "") && identities.has(item.tokenAddress.toLowerCase()) &&
+    check(record(item) && ADDRESS.test(item.tokenAddress ?? "") && addresses.has(item.tokenAddress.toLowerCase()) &&
       !presented.has(item.tokenAddress.toLowerCase()) && Array.isArray(item.links), "presentation identity");
     presented.add(item.tokenAddress.toLowerCase());
     for (const link of item.links) validateChainLink(link?.url, route);
@@ -198,8 +259,8 @@ async function observeReads(input, target, headers, observedAt) {
       first ??= body;
       check(body.page.totalItems === first.page.totalItems, "catalog changed during pagination; rerun smoke");
       for (const item of body.items) {
-        check(!identities.has(item.tokenAddress.toLowerCase()), "duplicate token across pages; rerun smoke");
-        identities.add(item.tokenAddress.toLowerCase());
+        check(!identities.has(launchIdentity(item)), "duplicate launch across pages; rerun smoke");
+        identities.add(launchIdentity(item));
       }
       pages.push({ number, status: body.status, count: body.items.length, updatedAt: body.updatedAt,
         sourceEvidence: body.sourceEvidence, ...(body.sources ? { sources: body.sources } : {}), bodyDigest: result.bodyDigest });
@@ -214,10 +275,11 @@ async function observeReads(input, target, headers, observedAt) {
     const main = /<main\b[^>]*>([\s\S]*?)<\/main>/iu.exec(token.text)?.[1];
     check(typeof main === "string", "token page main content");
     const heading = /<h1\b[^>]*>([\s\S]*?)<\/h1>/iu.exec(main)?.[1];
-    check(heading && htmlText(heading.replace(/<[^>]*>/gu, "")) === item.name, "verified token page heading");
+    const expectedName = item.name?.trim() || (projectedItem(item) ? "Unnamed contract" : "Unnamed token");
+    check(heading && htmlText(heading.replace(/<[^>]*>/gu, "")) === expectedName, "verified token page heading");
     const anchors = [...main.matchAll(/<a\b[^>]*\bhref="([^"]+)"/giu)].map(match => htmlText(match[1]));
     const explorer = route.chainId === 1 ? "https://etherscan.io" : "https://robinhoodchain.blockscout.com";
-    check(anchors.some(href => same(href, `${explorer}/token/${item.tokenAddress}`)) &&
+    check(anchors.some(href => same(href, `${explorer}/${projectedItem(item) ? "address" : "token"}/${item.tokenAddress}`)) &&
       anchors.includes(`/explore/${route.slug}`), "token page chain links");
     for (const href of anchors) {
       // Only chain-specific destinations are in scope; project/social links may

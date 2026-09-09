@@ -3,11 +3,12 @@ import type { IndexStore } from "@/lib/server/robinhood-index/store";
 import type { ModuleModeUnavailableSource } from "@/lib/server/robinhood-index/module-source";
 
 const mocks = vi.hoisted(() => ({
-  read: vi.fn(), source: vi.fn(), sync: vi.fn(), moduleSync: vi.fn(),
+  projectionSync: vi.fn(), projectionSource: vi.fn(), read: vi.fn(), source: vi.fn(), sync: vi.fn(), moduleSync: vi.fn(),
   moduleSources: vi.fn<typeof import("@/lib/server/robinhood-index/module-source").configuredModuleModeSources>(),
   store: vi.fn<() => IndexStore>(), storeRead: vi.fn<IndexStore["read"]>(), storeWrite: vi.fn<IndexStore["write"]>(),
 }));
 vi.mock("@/lib/server/robinhood-index/read", () => ({ readRobinhoodLaunches: mocks.read }));
+vi.mock("@/lib/server/robinhood-index/launch-projection-source", () => ({ launchProjectionSourceV1: mocks.projectionSource, syncLaunchProjectionIndex: mocks.projectionSync }));
 vi.mock("@/lib/server/robinhood-index/source", () => ({ robinhoodSource: mocks.source }));
 vi.mock("@/lib/server/robinhood-index/module-source", () => ({ configuredModuleModeSources: mocks.moduleSources }));
 vi.mock("@/lib/server/robinhood-index/store", () => ({ indexStore: mocks.store }));
@@ -17,6 +18,7 @@ import { GET as update } from "@/app/api/ops/robinhood-index/route";
 
 beforeEach(() => {
   vi.resetAllMocks();
+  mocks.projectionSync.mockRejectedValue(new Error("Projection unavailable"));
   mocks.moduleSources.mockResolvedValue({ lanes: [], unavailableSources: [] });
   mocks.storeRead.mockResolvedValue(null);
   mocks.store.mockReturnValue({ read: mocks.storeRead, write: mocks.storeWrite });
@@ -83,7 +85,7 @@ describe("Robinhood website HTTP boundaries", () => {
     }));
     expect(response.status).toBe(503);
     expect(await response.json()).toEqual({
-      error: "index_update_unavailable", custom: { status: "unavailable" }, moduleMode: { status: moduleStatus },
+      error: "index_update_unavailable", custom: { status: "unavailable" }, launchProjections: { status: "unavailable" }, moduleMode: { status: moduleStatus },
       moduleSources: {}, moduleUnavailableSources: unavailableSources,
     });
     expect(mocks.moduleSources).toHaveBeenCalledOnce();

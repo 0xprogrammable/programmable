@@ -1,0 +1,27 @@
+.trade { border-top: 1px solid var(--border, #333); margin-block: 24px; padding-block: 24px; min-width: 0; max-width: 720px; font-size: 14px; line-height: 1.5; }
+.trade h2 { font-size: 22px; margin: 0 0 8px; letter-spacing: -.025em; }
+.trade h3 { font-size: 17px; margin: 0 0 16px; }
+.trade p, .trade code { overflow-wrap: anywhere; }
+.trade p { margin-block: 12px; }
+.trade fieldset { padding: 0; margin: 20px 0; border: 0; min-width: 0; }
+.fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.trade label { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.trade input, .trade select { background: var(--background, #111); border: 1px solid var(--border, #444); color: inherit; border-radius: 6px; font: inherit; padding: 10px 12px; width: 100%; min-width: 0; min-height: 44px; }
+.trade button { min-height: 44px; border: 1px solid transparent; border-radius: 6px; padding: 10px 16px; background: #e786b2; color: #1a0d14; font: inherit; font-weight: 600; cursor: pointer; }
+.trade button:hover { background: #f19ec4; }
+.trade button:disabled { opacity: .6; cursor: wait; }
+.trade .secondary { background: transparent; color: inherit; border-color: var(--border, #444); }
+.trade :is(button, input, select, summary, a):focus-visible { outline: 2px solid #e786b2; outline-offset: 4px; }
+.trade .hint { color: var(--muted-foreground, #aaa); font-size: 13px; }
+.trade summary { min-height: 44px; display: flex; align-items: center; text-decoration: underline; text-underline-offset: 4px; cursor: pointer; }
+.review { margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--border, #333); }
+.review dl { display: grid; gap: 12px; margin: 0; }
+.review dl div { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.review dt { color: var(--muted-foreground, #aaa); }
+.review dd { margin: 0; overflow-wrap: anywhere; }
+.review code { font-size: 12px; }
+.review pre { font-size: 12px; white-space: pre-wrap; word-break: break-word; max-height: 240px; overflow: auto; }
+.actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 16px; }
+.trade .error { color: #ffb6be; }
+@media(max-width: 540px) { .fields, .review dl div { grid-template-columns: 1fr; } .review dl div { gap: 4px; } .actions button { flex: 1 1 150px; } }
+@media(forced-colors: active) { .trade :is(button,input,select,summary,a):focus-visible { outline-color: Highlight; } .trade button { border-color: ButtonText; } }

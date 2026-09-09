@@ -26,6 +26,8 @@ export async function readRobinhoodLaunches(page = 1, query = "", filters: Robin
       modules: moduleModeSnapshots(snapshot).map(source => ({ source: source.sourceKind, sourceAddress: source.sourceAddress,
         releaseDigest: source.releaseDigest, startBlock: source.startBlock, cursor: source.cursor,
         finalizedBlock: source.finalizedBlock, updatedAt: source.updatedAt })),
+      launchProjections: snapshot.launchProjections ? { sourceUrl: snapshot.launchProjections.sourceUrl,
+        updatedAt: snapshot.launchProjections.updatedAt, nextCursor: snapshot.launchProjections.nextCursor } : null,
     } : null, presentations: await readRobinhoodPresentations(list.items, markets).catch(() => [] as RobinhoodCoinPresentation[]) };
   } catch { return { ...launchList(null, page, query, Date.now(), filters, undefined, pageSize), sourceEvidence: null, presentations: [] as RobinhoodCoinPresentation[] }; }
 }
@@ -37,7 +39,8 @@ export async function readRobinhoodToken(address: string) {
     return {
       status: list.status,
       updatedAt: list.updatedAt,
-      token: snapshotLaunches(snapshot).find((row) => row.tokenAddress.toLowerCase() === address.toLowerCase()) ?? null,
+      token: snapshotLaunches(snapshot).find((row) => row.tokenAddress.toLowerCase() === address.toLowerCase()
+        || row.launchProjection?.components.some(component => component.expectedAddress.toLowerCase() === address.toLowerCase())) ?? null,
     };
   } catch { return { status: "unavailable" as const, updatedAt: null, token: null }; }
 }
@@ -46,4 +49,14 @@ export async function readRobinhoodProfileLaunches(account: string, page = 1, pa
   const unavailable = profileLaunchList(null, account, page, Date.now(), pageSize);
   try { return profileLaunchList(await readSnapshot(), unavailable.account, page, Date.now(), pageSize); }
   catch { return unavailable; }
+}
+
+export async function readRobinhoodProfileClaimDescriptors(account: string) {
+  if (!/^0x[0-9a-f]{40}$/i.test(account)) throw new Error("Invalid claim account");
+  const rows = snapshotLaunches(await readSnapshot());
+  const claims = rows.flatMap(row => row.launchProjection?.claimDescriptors.flatMap(descriptor =>
+    [descriptor.requiredController, descriptor.beneficiary].some(value => value.toLowerCase() === account.toLowerCase())
+      ? [{ launchId: row.launchId, name: row.name, descriptor }] : []) ?? []);
+  // A descriptor may be referenced by multiple finalized launch records; one claim liability is shown once.
+  return [...new Map(claims.map(claim => [`${claim.descriptor.chainId}:${claim.descriptor.accrualContract.toLowerCase()}:${claim.descriptor.claimId}`, claim])).values()];
 }
