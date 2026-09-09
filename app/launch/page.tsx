@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
   title: "Launch · Programmable",
   description:
-    "Choose Classic for a guided token launch or use the Custom Launch API for a custom Uniswap v4 hook.",
+    "Create a coin, add modules or build your own Uniswap v4 hook.",
   alternates: {
     canonical: "/launch",
   },
