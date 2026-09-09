@@ -1,8 +1,8 @@
-# Open package SDK candidate v0.1
+# Open source packages and configuration
 
-This implements the first **local source and configuration slice** of the open Classic architecture: source-package declarations, pinned local file bytes, structured configuration encoded to deterministic ABI bytes, caller-supplied role/asset/component bindings, typed preparation links and numeric constraints across the configuration.
+The open package format describes source files, their hashes, configuration, role/asset/component bindings, typed preparation links and numeric constraints. The same descriptor is used by the [Module contribution API](MODULE-API.md). Begin with authenticated context and the [agent guide](AGENT_GUIDE.md) before creating a new contribution.
 
-The V1 contracts, fees, authority and launch API are unchanged. This is **not a new launch engine**. Successful plans always say `scope: configuration-preview`, `launchable: false`, `onchainApproved: false`, `runtimeVerified: false` and `authorizationVerified: false`. A modelled connection is not an executed contract call. Matching hashes do not prove authorship, review, economic safety or compatibility with V1's ABI.
+The configuration tools described here produce a local preview. Successful plans report `scope: configuration-preview`, `launchable: false`, `onchainApproved: false`, `runtimeVerified: false` and `authorizationVerified: false`. These tools do not alter the V1 contracts, fees or authority. A modelled connection does not execute a contract call. Matching hashes do not prove authorship, review, economic safety or compatibility with an execution interface.
 
 ## Run the complete local example
 
@@ -111,8 +111,8 @@ Family candidates are deduplicated across versions/instances. Conflicting declar
 
 Missing host capabilities remain explicit even with a valid preview. Caller-supplied host capabilities are local assertions, not website availability evidence. There is no path here from successful preview to onchain approval or launchability.
 
-## Following work
+## Execution and review
 
-Actual reproducible builds and admitted engine/action contracts must next enforce protected funds, authenticated actors, per-launch state, effective immutable code, permitted control transitions, runtime composition conditions and market construction. Local revalidation of edited parameters is not onchain enforcement.
+Submit the complete package through the [source API](MODULE-API.md). The authenticated context exposes current intake limits and review coverage before a build. The descriptor accepts versioned runtime and interface namespaces without a business-category allowlist. An unknown runtime remains a declared review requirement; assigning it a name does not install a build adapter or host capability.
 
-Full management UI, new intake service, independent review, registry activation, collector and real deployment/claim evidence remain outstanding. So do the unexpected-contributor and new-engine demonstrations. This candidate provides executable source/configuration boundaries for those steps, without replacing them with metadata.
+The operator selects the executable review plan. Admitted implementations must enforce protected funds, authenticated actors, per-launch state, immutable code, permitted control transitions and actual composition or market rules. Local parameter validation does not enforce these onchain. Follow the review resource for the specific package, then the Registry and active catalog for publication. The configuration preview cannot establish any of those states.

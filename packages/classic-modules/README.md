@@ -1,8 +1,12 @@
-# Classic Modules V1 contributor tools
+# Module Mode contributor tools
 
-The separate [open package candidate v0.1](OPEN-PACKAGES.md) adds a local source/configuration preview through `./open` and three `*-open-*` CLI commands. It does not change the V1 engine or its ABI and never produces a launchable or approved plan.
+For a new contribution, start with the [agent guide](AGENT_GUIDE.md) and [source API reference](MODULE-API.md). They cover authenticated context, complete source packaging, direct submission, immutable receipts and review progress. The API accepts source architectures through versioned runtime and capability names; there is no business-category allowlist. Current review coverage and public launch availability are separate from source intake.
 
-This local package validates module review requests, builds exact launch recipes and maintains an immutable local review queue. It does not sign, deploy, contact an API, execute contributed source code or grant onchain approval. The package is private and has not been published to npm.
+The [open package format](OPEN-PACKAGES.md) provides the source descriptor and deterministic configuration tools. Its local configuration preview is not a launch or an approval. The package is marked private and has not been published to npm; the [current discovery](https://programmable.market/api/agent) supplies a verified standalone CLI that works without npm installation or a repository checkout.
+
+## Historical Classic Modules V1
+
+The following reference describes the original Classic V1 interface and its local commands. These commands validate V1 review requests, build exact V1 recipes and maintain a local review queue. They do not sign, deploy, execute contributed source or grant onchain approval. The current HTTP contribution commands are documented separately in [MODULE-API.md](MODULE-API.md).
 
 The catalog can contain thousands of versions. A launch selects at most eight distinct module families. V1 supports one creator fee policy and compatible quote-limit modules; new effect kinds require a new engine version.
 
