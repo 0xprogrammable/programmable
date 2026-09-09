@@ -9,6 +9,7 @@ export async function createWalletSessionServer() {
   const bundled = await build({
     stdin: {
       contents: `
+        import './tests/browser/fixtures/view-chain-scheduling';
         import React, {useState} from 'react';
         import {createRoot} from 'react-dom/client';
         import {WalletProvider, WalletButton, useWallet} from './components/wallet-provider';
@@ -17,6 +18,7 @@ export async function createWalletSessionServer() {
         import {ModuleModeBuilder} from './components/module-mode-builder';
         import {moduleModeWalletStep} from './components/module-mode-wallet-state';
         import {TokenRouteChainSync} from './components/token-route-chain-sync';
+        import {RobinhoodLaunchesView} from './components/robinhood-launches-view';
         import {FixtureControls} from './tests/browser/fixtures/wallet-session-runtime';
         import './app/globals.css';
         import './app/interface.css';
@@ -63,6 +65,7 @@ export async function createWalletSessionServer() {
               description:'Local UI callback only. No transaction is prepared or sent.',
               onContinue:async () => setModuleContinuations(previous => previous + 1)}}/> : null}
             {location.pathname === '/token/ethereum' ? <TokenRouteChainSync chainId={1}><p>Ethereum token route</p></TokenRouteChainSync> : null}
+            {location.pathname === '/explore/robinhood' ? <RobinhoodLaunchesView chainId={4663}/> : null}
           </main>;
         }
         createRoot(document.getElementById('root')).render(<ViewChainProvider><WalletProvider><SiteHeader/><Consumer/></WalletProvider></ViewChainProvider>);
@@ -78,6 +81,14 @@ export async function createWalletSessionServer() {
     },
     external: ["/brand/*", "/fonts/*"],
     plugins: [{ name: "wallet-session-boundaries", setup(plugin) {
+      plugin.onResolve({ filter: /^react$/ }, (args) => args.importer === resolve(root, "components/view-chain.tsx")
+        ? { path: "view-chain-react", namespace: "view-chain-react" } : undefined);
+      plugin.onLoad({ filter: /.*/, namespace: "view-chain-react" }, () => ({
+        loader: "tsx", resolveDir: root,
+        contents: `export * from 'react'; import {useEffect as nativeEffect} from 'react';
+          import {deferViewChainEffect} from './tests/browser/fixtures/view-chain-scheduling';
+          export function useEffect(effect,deps){return nativeEffect(()=>deferViewChainEffect(effect),deps);}`,
+      }));
       plugin.onResolve({ filter: /^\.\/wallet-provider-runtime$/ }, () => ({ path: runtime }));
       plugin.onResolve({ filter: /^next\/(navigation|link|image)$/ }, (args) => ({ path: args.path, namespace: "fixture" }));
       plugin.onLoad({ filter: /.*/, namespace: "fixture" }, (args) => ({
@@ -94,6 +105,12 @@ export async function createWalletSessionServer() {
   return createServer(async (request, response) => {
     const url = new URL(request.url, "http://localhost");
     if (url.pathname === "/favicon.ico") { response.writeHead(204); response.end(); return; }
+    if (url.pathname === "/api/explore/robinhood") {
+      response.setHeader("Content-Type", "application/json");
+      response.end(JSON.stringify({ chainId: 4663, status: "ready", updatedAt: null, items: [], presentations: [],
+        page: { number: 1, size: 50, totalItems: 0, totalPages: 0, hasMore: false } }));
+      return;
+    }
     if (sources.has(url.pathname)) {
       response.setHeader("Content-Type", url.pathname.endsWith(".css") ? "text/css" : "text/javascript");
       response.end(sources.get(url.pathname)); return;
@@ -108,7 +125,7 @@ export async function createWalletSessionServer() {
       } catch { response.writeHead(404); response.end(); }
       return;
     }
-    if (!["/profile", "/developers/api-keys", "/launch/modules", "/token/ethereum"].includes(url.pathname)) {
+    if (!["/profile", "/developers/api-keys", "/launch/modules", "/token/ethereum", "/explore/robinhood"].includes(url.pathname)) {
       response.writeHead(404); response.end(); return;
     }
     response.setHeader("Content-Type", "text/html");

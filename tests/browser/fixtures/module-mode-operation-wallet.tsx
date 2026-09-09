@@ -78,6 +78,7 @@ export function FixtureWallet({ children }: { children: ReactNode }) {
   return <Context.Provider value={{ wallet, openWallet: () => setWallet({ account, chainId: "0x1237" }) }}>{children}</Context.Provider>;
 }
 export const useViewChain = () => ({ hydrated: true, viewChainId: 4663, setViewChainId: () => {} });
+export const useRouteViewChain = useViewChain;
 export function useWallet() {
   const value = useContext(Context);
   return { ...value, authenticated: true, sessionReady: true, authReady: true, connecting: false, openingWallet: false, switchingNetwork: false, disconnecting: false,

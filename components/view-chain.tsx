@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useState,
   useSyncExternalStore,
   type ReactNode,
 } from "react";
@@ -32,15 +33,31 @@ type ViewChainContextValue = Readonly<{
 }>;
 
 const ViewChainContext = createContext<ViewChainContextValue | null>(null);
+const VIEW_CHAIN_REVISION_COOKIE_NAME = `${VIEW_CHAIN_COOKIE_NAME}-revision`;
+const VIEW_CHAIN_REVISION_STORAGE_KEY = `${VIEW_CHAIN_STORAGE_KEY}:revision`;
 
-function readViewChainCookie(): ViewChainId | null {
-  const encodedName = `${VIEW_CHAIN_COOKIE_NAME}=`;
+function readCookie(name: string): string | null {
+  const encodedName = `${name}=`;
   for (const cookiePart of document.cookie.split(";")) {
     const normalizedPart = cookiePart.trim();
     if (!normalizedPart.startsWith(encodedName)) continue;
-    return tryParseViewChainId(normalizedPart.slice(encodedName.length));
+    return normalizedPart.slice(encodedName.length);
   }
   return null;
+}
+
+function readViewChainCookie(): ViewChainId | null {
+  return tryParseViewChainId(readCookie(VIEW_CHAIN_COOKIE_NAME));
+}
+
+function readViewChainRevision(): string {
+  let stored: string | null = null;
+  try {
+    stored = window.localStorage.getItem(VIEW_CHAIN_REVISION_STORAGE_KEY);
+  } catch {
+    // The cookie still detects choices when browser storage is blocked.
+  }
+  return JSON.stringify([readCookie(VIEW_CHAIN_REVISION_COOKIE_NAME), stored]);
 }
 
 function readStoredViewChain(): ViewChainId | null {
@@ -108,15 +125,27 @@ export function ViewChainProvider({
 
   useEffect(() => {
     if (!hydrated) return;
+    // Another tab may have changed the preference since this render committed.
+    const currentViewChainId = getViewChainSnapshot();
+    if (currentViewChainId === null) return;
     if (
-      readViewChainCookie() !== viewChainId ||
-      readStoredViewChain() !== viewChainId
+      readViewChainCookie() !== currentViewChainId ||
+      readStoredViewChain() !== currentViewChainId
     ) {
-      persistViewChain(viewChainId);
+      persistViewChain(currentViewChainId);
     }
-  }, [hydrated, viewChainId]);
+  }, [getViewChainSnapshot, hydrated, viewChainId]);
 
   const setViewChainId = useCallback((nextViewChainId: ViewChainId) => {
+    // Publish a distinct revision before the value. Pending route entry must
+    // detect a newer choice even before its storage event or after a round trip.
+    const revision = window.crypto.randomUUID();
+    document.cookie = `${VIEW_CHAIN_REVISION_COOKIE_NAME}=${revision}; Path=/; SameSite=Lax`;
+    try {
+      window.localStorage.setItem(VIEW_CHAIN_REVISION_STORAGE_KEY, revision);
+    } catch {
+      // Keep the same cookie fallback as the browsing preference itself.
+    }
     persistViewChain(nextViewChainId);
   }, []);
 
@@ -137,5 +166,34 @@ export function useViewChain(): ViewChainContextValue {
   if (!value) {
     throw new Error("useViewChain must be used within ViewChainProvider");
   }
+  return value;
+}
+
+function captureRouteEntry(chainId: ViewChainId | undefined) {
+  if (typeof document === "undefined") return { chainId, revision: null, previousChain: null };
+  return { chainId, revision: readViewChainRevision(), previousChain: readViewChainCookie() ?? readStoredViewChain() };
+}
+
+/** Apply a route's initial preference without replacing a more recent choice. */
+export function useRouteViewChain(chainId: ViewChainId | undefined): ViewChainContextValue {
+  const value = useViewChain();
+  const { hydrated, setViewChainId } = value;
+  // Capture before the first passive effect, which may run after a visible
+  // background tab has already been superseded by a choice in another tab.
+  const [entry, setEntry] = useState(() => captureRouteEntry(chainId));
+  if (entry.chainId !== chainId) setEntry(captureRouteEntry(chainId));
+
+  useEffect(() => {
+    const { chainId: routeChainId, revision, previousChain } = entry;
+    if (!hydrated || routeChainId === undefined || revision === null) return;
+    const timer = window.setTimeout(() => {
+      if (readViewChainRevision() !== revision) return;
+      // Also respect a numeric preference written by an already open older tab.
+      if (previousChain !== null && (readViewChainCookie() ?? readStoredViewChain()) !== previousChain) return;
+      setViewChainId(routeChainId);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [entry, hydrated, setViewChainId]);
+
   return value;
 }
