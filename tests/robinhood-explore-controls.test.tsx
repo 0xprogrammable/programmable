@@ -29,9 +29,9 @@ describe("Explore toolbar and loading structure", () => {
   it("loads the explicit Ethereum chain with an enabled search and its own list", () => {
     const html = renderToStaticMarkup(<RobinhoodLaunchesView chainId={1} />);
     expect(html).toContain("Search Ethereum launches by name, symbol or address");
-    expect(html).toContain('aria-label="Ethereum token launches"');
+    expect(html).toContain('aria-label="Ethereum launches"');
     expect(html).not.toContain("indexing is being rebuilt");
-    expect(html).not.toContain('aria-label="Robinhood token launches"');
+    expect(html).not.toContain('aria-label="Robinhood launches"');
   });
   it("keeps accessible arrows beside the chain and Filters controls without a separate page or mode row", () => {
     const html = renderToStaticMarkup(<RobinhoodLaunchesView chainId={4663} />);
@@ -45,6 +45,6 @@ describe("Explore toolbar and loading structure", () => {
     expect(html).not.toContain(">Previous<");
     expect(html).not.toContain(">Next<");
     expect(html.match(/<li /g)).toHaveLength(10);
-    expect(html).toContain('aria-label="Robinhood token launches" aria-busy="true"');
+    expect(html).toContain('aria-label="Robinhood launches" aria-busy="true"');
   });
 });
