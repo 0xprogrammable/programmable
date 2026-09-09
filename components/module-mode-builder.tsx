@@ -2,10 +2,11 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { ArrowLeft, ArrowRight, Check, ChevronDown, Download, Plus, Puzzle, Settings2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, ChevronDown, Download, Plus, Puzzle, Settings2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import { ModuleLibrary, ModuleCategoryIcon } from "@/components/module-library";
+import { ModulePickerDialog } from "@/components/module-picker-dialog";
 import { moduleCategory } from "@/lib/module-mode/library";
 import { ModuleSchemaField } from "@/components/module-mode-fields";
 import { ModuleModeImagePicker, moduleModeImageSource, type ModuleModeImageResource } from "@/components/module-mode-image";
@@ -90,6 +91,8 @@ export function ModuleModeBuilder({ catalog = PREVIEW_MODULE_CATALOG, engine = N
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [feesOpen, setFeesOpen] = useState(false);
   const [moreLinks, setMoreLinks] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [configurationId, setConfigurationId] = useState<string | null>(null);
   const [checked, setChecked] = useState(false);
   const [review, setReview] = useState<ModuleModeDraft | null>(null);
   const [reviewEntries, setReviewEntries] = useState<ModuleModeCatalogEntry[]>([]);
@@ -108,7 +111,6 @@ export function ModuleModeBuilder({ catalog = PREVIEW_MODULE_CATALOG, engine = N
     return () => { for (const url of urls) URL.revokeObjectURL(url); };
   }, []);
   const form = useRef<HTMLFormElement>(null);
-  const library = useRef<{ reveal: (id: string) => void }>(null);
   const reviewHeading = useRef<HTMLHeadingElement>(null);
   const result = useMemo(() => checked ? validateModuleModeDraft(state, catalog, configurationContext, engine, undefined, minimumInitialBuyWei, release) : null, [checked, state, catalog, configurationContext, engine, minimumInitialBuyWei, release]);
   const issues = result && !result.ok ? result.issues : [];
@@ -118,6 +120,7 @@ export function ModuleModeBuilder({ catalog = PREVIEW_MODULE_CATALOG, engine = N
   const fees = feeBreakdown(state.buyFeePercent, state.sellFeePercent, policy);
   const feeAllocation = programmableFeeAllocation(selected.length, policy);
   const missingSelected = selected.filter((entry) => !catalog.some((current) => current.id === entry.id));
+  const configuredEntry = selected.find(entry => entry.id === configurationId);
   const amounts = nativeValueBreakdown(state, visibleCatalog);
   const hasFunding = selected.some((entry) => Boolean(entry.funding));
   const tokenImageSource = moduleModeImageSource(state.tokenImage, imageResource);
@@ -134,19 +137,15 @@ export function ModuleModeBuilder({ catalog = PREVIEW_MODULE_CATALOG, engine = N
   function add(entry: ModuleModeCatalogEntry) {
     setChosenEntries((current) => ({ ...current, [entry.id]: entry }));
     setState((current) => setModuleSelected(current, entry, true)); setRemoved(null);
-    setAnnouncement(`${entry.title} added. Configure it below.`);
+    setAnnouncement(`${entry.title} added to your coin.`);
   }
   function remove(entry: ModuleModeCatalogEntry) {
     setState((current) => setModuleSelected(current, entry, false)); setRemoved(entry);
     setAnnouncement(`${entry.title} removed. Your settings are kept.`);
   }
   function showModules(id?: string) {
-    if (id) { library.current?.reveal(id); return; }
-    requestAnimationFrame(() => {
-      const target = document.getElementById(id ? `module-${id}-title` : "module-advanced-title");
-      target?.scrollIntoView({ block: "center", behavior: "auto" });
-      target?.focus();
-    });
+    if (id) setConfigurationId(id);
+    else setPickerOpen(true);
   }
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (imageBusy || contextLocked) return; setChecked(true);
@@ -155,6 +154,9 @@ export function ModuleModeBuilder({ catalog = PREVIEW_MODULE_CATALOG, engine = N
       if (next.issues.some((issue) => issue.path.startsWith("/socialLinks") || issue.path === "/description")) setDetailsOpen(true);
       if (next.issues.some((issue) => issue.path.includes("FeePercent"))) setFeesOpen(true);
       if (next.issues.some((issue) => /^\/socialLinks\/(discord|github|gitbook)$/.test(issue.path))) setMoreLinks(true);
+      const firstIssue = next.issues[0];
+      const invalidModule = selected.find(entry => firstIssue?.path.startsWith(`/modules/${entry.id}`) || firstIssue?.path === `/funding/${entry.id}`);
+      if (invalidModule) { setConfigurationId(invalidModule.id); return; }
       requestAnimationFrame(() => { const target = form.current?.querySelector<HTMLElement>('[aria-invalid="true"], [data-invalid="true"]') ?? form.current?.querySelector<HTMLElement>("[data-error-summary]"); target?.focus(); });
       return;
     }
@@ -183,15 +185,11 @@ export function ModuleModeBuilder({ catalog = PREVIEW_MODULE_CATALOG, engine = N
   return (
     <div className={`${styles.page} ${styles.studio}`}>
       <div className={styles.pageTop}><Link href="/launch" className={styles.backLink}><ArrowLeft size={16} aria-hidden="true" /> Launch</Link><span className={styles.network} aria-label="Launch network: Robinhood. Fee currency: ETH.">Robinhood <span aria-hidden="true">·</span> ETH</span></div>
-      <header className={styles.heading}>
-        <div className={styles.titleRow}><h1>Create a coin</h1>{launchAction ? null : <span className={styles.previewTag}>Preview</span>}</div>
-        <p>Add modules to choose how it works.</p>
-      </header>
       {statusContent}
       <div className={resultContent ? styles.resultLayout : styles.layout}>
         {resultContent ? <section className={styles.formPanel}>{resultContent}</section> : review ? (
           <section className={styles.formPanel} aria-labelledby="module-review-title">
-            <div className={styles.sectionHeading}><div><h2 id="module-review-title" ref={reviewHeading} tabIndex={-1}>{launchAction?.title ?? "Review draft"}</h2>{launchAction?.description ? <p role="status">{launchAction.description}</p> : null}</div></div>
+            <div className={styles.sectionHeading}><div><h1 id="module-review-title" ref={reviewHeading} tabIndex={-1}>{launchAction?.title ?? "Review draft"}</h1>{launchAction?.description ? <p role="status">{launchAction.description}</p> : null}</div></div>
             <dl className={styles.reviewRows}>
               <div><dt>Token</dt><dd>{review.token.name} <span>${review.token.symbol}</span></dd></div>
               <div><dt>Initial buy</dt><dd>{state.initialBuyEth.trim()} ETH</dd></div>
@@ -208,9 +206,10 @@ export function ModuleModeBuilder({ catalog = PREVIEW_MODULE_CATALOG, engine = N
           </section>
         ) : (
           <form ref={form} onSubmit={submit} noValidate className={styles.formPanel}>
+            <header className={styles.heading}><h1>Create a coin</h1></header>
             <fieldset className={styles.formFields} disabled={contextLocked} aria-label="Token configuration">
             <section className={styles.formSection} aria-labelledby="module-token-title">
-              <div className={styles.sectionHeading}><span className={styles.sectionMarker}>1</span><h2 id="module-token-title">Your coin</h2></div>
+              <h2 id="module-token-title" className={styles.liveRegion}>Coin details</h2>
               <div className={styles.identityEditor}>
               <ModuleModeImagePicker compact image={state.tokenImage} resource={imageResource} onChange={changeImage} onBusyChange={setImageBusy} error={fieldIssue("tokenImage")?.message} onUndo={previousImage ? () => { const previous = previousImage; setPreviousImage(null); changeImage(previous.image, previous.resource, false); } : undefined} />
               <div className={styles.tokenFields}>
@@ -219,7 +218,7 @@ export function ModuleModeBuilder({ catalog = PREVIEW_MODULE_CATALOG, engine = N
               </div>
               </div>
               <button type="button" className={styles.detailsToggle} aria-expanded={detailsOpen} aria-controls="module-coin-details" onClick={() => setDetailsOpen(value => !value)}>
-                <Plus size={16} aria-hidden="true" /> Description and links <span>Optional</span><ChevronDown size={16} aria-hidden="true" className={detailsOpen ? styles.chevronOpen : undefined} />
+                Description and links<ChevronDown size={16} aria-hidden="true" className={detailsOpen ? styles.chevronOpen : undefined} />
               </button>
               <div id="module-coin-details" hidden={!detailsOpen} className={styles.coinDetails}>
               <div className={styles.field}><label htmlFor="module-description">Description <span>Optional</span></label><textarea id="module-description" name="description" value={state.description} rows={2} placeholder="What’s the story?" aria-invalid={Boolean(fieldIssue("description")) || undefined} aria-describedby={fieldIssue("description") ? "module-description-error" : undefined} onChange={(event) => update("description", event.target.value)} />{fieldIssue("description") ? <p className={styles.fieldError} id="module-description-error">{fieldIssue("description")?.message}</p> : null}</div>
@@ -233,10 +232,14 @@ export function ModuleModeBuilder({ catalog = PREVIEW_MODULE_CATALOG, engine = N
               </div>
             </section>
             <section className={styles.modulesSection} aria-labelledby="module-advanced-title">
-              <div className={styles.sectionHeading}><span className={styles.sectionMarker}>2</span><div><h2 id="module-advanced-title" tabIndex={-1}>Add your modules</h2><p>Each module adds a feature. Choose what fits your coin.</p></div><span className={styles.selectionCount}>{selected.length ? `${selected.length} added` : "Optional"}</span></div>
-              <div className={styles.mobileAssembly} aria-label="Coin with selected modules"><span>{state.symbol.trim() ? `$${state.symbol.trim()}` : "Your coin"}</span><Plus size={14} aria-hidden="true" />{selected.length ? selected.map(entry => <button key={entry.id} type="button" onClick={() => showModules(entry.id)}>{entry.title}</button>) : <span className={styles.mobileAssemblyEmpty}>Your modules</span>}</div>
+              <div className={styles.moduleSectionHeading}><div><h2 id="module-advanced-title">Modules</h2><p>Add features to your coin.</p></div><Puzzle size={24} strokeWidth={1.6} aria-hidden="true" /></div>
               <div id="module-advanced-content">
-                <ModuleLibrary catalog={catalog} selectedIds={state.selectedModules} onAdd={add} onRemove={remove} renderConfiguration={renderModuleConfiguration} controllerRef={library} />
+                {selected.length ? <ul className={styles.selectedModules}>{selected.map(entry => <li key={entry.id}>
+                  <ModuleCategoryIcon category={moduleCategory(entry).id} size={20} />
+                  <button type="button" className={styles.configureModule} onClick={() => showModules(entry.id)} aria-label={`Configure ${entry.title}`}><span>{entry.title}</span><Settings2 size={16} aria-hidden="true" /></button>
+                  <button type="button" className={styles.removeModule} onClick={() => remove(entry)} aria-label={`Remove ${entry.title}`}><X size={17} aria-hidden="true" /></button>
+                </li>)}</ul> : null}
+                <button type="button" className={styles.addModulesButton} onClick={() => showModules()}><Plus size={18} aria-hidden="true" />Add modules</button>
                 {removed ? <div className={styles.undo}><span>{removed.title} removed.</span><button type="button" onClick={() => add(removed)}>Undo</button></div> : null}
                 {missingSelected.map((entry) => <div className={styles.unavailableModule} key={entry.id}><p><strong>{entry.title}</strong> is no longer in the current catalog. Your settings are kept; remove it to continue with another configuration.</p><button className={styles.textButton} type="button" onClick={() => remove(entry)}>Remove {entry.title}</button></div>)}
 
@@ -244,49 +247,46 @@ export function ModuleModeBuilder({ catalog = PREVIEW_MODULE_CATALOG, engine = N
               {versionContent ? <details className={styles.setupDetails}><summary>Other coin setups<ChevronDown size={16} aria-hidden="true" /></summary><div>{versionContent}</div></details> : null}
             </section>
             <section className={styles.formSection} aria-labelledby="module-launch-title">
-              <div className={styles.sectionHeading}><span className={styles.sectionMarker}>3</span><h2 id="module-launch-title">Launch settings</h2></div>
+              <h2 id="module-launch-title" className={styles.liveRegion}>Launch settings</h2>
               <TextField label="Initial buy" name="initialBuyEth" value={state.initialBuyEth} placeholder="0.00" suffix="ETH" inputMode="decimal" required issue={fieldIssue("initialBuyEth")} help={minimumInitialBuyWei ? `Minimum ${formatNativeWei(minimumInitialBuyWei)} ETH, plus gas.` : "Your first purchase at launch, plus gas."} onChange={(value) => update("initialBuyEth", value)} />
-              <button type="button" className={styles.feesToggle} aria-expanded={feesOpen} aria-controls="module-fee-settings" onClick={() => setFeesOpen(value => !value)}><Settings2 size={18} aria-hidden="true" /><span>Creator fees</span><strong>{state.buyFeePercent}% buy · {state.sellFeePercent}% sell</strong><ChevronDown size={16} aria-hidden="true" className={feesOpen ? styles.chevronOpen : undefined} /></button>
+              <button type="button" className={styles.feesToggle} aria-expanded={feesOpen} aria-controls="module-fee-settings" onClick={() => setFeesOpen(value => !value)}><span>Creator fees</span><strong>{state.buyFeePercent}% buy · {state.sellFeePercent}% sell</strong><ChevronDown size={16} aria-hidden="true" className={feesOpen ? styles.chevronOpen : undefined} /></button>
               <div id="module-fee-settings" hidden={!feesOpen} className={styles.feeSettings}>
               <div className={styles.twoFields}>{(["buy", "sell"] as const).map((direction) => { const key = `${direction}FeePercent` as const; const issue = fieldIssue(key); return <div className={styles.field} key={direction}><label htmlFor={`module-${key}`}>{direction === "buy" ? "Buy fee" : "Sell fee"}</label><select id={`module-${key}`} name={key} value={state[key]} onChange={(event) => update(key, event.target.value)} aria-invalid={Boolean(issue) || undefined} aria-describedby={issue ? `module-${key}-error` : undefined}>{feeOptions.map((value) => <option key={value} value={value}>{value}%</option>)}</select>{issue ? <p id={`module-${key}-error`} className={styles.fieldError}>{issue.message}</p> : null}</div>; })}</div>
               <div className={styles.feeLine}><span>Platform fee <span className={styles.feeAsset}>in ETH</span></span><strong>+ {fees.programmable}</strong></div>
               <details className={styles.feeExplanation}><summary>How fees are shared</summary><p>{feeAllocation} Added to each trade, including your initial buy.</p></details>
               </div>
-              {!feesOpen ? <p className={styles.help}>Plus {fees.programmable} platform fee per trade.</p> : null}
             </section>
             {issues.length ? <div className={styles.errorSummary} tabIndex={-1} data-error-summary><strong>Check your draft</strong><ul>{issues.map((issue, index) => <li key={`${issue.path}-${index}`}>{issue.message}</li>)}</ul></div> : null}
             <div className={styles.formFooter}><button type="submit" className={styles.primaryButton} disabled={imageBusy || Boolean(launchAction?.disabled)}>{launchAction?.label ?? "Review draft"} <ArrowRight size={18} aria-hidden="true" /></button></div>
+            {!launchAction ? <p className={styles.availabilityNote}>Wallet launching is unavailable. You can save a draft.</p> : null}
             </fieldset>
           </form>
         )}
         {!resultContent ? <aside className={styles.previewPanel} aria-labelledby="module-preview-title">
-          <div className={styles.previewCaption}><span>YOUR COIN</span><span>Preview</span></div>
           <div className={styles.coinCard}>
             <div className={styles.coinCardHeading}>
-              <div className={styles.coinAvatar}>{tokenImageSource ? <Image src={tokenImageSource} alt="Your selected token image" fill sizes="112px" unoptimized /> : <span aria-hidden="true">{state.symbol.trim().slice(0, 2).toUpperCase() || <Puzzle size={44} strokeWidth={1.4} />}</span>}</div>
+              <div className={styles.coinAvatar}>{tokenImageSource ? <Image src={tokenImageSource} alt="Your selected token image" fill sizes="64px" unoptimized /> : <span aria-hidden="true">{state.symbol.trim().slice(0, 2).toUpperCase() || <Puzzle size={28} strokeWidth={1.5} />}</span>}</div>
               <div><h2 id="module-preview-title">{state.name.trim() || "Your coin"}</h2><p>{state.symbol.trim() ? `$${state.symbol.trim()}` : "$COIN"}</p></div>
-              {state.description.trim() ? <p className={styles.coinDescription}>{state.description.trim()}</p> : null}
             </div>
-            <div className={styles.coinAssembly} aria-label="Your coin configuration">
-              <div className={styles.baseBlock}><span className={styles.baseDot} aria-hidden="true" /><div><strong>ETH pool</strong><span>Your coin’s trading pair</span></div><Check size={16} aria-hidden="true" /></div>
-              {selected.map(entry => <div className={styles.assemblyModule} key={entry.id}>
-                <ModuleCategoryIcon category={moduleCategory(entry).id} size={20} />
-                {review ? <span>{entry.title}</span> : <button type="button" disabled={contextLocked} onClick={() => showModules(entry.id)} aria-label={`Configure ${entry.title}`}>{entry.title}</button>}
-                <Check size={14} aria-hidden="true" />
-              </div>)}
-              {!review ? <button type="button" className={styles.addModuleSlot} disabled={contextLocked} onClick={() => showModules()}><Plus size={18} aria-hidden="true" />{selected.length ? "Add another module" : "Add your first module"}</button> : null}
-            </div>
+            {state.description.trim() ? <p className={styles.coinDescription}>{state.description.trim()}</p> : null}
+            {selected.length ? <ul className={styles.coinAttachments} aria-label="Attached modules">{selected.map(entry => <li key={entry.id}><Puzzle size={16} aria-hidden="true" /><span>{entry.title}</span></li>)}</ul> : null}
             <dl className={styles.coinTotals}>
+              <div><dt>Paired with</dt><dd>ETH</dd></div>
               <div><dt>Buy fee</dt><dd>{fees.buy}</dd></div><div><dt>Sell fee</dt><dd>{fees.sell}</dd></div>
               <div><dt>Initial buy</dt><dd>{amounts.initialBuy} ETH</dd></div>
               {hasFunding ? <><div><dt>Module budgets</dt><dd>{amounts.funding} ETH</dd></div><div className={styles.coinTotal}><dt>Total before gas</dt><dd>{amounts.total} ETH</dd></div></> : null}
             </dl>
             <p className={styles.coinFeeNote}>Includes the {fees.programmable} platform fee.</p>
           </div>
-          <Link href="/developers/modules" className={styles.buildModuleLink}>Have a module idea?<ArrowRight size={16} aria-hidden="true" /></Link>
-          {!launchAction ? <p className={styles.availabilityNote}>Preview only. Wallet launching is not available yet.</p> : null}
+          <Link href="/developers/modules" className={styles.buildModuleLink}><Puzzle size={16} aria-hidden="true" />Build your own module<ArrowRight size={16} aria-hidden="true" /></Link>
         </aside> : null}
       </div>
+      {pickerOpen ? <ModulePickerDialog title="Add modules" description="Modules are upgrades for your coin. Pick the features you want." onClose={() => setPickerOpen(false)}>
+        <ModuleLibrary catalog={catalog} selectedIds={state.selectedModules} onAdd={add} onRemove={remove} />
+      </ModulePickerDialog> : null}
+      {configuredEntry ? <ModulePickerDialog title={configuredEntry.title} description={configuredEntry.summary} onClose={() => setConfigurationId(null)}>
+        <fieldset className={styles.formFields} disabled={contextLocked}>{renderModuleConfiguration(configuredEntry)}</fieldset>
+      </ModulePickerDialog> : null}
       <div className={styles.liveRegion} role="status" aria-live="polite">{announcement}</div>
     </div>
   );

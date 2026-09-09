@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Puzzle } from "lucide-react";
 
 import launchExperience from "@/components/launch-experience.module.css";
 import { ProfileChainSelector } from "@/components/profile-chain-selector";
@@ -294,21 +294,17 @@ export function LaunchModelPicker({
             aria-describedby="launch-model-modules-description"
           >
             <span className={`${launchExperience.modelArt} ${launchExperience.moduleArt}`} aria-hidden="true">
-              <span className={launchExperience.moduleStack}>
-                <span className={launchExperience.modulePiece}><span>01</span><strong>Your coin</strong><span>●</span></span>
-                <span className={launchExperience.modulePiece}><span>02</span><strong>Your fees</strong><span>%</span></span>
-                <span className={launchExperience.modulePiece}><span>03</span><strong>Your modules</strong><span>+</span></span>
-              </span>
+              <Puzzle className={launchExperience.modulePuzzle} strokeWidth={0.7} />
             </span>
             <span className={`launch-model-card-body ${launchExperience.modelBody}`}>
               <span className={`launch-model-card-heading ${launchExperience.modelHeading}`}>
                 <strong id="launch-model-modules-title">Modules</strong>
               </span>
               <span className={`launch-model-description ${launchExperience.modelDescription}`} id="launch-model-modules-description">
-                Create a coin and add the features you want.
+                Your coin, with upgrades. Add modules to give it new features.
               </span>
               <span className={`launch-model-action ${launchExperience.modelAction}`}>
-                Open builder <ArrowRight aria-hidden="true" size={16} />
+                Create a coin <ArrowRight aria-hidden="true" size={16} />
               </span>
             </span>
           </Link>

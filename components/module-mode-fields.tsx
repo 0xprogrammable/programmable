@@ -41,6 +41,9 @@ export function ModuleSchemaField({ schema, value, onChange, label, path, schema
   const savedAccounts = useRef<Record<string, FormValue>>({});
   const [removedItem, setRemovedItem] = useState<{ value: FormValue; index: number } | null>(null);
   const title = schema.label ?? label ?? "Configuration";
+  const help = schema.help
+    ?.replace("Cumulative gross buys include fees.", "Each wallet’s total includes fees.")
+    .replace("Starts at instance construction; maximum 30 days.", "Starts when the module is created. Up to 30 days.");
   const id = moduleFieldId(path);
   const issue = issues.find((item) => item.path === path);
   const describedBy = [schema.help ? `${id}-help` : "", issue ? `${id}-error` : ""].filter(Boolean).join(" ") || undefined;
@@ -53,7 +56,7 @@ export function ModuleSchemaField({ schema, value, onChange, label, path, schema
       rows = configurationSummary(schema, configurationToForm(schema, fixed.value, fields, schemaPath), fields, title, schemaPath, fixed.bindings);
     } catch { /* Invalid published bindings remain a visible validation error. */ }
     if (!rows) return <p className={styles.fieldError} role="alert">The fixed template value could not be verified. Refresh the catalog before reviewing.</p>;
-    return <div className={styles.field} aria-describedby={describedBy}><span>{title} <small>Fixed by template</small></span><dl className={styles.reviewRows}>{rows.map((row, index) => <div key={`${row.label}-${index}`}><dt>{row.label}</dt><dd>{row.value}</dd></div>)}</dl>{schema.help ? <p id={`${id}-help`} className={styles.help}>{schema.help}</p> : null}{issue ? <p id={`${id}-error`} className={styles.fieldError}>{issue.message}</p> : null}</div>;
+    return <div className={styles.field} aria-describedby={describedBy}><span>{title} <small>Fixed by template</small></span><dl className={styles.reviewRows}>{rows.map((row, index) => <div key={`${row.label}-${index}`}><dt>{row.label}</dt><dd>{row.value}</dd></div>)}</dl>{schema.help ? <p id={`${id}-help`} className={styles.help}>{help}</p> : null}{issue ? <p id={`${id}-error`} className={styles.fieldError}>{issue.message}</p> : null}</div>;
   }
 
   if (schema.type === "record") {
@@ -85,7 +88,7 @@ export function ModuleSchemaField({ schema, value, onChange, label, path, schema
         })}
       </div>
     );
-    return label || schema.label ? <fieldset className={styles.collection}><legend>{title}</legend>{schema.help ? <p className={styles.help}>{schema.help}</p> : null}{children}</fieldset> : children;
+    return label || schema.label ? <fieldset className={styles.collection}><legend>{title}</legend>{schema.help ? <p className={styles.help}>{help}</p> : null}{children}</fieldset> : children;
   }
 
   if (schema.type === "array") {
@@ -93,7 +96,7 @@ export function ModuleSchemaField({ schema, value, onChange, label, path, schema
     return (
       <fieldset className={styles.collection} aria-describedby={describedBy}>
         <legend>{title}</legend>
-        {schema.help ? <p id={`${id}-help`} className={styles.help}>{schema.help}</p> : null}
+        {schema.help ? <p id={`${id}-help`} className={styles.help}>{help}</p> : null}
         {values.map((item, index) => (
           <div key={index} className={styles.collectionItem}>
             <div className={styles.collectionHeader}>
@@ -128,7 +131,7 @@ export function ModuleSchemaField({ schema, value, onChange, label, path, schema
           }}>
             {Object.entries(schema.variants).map(([key, variant]) => <option key={key} value={key}>{variant.label ?? readable(key)}</option>)}
           </select>
-          {schema.help ? <p id={`${id}-help`} className={styles.help}>{schema.help}</p> : null}
+          {schema.help ? <p id={`${id}-help`} className={styles.help}>{help}</p> : null}
           {issue ? <p id={`${id}-error`} className={styles.fieldError}>{issue.message}</p> : null}
         </div>
         {branchSchema ? <ModuleSchemaField {...shared} schema={branchSchema} value={children} onChange={(next) => onChange({ [schema.tag]: branch, ...asFormRecord(next) })} path={path} schemaPath={`${schemaPath}/${branch}`} /> : null}
@@ -137,7 +140,7 @@ export function ModuleSchemaField({ schema, value, onChange, label, path, schema
   }
 
   if (schema.type === "bool") {
-    return <div className={styles.field}><label className={styles.optionalToggle}><input id={id} type="checkbox" checked={value === true} aria-invalid={Boolean(issue) || undefined} aria-describedby={describedBy} onChange={(event) => onChange(event.target.checked)} /><span>{title}</span></label>{schema.help ? <p id={`${id}-help`} className={styles.help}>{schema.help}</p> : null}{issue ? <p id={`${id}-error`} className={styles.fieldError}>{issue.message}</p> : null}</div>;
+    return <div className={styles.field}><label className={styles.optionalToggle}><input id={id} type="checkbox" checked={value === true} aria-invalid={Boolean(issue) || undefined} aria-describedby={describedBy} onChange={(event) => onChange(event.target.checked)} /><span>{title}</span></label>{schema.help ? <p id={`${id}-help`} className={styles.help}>{help}</p> : null}{issue ? <p id={`${id}-error`} className={styles.fieldError}>{issue.message}</p> : null}</div>;
   }
 
   if (schema.type === "account") {
@@ -161,7 +164,7 @@ export function ModuleSchemaField({ schema, value, onChange, label, path, schema
         <div className={styles.field}>
           <label htmlFor={id}>{role ? "Role" : "Wallet address"}</label>
           {role ? <select id={id} value={String(record.role ?? "")} aria-invalid={Boolean(issue) || undefined} aria-describedby={describedBy} onChange={(event) => onChange({ role: event.target.value })}><option value="">Choose a role</option>{roles.map((key) => <option value={key} key={key}>{key}</option>)}</select> : <input id={id} type="text" spellCheck={false} autoComplete="off" placeholder="0x…" value={String(record.address ?? "")} aria-invalid={Boolean(issue) || undefined} aria-describedby={describedBy} onChange={(event) => onChange({ address: event.target.value })} />}
-          {schema.help ? <p id={`${id}-help`} className={styles.help}>{schema.help}</p> : null}
+          {schema.help ? <p id={`${id}-help`} className={styles.help}>{help}</p> : null}
           {issue ? <p id={`${id}-error`} className={styles.fieldError}>{issue.message}</p> : null}
         </div>
       </fieldset>
@@ -178,7 +181,7 @@ export function ModuleSchemaField({ schema, value, onChange, label, path, schema
   const display = fields[schemaPath];
   if (schema.type === "uint" && display?.input === "duration") {
     const duration = typeof value === "string" ? { amount: value, unit: "seconds" } : asFormRecord(value);
-    return <div className={styles.field}><label htmlFor={id}>{title}</label><div className={styles.durationInput}><input id={id} type="text" inputMode="decimal" value={String(duration.amount ?? "")} aria-invalid={Boolean(issue) || undefined} aria-describedby={describedBy} onChange={(event) => onChange({ ...duration, amount: event.target.value })} /><select value={String(duration.unit ?? "seconds")} aria-label={`${title} unit`} onChange={(event) => onChange({ ...duration, unit: event.target.value })}>{Object.keys(DURATION_UNITS).map((unit) => <option key={unit} value={unit}>{unit}</option>)}</select></div>{schema.help ? <p id={`${id}-help`} className={styles.help}>{schema.help}</p> : null}{issue ? <p id={`${id}-error`} className={styles.fieldError}>{issue.message}</p> : null}</div>;
+    return <div className={styles.field}><label htmlFor={id}>{title}</label><div className={styles.durationInput}><input id={id} type="text" inputMode="decimal" value={String(duration.amount ?? "")} aria-invalid={Boolean(issue) || undefined} aria-describedby={describedBy} onChange={(event) => onChange({ ...duration, amount: event.target.value })} /><select value={String(duration.unit ?? "seconds")} aria-label={`${title} unit`} onChange={(event) => onChange({ ...duration, unit: event.target.value })}>{Object.keys(DURATION_UNITS).map((unit) => <option key={unit} value={unit}>{unit}</option>)}</select></div>{schema.help ? <p id={`${id}-help`} className={styles.help}>{help}</p> : null}{issue ? <p id={`${id}-error`} className={styles.fieldError}>{issue.message}</p> : null}</div>;
   }
   return (
     <div className={styles.field}>
@@ -187,7 +190,7 @@ export function ModuleSchemaField({ schema, value, onChange, label, path, schema
         <input id={id} type={display?.input === "datetime-utc" ? "datetime-local" : "text"} value={typeof value === "string" ? value : ""} inputMode={schema.type === "uint" ? display?.decimals ? "decimal" : "numeric" : "text"} autoComplete="off" spellCheck={schema.type === "string"} placeholder={display?.placeholder ?? (schema.type === "address" ? "0x…" : undefined)} aria-label={display?.suffix ? `${title} (${display.suffix})` : undefined} aria-invalid={Boolean(issue) || undefined} aria-describedby={describedBy} onChange={(event) => onChange(event.target.value)} />
         {display?.suffix ? <span aria-hidden="true">{display.suffix}</span> : null}
       </div>
-      {schema.help ? <p id={`${id}-help`} className={styles.help}>{schema.help}</p> : null}
+      {schema.help ? <p id={`${id}-help`} className={styles.help}>{help}</p> : null}
       {issue ? <p id={`${id}-error`} className={styles.fieldError}>{issue.message}</p> : null}
     </div>
   );
