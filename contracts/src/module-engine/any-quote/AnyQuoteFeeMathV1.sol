@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {AnyQuoteTypesV1 as A} from "./AnyQuoteTypesV1.sol";
+import { AnyQuoteTypesV1 as A } from "./AnyQuoteTypesV1.sol";
 
 /// @notice Quote-denominated fees with independent, persistent rounding carry.
 library AnyQuoteFeeMathV1 {

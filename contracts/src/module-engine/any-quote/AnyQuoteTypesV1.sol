@@ -5,7 +5,7 @@ library AnyQuoteTypesV1 {
     uint256 internal constant CHAIN_ID = 4663;
     uint256 internal constant TOKEN_SUPPLY = 1_000_000_000 ether;
     uint16 internal constant PLATFORM_BPS = 30;
-    uint16 internal constant MAX_CREATOR_BPS = 1_000;
+    uint16 internal constant MAX_CREATOR_BPS = 1000;
     int24 internal constant TICK_SPACING = 200;
     address internal constant PLATFORM_RECIPIENT = 0xD88539d3c4C460136a733A3Fd60cf6BF269079da;
     bytes32 internal constant SCHEMA_ID = keccak256("programmable.any-quote.configuration.v1");
