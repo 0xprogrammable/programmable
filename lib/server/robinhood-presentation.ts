@@ -16,6 +16,13 @@ const DEX_PAIRS = "https://api.dexscreener.com/latest/dex/pairs/robinhood/";
 const MAIN_TOKEN = "0xc60ba256b44334a0cd2c7242e98b88f031abb006";
 // Platform-provided display assets supplement the immutable launch metadata.
 const SUPPLEMENTAL_TOKEN_PRESENTATIONS: Readonly<Record<string, Pick<RobinhoodCoinPresentation, "imageUrl" | "links">>> = {
+  "0x105f6435a4ab3c03c13d4a0db67961344694d0cc": {
+    imageUrl: "/brand/projects/blob-token-v1.jpg",
+    links: [
+      { label: "Website", url: "https://playblob.com/" },
+      { label: "X", url: "https://x.com/playblobdotcom" },
+    ],
+  },
   "0x34cd7dd63c550a78a3228c199474189b88565ac9": {
     imageUrl: "/brand/projects/arbit-token-v1.png",
     links: [
