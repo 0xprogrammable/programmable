@@ -137,7 +137,7 @@ export async function readModuleEngineLaunchVersions(input: { digests: readonly 
     try {
       const availability = parseModuleEngineAvailability(result.value), release = availability.release;
       return release?.releaseDigest === digests[index] ? [{ sourceKind: "module-engine-v1" as const,
-        releaseDigest: release.releaseDigest, label: `Engine v1 · ${release.releaseDigest.slice(2, 10)}` }] : [];
+        releaseDigest: release.releaseDigest, label: `${release.sourceVersion === "module-engine-any-quote-v1" ? "Any Quote LP" : "Engine v1"} · ${release.releaseDigest.slice(2, 10)}` }] : [];
     } catch { return []; }
   });
 }

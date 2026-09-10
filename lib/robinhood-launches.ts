@@ -1,4 +1,5 @@
 import { MODULE_MODE_ECONOMICS_POLICY_V2 } from "./module-mode/release";
+import { MODULE_ENGINE_ANY_QUOTE_ECONOMICS_POLICY_ID } from "./module-engine/profile";
 import type { LaunchProjectionV1 } from "./custom-launch/launch-plan-v1";
 
 export type RobinhoodLaunch = Readonly<{
@@ -23,7 +24,9 @@ export type RobinhoodLaunch = Readonly<{
   modulePackageIds?: readonly string[];
   moduleFamilyIds?: readonly string[];
   economicsPolicyId?: string;
-  protocolFeeBps?: 10;
+  protocolFeeBps?: 10 | 30;
+  feeAsset?: string;
+  feeLedgerAddress?: string;
   authorPoolFeeBps?: 0 | 20;
   platformFeeBps?: 10 | 30;
   feeEligibleFamilyIds?: readonly string[];
@@ -134,7 +137,7 @@ export type RobinhoodEngineLaunch = RobinhoodLaunch & Readonly<{
   engineAddress: string; engineRevisionId: string; engineFamilyId: string; engineManifestHash: string; engineRuntimeCodeHash: string;
   tokenRuntimeCodeHash: string; quoteAsset: string; quoteDecimals: number; configurationHash: string; constructorHash: string;
   initCodeHash: string; planHash: string; resourcesHash: string; verificationDigest: string;
-  economicsPolicyId: string; protocolFeeBps: 10; authorPoolFeeBps: 0 | 20; platformFeeBps: 10 | 30; feeEligibleFamilyIds: readonly string[];
+  economicsPolicyId: string; protocolFeeBps: 10 | 30; authorPoolFeeBps: 0 | 20; platformFeeBps: 10 | 30; feeEligibleFamilyIds: readonly string[];
   modulePackageIds: readonly string[]; moduleFamilyIds: readonly string[]; primaryMarket: RobinhoodEnginePrimaryMarket | null;
 }>;
 export type RobinhoodModuleLaunch = RobinhoodNativeModuleLaunch | RobinhoodEngineLaunch;
@@ -145,6 +148,7 @@ export function isRobinhoodEngineLaunch(value: unknown): value is RobinhoodEngin
   const row = value as Record<string, unknown>;
   const address = (item: unknown): item is string => typeof item === "string" && /^0x(?!0{40}$)[\da-f]{40}$/i.test(item);
   const hash = (item: unknown): item is string => typeof item === "string" && /^0x(?!0{64}$)[\da-f]{64}$/i.test(item);
+  const anyQuote = row.economicsPolicyId === MODULE_ENGINE_ANY_QUOTE_ECONOMICS_POLICY_ID;
   if (row.sourceKind !== "module-engine-v1" || row.routerAddress !== null || row.stampHash !== null
     || ["recipeHash", "runtime", "launchKey"].some(key => Object.hasOwn(row, key))
     || ![row.sourceAddress, row.tokenAddress, row.creator, row.engineAddress, row.quoteAsset].every(address)
@@ -152,23 +156,26 @@ export function isRobinhoodEngineLaunch(value: unknown): value is RobinhoodEngin
     || ![row.launchId, row.sourceReleaseDigest, row.engineRevisionId, row.engineFamilyId, row.engineManifestHash, row.engineRuntimeCodeHash,
       row.tokenRuntimeCodeHash, row.configurationHash, row.constructorHash, row.initCodeHash, row.planHash, row.resourcesHash,
       row.verificationDigest, row.transactionHash, row.blockHash].every(hash)
-    || !Number.isInteger(row.quoteDecimals) || Number(row.quoteDecimals) < 0 || Number(row.quoteDecimals) > 18
+    || !Number.isInteger(row.quoteDecimals) || Number(row.quoteDecimals) < 0 || Number(row.quoteDecimals) > (anyQuote ? 36 : 18)
     || row.decimals !== 18 || ![row.name, row.symbol].every(item => typeof item === "string" && item.length > 0 && item.length <= 128)
     || typeof row.blockNumber !== "string" || !/^(0|[1-9][0-9]*)$/.test(row.blockNumber)
     || !Number.isSafeInteger(row.logIndex) || Number(row.logIndex) < 0
     || !(row.launchedAt === null || (typeof row.launchedAt === "string" && Number.isFinite(Date.parse(row.launchedAt))))
     || !Array.isArray(row.modulePackageIds) || row.modulePackageIds.length !== 1 || row.modulePackageIds[0] !== row.engineRevisionId
     || !Array.isArray(row.moduleFamilyIds) || row.moduleFamilyIds.length !== 1 || row.moduleFamilyIds[0] !== row.engineFamilyId
-    || row.economicsPolicyId !== MODULE_MODE_ECONOMICS_POLICY_V2 || row.protocolFeeBps !== 10
-    || (row.authorPoolFeeBps !== 0 && row.authorPoolFeeBps !== 20) || row.platformFeeBps !== 10 + Number(row.authorPoolFeeBps)
-    || !Array.isArray(row.feeEligibleFamilyIds) || row.feeEligibleFamilyIds.length > 8 || !row.feeEligibleFamilyIds.every(hash)
-    || row.authorPoolFeeBps !== (row.feeEligibleFamilyIds.length ? 20 : 0)
-    || row.feeEligibleFamilyIds.some((id, index, ids) => index > 0 && id.toLowerCase() <= ids[index - 1].toLowerCase())) return false;
+    || (anyQuote ? row.protocolFeeBps !== 30 || row.authorPoolFeeBps !== 0 || row.platformFeeBps !== 30
+      || row.feeAsset !== row.quoteAsset || !address(row.feeLedgerAddress) || row.primaryMarket === null
+      || !Array.isArray(row.feeEligibleFamilyIds) || row.feeEligibleFamilyIds.length !== 0
+      : row.economicsPolicyId !== MODULE_MODE_ECONOMICS_POLICY_V2 || row.protocolFeeBps !== 10
+        || (row.authorPoolFeeBps !== 0 && row.authorPoolFeeBps !== 20) || row.platformFeeBps !== 10 + Number(row.authorPoolFeeBps)
+        || !Array.isArray(row.feeEligibleFamilyIds) || row.feeEligibleFamilyIds.length > 8 || !row.feeEligibleFamilyIds.every(hash)
+        || row.authorPoolFeeBps !== (row.feeEligibleFamilyIds.length ? 20 : 0)
+        || row.feeEligibleFamilyIds.some((id, index, ids) => index > 0 && id.toLowerCase() <= ids[index - 1].toLowerCase()))) return false;
   if (row.primaryMarket === null) return row.hookAddress === null && row.poolManager === null && row.poolId === null;
   if (!row.primaryMarket || typeof row.primaryMarket !== "object" || Array.isArray(row.primaryMarket)) return false;
   const market = row.primaryMarket as Record<string, unknown>;
   return market.kind === "uniswap-v4" && market.chainId === 4663 && market.launchId === row.launchId
-    && market.primaryToken === row.tokenAddress && market.quoteAsset === row.quoteAsset && market.hook === row.engineAddress
+    && market.primaryToken === row.tokenAddress && market.quoteAsset === row.quoteAsset && (anyQuote ? address(market.hook) && market.hook !== row.engineAddress : market.hook === row.engineAddress)
     && address(market.poolManager) && hash(market.poolId) && row.poolManager === market.poolManager && row.poolId === market.poolId
     && row.hookAddress === market.hook && Number.isInteger(market.initialTick) && Math.abs(Number(market.initialTick)) < 887272;
 }

@@ -14,19 +14,20 @@ export interface ModuleEngineLibraryProps {
   disabled?: boolean;
 }
 const categoryLabels = { "quote-v1": "Trading", "escrow-v1": "Deposits", "settlement-v1": "Payments", "custom-v1": "Custom" } as const;
+const categoryFor = (profile: ModuleEngineTemplate["manifest"]["manifest"]["catalogDefinition"]["interface"]) => profile === "quote-shared-v1" ? "quote-v1" : profile;
 
 /** Engine templates retain their own source, revision and operation wire throughout selection. */
 export function ModuleEngineLibrary({ templates, selectedId, onSelect, disabled = false }: ModuleEngineLibraryProps) {
   const [query, setQuery] = useState(""), [kind, setKind] = useState("all"), [page, setPage] = useState(1);
   const deferred = useDeferredValue(query), id = useId();
   const categories = useMemo(() => (Object.keys(categoryLabels) as (keyof typeof categoryLabels)[])
-    .filter(value => templates.some(template => template.manifest.manifest.catalogDefinition.interface === value)), [templates]);
+    .filter(value => templates.some(template => categoryFor(template.manifest.manifest.catalogDefinition.interface) === value)), [templates]);
   const results = useMemo(() => {
     const words = deferred.trim().toLocaleLowerCase().split(/\s+/u).filter(Boolean);
     return templates.filter(template => {
       const { catalogDefinition: definition, revision } = template.manifest.manifest;
-      if (kind !== "all" && definition.interface !== kind) return false;
-      const searchable = [definition.id, definition.title, definition.summary, definition.version, categoryLabels[definition.interface], moduleEngineInterfaceLabel(definition.interface),
+      if (kind !== "all" && categoryFor(definition.interface) !== kind) return false;
+      const searchable = [definition.id, definition.title, definition.summary, definition.version, categoryLabels[categoryFor(definition.interface)], moduleEngineInterfaceLabel(definition.interface),
         ...revision.operationPermissions.map(operation => moduleEngineOperationLabel(operation.operationId))].join(" ").toLocaleLowerCase();
       return words.every(word => searchable.includes(word));
     });
@@ -48,7 +49,7 @@ export function ModuleEngineLibrary({ templates, selectedId, onSelect, disabled 
       {results.slice((currentPage - 1) * MODULE_LIBRARY_PAGE_SIZE, currentPage * MODULE_LIBRARY_PAGE_SIZE).map(template => {
         const { catalogDefinition: definition } = template.manifest.manifest, selected = definition.id === selectedId;
         return <article key={template.manifestHash} className={styles.module} data-selected={selected}>
-          <div className={styles.moduleInfo}><h3>{definition.title}</h3><p>{definition.summary}</p><span>{categoryLabels[definition.interface]} · v{definition.version}</span></div>
+          <div className={styles.moduleInfo}><h3>{definition.title}</h3><p>{definition.summary}</p><span>{categoryLabels[categoryFor(definition.interface)]} · v{definition.version}</span></div>
           <button type="button" className={styles.add} disabled={disabled} aria-label={`Choose module ${definition.title}`} aria-pressed={selected}
             onClick={() => { if (!selected) onSelect(template); }}><span className={styles.selectionIcon} aria-hidden="true">{selected ? <Check size={14} /> : null}</span>{selected ? "Selected" : "Choose"}</button>
         </article>;

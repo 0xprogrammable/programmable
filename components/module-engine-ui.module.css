@@ -129,3 +129,23 @@
 .previewModule { gap:8px; margin-top:16px; }
 .previewModule strong, .previewFacts > div { font-size:13px; }
 .builderRoot .builderForm > fieldset > section + section { border:0; margin-top:28px; padding-top:0; }
+
+/* The free pair address is part of the primary Any Quote flow. */
+.anyQuoteAsset { margin-top: 20px; min-width: 0; }
+.anyQuoteAvailability { color: var(--engine-muted, #b7b7b3); font-size: 13px; line-height: 20px; min-width: 0; }
+.anyQuoteStatusText { align-items: flex-start; display: flex; gap: 8px; }
+.anyQuoteStatusText > svg { flex: 0 0 16px; margin-top: 2px; }
+.anyQuoteStatusText > span { min-width: 0; overflow-wrap: anywhere; }
+.anyQuoteStatusText small { color: var(--engine-muted, #b7b7b3); display: block; font: inherit; margin-top: 4px; }
+.anyQuoteAvailability[data-status="compatible"] .anyQuoteStatusText { color: #c7ddb7; }
+.anyQuoteAvailability[data-status="incompatible"] .anyQuoteStatusText, .anyQuoteAvailability[data-status="invalid"] .anyQuoteStatusText { color: #ffacb6; }
+.anyQuoteRetry { align-items: center; background: transparent; border: 1px solid #73736c; border-radius: 8px; color: var(--engine-ink, #f5f3ef); cursor: pointer; display: inline-flex; font: inherit; gap: 8px; margin-top: 12px; min-height: 44px; padding: 8px 12px; }
+.anyQuoteInitialBuy { margin-top: 24px; }
+.anyQuoteAmount { position: relative; }
+.anyQuoteAmount > input { width: 100%; }
+.builderRoot .anyQuoteAmount > input { padding-right: 60px; }
+.anyQuoteAmount > span { color: var(--engine-muted, #b7b7b3); font-size: 14px; pointer-events: none; position: absolute; right: 16px; top: 50%; transform: translateY(-50%); }
+.anyQuoteSpinner { animation: anyQuoteSpin 1s linear infinite; }
+@keyframes anyQuoteSpin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .anyQuoteSpinner { animation: none; } }
+@media (forced-colors: active) { .anyQuoteAvailability[data-status] .anyQuoteStatusText { color: CanvasText; } .anyQuoteRetry { border-color: ButtonText; } }

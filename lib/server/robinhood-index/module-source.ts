@@ -11,12 +11,15 @@ import type { Checkpoint } from "./model";
 import { canonicalizeJson, parseStrictJson } from "../projection-target/canonical-json";
 
 export type SupportedModuleModeRelease = ModuleModeRelease | ModuleEngineRelease;
+function isEngineRelease(release: SupportedModuleModeRelease): release is ModuleEngineRelease {
+  return release.sourceVersion === "module-engine-v1" || release.sourceVersion === "module-engine-any-quote-v1";
+}
 function bindSupportedRelease(value: unknown): SupportedModuleModeRelease {
-  return value && typeof value === "object" && Object.getOwnPropertyDescriptor(value, "sourceVersion")?.value === "module-engine-v1"
+  return value && typeof value === "object" && ["module-engine-v1", "module-engine-any-quote-v1"].includes(Object.getOwnPropertyDescriptor(value, "sourceVersion")?.value)
     ? bindActiveModuleEngineRelease(value) : bindActiveModuleModeRelease(value);
 }
 function sourceAddress(release: SupportedModuleModeRelease): string {
-  return release.sourceVersion === "module-engine-v1" ? release.contracts.host.address : release.contracts.launcher.address;
+  return isEngineRelease(release) ? release.contracts.host.address : release.contracts.launcher.address;
 }
 
 const COLLECTOR_SCHEMA = "programmable.module-mode-index.v1";
@@ -74,15 +77,16 @@ export function moduleModePublicLaunch(row: ModuleModeProvenance | ModuleModePro
 
 export function moduleEnginePublicLaunch(row: ModuleEngineProvenanceV1, launchedAt: string | null): RobinhoodEngineLaunch {
   if (launchedAt !== null && (typeof launchedAt !== "string" || !Number.isFinite(Date.parse(launchedAt)))) throw new Error("Engine launch timestamp is invalid");
-  return Object.freeze({ sourceKind: row.sourceVersion, sourceAddress: row.host, sourceReleaseDigest: row.sourceReleaseDigest,
+  return Object.freeze({ sourceKind: "module-engine-v1", sourceAddress: row.host, sourceReleaseDigest: row.sourceReleaseDigest,
     routerAddress: null, stampHash: null, launchId: row.launchId, tokenAddress: row.token, creator: row.creator,
     hookAddress: row.primaryMarket?.hook ?? null, poolManager: row.primaryMarket?.poolManager ?? null, poolId: row.primaryMarket?.poolId ?? null,
     engineAddress: row.engine, engineRevisionId: row.revisionId, engineFamilyId: row.familyId, engineManifestHash: row.manifestHash,
     engineRuntimeCodeHash: row.engineCodeHash, tokenRuntimeCodeHash: row.tokenRuntimeCodeHash, quoteAsset: row.quoteAsset, quoteDecimals: row.quoteDecimals,
     configurationHash: row.configurationHash, constructorHash: row.constructorHash, initCodeHash: row.initCodeHash, planHash: row.planHash,
     resourcesHash: row.resourcesHash, verificationDigest: row.verificationDigest, primaryMarket: row.primaryMarket,
-    economicsPolicyId: row.economicsPolicyId, protocolFeeBps: 10, authorPoolFeeBps: row.authorPoolFeeBps as 0 | 20,
-    platformFeeBps: row.platformFeeBps as 10 | 30, feeEligibleFamilyIds: row.eligibleFamilies,
+    economicsPolicyId: row.economicsPolicyId, protocolFeeBps: row.protocolFeeBps as 10 | 30, authorPoolFeeBps: row.authorPoolFeeBps as 0 | 20,
+    platformFeeBps: row.platformFeeBps as 10 | 30, feeEligibleFamilyIds: row.sourceVersion === "module-engine-any-quote-v1" ? Object.freeze([]) : row.eligibleFamilies,
+    ...(row.sourceVersion === "module-engine-any-quote-v1" ? { feeAsset: row.quoteAsset, feeLedgerAddress: row.feeLedgerAddress } : {}),
     modulePackageIds: Object.freeze([row.revisionId]), moduleFamilyIds: Object.freeze([row.familyId]),
     transactionHash: row.transactionHash, blockNumber: row.blockNumber, blockHash: row.blockHash, logIndex: row.logIndex,
     launchedAt, name: row.name, symbol: row.symbol, decimals: 18 });
@@ -112,7 +116,7 @@ export async function moduleModeSource(profile: unknown, collector: ModuleModeFi
   };
   if ((await block(BigInt(finalized.number))).hash !== finalized.hash) throw new Error("Module Mode finalized boundary changed");
   return {
-    sourceKind: release.sourceVersion, sourceAddress: sourceAddress(release),
+    sourceKind: isEngineRelease(release) ? "module-engine-v1" : release.sourceVersion, sourceAddress: sourceAddress(release),
     releaseDigest: release.releaseDigest, startBlock: BigInt(release.startBlock), finalized, block,
     async launches(from, to) {
       if (from < BigInt(release.startBlock) || to < from || to > BigInt(finalized.number)) throw new Error("Module Mode scan is outside verified bounds");
@@ -122,9 +126,9 @@ export async function moduleModeSource(profile: unknown, collector: ModuleModeFi
       if (moduleHash(raw.sourceReleaseDigest, "collector.range.release") !== release.releaseDigest
         || raw.fromBlock !== from.toString() || raw.toBlock !== to.toString() || raw.complete !== true
         || !Array.isArray(raw.launches)) throw new Error("Module Mode collector range is incomplete or unbound");
-      if (raw.launches.length > (release.sourceVersion === "module-engine-v1" ? 32 : 1000)) throw new IndexRangeTooWide("Module Mode launch range exceeds verification budget");
+      if (raw.launches.length > (isEngineRelease(release) ? 32 : 1000)) throw new IndexRangeTooWide("Module Mode launch range exceeds verification budget");
       const entries = raw.launches.map(value => moduleRecord(value, ["evidence", "launchedAt"], "collector.launch"));
-      const rows = release.sourceVersion === "module-engine-v1"
+      const rows = isEngineRelease(release)
         ? normalizeModuleEngineLaunchesV1(entries.map(entry => entry.evidence), release)
         : normalizeSupportedModuleModeLaunches(entries.map(entry => entry.evidence), release);
       const canonical = new Map<string, string>();
@@ -136,7 +140,7 @@ export async function moduleModeSource(profile: unknown, collector: ModuleModeFi
         if (BigInt(row.blockNumber) < from || BigInt(row.blockNumber) > to) throw new Error("Module Mode launch is outside scan range");
         const timestamp = entries[index].launchedAt;
         if (timestamp !== null && typeof timestamp !== "string") throw new Error("Module Mode launch timestamp is invalid");
-        return row.sourceVersion === "module-engine-v1" ? moduleEnginePublicLaunch(row, timestamp) : moduleModePublicLaunch(row, timestamp);
+        return row.kind === "module-engine" ? moduleEnginePublicLaunch(row, timestamp) : moduleModePublicLaunch(row, timestamp);
       });
     },
   };
@@ -272,7 +276,7 @@ export function createModuleModeHttpCollector(input: {
     },
     async authenticateRelease(release) {
       const value = await request("release", { sourceReleaseDigest: release.releaseDigest });
-      const actual = release.sourceVersion === "module-engine-v1" ? bindActiveModuleEngineRelease(value) : bindActiveModuleModeRelease(value);
+      const actual = isEngineRelease(release) ? bindActiveModuleEngineRelease(value) : bindActiveModuleModeRelease(value);
       if (canonicalizeJson(actual) !== canonicalizeJson(release)) throw new Error("Module Mode collector active release differs");
     },
     async finalizedBoundary(release) {

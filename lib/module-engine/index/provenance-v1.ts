@@ -1,8 +1,9 @@
-import { concatHex, decodeAbiParameters, encodeAbiParameters, getCreate2Address, keccak256, parseAbiParameters, type Address, type Hex } from "viem";
+import { concatHex, decodeAbiParameters, encodeAbiParameters, getCreate2Address, keccak256, parseAbiParameters, toHex, type Address, type Hex } from "viem";
 import { moduleAddress as address, moduleBytes as bytes, moduleEqual as equal, moduleHash as hash, moduleInteger as integer, moduleRecord as record, moduleUint as uint, rejectModuleEvidence as fail } from "../../module-mode/release";
-import { MODULE_ENGINE_INDEX_ABI_V1, MODULE_ENGINE_PARAMETERS_MAX_BYTES_V1, ENGINE_LAUNCH_PARAMETERS, moduleEngineConstructorParameters, moduleEnginePlanParameters } from "./abi-v1";
-import { moduleEngineReleaseIdentity, MODULE_ENGINE_SOURCE_ID, type ModuleEngineReleaseIdentity } from "./release-v1";
+import { MODULE_ENGINE_INDEX_ABI_V1, MODULE_ENGINE_ANY_QUOTE_INDEX_ABI_V1, MODULE_ENGINE_PARAMETERS_MAX_BYTES_V1, ENGINE_LAUNCH_PARAMETERS, moduleEngineConstructorParameters, moduleEnginePlanParameters } from "./abi-v1";
+import { moduleEngineReleaseIdentity, isModuleEngineAnyQuoteRelease, moduleEngineSourceId, type ModuleEngineReleaseIdentity } from "./release-v1";
 import { bound, canonicalEngineLog, engineEvent, engineReadSet, finality, list, plain, same, text, type EngineBlock } from "./proof-v1";
+import { anyQuoteSourceBindings, normalizeAnyQuoteMarket } from "./any-quote-v1";
 export const MODULE_ENGINE_EVIDENCE_SCHEMA_V1 = "programmable.module-engine.evidence.v1" as const;
 export const MODULE_ENGINE_PROVENANCE_SCHEMA_V1 = "programmable.module-engine.provenance.v1" as const;
 const zeroHash = `0x${"00".repeat(32)}`;
@@ -16,7 +17,8 @@ const obj = (value: unknown, label: string) => {
 };
 /** Internal consistency after authenticated dual-RPC observation; it does not admit caller supplied launch JSON. */
 export function normalizeModuleEngineLaunchV1(value: unknown, profile: ModuleEngineReleaseIdentity) {
-    const release = moduleEngineReleaseIdentity(profile), abi = MODULE_ENGINE_INDEX_ABI_V1;
+    const release = moduleEngineReleaseIdentity(profile), anyQuote = isModuleEngineAnyQuoteRelease(release);
+    const abi = anyQuote ? MODULE_ENGINE_ANY_QUOTE_INDEX_ABI_V1 : MODULE_ENGINE_INDEX_ABI_V1;
     const pins = Object.fromEntries(Object.entries(release.contracts).map(([role, pin]) => [role, { address: address(pin.address, `engine.${role}`), runtimeCodeHash: hash(pin.runtimeCodeHash, `engine.${role}.code`) }])) as typeof release.contracts;
     const raw = record(value, ["schemaVersion", "header", "receipt", "event", "state", "runtimeReads", "market", "verification"], "engine.evidence");
     equal(raw.schemaVersion, MODULE_ENGINE_EVIDENCE_SCHEMA_V1, "engine.schema");
@@ -42,11 +44,13 @@ export function normalizeModuleEngineLaunchV1(value: unknown, profile: ModuleEng
     same(emitted.log, event, "engine.discovery.event");
     const launchId = hash(emitted.args.launchId, "engine.launchId"), token = address(emitted.args.token, "engine.token"), engine = address(emitted.args.engine, "engine.engine");
     const state = engineReadSet(raw.state, block, abi);
-    equal(state.take(pins.host.address, "SOURCE_VERSION"), MODULE_ENGINE_SOURCE_ID, "engine.sourceVersion");
+    equal(state.take(pins.host.address, "SOURCE_VERSION"), moduleEngineSourceId(release), "engine.sourceVersion");
     for (const role of ["registry", "tokenFactory", "launchPolicy", "ledger"] as const)
         equal(state.take(pins.host.address, role), pins[role].address, `engine.host.${role}`);
     equal(state.take(pins.ledger.address, "ECONOMICS_POLICY_ID"), release.economicsPolicyId, "engine.ledger.policy");
-    for (const [field, expected] of [["hook", pins.host.address], ["registry", pins.registry.address], ["poolManager", pins.poolManager.address]] as const)
+    if (isModuleEngineAnyQuoteRelease(release)) {
+        for (const [account, getter, expected] of anyQuoteSourceBindings(release.contracts)) equal(state.take(account, getter), expected, `anyQuote.source.${getter}`);
+    } else for (const [field, expected] of [["hook", pins.host.address], ["registry", pins.registry.address], ["poolManager", pins.poolManager.address]] as const)
         equal(state.take(pins.ledger.address, field), expected, `engine.ledger.${field}`);
     equal(emitted.args.economicsPolicyId, release.economicsPolicyId, "engine.event.policy");
     const launch = obj(state.take(pins.host.address, "getLaunch", [launchId]), "engine.launch");
@@ -77,7 +81,7 @@ export function normalizeModuleEngineLaunchV1(value: unknown, profile: ModuleEng
     equal(configHash, launch.configurationHash, "engine.configurationHash");
     equal(keccak256(encodeAbiParameters(parseAbiParameters("uint256,address,address,bytes32,bytes32"), [4663n, pins.host.address, token, revisionId, configHash])), launchId, "engine.computedLaunchId");
     equal(keccak256(encodeAbiParameters(moduleEnginePlanParameters, [4663n, pins.host.address, creator, decoded])), launch.planHash, "engine.computedPlanHash");
-    const context = { host: pins.host.address, launchId, token, creator, quoteAsset, feeCollector: pins.host.address };
+    const context = { host: pins.host.address, launchId, token, creator, quoteAsset, feeCollector: anyQuote ? pins.ledger.address : pins.host.address };
     const constructor = encodeAbiParameters(moduleEngineConstructorParameters, [context, configuration]);
     equal(keccak256(constructor), launch.constructorHash, "engine.constructorHash");
     const initCode = concatHex([creation, constructor]);
@@ -128,28 +132,34 @@ export function normalizeModuleEngineLaunchV1(value: unknown, profile: ModuleEng
             fail("engine.eligibleFamily.order");
         prior = BigInt(f);
     }
-    const platformFeeBps = eligibleFamilies.length ? 30 : 10;
+    const platformFeeBps = anyQuote || eligibleFamilies.length ? 30 : 10;
     const creatorFees = [p.buyCreatorFeeBps, p.sellCreatorFeeBps].map(value => { const bps = integer(value, "engine.creatorFee", 1000); if (bps % 100 !== 0)
         fail("engine.creatorFee.step"); return bps; });
     equal(launch.buyCreatorFeeBps, creatorFees[0], "engine.buyFee");
     equal(launch.sellCreatorFeeBps, creatorFees[1], "engine.sellFee");
-    same(state.take(pins.host.address, "feeTerms", [launchId, true]), [platformFeeBps, creatorFees[0]], "engine.buyFeeTerms");
-    same(state.take(pins.host.address, "feeTerms", [launchId, false]), [platformFeeBps, creatorFees[1]], "engine.sellFeeTerms");
-    const registered = engineEvent(logs, abi, pins.ledger.address, "PoolRegistered", launchId);
+    if (!anyQuote) {
+        same(state.take(pins.host.address, "feeTerms", [launchId, true]), [platformFeeBps, creatorFees[0]], "engine.buyFeeTerms");
+        same(state.take(pins.host.address, "feeTerms", [launchId, false]), [platformFeeBps, creatorFees[1]], "engine.sellFeeTerms");
+    }
+    const registered = engineEvent(logs, abi, pins.ledger.address, anyQuote ? "QuoteLaunchRegistered" : "PoolRegistered", launchId);
     if (registered.logIndex >= emitted.logIndex)
         fail("engine.ledger.registration-order");
     const wallets = list(p.creatorWallets, "engine.creatorWallets", 10).map(value => address(value, "engine.creatorWallet")), shares = list(p.creatorSharesBps, "engine.creatorShares", 10).map(value => integer(value, "engine.creatorShare", 10000));
     if (!wallets.length || wallets.length !== shares.length || shares.some(v => v === 0) || shares.reduce((a, b) => a + b, 0) !== 10000 || new Set(wallets).size !== wallets.length)
         fail("engine.creatorAllocation");
-    const ledgerConfig = keccak256(encodeAbiParameters(parseAbiParameters("bytes32,uint256,address,address,bytes32,address[],uint16[],bytes32[]"), [release.economicsPolicyId, 4663n, pins.ledger.address, pins.host.address, launchId, wallets, shares, eligibleFamilies]));
+    const ledgerConfig = isModuleEngineAnyQuoteRelease(release) ? keccak256(encodeAbiParameters(parseAbiParameters("bytes32,uint256,address,address,address,address,bytes32,address,address[],uint16[]"), [release.economicsPolicyId, 4663n, pins.ledger.address, pins.poolManager.address, release.contracts.sharedHook.address, pins.host.address, launchId, quoteAsset, wallets, shares])) : keccak256(encodeAbiParameters(parseAbiParameters("bytes32,uint256,address,address,bytes32,address[],uint16[],bytes32[]"), [release.economicsPolicyId, 4663n, pins.ledger.address, pins.host.address, launchId, wallets, shares, eligibleFamilies]));
     equal(registered.args.configurationHash, ledgerConfig, "engine.ledgerConfiguration.event");
     same(registered.args.creatorWallets, wallets, "engine.ledgerCreators");
     same(registered.args.creatorSharesBps, shares, "engine.ledgerShares");
-    same(registered.args.moduleFamilies, eligibleFamilies, "engine.ledgerFamilies");
+    if (anyQuote) equal(registered.args.asset, quoteAsset, "anyQuote.ledger.asset");
+    else same(registered.args.moduleFamilies, eligibleFamilies, "engine.ledgerFamilies");
     equal(state.take(pins.ledger.address, "configurationHash", [launchId]), ledgerConfig, "engine.ledgerConfiguration.getter");
     equal(state.take(pins.ledger.address, "platformFeeBps", [launchId]), platformFeeBps, "engine.platformFee");
-    equal(state.take(pins.ledger.address, "moduleCount", [launchId]), String(eligibleFamilies.length), "engine.familiesCount");
-    eligibleFamilies.forEach((family, index) => equal(state.take(pins.ledger.address, "moduleFamilyAt", [launchId, BigInt(index)]), family, "engine.feeFamily"));
+    if (anyQuote) equal(state.take(pins.ledger.address, "quoteAsset", [launchId]), quoteAsset, "anyQuote.ledger.quoteAsset");
+    else {
+        equal(state.take(pins.ledger.address, "moduleCount", [launchId]), String(eligibleFamilies.length), "engine.familiesCount");
+        eligibleFamilies.forEach((family, index) => equal(state.take(pins.ledger.address, "moduleFamilyAt", [launchId, BigInt(index)]), family, "engine.feeFamily"));
+    }
     const name = text(p.name, "engine.name", 64), symbol = text(p.symbol, "engine.symbol", 16);
     for (const [getter, expected] of [["name", name], ["symbol", symbol], ["decimals", 18], ["totalSupply", "1000000000000000000000000000"], ["creator", pins.host.address]] as const)
         equal(state.take(token, getter), expected, `engine.token.${getter}`);
@@ -158,17 +168,18 @@ export function normalizeModuleEngineLaunchV1(value: unknown, profile: ModuleEng
     const tokenSalt = keccak256(encodeAbiParameters(parseAbiParameters("string,string,uint8,address,bytes32"), [name, symbol, 18, pins.host.address, graffiti]));
     equal(getCreate2Address({ from: pins.tokenFactory.address, salt: tokenSalt, bytecodeHash: release.tokenCreationCodeHash }).toLowerCase(), token, "engine.token.create2");
     equal(state.take(pins.tokenFactory.address, "getUERC20Address", [name, symbol, 18, pins.host.address, graffiti]), token, "engine.token.prediction");
-    const quoteDecimals = integer(state.take(quoteAsset, "decimals"), "engine.quoteDecimals", 18);
+    const quoteDecimals = integer(state.take(quoteAsset, "decimals"), "engine.quoteDecimals", anyQuote ? 36 : 18);
     const operation = obj(p.initialOperation, "engine.initialOperation");
     bytes(operation.data, "engine.initialData", 16384);
     const operationId = optionalHash(operation.operationId, "engine.operationId"), requiredOperation = optionalHash(revision.initialOperationId, "engine.requiredOperation");
     if (operationId !== zeroHash) {
-        equal(operationId, requiredOperation, "engine.initialOperationId");
-        const permission = obj(state.take(pins.host.address, "permission", [revisionId, operationId]), "engine.permission");
+        const nativeBuy = anyQuote && operationId === keccak256(toHex("spot.buy.native-exact-input.v1"));
+        if (!nativeBuy) equal(operationId, requiredOperation, "engine.initialOperationId");
+        const permission = nativeBuy ? { operationId, inputRoles: 4, outputRoles: 1, authorization: 0 } : obj(state.take(pins.host.address, "permission", [revisionId, operationId]), "engine.permission");
         equal(permission.operationId, operationId, "engine.permission.id");
         const inputRoles = integer(permission.inputRoles, "engine.inputRoles", 7), outputRoles = integer(permission.outputRoles, "engine.outputRoles", 7);
         integer(permission.authorization, "engine.authorization", 1);
-        if ((inputRoles & ~moneyRights) !== 0)
+        if (!nativeBuy && (inputRoles & ~moneyRights) !== 0)
             fail("engine.permission.moneyRights");
         equal(operation.actor, creator, "engine.operation.actor");
         equal(uint(operation.nonce, "engine.operation.nonce"), "0", "engine.initialNonce");
@@ -183,8 +194,11 @@ export function normalizeModuleEngineLaunchV1(value: unknown, profile: ModuleEng
         if ((inRole & inputRoles) !== inRole || (outRole & outputRoles) !== outRole)
             fail("engine.operation.permissions");
     }
-    else
-        equal(requiredOperation, zeroHash, "engine.initial.required");
+    else if (anyQuote) {
+        for (const key of ["actor", "recipient", "inputAsset", "outputAsset"]) equal(operation[key], zeroAddress, "anyQuote.initial.empty-address");
+        for (const key of ["inputAmount", "minimumOutput", "deadline", "nonce"]) equal(operation[key], "0", "anyQuote.initial.empty-amount");
+        equal(operation.data, "0x", "anyQuote.initial.empty-data");
+    } else equal(requiredOperation, zeroHash, "engine.initial.required");
     state.done();
     const codes = list(raw.runtimeReads, "engine.codes", 16).map(v => { const r = bound(v, ["address", "code"], block, "engine.code"); return { address: address(r.address, "engine.code.address"), code: bytes(r.code, "engine.code.bytes", 24576) }; });
     const seen = new Set<string>();
@@ -204,14 +218,15 @@ export function normalizeModuleEngineLaunchV1(value: unknown, profile: ModuleEng
     const tokenRuntimeCodeHash = keccak256(requireCode(token));
     equal(requireCode(engine, hash(launch.engineCodeHash, "engine.code.hash")), runtime, "engine.runtime.bytes");
     requireCode(quoteAsset);
-    const primaryMarket = raw.market === null ? null : normalizeMarket(raw.market, block, pins, launchId, token, quoteAsset, engine, quoteDecimals, hash(launch.resourcesHash, "engine.resourcesHash"), logs);
+    const primaryMarket = isModuleEngineAnyQuoteRelease(release) ? normalizeAnyQuoteMarket(raw.market, block, release.contracts, { launchId, token, quoteAsset, engine, revisionId, familyId, configuration, configurationHash: configHash, quoteDecimals, resourcesHash: hash(launch.resourcesHash, "anyQuote.resourcesHash"), buyCreatorFeeBps: creatorFees[0]!, sellCreatorFeeBps: creatorFees[1]!, launchLogIndex: emitted.logIndex }, logs) : raw.market === null ? null : normalizeMarket(raw.market, block, pins, launchId, token, quoteAsset, engine, quoteDecimals, hash(launch.resourcesHash, "engine.resourcesHash"), logs);
     if (used.size !== codes.length)
         fail("engine.code.unused");
     return Object.freeze({ schemaVersion: MODULE_ENGINE_PROVENANCE_SCHEMA_V1, kind: "module-engine" as const, chainId: 4663 as const, sourceVersion: release.sourceVersion, sourceReleaseDigest: release.releaseDigest,
         host: pins.host.address, launchId, token, tokenRuntimeCodeHash, creator, quoteAsset, quoteDecimals, engine, revisionId, familyId, manifestHash, engineCodeHash: hash(launch.engineCodeHash, "engine.runtimeHash"), configurationHash: configHash,
         constructorHash: hash(launch.constructorHash, "engine.constructorHash"), initCodeHash: hash(launch.initCodeHash, "engine.initCodeHash"), planHash: hash(launch.planHash, "engine.planHash"), resourcesHash: hash(launch.resourcesHash, "engine.resourcesHash"),
         transactionHash: tx, logIndex: event.logIndex, blockNumber: block.blockNumber, blockHash: block.blockHash, name, symbol, configuration, economicsPolicyId: release.economicsPolicyId,
-        protocolFeeBps: 10, authorPoolFeeBps: eligibleFamilies.length ? 20 : 0, platformFeeBps, buyCreatorFeeBps: creatorFees[0]!, sellCreatorFeeBps: creatorFees[1]!, eligibleFamilies: Object.freeze(eligibleFamilies),
+        ...(anyQuote ? { feeLedgerAddress: pins.ledger.address } : {}),
+        protocolFeeBps: anyQuote ? 30 : 10, authorPoolFeeBps: anyQuote ? 0 : eligibleFamilies.length ? 20 : 0, platformFeeBps, buyCreatorFeeBps: creatorFees[0]!, sellCreatorFeeBps: creatorFees[1]!, eligibleFamilies: Object.freeze(eligibleFamilies),
         creatorWallets: Object.freeze(wallets), creatorSharesBps: Object.freeze(shares), primaryMarket, marketStatus: primaryMarket ? "verified" as const : "unobserved" as const, ...verification });
 }
 function normalizeMarket(value: unknown, block: EngineBlock, pins: ModuleEngineReleaseIdentity["contracts"], launchId: Hex, token: Address, quoteAsset: Address, engine: Address, quoteDecimals: number, resourcesHash: Hex, logs: ReturnType<typeof canonicalEngineLog>[]) {

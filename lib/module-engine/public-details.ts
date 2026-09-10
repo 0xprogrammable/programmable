@@ -6,9 +6,9 @@ export interface ModuleEnginePublicDetails extends ModulePublicDetailsBase {
   sourceKind: "module-engine-v1";
   engine: { interface: ModuleEngineCatalogDefinition["interface"]; operations: ModuleEnginePermission[] };
 }
-const interfaces = ["quote-v1", "escrow-v1", "settlement-v1", "custom-v1"];
+const interfaces = ["quote-v1", "quote-shared-v1", "escrow-v1", "settlement-v1", "custom-v1"];
 const operationNames = new Map([
-  ["spot.buy.exact-input.v1", "Buy"], ["spot.sell.exact-input.v1", "Sell"], ["escrow.deposit.v1", "Deposit"], ["escrow.withdraw.v1", "Withdraw"],
+  ["spot.buy.native-exact-input.v1", "Buy with ETH"], ["spot.buy.exact-input.v1", "Buy"], ["spot.sell.exact-input.v1", "Sell"], ["escrow.deposit.v1", "Deposit"], ["escrow.withdraw.v1", "Withdraw"],
   ["settlement.request.v1", "Request payment"], ["settlement.fulfill.v1", "Fulfill payment"], ["settlement.refund.v1", "Refund payment"],
 ].map(([id, label]) => [keccak256(toHex(id)), label]));
 
@@ -16,10 +16,10 @@ export function moduleEngineOperationLabel(operationId: string): string {
   return operationNames.get(operationId.toLowerCase() as `0x${string}`) ?? `Custom operation ${operationId.slice(2, 10)}`;
 }
 export function moduleEngineInterfaceLabel(value: ModuleEngineCatalogDefinition["interface"]): string {
-  return ({ "quote-v1": "Trading", "escrow-v1": "Escrow", "settlement-v1": "Settlement", "custom-v1": "Custom template" })[value];
+  return ({ "quote-v1": "Trading", "quote-shared-v1": "Trading", "escrow-v1": "Escrow", "settlement-v1": "Settlement", "custom-v1": "Custom template" })[value];
 }
 export function moduleEngineCategory(value: ModuleEngineCatalogDefinition["interface"]): string {
-  return value === "quote-v1" ? "trading" : "experiments";
+  return (value === "quote-v1" || value === "quote-shared-v1") ? "trading" : "experiments";
 }
 /** Display exactly the Host's asset-role bitmask, without claiming mint, burn or arbitrary wallet access. */
 export function moduleEngineAssetRoles(roles: number): string {
