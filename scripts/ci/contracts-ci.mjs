@@ -35,6 +35,7 @@ export const CONTRACT_CI_RELEASE = Object.freeze([
     "contracts/scripts/module-engine/deployment.test.mjs",
     "contracts/scripts/module-engine/quote-deployment.test.mjs",
     "contracts/scripts/module-engine/any-quote-deployment.test.mjs",
+    "scripts/test/any-quote-readiness-discovery.test.mjs",
     "scripts/test/any-quote-route-price.test.mjs",
     "scripts/test/any-quote-route-runtime.test.mjs"],
   ["npm", "run", "contracts:custom-registry-v2:test"],

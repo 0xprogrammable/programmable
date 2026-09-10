@@ -265,7 +265,7 @@ export function classifyVerifyPaths(
       continue;
     }
 
-    if (/^(?:contracts\/|foundry\.toml$|remappings\.txt$|scripts\/test\/any-quote-(?:route-price\.test\.mjs|route-runtime\.test\.mjs|route-permit2\.hex)$)/u.test(path)) {
+    if (/^(?:contracts\/|foundry\.toml$|remappings\.txt$|scripts\/test\/any-quote-(?:route-price\.test\.mjs|route-runtime\.test\.mjs|route-permit2\.hex|readiness-discovery\.test\.mjs)$)/u.test(path)) {
       scope.contracts = true;
       scope.interface = true;
       continue;
