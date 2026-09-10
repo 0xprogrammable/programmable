@@ -319,7 +319,9 @@ export async function readRobinhoodPresentations(tokens: readonly RobinhoodLaunc
     }
     const supplemental = SUPPLEMENTAL_TOKEN_PRESENTATIONS[key];
     for (const link of supplemental?.links ?? []) {
-      if (!links.some(existing => existing.label === link.label || existing.url === link.url)) links.push(link);
+      const existing = links.findIndex(candidate => candidate.label === link.label || candidate.url === link.url);
+      if (existing === -1) links.push(link);
+      else links[existing] = link;
     }
     return {
       tokenAddress: token.tokenAddress,
