@@ -6,7 +6,7 @@ import os from 'node:os';
 import { runInNewContext } from 'node:vm';
 import { keccak256, toHex } from 'viem';
 import { buildPlan, assertPlan, digest, HOOK_MASK, HOOK_FLAGS, materializeRuntime } from './core.mjs';
-import { walletRequest, revalidateWalletRequest, rpcClient, observeReceipt } from './rpc.mjs';
+import { walletRequest, prepareWalletRequest, revalidateWalletRequest, rpcClient, observeReceipt } from './rpc.mjs';
 import { armJournal, armRetryJournal, retryJournalEntry, journalEntry, recordTransaction, journalDirectory } from './journal.mjs';
 import { assertContinuationPlan, assertOriginalRequest, walletRetryRequest } from './recovery.mjs';
 import { sameOrigin, startOperator } from './operator.mjs';
@@ -75,6 +75,41 @@ test('EIP1559 request is exact, fully funded and bounded', () => {
 });
 test('expiry stops the handoff before any RPC or wallet access', async () => {
   await assert.rejects(revalidateWalletRequest(plan, { planDigest: plan.planDigest, issuedAt: 0, expiresAt: 1 }, [], ceilings), /expired/);
+});
+test('new requests reserve reviewed gas so fresh estimates can rise within the unchanged wallet allowance', async () => {
+  const limits = { maxGas: '1000000', maxFeePerGas: '1940000000', maxPriorityFeePerGas: '1000000' };
+  const initial = { ...observation, gasLimit: '879781', baseFeePerGas: '765498000' };
+  let current = initial;
+  const observe = async () => structuredClone(current);
+  const prepared = await prepareWalletRequest(plan, 0, [], limits, observe);
+  const expected = { ...walletRequest(plan, initial, limits), gas: '0xf4240' };
+  assert.deepEqual(prepared.request, expected);
+  assert.equal(prepared.observation.gasLimit, '879781', 'The actual observation remains distinct from reserved gas');
+  const { requestDigest, ...body } = prepared;
+  assert.equal(requestDigest, digest('programmable.module-mode-owner-request.v1', body));
+  const original = structuredClone(prepared);
+  for (const gasLimit of ['879950', '1000000']) {
+    current = { ...initial, gasLimit };
+    await revalidateWalletRequest(plan, prepared, [], limits, observe);
+    assert.deepEqual(prepared, original, 'Gas, nonce, data, fee caps and the request digest never change at handoff');
+  }
+  current = { ...initial, gasLimit: '1000001' };
+  await assert.rejects(revalidateWalletRequest(plan, prepared, [], limits, observe), /owner-reviewed gas limit/);
+  current = { ...initial, nonce: '4' };
+  await assert.rejects(revalidateWalletRequest(plan, prepared, [], limits, observe), /nonce changed/);
+  current = { ...initial, minimumBalance: '1939999999999999' };
+  await assert.rejects(revalidateWalletRequest(plan, prepared, [], limits, observe), /balance fell below reviewed maximum cost/);
+  await assert.rejects(prepareWalletRequest(plan, 0, [], limits, observe), /reserved maximum gas cost/);
+});
+test('a historical request below the new preparation reserve keeps its original gas and retry ceiling', () => {
+  const limits = { maxGas: '1000000', maxFeePerGas: '1940000000', maxPriorityFeePerGas: '1000000' };
+  const observed = { ...observation, gasLimit: '879453' };
+  const body = { planDigest: plan.planDigest, stepIndex: 0, request: walletRequest(plan, observed, limits),
+    observation: observed, issuedAt: 1000, expiresAt: 301000 };
+  const entry = { ...body, requestDigest: digest('programmable.module-mode-owner-request.v1', body) };
+  assert.equal(BigInt(entry.request.gas), 879453n);
+  assert.deepEqual(walletRetryRequest(plan, entry, { ...observed, gasLimit: '879400' }, limits, entry.requestDigest), entry.request);
+  assert.throws(() => walletRetryRequest(plan, entry, { ...observed, gasLimit: '879454' }, limits, entry.requestDigest), /exceeds the original request/);
 });
 function originalRequest() {
   const request = { planDigest: plan.planDigest, stepIndex: 0, request: walletRequest(plan, observation, ceilings), observation, issuedAt: 1000, expiresAt: 301000 };
