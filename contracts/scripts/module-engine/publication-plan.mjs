@@ -23,6 +23,14 @@ export async function bindEngineIdentity(identity) {
   equal(identity, result, 'Immutable engine release');
   return result;
 }
+export function assertAnyQuotePublicationIdentity(source, subject) {
+  const author = '0xd88539d3c4c460136a733a3fd60cf6bf269079da';
+  need(subject.author === author && source.request.descriptor.author.toLowerCase() === author
+    && source.request.descriptor.rewardWallet.toLowerCase() === author
+    && source.familyId === '0x91ec5e77c54fc78d8cd1240c9caf3252a8ee656b9ad9e6b3f454399985d0760b'
+    && !Object.hasOwn(source.request, 'supersedesSubmissionId'),
+  'Any Quote publication requires the platform author and reward wallet in its new family');
+}
 /** Local consistency only. Authenticated current acceptance is checked separately before every wallet handoff. */
 export async function bindEngineReview(bundle, identity) {
   exactKeys(bundle, ['source', 'manifest', 'review', 'artifact', 'buildPlan'], 'Engine accepted bundle');
@@ -30,9 +38,7 @@ export async function bindEngineReview(bundle, identity) {
   const source = api.validateModuleSubmissionRequest(bundle.source); need(source.ok, 'Invalid engine source package');
   need(api.validateModuleReviewDecisionRecordV1(bundle.review), 'Invalid engine review decision');
   const review = bundle.review, subject = api.parseReviewSubject(review.subject), artifact = api.parseReviewArtifact(bundle.artifact, subject), buildPlan = api.parseReviewPlan(bundle.buildPlan, subject);
-  if (api.isModuleEngineAnyQuoteRelease(identity)) need(subject.author === '0x2bb333d48dfaf1596d9036671d2e43168994249e'
-    && source.familyId === '0x6e348066f0f7596b0efa2013f5b96b0846390a32cf8b86706b2b06c8eaf935cc',
-  'Any Quote accepted revision must preserve its original author and family');
+  if (api.isModuleEngineAnyQuoteRelease(identity)) assertAnyQuotePublicationIdentity(source, subject);
   need(artifact.schemaVersion === 'programmable.modules.engine-build.v1' && buildPlan.schemaVersion === 'programmable.modules.engine-build-plan.v1', 'Protected engine profile required');
   api.verifyModuleEngineBuildArtifactV1(artifact, subject, buildPlan, source.request);
   need(review.command.outcome === 'accept' && review.command.artifactDigest === artifact.artifactDigest

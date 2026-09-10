@@ -8,7 +8,7 @@ import { armJournal, armRetryJournal, journalEntry, recordTransaction, recordRec
 import assert from 'node:assert/strict';
 import { decodeFunctionData, decodeFunctionResult, encodeFunctionData, encodeFunctionResult, erc20Abi } from 'viem';
 import { engineWalletFixture, engineWorld, a, h } from './wallet-test-fixtures.mjs';
-import { createEnginePublicationOperatorPlan, assertEnginePublicationOperatorPlan, assertCurrentEngineReview, ENGINE_LIFECYCLE_OPERATOR_SCHEMA } from './publication-plan.mjs';
+import { createEnginePublicationOperatorPlan, assertEnginePublicationOperatorPlan, assertCurrentEngineReview, assertAnyQuotePublicationIdentity, ENGINE_LIFECYCLE_OPERATOR_SCHEMA } from './publication-plan.mjs';
 import { createEngineLifecycleOperatorPlan, assertEngineLifecycleOperatorPlan, bindAnyQuotePreactivationPacket } from './lifecycle-operator-plan.mjs';
 import { assertAuthenticatedOperationPlan } from '../module-mode/publication-plan.mjs';
 import { assertOperationPlan, startPublicationOperator } from '../module-mode/publication-operator.mjs';
@@ -16,6 +16,27 @@ import { preparePublicationRequest, revalidatePublicationRequest, preparePublica
   assertPublicationRequest, publicationWalletRequest } from '../module-mode/publication-rpc.mjs';
 import { anyQuoteWalletStep, anyQuoteRequestExpiry } from './operation-rpc.mjs';
 const ceilings = { maxGas: '2000000', maxFeePerGas: '1000', maxPriorityFeePerGas: '10', maxValue: '10000' };
+
+test('Any Quote publication binds the platform wallet to a new family without rewriting prior authorship', async () => {
+  const f = await engineWalletFixture(), author = '0xd88539d3c4c460136a733a3fd60cf6bf269079da';
+  const request = structuredClone(f.source);
+  Object.assign(request.descriptor, { author, rewardWallet: author, familySalt: '0x26106d3b3ae444a8974ec9900aa35321d616d0dd8bd4850fc3855ae6cc539069' });
+  delete request.supersedesSubmissionId;
+  const validate = value => { const checked = f.api.validateModuleSubmissionRequest(value); assert.equal(checked.ok, true); return checked; };
+  const source = validate(request), subject = { ...f.bundle.review.subject, author, requestDigest: source.requestDigest };
+  assert.equal(source.familyId, '0x91ec5e77c54fc78d8cd1240c9caf3252a8ee656b9ad9e6b3f454399985d0760b');
+  assertAnyQuotePublicationIdentity(source, subject);
+  for (const mutate of [
+    value => { value.descriptor.author = '0x2bb333d48dfaf1596d9036671d2e43168994249e'; },
+    value => { value.descriptor.rewardWallet = a(99); },
+    value => { value.descriptor.familySalt = h(99); },
+    value => { value.supersedesSubmissionId = '87ff3c7c-1e6a-4196-9ac4-279daa63c72a'; },
+  ]) {
+    const changed = structuredClone(request); mutate(changed);
+    assert.throws(() => assertAnyQuotePublicationIdentity(validate(changed), subject), /platform author and reward wallet/);
+  }
+  assert.throws(() => assertAnyQuotePublicationIdentity(source, { ...subject, author: a(99) }), /platform author and reward wallet/);
+});
 
 // Wire-only synthetic cases. They cannot pass the real source/deployment/admission initialization.
 function anyQuoteWire(kind = 'buy') {
