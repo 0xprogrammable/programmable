@@ -36,7 +36,7 @@ describe("Any Quote LP visible economic and availability boundaries", () => {
     expect(anyQuoteUserMessage(new Error("Insufficient ETH balance."), "Insufficient ETH balance.")).toBe("Insufficient ETH balance.");
   });
   it.each([true, false])("reviews the final ETH direction instead of quote-funded host data (buy=%s)", buy => {
-    const prepared: PreparedModuleEngineSwap = { ...base, kind: "swap", buy, quoteAsset: QUOTE, quoteDecimals: 6, recipient: ACCOUNT, inputAmount: 10n ** 18n, outputAmount: 2n * 10n ** 18n, minimumOutput: 19n * 10n ** 17n };
+    const prepared: PreparedModuleEngineSwap = { ...base, kind: "swap", buy, externalRoute: { provider: "uniswap-trading-api", chainId: 4663, tokenIn: buy ? addr(0) : QUOTE, tokenOut: buy ? QUOTE : addr(0), amountIn: "1", amountOut: "1", hops: [], checkpoint: { number: "100", hash: hash(100), timestamp: String(base.expiresAt - 120n) }, validUntil: String(base.expiresAt), evidenceHash: hash(101) }, quoteAsset: QUOTE, quoteDecimals: 6, recipient: ACCOUNT, inputAmount: 10n ** 18n, outputAmount: 2n * 10n ** 18n, minimumOutput: 19n * 10n ** 17n };
     const html = renderToStaticMarkup(<ModuleEngineTransactionReview prepared={prepared} anyQuote busy={false} onConfirm={vi.fn()} onEdit={vi.fn()} />);
     expect(html).toContain(buy ? "Buy with ETH" : "Sell to ETH"); expect(html).toContain(buy ? "2 tokens" : "2 ETH");
     expect(html).not.toContain("Minimum ETH from fee conversion"); expect(html).not.toContain("action details could not be read");

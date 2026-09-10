@@ -1,8 +1,11 @@
 import type { ModuleEngineCatalogDefinition, ModuleEngineReleaseIdentity, ModuleEngineRevisionDefinition } from "../module-engine/catalog";
-import { createModuleEngineHostManifest, ENGINE_ZERO_ADDRESS, ENGINE_ZERO_HASH } from "../module-engine/catalog";
+import { createModuleEngineHostManifest, isModuleEngineAnyQuoteRelease, ENGINE_ZERO_ADDRESS, ENGINE_ZERO_HASH } from "../module-engine/catalog";
 import { nativeCanonicalJson } from "./native-catalog";
 import type { ReviewJob } from "./review-contract";
 import type { OpenSourcePackage } from "../../packages/classic-modules/src/open-packages.mjs";
+
+import { MODULE_ENGINE_SHARED_QUOTE_ENVIRONMENT_V1, MODULE_ENGINE_SHARED_QUOTE_POLICY_V1 } from "./review-engine-shared-quote";
+import { validateModuleEngineBuildPlanV1, validateModuleEngineTestResultsV1 } from "./review-engine-contract";
 
 /** The same build-to-manifest binding is enforced at independent review and publication. */
 export function createReviewedModuleEngineManifest(input: { job: Pick<ReviewJob, "plan" | "artifact">; descriptor: OpenSourcePackage;
@@ -14,7 +17,17 @@ export function createReviewedModuleEngineManifest(input: { job: Pick<ReviewJob,
   same(revision.packageId, artifact.packageId, "package"); same(revision.familyId, artifact.familyId, "family");
   for (const key of ["executionGas", "moneyRights", "coinRights", "operationPermissions"] as const) same(revision[key], artifact[key], key);
   same(input.definition.configurationAbi, artifact.configurationAbi, "configuration mapping"); same(plan.configurationAbi, artifact.configurationAbi, "plan configuration mapping");
-  if (artifact.testEconomics.platformBps !== (revision.eligibleFamilies.length ? 30 : 10)) throw new Error("Engine fee-family mode differs from the protected economics vectors.");
+  const sharedQuote = isModuleEngineAnyQuoteRelease(input.release);
+  if (sharedQuote !== (artifact.testEnvironment?.profile === MODULE_ENGINE_SHARED_QUOTE_ENVIRONMENT_V1.profile)) throw new Error("Engine shared-hook profile differs from the protected build.");
+  if (sharedQuote) {
+    same(artifact.testEnvironment, MODULE_ENGINE_SHARED_QUOTE_ENVIRONMENT_V1, "shared-hook environment");
+    same(plan.testEnvironment, artifact.testEnvironment, "plan shared-hook environment");
+    if (!input.descriptor.requiresHost.includes(MODULE_ENGINE_SHARED_QUOTE_POLICY_V1.hostRequirement)) throw new Error("Engine source does not require the shared-hook host.");
+    if (input.definition.interface !== "quote-shared-v1" || revision.fixedQuoteAsset !== ENGINE_ZERO_ADDRESS || revision.fixedConfigurationHash !== ENGINE_ZERO_HASH) throw new Error("Shared quote engines require dynamic quote configuration.");
+    validateModuleEngineBuildPlanV1(plan, artifact.subject);
+    validateModuleEngineTestResultsV1(artifact.tests, artifact.subject.requestDigest, artifact.planDigest, artifact.cases, artifact.testEnvironment);
+  }
+  if (artifact.testEconomics.platformBps !== (sharedQuote || revision.eligibleFamilies.length ? 30 : 10)) throw new Error("Engine fee-family mode differs from the protected economics vectors.");
   const positive = artifact.cases.filter(c => c.expectedDeployment === "success");
   if (revision.fixedQuoteAsset !== ENGINE_ZERO_ADDRESS && !positive.some(c => c.quoteAsset === revision.fixedQuoteAsset)) throw new Error("Fixed quote asset has no successful reviewed instance.");
   const admitted = positive.filter(c => (revision.fixedQuoteAsset === ENGINE_ZERO_ADDRESS || c.quoteAsset === revision.fixedQuoteAsset)

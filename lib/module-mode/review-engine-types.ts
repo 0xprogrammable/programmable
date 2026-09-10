@@ -2,6 +2,8 @@
 import type { Hex as ModuleDigestV1 } from "viem";
 import type { ReviewSubject as ModuleReviewSubjectV1 } from "./review-contract";
 import type { ModuleEngineConfigurationArgument as ModuleEngineConfigurationArgumentV1 } from "../module-engine/catalog";
+import type { MODULE_ENGINE_SHARED_QUOTE_ENVIRONMENT_V1 } from "./review-engine-shared-quote";
+export { MODULE_ENGINE_SHARED_QUOTE_ENVIRONMENT_V1 } from "./review-engine-shared-quote";
 type JsonValue = unknown;
 
 export const MODULE_ENGINE_PLAN_SCHEMA_V1 = "programmable.modules.engine-build-plan.v1" as const;
@@ -16,7 +18,7 @@ export const MODULE_ENGINE_QUOTE_NVDA_ENVIRONMENT_V1 = Object.freeze({
   profile: "programmable.engine-quote-nvda-v4-v3@1",
   sourceDigest: "0x99893b6a331147270eec445b65cbb3ee43265fb8aba36f72063c1542ef7ff41d",
 } as const);
-export type ModuleEngineTestEnvironmentV1 = typeof MODULE_ENGINE_QUOTE_ENVIRONMENT_V1 | typeof MODULE_ENGINE_QUOTE_NVDA_ENVIRONMENT_V1;
+export type ModuleEngineTestEnvironmentV1 = typeof MODULE_ENGINE_QUOTE_ENVIRONMENT_V1 | typeof MODULE_ENGINE_QUOTE_NVDA_ENVIRONMENT_V1 | typeof MODULE_ENGINE_SHARED_QUOTE_ENVIRONMENT_V1;
 export const MODULE_ENGINE_CONTEXT_ABI_V1 = [
   { name: "host", type: "address" }, { name: "launchId", type: "bytes32" },
   { name: "token", type: "address" }, { name: "creator", type: "address" },
@@ -108,6 +110,8 @@ export interface ModuleEngineContractArtifactV1 {
   readonly externalSelectors: readonly string[];
 }
 export interface ModuleEngineCompiledCaseV1 extends ModuleEngineCaseV1 {
+  /** Submitted positive-case configuration, before the closed isolated-environment substitution. */
+  readonly sharedQuoteConfiguration?: { readonly sourceConfigBytes: `0x${string}`; readonly sourceConfigHash: ModuleDigestV1 };
   readonly context: ModuleEngineContextV1;
   readonly contextHash: ModuleDigestV1;
   readonly configBytes: `0x${string}`;
@@ -119,6 +123,7 @@ export interface ModuleEngineCompiledCaseV1 extends ModuleEngineCaseV1 {
   readonly runtimeCodeHash: ModuleDigestV1;
 }
 export interface ModuleEngineTestRequestV1 {
+  readonly sharedQuoteIdentity?: { readonly familyId: ModuleDigestV1; readonly author: `0x${string}` };
   readonly testEnvironment?: ModuleEngineTestEnvironmentV1;
   readonly schemaVersion: "programmable.modules.engine-tests.v1";
   readonly packageId: ModuleDigestV1;
@@ -131,6 +136,15 @@ export interface ModuleEngineTestRequestV1 {
   readonly cases: readonly ModuleEngineCompiledCaseV1[];
 }
 export interface ModuleEngineTestResultV1 {
+  readonly sharedQuoteChecks?: readonly {
+    readonly id: string;
+    readonly policyAndRuntimeBound: boolean | null;
+    readonly zeroQuoteLaunch: boolean | null;
+    readonly initialBuyRollback: boolean | null;
+    readonly externalRouterFourForms: boolean | null;
+    readonly partialFillRejected: boolean | null;
+    readonly quoteClaimsBacked: boolean | null;
+  }[];
   readonly schemaVersion: "programmable.modules.engine-test-results.v1";
   readonly requestDigest: ModuleDigestV1;
   readonly planDigest: ModuleDigestV1;
