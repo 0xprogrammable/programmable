@@ -195,3 +195,31 @@ export function buildAnyQuoteSwapV1(input: {
       permit2Spender: ANY_QUOTE_INFRASTRUCTURE.universalRouter, amount: input.amountIn.toString() },
   };
 }
+
+/** Read-only settlement probe. These bytes must never become a launch operation or wallet request.
+ * Balance checks bracket the external conversion so the server can read actual transfer effects
+ * from callTracer without token storage guesses, logs, donated balances or state overrides. */
+export function buildAnyQuoteSettlementProbeV1(input: {
+  owner: Address; recipient: Address; externalRoute: AnyQuoteExternalRouteV1; deadline: bigint; now: bigint;
+}) {
+  const owner = anyQuoteAddressV1(input.owner), recipient = anyQuoteAddressV1(input.recipient), route = input.externalRoute;
+  const hops = requireAnyQuoteNativeUnlockRouteV1(route, "buy"), asset = anyQuoteAddressV1(route.tokenOut);
+  const amountIn = anyQuoteUintV1(route.amountIn, INT128_MAX), amountOut = anyQuoteUintV1(route.amountOut, INT128_MAX);
+  if (!anyQuoteSameAddressV1(route.tokenIn, ANY_QUOTE_WETH) || input.deadline <= input.now
+    || input.deadline > input.now + 300n || input.deadline > BigInt(route.validUntil)
+    || anyQuoteSameAddressV1(recipient, ANY_QUOTE_INFRASTRUCTURE.poolManager)
+    || anyQuoteSameAddressV1(recipient, ANY_QUOTE_INFRASTRUCTURE.universalRouter)) throw new AnyQuoteErrorV1("SETTLEMENT_PROBE_BOUNDS_INVALID");
+  const v4 = new V4Planner();
+  v4.addAction(Actions.SWAP_EXACT_IN, [[ANY_QUOTE_NATIVE, hops.map(h => [h.tokenOut, h.key.fee, h.key.tickSpacing, h.key.hooks, h.hookData]), [], amountIn.toString(), amountOut.toString()]], URVersion.V2_1_1);
+  v4.addAction(Actions.SETTLE, [ANY_QUOTE_NATIVE, amountIn.toString(), false], URVersion.V2_1_1);
+  v4.addAction(Actions.TAKE, [asset, recipient, "0"], URVersion.V2_1_1);
+  const planner = new RoutePlanner();
+  const check = (owner: Address) => planner.addCommand(CommandType.BALANCE_CHECK_ERC20, [owner, asset, "0"], false, UniversalRouterVersion.V2_1_1);
+  check(recipient); check(ANY_QUOTE_INFRASTRUCTURE.poolManager);
+  planner.addCommand(CommandType.V4_SWAP, [v4.finalize()], false, UniversalRouterVersion.V2_1_1);
+  check(recipient); check(ANY_QUOTE_INFRASTRUCTURE.poolManager);
+  const commands = planner.commands as Hex, inputs = planner.inputs as Hex[];
+  return { simulationOnly: true as const, asset, recipient, amountIn, amountOut, unlockData: inputs[2],
+    transaction: { from: owner, to: ANY_QUOTE_INFRASTRUCTURE.universalRouter,
+      data: encodeFunctionData({ abi: executeAbi, functionName: "execute", args: [commands, inputs, input.deadline] }), value: amountIn.toString() } };
+}

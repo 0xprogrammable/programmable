@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import { createServer } from "node:net";
 import { build } from "esbuild";
 import { keccak256 } from "viem";
 
@@ -11,24 +12,30 @@ const root = resolve(import.meta.dirname, "../..");
 const contracts = resolve(root, "contracts");
 const script = resolve(import.meta.dirname, "any-quote-route-runtime.test.mjs");
 
+async function compiler(withSettlement = false) {
+  const extra = withSettlement ? "export * from './lib/server/module-engine/any-quote-settlement'; export * from './lib/server/custom-launch/routed-trade-rpc-v1';" : "";
+  const bundle = await build({ absWorkingDir: root, stdin: { contents: `export * from './lib/module-engine/any-quote/route'; export * from './lib/module-engine/any-quote/types'; ${extra}`, resolveDir: root }, bundle: true, format: "cjs", platform: "node", packages: "external", write: false });
+  const loadedModule = { exports: {} }, require = createRequire(import.meta.url);
+  new Function("require", "module", "exports", bundle.outputFiles[0].text)(name => name === "server-only" ? {} : require(name), loadedModule, loadedModule.exports);
+  return loadedModule.exports;
+}
+
 // Foundry calls the real TypeScript compiler with the token/hook addresses produced by its
 // real host fixture. This prevents a separately handwritten Solidity route from passing while
 // the browser compiler emits different bytes.
 if (process.argv[2] === "encode") {
-  const bundle = await build({ absWorkingDir: root, stdin: { contents: "export * from './lib/module-engine/any-quote/route'; export * from './lib/module-engine/any-quote/types';", resolveDir: root }, bundle: true, format: "cjs", platform: "node", packages: "external", write: false });
-  const loadedModule = { exports: {} };
-  new Function("require", "module", "exports", bundle.outputFiles[0].text)(createRequire(import.meta.url), loadedModule, loadedModule.exports);
-  const a = loadedModule.exports;
+  const a = await compiler();
   const [token, quote, hook, owner, side, amount, minimum, nowText, kind] = process.argv.slice(3);
   const now = BigInt(nowText), buy = side === "buy";
   const key = { currency0: a.ANY_QUOTE_NATIVE, currency1: quote, fee: 3000, tickSpacing: 60, hooks: a.ANY_QUOTE_NATIVE };
   const moduleKey = { currency0: BigInt(token) < BigInt(quote) ? token : quote, currency1: BigInt(token) < BigInt(quote) ? quote : token, fee: 0, tickSpacing: 200, hooks: hook };
-  const built = a.buildAnyQuoteSwapV1({ pool: { token, quoteAsset: quote, sharedHook: hook, poolId: a.anyQuotePoolIdV1(moduleKey) }, owner, recipient: owner, side, amountIn: BigInt(amount), minimumAmountOut: BigInt(minimum), now, deadline: now + 120n,
-    externalRoute: { provider: "uniswap-trading-api", chainId: 4663, tokenIn: buy ? a.ANY_QUOTE_WETH : quote, tokenOut: buy ? quote : a.ANY_QUOTE_WETH, amountIn: amount, amountOut: "1", checkpoint: { number: "1", hash: `0x${"11".repeat(32)}`, timestamp: nowText }, validUntil: (now + 120n).toString(), evidenceHash: `0x${"11".repeat(32)}`,
-      hops: [{ protocol: "V4", tokenIn: buy ? a.ANY_QUOTE_NATIVE : quote, tokenOut: buy ? quote : a.ANY_QUOTE_NATIVE, key, poolId: a.anyQuotePoolIdV1(key), hookData: "0x" }] } });
+  const externalRoute = { provider: "uniswap-trading-api", chainId: 4663, tokenIn: buy ? a.ANY_QUOTE_WETH : quote, tokenOut: buy ? quote : a.ANY_QUOTE_WETH, amountIn: amount, amountOut: kind === "probe" ? minimum : "1", checkpoint: { number: "1", hash: `0x${"11".repeat(32)}`, timestamp: nowText }, validUntil: (now + 120n).toString(), evidenceHash: `0x${"11".repeat(32)}`,
+    hops: [{ protocol: "V4", tokenIn: buy ? a.ANY_QUOTE_NATIVE : quote, tokenOut: buy ? quote : a.ANY_QUOTE_NATIVE, key, poolId: a.anyQuotePoolIdV1(key), hookData: "0x" }] };
+  const built = kind === "probe" ? a.buildAnyQuoteSettlementProbeV1({ owner, recipient: token, externalRoute, now, deadline: now + 120n })
+    : a.buildAnyQuoteSwapV1({ pool: { token, quoteAsset: quote, sharedHook: hook, poolId: a.anyQuotePoolIdV1(moduleKey) }, owner, recipient: owner, side, amountIn: BigInt(amount), minimumAmountOut: BigInt(minimum), now, deadline: now + 120n, externalRoute });
   process.stdout.write(kind === "operation" ? built.nativeBuyOperationData : built.transaction.data);
 } else {
-  test("real V4 host, pinned UR and Permit2 execute compiler bytes with donation independence and rollback", { timeout: 180_000 }, () => {
+  test("real V4 host, pinned UR and Permit2 execute compiler bytes and verify exact settlement traces", { timeout: 240_000 }, async () => {
     const work = resolve(root, "work/any-quote-route-runtime");
     const out = resolve(work, "out");
     mkdirSync(work, { recursive: true });
@@ -46,7 +53,21 @@ if (process.argv[2] === "encode") {
     const source = `${base}
 import { PoolModifyLiquidityTest } from "@uniswap/v4-core/src/test/PoolModifyLiquidityTest.sol";
 import { ModifyLiquidityParams } from "@uniswap/v4-core/src/types/PoolOperation.sol";
+import { V4Quoter } from "@uniswap/v4-periphery/src/lens/V4Quoter.sol";
+import { IV4Quoter } from "@uniswap/v4-periphery/src/interfaces/IV4Quoter.sol";
 interface IRoutePermit2 { function approve(address token, address spender, uint160 amount, uint48 expiry) external; }
+
+contract AnyQuoteSettlementTokenFixture is AnyQuoteHostWethFixture {
+    uint256 public mode;
+    function setMode(uint256 next) external { mode = next; }
+    function _update(address from, address to, uint256 amount) internal override {
+        if (from == 0x8366a39CC670B4001A1121B8F6A443A643e40951 && to != address(0)) {
+            require(mode != 2, "restricted recipient transfer");
+            if (mode == 1) { uint256 tax = amount / 100; super._update(from, address(0), tax); amount -= tax; }
+        }
+        super._update(from, to, amount);
+    }
+}
 
 contract AnyQuoteRouteRuntimeTest is AnyQuoteRouteBase {
     address internal constant QUOTE = 0xC60bA256B44334A0Cd2C7242E98B88f031abB006;
@@ -56,7 +77,7 @@ contract AnyQuoteRouteRuntimeTest is AnyQuoteRouteBase {
     receive() external payable {}
 
     function seedExternal() internal {
-        deployCodeTo("AnyQuoteHostWethFixture", QUOTE);
+        deployCodeTo("AnyQuoteSettlementTokenFixture", QUOTE);
         quote = AnyQuoteHostWethFixture(QUOTE);
         quote.mint(address(this), 1000 ether);
         vm.deal(address(this), 1000 ether);
@@ -70,12 +91,16 @@ contract AnyQuoteRouteRuntimeTest is AnyQuoteRouteBase {
     }
 
     function encoded(address token, bool buy, uint256 amount, uint256 minimum, bool operation) internal returns(bytes memory) {
+        return encodedKind(token, buy, amount, minimum, operation ? "operation" : "transaction");
+    }
+
+    function encodedKind(address token, bool buy, uint256 amount, uint256 minimum, string memory kind) internal returns(bytes memory) {
         string[] memory args = new string[](12);
         args[0] = "${process.execPath}"; args[1] = "${script}"; args[2] = "encode";
         args[3] = vm.toString(token); args[4] = vm.toString(QUOTE); args[5] = vm.toString(address(host.sharedHook()));
         args[6] = vm.toString(ALICE); args[7] = buy ? "buy" : "sell";
         args[8] = vm.toString(amount); args[9] = vm.toString(minimum); args[10] = vm.toString(block.timestamp);
-        args[11] = operation ? "operation" : "transaction";
+        args[11] = kind;
         return vm.ffi(args);
     }
 
@@ -162,22 +187,90 @@ contract AnyQuoteRouteRuntimeTest is AnyQuoteRouteBase {
         assertEq(ROUTER.balance, 100 ether); assertEq(quote.balanceOf(ROUTER), 100 ether);
         vm.stopPrank();
     }
+
+    function testRouteSettlementProbeExecutesPinnedRouterAndDetectsUnsupportedTransfers() public {
+        seedExternal(); quote.mint(ROUTER, 11 ether); vm.deal(ROUTER, 7 ether);
+        V4Quoter quoter = new V4Quoter(IPoolManager(MANAGER));
+        PoolKey memory key = PoolKey(Currency.wrap(address(0)), Currency.wrap(QUOTE), 3000, 60, IHooks(address(0)));
+        (uint256 expected,) = quoter.quoteExactInputSingle(IV4Quoter.QuoteExactSingleParams(key, true, 1 ether, ""));
+        bytes memory data = encodedKind(A.PLATFORM_RECIPIENT, true, 1 ether, expected, "probe");
+        vm.writeFile("${work}/probe.json", string.concat('{"owner":"', vm.toString(ALICE), '","recipient":"', vm.toString(A.PLATFORM_RECIPIENT),
+            '","quote":"', vm.toString(QUOTE), '","amountOut":"', vm.toString(expected), '","now":"', vm.toString(block.timestamp), '","ownerBalance":"', vm.toString(ALICE.balance), '","data":"', vm.toString(data), '"}'));
+        uint256 snapshot = vm.snapshotState();
+        for (uint256 mode; mode < 3; ++mode) {
+            AnyQuoteSettlementTokenFixture(QUOTE).setMode(mode);
+            // Genesis fixtures contain real PM/UR state. Node replays read-only debug_traceCall
+            // against each one and feeds the unmodified trace into the production verifier.
+            vm.dumpState(string.concat("${work}/probe-", vm.toString(mode), ".json"));
+            uint256 managerBefore = quote.balanceOf(MANAGER); uint256 recipientBefore = quote.balanceOf(A.PLATFORM_RECIPIENT);
+            vm.prank(ALICE); (bool ok,) = ROUTER.call{value: 1 ether}(data);
+            if (mode == 2) {
+                assertFalse(ok); assertEq(quote.balanceOf(MANAGER), managerBefore); assertEq(quote.balanceOf(A.PLATFORM_RECIPIENT), recipientBefore);
+            } else {
+                assertTrue(ok); assertEq(managerBefore - quote.balanceOf(MANAGER), expected);
+                assertEq(quote.balanceOf(A.PLATFORM_RECIPIENT) - recipientBefore, mode == 1 ? expected - expected / 100 : expected);
+            }
+            assertEq(quote.balanceOf(ROUTER), 11 ether); assertEq(ROUTER.balance, 7 ether);
+            assertTrue(vm.revertToState(snapshot)); snapshot = vm.snapshotState();
+        }
+    }
 }
 `;
     writeFileSync(resolve(work, "RouteRuntime.t.sol"), source);
     const foundryConfig = readFileSync(resolve(contracts, "foundry.toml"), "utf8")
       .replace('libs = ["lib"]', `libs = ["${contracts}/lib"]`)
-      .replace(/fs_permissions = \[[\s\S]*?\n\]/, `fs_permissions = [{ access = "read", path = "${out}" }]`);
+      .replace(/fs_permissions = \[[\s\S]*?\n\]/, `fs_permissions = [{ access = "read-write", path = "${work}" }]`);
     writeFileSync(resolve(work, "foundry.toml"), foundryConfig);
     const remappings = readFileSync(resolve(contracts, "remappings.txt"), "utf8").trim().split("\n").map(line => { const [from, to] = line.split("="); return `${from}=${resolve(contracts, to)}/`; });
     remappings.push(`src/=${contracts}/src/`, `test/module-engine/=${contracts}/test/module-engine/`);
     writeFileSync(resolve(work, "remappings.txt"), remappings.join("\n") + "\n");
     const result = spawnSync("forge", ["test", "--root", work, "--match-contract", "AnyQuoteRouteRuntimeTest", "--match-test", "testRoute", "--ffi", "-vv"], {
-      cwd: contracts, encoding: "utf8", timeout: 160_000, maxBuffer: 4 * 1024 * 1024,
+      cwd: contracts, encoding: "utf8", timeout: 180_000, maxBuffer: 4 * 1024 * 1024,
       env: { ...process.env, FOUNDRY_SRC: resolve(contracts, "src/module-engine/any-quote"), FOUNDRY_TEST: work, FOUNDRY_SCRIPT: work, FOUNDRY_OUT: out, FOUNDRY_CACHE_PATH: resolve(work, "cache") },
     });
     writeFileSync(resolve(work, "verification.txt"), `${result.stdout ?? ""}\n${result.stderr ?? ""}`);
     assert.equal(result.status, 0, `${result.error?.message ?? ""}\n${result.stdout?.slice(-12000)}\n${result.stderr?.slice(-2000)}`);
     console.log(result.stdout);
+    await verifyRuntimeSettlementTraces(work);
   });
+}
+
+async function verifyRuntimeSettlementTraces(work) {
+  const a = await compiler(true), fixture = JSON.parse(readFileSync(resolve(work, "probe.json"), "utf8"));
+  const now = BigInt(fixture.now), key = { currency0: a.ANY_QUOTE_NATIVE, currency1: fixture.quote, fee: 3000, tickSpacing: 60, hooks: a.ANY_QUOTE_NATIVE };
+  const route = { provider: "uniswap-v4-initialize", chainId: 4663, tokenIn: a.ANY_QUOTE_WETH, tokenOut: fixture.quote,
+    amountIn: "1000000000000000000", amountOut: fixture.amountOut, validUntil: (now + 120n).toString(), checkpoint: { number: "1", timestamp: now.toString(), hash: `0x${"11".repeat(32)}` }, evidenceHash: `0x${"22".repeat(32)}`,
+    hops: [{ protocol: "V4", tokenIn: a.ANY_QUOTE_NATIVE, tokenOut: fixture.quote, key, poolId: a.anyQuotePoolIdV1(key), hookData: "0x" }] };
+  const probe = a.buildAnyQuoteSettlementProbeV1({ owner: fixture.owner, recipient: fixture.recipient, externalRoute: route, deadline: now + 120n, now });
+  assert.equal(probe.transaction.data.toLowerCase(), fixture.data.toLowerCase());
+  for (const mode of [0, 1, 2]) {
+    const dump = JSON.parse(readFileSync(resolve(work, `probe-${mode}.json`), "utf8"));
+    const genesis = resolve(work, `probe-genesis-${mode}.json`);
+    // dumpState exports contract allocs only; include the EOA balance recorded from that same
+    // Foundry fixture in genesis. The read-only trace request itself has no state overrides.
+    const alloc = { ...(dump.alloc ?? dump), [fixture.owner.toLowerCase()]: { balance: `0x${BigInt(fixture.ownerBalance).toString(16)}`, nonce: "0x0", code: "0x", storage: {} } };
+    writeFileSync(genesis, JSON.stringify({ config: { chainId: 4663 }, timestamp: `0x${now.toString(16)}`, gasLimit: "0x1c9c380", difficulty: "0x0", alloc }));
+    const port = await new Promise((resolve, reject) => { const server = createServer(); server.once("error", reject); server.listen(0, "127.0.0.1", () => { const port = server.address().port; server.close(error => error ? reject(error) : resolve(port)); }); });
+    const url = `http://127.0.0.1:${port}`;
+    const child = spawn("anvil", ["--init", genesis, "--chain-id", "4663", "--hardfork", "cancun", "--port", String(port), "--silent"], { stdio: ["ignore", "pipe", "pipe"] });
+    let diagnostic = ""; child.stdout.on("data", data => { diagnostic += data; }); child.stderr.on("data", data => { diagnostic += data; });
+    const rpc = async (method, params) => { const response = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }), signal: AbortSignal.timeout(5000) }); const body = await response.json(); if (body.error) throw Error(JSON.stringify(body.error)); return body.result; };
+    try {
+      let ready = false;
+      for (let attempt = 0; attempt < 50; attempt++) {
+        if (child.exitCode !== null) throw Error(`Anvil failed: ${diagnostic}`);
+        try { await rpc("eth_chainId", []); ready = true; break; } catch { await new Promise(resolve => setTimeout(resolve, 50)); }
+      }
+      assert.ok(ready, `Anvil did not start: ${diagnostic}`);
+      const raw = await rpc("debug_traceCall", [{ ...probe.transaction, value: `0x${probe.amountIn.toString(16)}` }, "latest", { tracer: "callTracer", timeout: "10s" }]);
+      writeFileSync(resolve(work, `probe-trace-${mode}.json`), JSON.stringify(raw));
+      const trace = a.tradeTraceV1(raw);
+      if (mode === 0) assert.equal(a.verifyAnyQuoteSettlementTraceV1(probe, trace).recipientCredit, fixture.amountOut);
+      else assert.throws(() => a.verifyAnyQuoteSettlementTraceV1(probe, trace), error => error.status === (mode === 1 ? "incompatible" : "inconclusive") && (mode !== 1 || error.code === "QUOTE_SETTLEMENT_AMOUNT_MISMATCH"));
+    } finally {
+      child.kill("SIGTERM");
+      if (child.exitCode === null) await new Promise(resolve => child.once("exit", resolve));
+    }
+  }
+  console.log("Pinned Universal Router callTracer: exact transfer accepted; FOT incompatible; restricted transfer inconclusive.");
 }

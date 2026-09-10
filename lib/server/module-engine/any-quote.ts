@@ -15,6 +15,7 @@ import { ANY_QUOTE_INFRASTRUCTURE, ANY_QUOTE_NATIVE_BUY_OPERATION_ID, ANY_QUOTE_
   anyQuoteSameAddressV1, anyQuoteUintV1, type AnyQuoteCheckpointV1 } from "@/lib/module-engine/any-quote/types";
 import { agreedTradeRpcV1, productionTradeRpcsV1, successfulTradeFramesV1, tradeTraceV1, type TradeRpcV1 } from "../custom-launch/routed-trade-rpc-v1";
 import { readModuleEngineAvailability } from "./catalog";
+import { verifyAnyQuoteLaunchSettlementV1 } from "./any-quote-settlement";
 
 type Selection = { releaseDigest: Hex; templateId: string };
 export interface AnyQuoteIntegrationDependencies {
@@ -95,6 +96,9 @@ export async function readAnyQuoteLaunchPreview(input: AnyQuoteLaunchPreviewInpu
   const predictedToken = predictAnyQuoteToken(intent, release), price = planAnyQuoteInitialPriceV1({ token: predictedToken, quoteAsset: intent.quoteAsset, quoteDecimals: readiness.token.decimals, quoteUsd: readiness.price.usd });
   const validUntil = min(block.timestamp + 180n, BigInt(readiness.validUntil)).toString();
   if (BigInt(validUntil) <= block.timestamp) throw new AnyQuoteErrorV1("READINESS_EXPIRED");
+  await verifyAnyQuoteLaunchSettlementV1({ account: intent.account, ledger: release.contracts.ledger.address,
+    creatorWallets: intent.creatorWallets, buyCreatorFeeBps: intent.buyCreatorFeeBps, sellCreatorFeeBps: intent.sellCreatorFeeBps,
+    externalRoute: readiness.routes.buy, deadline: BigInt(validUntil), now: block.timestamp, rpcs: rpcs(deps) });
   const priceEvidenceHash = anyQuoteEvidenceHashV1({ domain: "programmable.any-quote.price-intent.v1", intent, readinessEvidenceHash: readiness.evidenceHash, price, validUntil });
   const encoded = encodeAnyQuoteConfigurationV1({ sharedHook: release.contracts.sharedHook.address, quoteAsset: intent.quoteAsset, initialTick: price.initialTick, validUntil: BigInt(validUntil), priceEvidenceHash });
   const preview: AnyQuoteLaunchPreparation = { schemaVersion: "programmable.any-quote.launch-preview.v1", intent, readiness, predictedToken,

@@ -14,6 +14,7 @@ import { prepareModuleEngineAnyQuoteSwap, prepareModuleEngineClaim, readModuleEn
 import { ENGINE_CONTEXT, moduleEngineAnyQuoteLedgerAbi, moduleEngineHostAbi, moduleEngineLaunchParameters, moduleEnginePlanParameters } from "@/lib/module-engine/abi";
 import { readAnyQuoteLaunchPreview, readAnyQuoteReadiness } from "@/lib/server/module-engine/any-quote";
 import { anyQuoteJsonRequest } from "@/lib/server/module-engine/any-quote-http";
+import { settlementRpcFixture } from "./any-quote-settlement-fixture";
 
 vi.mock("server-only", () => ({}));
 
@@ -84,9 +85,13 @@ function sharedFixture() {
   const intent = anyQuoteLaunchIntent({ ...f.launchInput, releaseDigest: release.releaseDigest, initialBuyWei: "0", slippageBps: 100 });
   const token = predictAnyQuoteToken(intent, identity), now = f.state.timestamp, expiry = (now + 120n).toString();
   const price = planAnyQuoteInitialPriceV1({ token, quoteAsset: QUOTE, quoteDecimals: 36, quoteUsd: { numerator: "2", denominator: "1" } });
+  const externalKey = { currency0: ANY_QUOTE_NATIVE, currency1: QUOTE, fee: 3000, tickSpacing: 60, hooks: ANY_QUOTE_NATIVE };
+  const externalRoute = { provider: "uniswap-v4-initialize", chainId: 4663, tokenIn: ANY_QUOTE_WETH, tokenOut: QUOTE, amountIn: "1000", amountOut: "3000", validUntil: expiry,
+    checkpoint: { number: "100", hash: f.blockHash, timestamp: now.toString() }, evidenceHash: hash(821),
+    hops: [{ protocol: "V4", tokenIn: ANY_QUOTE_NATIVE, tokenOut: QUOTE, poolId: anyQuotePoolIdV1(externalKey), key: externalKey, hookData: "0x" }] } as const;
   const readiness = { status: "compatible", chainId: 4663, quoteAsset: QUOTE, token: { name: "Quote", symbol: "Q", decimals: 36 }, checkpoint: { number: "100", hash: f.blockHash, timestamp: now.toString() },
     price: { usd: price.quoteUsd, source: "chainlink", observedAt: now.toString(), validUntil: expiry, evidenceHash: hash(81), heartbeatSeconds: 86400 },
-    routes: {} as never, validUntil: expiry, evidenceHash: hash(82), checks: { codeAndMetadata: "verified", routePools: "verified-at-checkpoint", externalQuotes: "same-block-bidirectional", fullExecution: "required-before-signing" } } as const;
+    routes: { buy: externalRoute, sell: externalRoute }, validUntil: expiry, evidenceHash: hash(82), checks: { codeAndMetadata: "verified", routePools: "verified-at-checkpoint", externalQuotes: "same-block-bidirectional", fullExecution: "required-before-signing" } } as const;
   const priceEvidenceHash = anyQuoteEvidenceHashV1({ domain: "programmable.any-quote.price-intent.v1", intent, readinessEvidenceHash: readiness.evidenceHash, price, validUntil: expiry });
   const preview: AnyQuoteLaunchPreparation = { schemaVersion: "programmable.any-quote.launch-preview.v1", intent, readiness, predictedToken: token, pool: anyQuotePoolFor(token, QUOTE, identity.contracts.sharedHook.address),
     ...encodeAnyQuoteConfigurationV1({ sharedHook: identity.contracts.sharedHook.address, quoteAsset: QUOTE, initialTick: price.initialTick, validUntil: BigInt(expiry), priceEvidenceHash }), initialTick: price.initialTick, validUntil: expiry,
@@ -211,13 +216,25 @@ describe("Any Quote financial integration", () => {
     expect(() => anyQuoteMinimumOutput(100n, 1001)).toThrow("INVALID_SLIPPAGE");
   });
   it("prepares the same financial launch intent through the API without initial quote holdings", async () => {
-    const f = sharedFixture(), preview = await readAnyQuoteLaunchPreview({ ...f.intent, description: "Quote launch" }, {
+    const f = sharedFixture(), settlement = settlementRpcFixture(f.preview.readiness.routes.buy, addr(99)), preview = await readAnyQuoteLaunchPreview({ ...f.intent, description: "Quote launch" }, {
       client: f.client, availability: async () => ({ ...f.availability, release: f.release }), readiness: async () => f.preview.readiness,
+      options: { rpcs: settlement.rpcs },
     });
     expect(preview.initialBuy).toBeNull(); expect(preview.intent.initialBuyWei).toBe("0");
     expect(preview.configurationHash).toBe(f.preview.configurationHash);
     expect(assertAnyQuoteLaunchPreparation(preview, f.intent, f.release, f.state.timestamp)).toBe(preview);
     expect(f.client.call).not.toHaveBeenCalled();
+    expect(settlement.calls.some(call => call.method === "debug_traceCall")).toBe(true);
+  });
+  it.each(["taxed", "restricted", "unfunded"])("closes zero-buy launch preview when quote settlement is %s", async kind => {
+    const f = sharedFixture(), settlement = settlementRpcFixture(f.preview.readiness.routes.buy, addr(99));
+    if (kind === "taxed") settlement.state.recipientAdjustment = -1n;
+    if (kind === "restricted") settlement.state.failed = true;
+    if (kind === "unfunded") settlement.state.balance = 0n;
+    await expect(readAnyQuoteLaunchPreview({ ...f.intent, description: "Zero buy settlement gate" }, {
+      client: f.client, availability: async () => ({ ...f.availability, release: f.release }), readiness: async () => f.preview.readiness, options: { rpcs: settlement.rpcs },
+    })).rejects.toMatchObject({ status: kind === "taxed" ? "incompatible" : "inconclusive" });
+    expect(f.intent.initialBuyWei).toBe("0"); expect(f.client.call).not.toHaveBeenCalled();
   });
   it.each(["incompatible", "inconclusive"] as const)("keeps %s readiness distinct in the public API", async status => {
     const f = sharedFixture(), result = { status, chainId: 4663 as const, quoteAsset: QUOTE, code: status === "incompatible" ? "UNSUPPORTED_TOKEN_DECIMALS" : "PROVIDER_UNAVAILABLE", retryable: status === "inconclusive" };
