@@ -262,7 +262,9 @@ async function verifyRuntimeSettlementTraces(work) {
         try { await rpc("eth_chainId", []); ready = true; break; } catch { await new Promise(resolve => setTimeout(resolve, 50)); }
       }
       assert.ok(ready, `Anvil did not start: ${diagnostic}`);
-      const raw = await rpc("debug_traceCall", [{ ...probe.transaction, value: `0x${probe.amountIn.toString(16)}` }, "latest", { tracer: "callTracer", timeout: "10s" }]);
+      const checkpoint = await rpc("eth_getBlockByNumber", ["latest", false]);
+      const reference = { blockHash: checkpoint.hash, requireCanonical: true };
+      const raw = await rpc("debug_traceCall", [{ ...probe.transaction, value: `0x${probe.amountIn.toString(16)}` }, reference, { tracer: "callTracer", timeout: "10s" }]);
       writeFileSync(resolve(work, `probe-trace-${mode}.json`), JSON.stringify(raw));
       const trace = a.tradeTraceV1(raw);
       if (mode === 0) assert.equal(a.verifyAnyQuoteSettlementTraceV1(probe, trace).recipientCredit, fixture.amountOut);
