@@ -3,6 +3,7 @@ import "server-only";
 import { readWebsiteRouterCustomIdentitySnapshotV1 } from "@/lib/alchemy/router-custom-public.server";
 import { readEnvioClassicV3CatalogV1 } from "@/lib/market-data/envio-classic-v3-catalog.server";
 import { publicExploreCatalogEntriesV1, publicExplorePresentationEntryV1 } from "@/lib/public-explore-catalog-v1";
+import { isPublicExploreIdentityV1 } from "@/lib/explore-public-visibility";
 import { ETHEREUM_EXPLORE_FILTERS } from "@/lib/ethereum-explore";
 import type { CanonicalTokenExploreEntry } from "@/lib/tokens";
 
@@ -62,7 +63,7 @@ export async function readEthereumExploreCatalog(dependencies: Dependencies = re
 export async function readEthereumLaunches(page = 1, query = "", filters = ETHEREUM_EXPLORE_FILTERS, pageSize: 10 | 50 = 10, dependencies?: Dependencies) {
   const catalog = await readEthereumExploreCatalog(dependencies);
   const q = query.normalize("NFC").trim().replace(/^\$/, "").toLowerCase();
-  const visible = publicExploreCatalogEntriesV1(catalog.entries).filter((entry): entry is CanonicalTokenExploreEntry => entry.exploreKind === "token");
+  const visible = publicExploreCatalogEntriesV1(catalog.entries).filter((entry): entry is CanonicalTokenExploreEntry => entry.exploreKind === "token" && isPublicExploreIdentityV1(entry));
   const filtered = visible.filter(entry => (filters.mode === undefined || filters.mode === "all" || entry.launchCategoryProvenance.category === filters.mode)
     && (!q || [entry.name, entry.symbol, entry.tokenAddress].some(value => value?.normalize("NFC").toLowerCase().includes(q))));
   filtered.sort((a, b) => {

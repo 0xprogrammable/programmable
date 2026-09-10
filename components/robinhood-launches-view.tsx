@@ -287,7 +287,7 @@ function IndexedLaunchList({ embedded, enabled, chainId }: { embedded: boolean; 
         : snapshot?.request.q || hasFilters ? "No matching launches" : "No finalized launches yet";
 
   return (
-    <div className={`${styles.page} explore-page page-width`}>
+    <div className={`${styles.page} page-width`}>
       <header className={styles.heading}>
         <Heading data-explore-heading id={headingId}>Explore</Heading>
       </header>
