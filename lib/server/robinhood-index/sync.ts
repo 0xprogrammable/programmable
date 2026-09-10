@@ -36,6 +36,7 @@ function sameEngineLaunchIdentity(left: RobinhoodEngineLaunch, right: RobinhoodE
     "engineManifestHash", "engineRuntimeCodeHash", "tokenRuntimeCodeHash", "quoteAsset", "configurationHash",
     "constructorHash", "initCodeHash", "planHash", "resourcesHash", "economicsPolicyId"] as const)
     .every(key => left[key].toLowerCase() === right[key].toLowerCase())
+    && (["feeAsset", "feeLedgerAddress"] as const).every(key => left[key]?.toLowerCase() === right[key]?.toLowerCase())
     && (["logIndex", "quoteDecimals", "decimals", "name", "symbol", "protocolFeeBps", "authorPoolFeeBps", "platformFeeBps"] as const)
       .every(key => left[key] === right[key])
     && (["modulePackageIds", "moduleFamilyIds", "feeEligibleFamilyIds"] as const)
