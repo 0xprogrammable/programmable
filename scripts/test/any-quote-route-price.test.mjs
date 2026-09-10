@@ -125,3 +125,12 @@ test("agreed chain quantities serialize canonically before checkpoint and runtim
   assert.equal(result.status, "inconclusive");
   assert.ok(methods.includes("eth_getCode"));
 });
+test("stock REST quote envelope binds chain and CA and applies multiplier exactly once", () => {
+  const quote = { tokenSymbol: "NVDA", deployments: [{ chainId: 4663, contractAddress: QUOTE }], bid: "218.82", ask: "218.84", currency: "USD", isTradingHalt: false, generatedAt: "2026-09-10T16:00:00Z" };
+  const input = { asset: QUOTE, symbol: "NVDA", now: BigInt(Date.parse(quote.generatedAt) / 1000) + 1n, multiplier: 101n * 10n ** 16n };
+  assert.deepEqual(a.parseAnyQuoteStockPriceV1({ quotes: [quote] }, input).usd, { numerator: "2210183", denominator: "10000" });
+  assert.throws(() => a.parseAnyQuoteStockPriceV1(quote, input), /STOCK_PRICE_UNAVAILABLE/);
+  assert.throws(() => a.parseAnyQuoteStockPriceV1({ quotes: [{ ...quote, deployments: [{ chainId: 1, contractAddress: QUOTE }] }] }, input), /IDENTITY_MISMATCH/);
+  assert.throws(() => a.parseAnyQuoteStockPriceV1({ quotes: [{ ...quote, deployments: [{ chainId: 4663, contractAddress: TOKEN0 }] }] }, input), /IDENTITY_MISMATCH/);
+  assert.throws(() => a.parseAnyQuoteStockPriceV1({ quotes: [quote] }, { ...input, now: input.now + 61n }), /STOCK_PRICE_STALE/);
+});

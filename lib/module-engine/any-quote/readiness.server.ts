@@ -229,20 +229,32 @@ async function trustedPrice(asset: Address, ctx: Context, options: AnyQuoteReadi
     });
     if (feeds.length === 1) return await chainlink(anyQuoteAddressV1(feeds[0].proxyAddress), Number(feeds[0].heartbeat), ctx);
   } catch { /* A fresh authoritative stock REST price is a separate, explicitly labelled fallback. */ }
-  const price = record(await fetchJson(`https://api.robinhood.com/rhj/prices/${encodeURIComponent(stock.tokenSymbol)}`, options));
+  const rawPrice = await fetchJson(`https://api.robinhood.com/rhj/prices/${encodeURIComponent(stock.tokenSymbol)}`, options);
+  const multiplier = await ctx.call(asset, "function uiMultiplier() view returns (uint256)") as bigint;
+  const parsed = parseAnyQuoteStockPriceV1(rawPrice, { asset, symbol: stock.tokenSymbol, now: ctx.now, multiplier });
+  return { usd: parsed.usd, source: "robinhood-stock-rest", observedAt: parsed.observedAt.toString(), validUntil: min(parsed.observedAt + 60n, ctx.now + ROUTE_LIFETIME).toString(), heartbeatSeconds: 60,
+    evidenceHash: anyQuoteEvidenceHashV1({ asset, symbol: stock.tokenSymbol, bid: parsed.bid, ask: parsed.ask, generatedAt: parsed.generatedAt, multiplier: multiplier.toString(), checkpoint: ctx.checkpoint }) };
+}
+
+/** Robinhood REST returns a quotes collection, bound by both symbol and deployment identity. */
+export function parseAnyQuoteStockPriceV1(value: unknown, input: { asset: Address; symbol: string; now: bigint; multiplier: bigint }) {
+  const envelope = record(value);
+  if (!Array.isArray(envelope.quotes) || envelope.quotes.length > 4096) throw new AnyQuoteErrorV1("STOCK_PRICE_UNAVAILABLE");
+  const matching = envelope.quotes.map(record).filter(price => price.tokenSymbol === input.symbol && Array.isArray(price.deployments)
+    && price.deployments.map(record).some(d => Number(d.chainId) === 4663 && typeof d.contractAddress === "string" && anyQuoteSameAddressV1(d.contractAddress, input.asset)));
+  if (matching.length !== 1) throw new AnyQuoteErrorV1("STOCK_PRICE_IDENTITY_MISMATCH");
+  const price = matching[0];
   if (price.currency !== "USD" || price.isTradingHalt !== false || typeof price.generatedAt !== "string"
     || typeof price.bid !== "string" || typeof price.ask !== "string") throw new AnyQuoteErrorV1("STOCK_PRICE_UNAVAILABLE");
   const stamp = Date.parse(price.generatedAt);
   if (!Number.isFinite(stamp)) throw new AnyQuoteErrorV1("STOCK_PRICE_UNAVAILABLE");
   const observed = BigInt(Math.floor(stamp / 1000));
-  if (observed > ctx.now || ctx.now - observed > 60n) throw new AnyQuoteErrorV1("STOCK_PRICE_STALE");
+  if (observed > input.now || input.now - observed > 60n) throw new AnyQuoteErrorV1("STOCK_PRICE_STALE");
   const bid = parseAnyQuoteDecimalV1(price.bid), ask = parseAnyQuoteDecimalV1(price.ask);
   const bn = BigInt(bid.numerator), bd = BigInt(bid.denominator), an = BigInt(ask.numerator), ad = BigInt(ask.denominator);
   if (bn * ad > an * bd || (an * bd - bn * ad) * 10_000n > bn * ad * 200n) throw new AnyQuoteErrorV1("STOCK_SPREAD_UNAVAILABLE");
-  const multiplier = await ctx.call(asset, "function uiMultiplier() view returns (uint256)") as bigint;
-  const usd = multiplyAnyQuoteRationalsV1(anyQuoteRationalV1(bn * ad + an * bd, 2n * bd * ad), anyQuoteRationalV1(multiplier, 10n ** 18n));
-  return { usd, source: "robinhood-stock-rest", observedAt: observed.toString(), validUntil: min(observed + 60n, ctx.now + ROUTE_LIFETIME).toString(), heartbeatSeconds: 60,
-    evidenceHash: anyQuoteEvidenceHashV1({ asset, symbol: stock.tokenSymbol, bid: price.bid, ask: price.ask, generatedAt: price.generatedAt, multiplier: multiplier.toString(), checkpoint: ctx.checkpoint }) };
+  const usd = multiplyAnyQuoteRationalsV1(anyQuoteRationalV1(bn * ad + an * bd, 2n * bd * ad), anyQuoteRationalV1(input.multiplier, 10n ** 18n));
+  return { usd, observedAt: observed, bid: price.bid, ask: price.ask, generatedAt: price.generatedAt };
 }
 
 /** Compare execution prices per unit across sizes, so constant pool/hook fees cancel.
