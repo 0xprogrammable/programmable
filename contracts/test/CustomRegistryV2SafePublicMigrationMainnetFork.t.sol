@@ -72,7 +72,7 @@ contract CustomRegistryV2SafePublicMigrationMainnetForkTest is Test {
             vm.skip(true, "ETHEREUM_RPC_URL is required for the mainnet fork proof");
             return;
         }
-        vm.createSelectFork(rpcUrl, REVIEWED_MAINNET_BLOCK);
+        vm.createSelectFork(vm.envOr("ETHEREUM_ARCHIVE_RPC_URL", rpcUrl), REVIEWED_MAINNET_BLOCK);
         safe = _deployLegacySafe(98_765_432_101);
     }
 
