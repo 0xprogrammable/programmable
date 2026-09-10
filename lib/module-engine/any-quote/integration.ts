@@ -26,6 +26,7 @@ export interface AnyQuoteTradeQuote {
   pool: AnyQuoteModulePoolV1; externalRoute: AnyQuoteExternalRouteV1; evidenceHash: Hex;
 }
 export const ANY_QUOTE_CONFIGURATION_PARAMETERS = parseAbiParameters("bytes32,address,bytes32,address,address,int24,uint64,bytes32");
+export const ANY_QUOTE_TOKEN_GRAFFITI_DOMAIN = "programmable.module-engine.any-quote-token.v1";
 export function anyQuoteSlippageBps(value = 100): number {
   if (!Number.isInteger(value) || value < 0 || value > 1_000) throw new AnyQuoteErrorV1("INVALID_SLIPPAGE");
   return value;
@@ -36,7 +37,7 @@ export function anyQuoteMinimumOutput(output: bigint, slippageBps: number): bigi
   return minimum;
 }
 export function predictAnyQuoteToken(input: Pick<AnyQuoteLaunchIntent, "account" | "creatorSalt" | "name" | "symbol">, release: ModuleEngineReleaseIdentity): Address {
-  const graffiti = keccak256(encodeAbiParameters(parseAbiParameters("string,address,bytes32"), ["programmable.module-engine.token.v1", input.account, input.creatorSalt]));
+  const graffiti = keccak256(encodeAbiParameters(parseAbiParameters("string,address,bytes32"), [ANY_QUOTE_TOKEN_GRAFFITI_DOMAIN, input.account, input.creatorSalt]));
   return getCreate2Address({ from: release.contracts.tokenFactory.address,
     salt: keccak256(encodeAbiParameters(parseAbiParameters("string,string,uint8,address,bytes32"), [input.name.trim(), input.symbol.trim(), 18, release.contracts.host.address, graffiti])),
     bytecodeHash: release.tokenCreationCodeHash }).toLowerCase() as Address;

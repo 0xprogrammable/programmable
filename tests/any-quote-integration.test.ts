@@ -1,16 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
-import { decodeAbiParameters, decodeFunctionData, encodeAbiParameters, encodeFunctionResult, getAddress, keccak256, parseAbiParameters, type Hex } from "viem";
+import { decodeAbiParameters, decodeFunctionData, encodeAbiParameters, encodeEventTopics, encodeFunctionResult, getAddress, getCreate2Address, keccak256, parseAbiParameters, type Hex, type TransactionReceipt } from "viem";
 import { fixture, ACCOUNT, CODE_HASH, QUOTE, TOKEN, addr, hash } from "./module-engine-fixture";
 import { moduleEngineReleaseIdentity, computeModuleEngineReleaseDigest, computeModuleEngineHostManifestHash, type ModuleEngineAnyQuoteReleaseIdentity } from "@/lib/module-engine/catalog";
 import { MODULE_ENGINE_ANY_QUOTE_SOURCE_VERSION, MODULE_ENGINE_ANY_QUOTE_SOURCE_ID, MODULE_ENGINE_ANY_QUOTE_PROFILE, MODULE_ENGINE_ANY_QUOTE_PROFILE_ID, MODULE_ENGINE_ANY_QUOTE_ECONOMICS_POLICY_ID } from "@/lib/module-engine/profile";
 import { ANY_QUOTE_CONFIGURATION_ABI, createAnyQuoteConfigurationSchema } from "@/lib/module-engine/any-quote-configuration";
-import { ANY_QUOTE_INFRASTRUCTURE } from "@/lib/module-engine/any-quote/types";
+import { ANY_QUOTE_INFRASTRUCTURE, ANY_QUOTE_NATIVE, ANY_QUOTE_NATIVE_BUY_OPERATION_ID } from "@/lib/module-engine/any-quote/types";
 import { anyQuoteEvidenceHashV1 } from "@/lib/module-engine/any-quote/route";
 import { planAnyQuoteInitialPriceV1, encodeAnyQuoteConfigurationV1 } from "@/lib/module-engine/any-quote/price";
 import { anyQuoteLaunchIntent, anyQuoteMinimumOutput, anyQuotePoolFor, assertAnyQuoteConfiguration, assertAnyQuoteLaunchPreparation, predictAnyQuoteToken, type AnyQuoteLaunchPreparation } from "@/lib/module-engine/any-quote/integration";
 import { compileModuleEngineLaunch, predictModuleEngineAddress } from "@/lib/module-engine/operation-plan";
-import { prepareModuleEngineClaim, readModuleEngineAdministration, readModuleEngineFeeControls, prepareModuleEngineFeeChange, revalidateModuleEngineTransaction } from "@/lib/module-engine/client";
-import { ENGINE_CONTEXT, moduleEngineAnyQuoteLedgerAbi } from "@/lib/module-engine/abi";
+import { prepareModuleEngineClaim, readModuleEngineAdministration, readModuleEngineFeeControls, prepareModuleEngineFeeChange, revalidateModuleEngineTransaction, verifyModuleEngineLaunchReceipt } from "@/lib/module-engine/client";
+import { ENGINE_CONTEXT, moduleEngineAnyQuoteLedgerAbi, moduleEngineHostAbi, moduleEngineLaunchParameters, moduleEnginePlanParameters } from "@/lib/module-engine/abi";
 import { readAnyQuoteLaunchPreview, readAnyQuoteReadiness } from "@/lib/server/module-engine/any-quote";
 import { anyQuoteJsonRequest } from "@/lib/server/module-engine/any-quote-http";
 
@@ -82,6 +82,14 @@ function sharedFixture() {
 }
 
 describe("Any Quote financial integration", () => {
+  it("matches the final AnyQuote host token graffiti domain while preserving native token predictions", async () => {
+    const f = sharedFixture(), compiled = await compileModuleEngineLaunch({ ...f.launchInput, configuration: {}, anyQuotePreparation: f.preview }, f.release, f.template.manifest, 36, BigInt(f.preview.validUntil));
+    const expectedGraffiti = keccak256(encodeAbiParameters(parseAbiParameters("string,address,bytes32"), ["programmable.module-engine.any-quote-token.v1", ACCOUNT, f.intent.creatorSalt]));
+    const expectedToken = getCreate2Address({ from: f.release.contracts.tokenFactory.address, salt: keccak256(encodeAbiParameters(parseAbiParameters("string,string,uint8,address,bytes32"), [f.intent.name, f.intent.symbol, 18, f.host, expectedGraffiti])), bytecodeHash: f.release.tokenCreationCodeHash });
+    expect(compiled.graffiti).toBe(expectedGraffiti); expect(compiled.predictedToken).toBe(expectedToken.toLowerCase()); expect(f.preview.predictedToken).toBe(expectedToken.toLowerCase());
+    const native = fixture(), nativePlan = await compileModuleEngineLaunch(native.launchInput, native.release, native.template.manifest, 6, native.state.timestamp + 120n);
+    expect(nativePlan.graffiti).toBe(keccak256(encodeAbiParameters(parseAbiParameters("string,address,bytes32"), ["programmable.module-engine.token.v1", ACCOUNT, native.launchInput.creatorSalt])));
+  });
   it("compiles signed price config with 36 decimals, optional zero buy and ledger context without mining the LP engine", async () => {
     const f = sharedFixture(), compiled = await compileModuleEngineLaunch({ ...f.launchInput, configuration: {}, anyQuotePreparation: f.preview }, f.release, f.template.manifest, 36, BigInt(f.preview.validUntil));
     expect(compiled.engine).toBe(predictModuleEngineAddress(f.host, ACCOUNT, f.launchInput.engineSalt, compiled.launchId, compiled.initCodeHash));
@@ -146,5 +154,26 @@ describe("Any Quote financial integration", () => {
     f.setPlatformWallet(addr(112));
     await expect(revalidateModuleEngineTransaction(prepared, addr(99))).rejects.toThrow("changed");
     expect(f.state.claimable).toBe(9n);
+  });
+  it("requires the initial ETH buy output and consumed nonce when confirming an AnyQuote launch", async () => {
+    const f = sharedFixture(), compiled = await compileModuleEngineLaunch({ ...f.launchInput, configuration: {}, anyQuotePreparation: f.preview }, f.release, f.template.manifest, 36, BigInt(f.preview.validUntil));
+    const operation = { operationId: ANY_QUOTE_NATIVE_BUY_OPERATION_ID, actor: ACCOUNT, recipient: ACCOUNT, inputAsset: ANY_QUOTE_NATIVE, inputAmount: 1000n, outputAsset: TOKEN, minimumOutput: 990n, deadline: BigInt(f.preview.validUntil), nonce: 0n, data: "0x1234" as Hex };
+    const parameters = { ...compiled.parameters, initialOperation: operation };
+    f.launch.planHash = keccak256(encodeAbiParameters(moduleEnginePlanParameters, [4663n, f.host, ACCOUNT, parameters]));
+    const log = (eventName: string, args: Record<string, unknown>) => {
+      const event = moduleEngineHostAbi.find(item => item.type === "event" && item.name === eventName); if (event?.type !== "event") throw new Error("Missing event fixture");
+      return { address: f.host, transactionHash: hash(200), blockNumber: 100n, blockHash: f.blockHash, removed: false,
+        topics: encodeEventTopics({ abi: moduleEngineHostAbi, eventName, args } as never), data: encodeAbiParameters(event.inputs.filter(item => !item.indexed), event.inputs.filter(item => !item.indexed).map(item => args[item.name!])) };
+    };
+    const logs = [log("EngineLaunchBound", { ...f.launch, runtimeCodeHash: f.launch.engineCodeHash, economicsPolicyId: f.release.economicsPolicyId }),
+      log("EngineLaunchParametersBound", { launchId: f.launch.launchId, encodedParameters: encodeAbiParameters(moduleEngineLaunchParameters, [parameters]) }),
+      log("EngineOperationExecuted", { ...operation, launchId: f.launch.launchId, outputAmount: 1000n, resultHash: keccak256(operation.data) })];
+    const receipt = { status: "success", transactionHash: hash(200), blockNumber: 100n, blockHash: f.blockHash, logs } as unknown as TransactionReceipt;
+    f.state.nonce = 1n;
+    await expect(verifyModuleEngineLaunchReceipt({ ...f, expected: f.launch, receipt })).resolves.toMatchObject({ kind: "launch", outputAmount: 1000n, finalized: false });
+    f.state.nonce = 0n;
+    await expect(verifyModuleEngineLaunchReceipt({ ...f, expected: f.launch, receipt })).rejects.toThrow("nonce was not consumed");
+    f.state.nonce = 1n;
+    await expect(verifyModuleEngineLaunchReceipt({ ...f, expected: f.launch, receipt: { ...receipt, logs: receipt.logs.slice(0, 2) } })).rejects.toThrow("exactly one");
   });
 });

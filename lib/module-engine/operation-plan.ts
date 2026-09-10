@@ -10,7 +10,7 @@ import { computeModuleEngineHostManifestHash, moduleEngineReleaseIdentity, modul
 import { encodeModuleEngineConfiguration } from "./configuration";
 import type { ModuleEngineOperation, ModuleEngineOperationIntent } from "./client";
 import { isModuleEngineAnyQuoteRelease } from "./profile";
-import { assertAnyQuoteConfiguration, type AnyQuoteLaunchPreparation } from "./any-quote/integration";
+import { ANY_QUOTE_TOKEN_GRAFFITI_DOMAIN, assertAnyQuoteConfiguration, type AnyQuoteLaunchPreparation } from "./any-quote/integration";
 import { ANY_QUOTE_NATIVE_BUY_OPERATION_ID } from "./any-quote/types";
 function need(condition: unknown, message: string): asserts condition { if (!condition) throw new Error(`Module engine: ${message}`); }
 function same(actual: string, expected: string, label: string) { need(actual.toLowerCase() === expected.toLowerCase(), `${label} differs.`); }
@@ -65,7 +65,7 @@ export async function compileModuleEngineLaunch(input: ModuleEngineLaunchInputs,
   const configurationHash = keccak256(configuration); need(configuration.length <= 16_384 * 2 + 2, "Configuration is too large.");
   if (m.revision.fixedConfigurationHash !== ZERO_HASH) same(configurationHash, m.revision.fixedConfigurationHash, "Fixed configuration");
   const host = release.contracts.host.address, creatorSalt = moduleEngineOptionalHash(input.creatorSalt, "creatorSalt");
-  const graffiti = keccak256(encodeAbiParameters(parseAbiParameters("string,address,bytes32"), ["programmable.module-engine.token.v1", account, creatorSalt]));
+  const graffiti = keccak256(encodeAbiParameters(parseAbiParameters("string,address,bytes32"), [isModuleEngineAnyQuoteRelease(release) ? ANY_QUOTE_TOKEN_GRAFFITI_DOMAIN : "programmable.module-engine.token.v1", account, creatorSalt]));
   const predictedToken = getCreate2Address({ from: release.contracts.tokenFactory.address, salt: keccak256(encodeAbiParameters(parseAbiParameters("string,string,uint8,address,bytes32"), [name, symbol, 18, host, graffiti])), bytecodeHash: release.tokenCreationCodeHash }).toLowerCase() as Address;
   need(predictedToken !== quoteAsset, "Primary and quote assets must differ.");
   const launchId = keccak256(encodeAbiParameters(parseAbiParameters("uint256,address,address,bytes32,bytes32"), [4663n, host, predictedToken, m.revision.packageId, configurationHash]));

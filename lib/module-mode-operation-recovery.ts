@@ -208,7 +208,7 @@ export async function recoverModuleEngineOperation(input: {
     if (decoded.functionName === "launch") {
       requireMatch(same(launch.creator, operation.account), "engine launch wallet");
       result = await verifyModuleEngineLaunchReceipt({ client: input.client, release, expected: launch, receipt });
-      if (!same(decoded.args[0].initialOperation.operationId, ENGINE_ZERO_HASH)) {
+      if (!isModuleEngineAnyQuoteRelease(release) && !same(decoded.args[0].initialOperation.operationId, ENGINE_ZERO_HASH)) {
         const initial = await verifyModuleEngineOperationReceipt({ client: input.client, release, launch, operation: decoded.args[0].initialOperation, receipt });
         result = { ...result, outputAmount: initial.outputAmount };
       }

@@ -74,7 +74,7 @@ export const moduleEngineAnyQuoteHookAbi = parseAbi([
   "function poolKey(bytes32 poolId) view returns ((address currency0,address currency1,uint24 fee,int24 tickSpacing,address hooks))",
   "function poolConfig(bytes32 poolId) view returns ((bytes32 launchId,bytes32 revisionId,bytes32 familyId,bytes32 configurationHash,address token,address quoteAsset,address initializer,int24 initialTick,uint16 buyCreatorFeeBps,uint16 sellCreatorFeeBps))",
   "function previewGrossFees(bytes32 poolId,bool buy,uint256 grossQuote) view returns (uint256 platformQuote,uint256 creatorQuote,uint16 nextPlatformRemainder,uint16 nextCreatorRemainder)",
-  "event QuotePoolSwap(bytes32 indexed poolId,bytes32 indexed launchId,address indexed swapSender,bool buy,bool exactInput,uint256 grossQuote,uint256 platformQuote,uint256 creatorQuote,int128 amount0,int128 amount1)",
+  "event QuotePoolSwap(bytes32 indexed poolId,bytes32 indexed launchId,address indexed swapSender,bool buy,bool exactInput,uint256 grossQuote,uint256 platformQuote,uint256 creatorQuote,int128 coreAmount0,int128 coreAmount1)",
   "event SharedQuotePoolBound(bytes32 indexed poolId,bytes32 indexed launchId,address indexed token,address quoteAsset,address engine,bytes32 revisionId,bytes32 familyId,bytes32 configurationHash,int24 initialTick,uint16 buyCreatorFeeBps,uint16 sellCreatorFeeBps)",
 ]);
 export const moduleEngineAnyQuoteLedgerAbi = parseAbi([

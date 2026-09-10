@@ -323,7 +323,9 @@ export async function verifyModuleEngineLaunchReceipt(input: { client: ModuleEng
   same(encodeAbiParameters(moduleEngineLaunchParameters, [parameters]), encodedParameters, "Canonical launch parameters");
   same(keccak256(encodeAbiParameters(moduleEnginePlanParameters, [4663n, block.release.contracts.host.address, actual.creator, parameters])), actual.planHash, "Parameters event plan hash");
   same(args.runtimeCodeHash, actual.engineCodeHash, "Engine runtime event"); same(args.economicsPolicyId, block.release.economicsPolicyId, "Engine economics event"); await canonical(input.client, block);
-  return receiptResult(input.receipt, "launch", { token: actual.token, launch: actual });
+  const initial = isModuleEngineAnyQuoteRelease(block.release) && parameters.initialOperation.operationId !== ZERO_HASH
+    ? await verifyModuleEngineOperationReceipt({ client: input.client, release: block.release, launch: actual, operation: parameters.initialOperation, receipt: input.receipt }) : null;
+  return receiptResult(input.receipt, "launch", { token: actual.token, launch: actual, ...(initial ? { outputAmount: initial.outputAmount } : {}) });
 }
 export async function verifyModuleEngineOperationReceipt(input: { client: ModuleEngineClient; release: ModuleEngineRelease; launch: ModuleEngineLaunchRecord; operation: ModuleEngineOperation; receipt: TransactionReceipt }): Promise<ModuleEngineReceiptResult> {
   const block = await receiptBlock(input.client, input.release, input.receipt), launch = await boundLaunch(input.client, block, input.launch.token); same(launch.launchId, input.launch.launchId, "Operation launch"); same(launch.planHash, input.launch.planHash, "Operation launch plan");
