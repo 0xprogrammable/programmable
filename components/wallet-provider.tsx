@@ -1266,6 +1266,12 @@ function PrivyWalletBridge({
   const [sessionSuppressed, setSessionSuppressed] = useState(false);
   const [accountSwitchRequested, setAccountSwitchRequested] = useState(false);
   const [walletAccountMismatch, setWalletAccountMismatch] = useState(false);
+  const [verifiedWalletNetwork, setVerifiedWalletNetwork] = useState<{
+    userId: string;
+    account: string;
+    chainId: string;
+    walletSnapshot: object;
+  } | null>(null);
   const [switchingNetwork, setSwitchingNetwork] = useState(false);
   const networkSwitchPendingRef = useRef(false);
   const [error, setError] = useState("");
@@ -1299,6 +1305,7 @@ function PrivyWalletBridge({
       applicantRefreshUserGate.invalidate();
       setSessionSuppressed(false);
       setWalletAccountMismatch(false);
+      setVerifiedWalletNetwork(null);
       setError("");
       setWalletLoginStatus("");
       setDialogOpen(false);
@@ -1540,11 +1547,14 @@ function PrivyWalletBridge({
       return null;
     }
 
+    const verified = verifiedWalletNetwork !== null && verifiedWalletNetwork.userId === user?.id
+      && verifiedWalletNetwork.account.toLowerCase() === connectedWalletAddress.toLowerCase()
+      && verifiedWalletNetwork.walletSnapshot === connectedWallet;
     return {
       account: connectedWalletAddress,
-      chainId: normalizeChainId(connectedWalletChainId),
+      chainId: verified ? verifiedWalletNetwork.chainId : normalizeChainId(connectedWalletChainId),
     };
-  }, [connectedWalletAddress, connectedWalletChainId]);
+  }, [connectedWallet, connectedWalletAddress, connectedWalletChainId, user?.id, verifiedWalletNetwork]);
   const walletLinked = Boolean(connectedWallet && ownedWalletAddresses.has(connectedWallet.address.toLowerCase()));
   const walletSessionGenerationRef = useRef(0);
   const walletRequestSessionRef = useRef({
@@ -1969,6 +1979,7 @@ function PrivyWalletBridge({
     applicantRefreshUserGate.invalidate();
     settleWalletLoginAttempt();
     setDisconnecting(true);
+    setVerifiedWalletNetwork(null);
     setError("");
     const markDisconnectFailed = () => {
       const outcome = getWalletDisconnectOutcome(false);
@@ -2064,6 +2075,7 @@ function PrivyWalletBridge({
           if (!isCurrentSession()) throw new Error("The wallet session changed. Reconnect and try again.");
         },
       });
+      const walletAtVerification = walletRequestSessionRef.current.walletCapability;
       if (connectedWallet.walletClientType !== "privy" && connectedWallet.walletClientType !== "privy-v2") {
         const accounts = await provider.request({ method: "eth_accounts" });
         if (!isCurrentSession()) return false;
@@ -2072,6 +2084,14 @@ function PrivyWalletBridge({
           setError("The active wallet changed. Reconnect and try again.");
           return false;
         }
+      }
+      // Switching to an already active network need not emit chainChanged.
+      // Use the verified readback only while this SDK snapshot and wallet still match.
+      if (walletAtVerification !== null) {
+        setVerifiedWalletNetwork({
+          userId: expectedUser, account: expectedAccount,
+          chainId: target.chainHex, walletSnapshot: walletAtVerification,
+        });
       }
       return true;
     } catch (cause) {

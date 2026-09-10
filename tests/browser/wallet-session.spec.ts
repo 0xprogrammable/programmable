@@ -789,6 +789,19 @@ test("a stale Robinhood SDK cache switches the actual provider before reporting 
   await expect(page.getByLabel("Selected account", { exact: true })).toHaveText(accountA);
 });
 
+test("verified network readback updates Module Mode even without an SDK chainChanged event", async ({ page }) => {
+  await open(page, "/launch/modules");
+  await scenario(page, "unsupported-network");
+  await page.getByRole("button", { name: "Keep the SDK network label stale", exact: true }).click();
+  await expect(page.getByLabel("Module wallet step", { exact: true })).toHaveText("switch");
+  await page.getByRole("button", { name: "Request Robinhood wallet network", exact: true }).click();
+  await expectNetworkResults(page, [true]);
+  await expect(page.getByLabel("Selected wallet network", { exact: true })).toHaveText("0x1237");
+  await expect(page.getByLabel("Module wallet step", { exact: true })).toHaveText("prepare");
+  await page.getByRole("button", { name: "Replace connected wallet capability", exact: true }).click();
+  await expect(page.getByLabel("Module wallet step", { exact: true })).toHaveText("switch");
+});
+
 test("duplicate requests do not open a second SDK network switch", async ({ page }) => {
   await open(page);
   await beginDelayedNetworkSwitch(page);
