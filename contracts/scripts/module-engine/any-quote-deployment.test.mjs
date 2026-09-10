@@ -6,6 +6,7 @@ import { fixtures, params, addr } from '../module-mode/test-fixtures.mjs';
 import { buildPlan, digest, HOOK_FLAGS, HOOK_MASK } from '../module-mode/core.mjs';
 import { observeReceipt, walletRequest } from '../module-mode/rpc.mjs';
 import { operatorSourceProfile } from '../module-mode/operator.mjs';
+import { assertContinuationPlan } from '../module-mode/recovery.mjs';
 import { anyQuoteConstructorArguments, anyQuoteSourceCreation, anyQuoteSourceRequests } from './any-quote-evidence.mjs';
 import { assertAnyQuotePlan, assertAnyQuoteProfile, buildAnyQuotePlan, ANY_QUOTE_DEPLOYMENT_SCHEMA,
   ANY_QUOTE_REUSE_DOMAIN, ANY_QUOTE_ROUTER } from './any-quote-core.mjs';
@@ -113,6 +114,42 @@ test('existing manual operator selects only the exact Any Quote profile and pres
   assert.throws(() => walletRequest(plan, { ...observation, nonce: '44' }, ceilings), /nonce/);
   const mixed = structuredClone(plan); mixed.identityCandidate.sourceVersion = 'module-engine-v1'; assert.throws(() => operatorSourceProfile(mixed));
   const old = structuredClone(plan); old.schemaVersion = 'programmable.module-engine-deployment-plan.v1'; assert.throws(() => walletRequest(old, observation, ceilings), /Direct creation/);
+});
+test('Any Quote operator continuation retains the original plan and rejects changed source basis, rights, nonces or bytes', async () => {
+  const { plan: original, build, basis, parameters } = await fixture();
+  const before = structuredClone(original), sourceCommit = 'c'.repeat(40);
+  const basisBody = structuredClone(basis); delete basisBody.basisDigest;
+  basisBody.provenance.sourceCommit = sourceCommit;
+  const successorBasis = { ...basisBody, basisDigest: digest(basisBody.schemaVersion, basisBody) };
+  const current = await buildAnyQuotePlan({ ...build, sourceCommit, sourceTree: 'd'.repeat(40), buildDigest: h('operator-only-build') }, parameters, successorBasis);
+  const rehash = plan => {
+    if (plan.basis) { const body = { ...plan.basis }; delete body.basisDigest; plan.basis.basisDigest = digest(body.schemaVersion, body); }
+    const body = { ...plan }; delete body.planDigest; plan.planDigest = digest(body.schemaVersion, body); return plan;
+  };
+  assert.notEqual(current.planDigest, original.planDigest);
+  assert.equal(assertContinuationPlan(original, current), original);
+  assert.deepEqual(original, before, 'Original plan and its journal identity remain authoritative');
+  assert.deepEqual(current.steps, original.steps);
+  for (const mutate of [
+    p => { p.identityCandidate.sourceCommit = 'e'.repeat(40); },
+    p => { p.basis.provenance.sourceCommit = 'e'.repeat(40); },
+    p => { p.basis.schemaVersion = 'other-basis-domain'; },
+    p => { p.basis.previousRelease.releaseDigest = h('another-release'); },
+    p => { p.basis.registryOwner = addr(88); },
+    p => { p.steps[1].nonce = '44'; },
+    p => { p.steps[1].data += '00'; },
+    p => { p.contracts.nativeRouteGuard.address = addr(88); },
+    p => { p.economics.platformRecipient = addr(88); },
+    p => { delete p.basis; },
+  ]) {
+    const changed = structuredClone(current); mutate(changed); rehash(changed);
+    assert.throws(() => assertContinuationPlan(original, changed), /Continuation/);
+  }
+  const invalidDigest = structuredClone(current); invalidDigest.basis.basisDigest = h('invalid');
+  const body = { ...invalidDigest }; delete body.planDigest; invalidDigest.planDigest = digest(body.schemaVersion, body);
+  assert.throws(() => assertContinuationPlan(original, invalidDigest), /basis/);
+  const future = structuredClone(current); future.schemaVersion = 'programmable.module-engine-any-quote-deployment-plan.v2'; rehash(future);
+  assert.throws(() => assertContinuationPlan(future, future), /basis/, 'Unreviewed plan domains remain excluded');
 });
 test('direct Host receipt requires CREATE address, reserved nonce, wallet payload and all child runtimes', async () => {
   const { plan } = await fixture(), step = plan.steps[1], transactionHash = h('included-host'), blockHash = h('inclusion-block');
