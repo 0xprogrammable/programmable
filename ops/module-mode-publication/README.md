@@ -8,6 +8,71 @@ not need a GitHub repository or a pull request. Publication is a separate operat
 The three commands are `manifest`, `prepare` and `export`. They never sign, send a transaction,
 publish a website or change the catalogue. `export` writes a reviewable local publication only after
 real Registry, contract-code, transaction and receipt checks pass on both reviewed RPC providers.
+The separate `correct-source` command records a bounded administrator correction as a new submission.
+It preserves the original source and attribution and starts a new review; it does not approve or publish.
+
+## Correct a submitted source package
+
+An authenticated administrator can apply a prepared small source correction without using the
+contributor's API key. Use the existing session-file workflow below. This command accepts source-byte
+edits, not a replacement author, reward wallet, family or review result. It only supports an original
+author submission; an existing platform correction cannot be corrected again through this version.
+
+```sh
+node ops/module-mode-publication/operator.mjs correct-source \
+  --submission 00000000-0000-4000-8000-000000000001 \
+  --correction-file /private/operator/correction.json \
+  --session-file /private/operator/session.json \
+  --output /private/operator/correction-run
+```
+
+The correction file contains exactly:
+
+```json
+{
+  "schemaVersion": "programmable.modules.source-correction.v1",
+  "expectedReviewRevision": 0,
+  "requestDigest": "0x…",
+  "version": "0.1.1-pm.1",
+  "reason": "Explain the concrete defect and the bounded correction.",
+  "idempotencyKey": "unique-correction-key-0001",
+  "files": [
+    {
+      "path": "src/Example.sol",
+      "expectedSha256": "original lowercase SHA-256 without 0x",
+      "sha256": "corrected lowercase SHA-256 without 0x",
+      "edits": [
+        { "offset": 0, "deleteBytes": 0, "insertBase64": "Ly8gRXhhbXBsZQo=" }
+      ]
+    }
+  ]
+}
+```
+
+All identifiers, hashes, offsets and source in that example are placeholders. Prepare the command
+against the live parent request and its current review revision. Offsets count bytes in each original
+file. Edits must be sorted and must not overlap. A new file uses `expectedSha256: null` and one
+insertion at offset zero. Existing files are never deleted. The complete command is limited to
+262,144 bytes, 16 changed files, 64 edits per file, 256 edits in total and 128 KiB of inserted bytes.
+The reason is trimmed text of 10 to 4,096 UTF-8 bytes; the idempotency key is 16 to 128 characters
+from `A-Za-z0-9._:-`. The platform version ends in `-pm.` followed by a positive integer.
+
+The backend reconstructs immutable source, changes only the descriptor version and source-file
+hashes, removes the old Git revision claim, and sets `supersedesSubmissionId` to the original submission.
+It records the actual authenticated editor, reason, parent identity, policy and correction digest
+separately. The author's principal, author wallet, reward wallet, family and all other descriptor
+fields remain unchanged. The parent must be unapproved, have no active build and belong to an author
+other than the correcting administrator. The new submission starts at `awaiting_plan`; previous build or approval
+results are not inherited. Admin detail exposes the verified `sourceCorrection` record.
+
+Before POST, the operator writes a private command and intent journal. It sends the command once,
+then verifies the stored receipt and newly fetched source, including every unchanged file and the
+original attribution. If a response is lost, it queries the receipt with the same idempotency key.
+Run the identical command with the same output directory to reconcile an interrupted run. An existing
+journal permits reads only; it never automatically sends another POST. Keep the original key and
+command while the outcome is unresolved. A missing `correction.complete.json` means verification is
+incomplete. A successful correction still needs a protected build, review, Registry admission and
+catalog publication through the normal process.
 
 ## Inputs and authority
 

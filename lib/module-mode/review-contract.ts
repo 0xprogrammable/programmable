@@ -27,7 +27,12 @@ export interface ReviewQueueItem extends Omit<ReviewJob, "artifact" | "plan" | "
 export interface ReviewQueue { schemaVersion: "programmable.modules.website-review-queue.v1"; jobs: ReviewQueueItem[]; nextCursor: string | null }
 export interface ReviewSourceInfo { descriptor: OpenSourcePackage; packageId: Hex; familyId: Hex; files: { path: string; sha256: string; bytes: number }[] }
 export interface ReviewAttempt { attempt: number; event: "claimed" | "completed" | "failed" | "expired"; requestDigest: Hex; planDigest: Hex; workerIdentity: null | { sourceCommit: string; runId: string; runAttempt: string; workflowRef: string; identityDigest: Hex }; artifactDigest: Hex | null; errorCode: string | null; createdAt: string }
-export interface ReviewDetail { schemaVersion: "programmable.modules.website-review-detail.v1"; job: ReviewJob; decisions: ModuleReviewDecisionRecordV1[]; attempts: ReviewAttempt[]; source: ReviewSourceInfo }
+export interface ReviewSourceCorrection {
+  schemaVersion: "programmable.modules.source-correction-record.v1"; parentSubmissionId: string; submissionId: string;
+  principalId: string; author: string; rewardWallet: string; familyId: Hex; baseRequestDigest: Hex; requestDigest: Hex;
+  packageId: Hex; version: string; correctedBy: string; policyDigest: Hex; commandDigest: Hex; reason: string; createdAt: string; correctionDigest: Hex;
+}
+export interface ReviewDetail { schemaVersion: "programmable.modules.website-review-detail.v1"; job: ReviewJob; decisions: ModuleReviewDecisionRecordV1[]; attempts: ReviewAttempt[]; source: ReviewSourceInfo; sourceCorrection?: ReviewSourceCorrection | null }
 export interface ReviewManifestCheck { schemaVersion: "programmable.modules.website-manifest-check.v1"; submissionId: string; requestDigest: Hex; reviewRevision: number; artifactDigest: Hex; hostManifestHash: Hex }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
@@ -53,6 +58,19 @@ export function parseReviewSubject(value: unknown): ReviewSubject {
   const r = reviewRecord(value, ["submissionId", "principalId", "author", "requestDigest"]);
   requireValue(isReviewId(r.submissionId) && isReviewId(r.principalId) && typeof r.author === "string" && ADDRESS.test(r.author) && isReviewDigest(r.requestDigest), "subject");
   return r as unknown as ReviewSubject;
+}
+export function parseReviewSourceCorrection(value: unknown): ReviewSourceCorrection {
+  const r = reviewRecord(value, ["schemaVersion", "parentSubmissionId", "submissionId", "principalId", "author", "rewardWallet", "familyId", "baseRequestDigest", "requestDigest", "packageId", "version", "correctedBy", "policyDigest", "commandDigest", "reason", "createdAt", "correctionDigest"]);
+  requireValue(r.schemaVersion === "programmable.modules.source-correction-record.v1" && isReviewId(r.parentSubmissionId)
+    && isReviewId(r.submissionId) && r.submissionId !== r.parentSubmissionId && isReviewId(r.principalId), "source correction subject");
+  for (const key of ["author", "rewardWallet", "correctedBy"] as const) requireValue(typeof r[key] === "string" && ADDRESS.test(r[key]), "source correction wallet");
+  for (const key of ["familyId", "baseRequestDigest", "requestDigest", "packageId", "policyDigest", "commandDigest", "correctionDigest"] as const) requireValue(isReviewDigest(r[key]), "source correction digest");
+  requireValue(typeof r.version === "string" && /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-pm\.[1-9][0-9]*$/u.test(r.version) && r.version.length <= 128
+    && typeof r.reason === "string" && r.reason.trim() === r.reason && !r.reason.includes("\0") && new TextEncoder().encode(r.reason).byteLength >= 10 && new TextEncoder().encode(r.reason).byteLength <= 4096
+    && r.correctedBy !== r.author && r.baseRequestDigest !== r.requestDigest && timestamp(r.createdAt), "source correction metadata");
+  const { correctionDigest, ...contents } = r;
+  requireValue(correctionDigest === reviewDigest("programmable.modules.source-correction-record.v1", contents), "source correction record digest");
+  return r as unknown as ReviewSourceCorrection;
 }
 export function parseReviewProgramAbi(value: unknown): ReviewProgramArgument[] {
   requireValue(Array.isArray(value) && value.length <= 128, "configuration ABI");
