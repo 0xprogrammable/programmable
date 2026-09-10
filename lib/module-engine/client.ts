@@ -1,4 +1,4 @@
-import { concatHex, decodeAbiParameters, decodeEventLog, decodeFunctionResult, encodeAbiParameters, encodeEventTopics, encodeFunctionData, erc20Abi, getCreate2Address, keccak256, parseAbi, parseAbiParameters, toHex, type Abi, type Address, type Hex, type TransactionReceipt } from "viem";
+import { concatHex, decodeAbiParameters, decodeEventLog, decodeFunctionResult, encodeAbiParameters, encodeEventTopics, encodeFunctionData, erc20Abi, getCreate2Address, keccak256, parseAbi, parseAbiParameters, toHex, type Abi, type Address, type Hex, type PublicClient, type TransactionReceipt } from "viem";
 import { compileOpenConfig, type OpenConfigValue } from "@/packages/classic-modules/src/open-config.mjs";
 import { createModuleNativeClient, type ModuleNativeClient, type ModuleNativeWalletTransaction } from "@/lib/module-mode/native-client";
 import { nativeCanonicalJson } from "@/lib/module-mode/native-catalog";
@@ -16,7 +16,7 @@ import anyQuoteChainProfile from "@/contracts/spec/robinhood-custom-launch/chain
 import { compileModuleEngineLaunch, moduleEngineOperation as operationFor } from "./operation-plan";
 export { materializeModuleEngineRuntime, predictModuleEngineAddress } from "./operation-plan";
 
-export type ModuleEngineClient = ModuleNativeClient;
+export type ModuleEngineClient = ModuleNativeClient & Partial<Pick<PublicClient, "getLogs">>;
 export const createModuleEngineClient = createModuleNativeClient;
 export interface ModuleEngineOperation { operationId: Hex; actor: Address; recipient: Address; inputAsset: Address; inputAmount: bigint; outputAsset: Address; minimumOutput: bigint; deadline: bigint; nonce: bigint; data: Hex }
 export type ModuleEngineOperationIntent = Omit<ModuleEngineOperation, "actor" | "nonce" | "deadline">;
@@ -120,6 +120,30 @@ function launchRecord(value: unknown): ModuleEngineLaunchRecord {
 }
 function ledgerAbi(release: ModuleEngineRelease): Abi { return isModuleEngineAnyQuoteRelease(release) ? moduleEngineAnyQuoteLedgerAbi : moduleEngineLedgerAbi; }
 function contextFor(release: ModuleEngineRelease, r: Pick<ModuleEngineLaunchRecord, "launchId" | "token" | "creator" | "quoteAsset">) { return { host: release.contracts.host.address, launchId: r.launchId, token: r.token, creator: r.creator, quoteAsset: r.quoteAsset, feeCollector: isModuleEngineAnyQuoteRelease(release) ? release.contracts.ledger.address : release.contracts.host.address }; }
+const quoteLedgerRegistrationAbi = parseAbi(["event QuoteLaunchRegistered(bytes32 indexed launchId,address indexed asset,bytes32 configurationHash,address[] creatorWallets,uint16[] creatorSharesBps)"]);
+async function anyQuoteLedgerConfiguration(client: ModuleEngineClient, block: BoundBlock, launch: ModuleEngineLaunchRecord): Promise<Hex> {
+  need(isModuleEngineAnyQuoteRelease(block.release), "Quote ledger source is unavailable.");
+  need(typeof client.getLogs === "function", "Quote launch registration logs are unavailable on this client.");
+  const pins = block.release.contracts, fromBlock = BigInt(block.release.startBlock);
+  const logs = await client.getLogs({ address: pins.ledger.address, event: quoteLedgerRegistrationAbi[0],
+    args: { launchId: launch.launchId, asset: launch.quoteAsset }, fromBlock, toBlock: block.blockNumber, strict: true });
+  need(logs.length === 1, "Expected exactly one quote launch registration from the released ledger.");
+  const log = logs[0];
+  need(!log.removed && log.blockNumber !== null && log.blockHash !== null && log.transactionHash !== null && log.blockNumber >= fromBlock && log.blockNumber <= block.blockNumber, "Quote launch registration is outside the canonical checkpoint.");
+  same(log.address, pins.ledger.address, "Quote launch registration ledger");
+  same((await client.getBlock({ blockNumber: log.blockNumber })).hash, log.blockHash, "Quote launch registration block");
+  const { args } = decodeEventLog({ abi: quoteLedgerRegistrationAbi, eventName: "QuoteLaunchRegistered", data: log.data, topics: log.topics, strict: true });
+  same(args.launchId, launch.launchId, "Quote launch registration ID"); same(args.asset, launch.quoteAsset, "Quote launch registration asset");
+  equal(encodeEventTopics({ abi: quoteLedgerRegistrationAbi, eventName: "QuoteLaunchRegistered", args }), log.topics, "Quote launch registration topics");
+  same(encodeAbiParameters(parseAbiParameters("bytes32,address[],uint16[]"), [args.configurationHash, args.creatorWallets, args.creatorSharesBps]), log.data, "Quote launch registration payload");
+  const wallets = args.creatorWallets.map(wallet => moduleAddress(wallet, "Original creator wallet")), shares = args.creatorSharesBps;
+  need(wallets.length > 0 && wallets.length <= 10 && wallets.length === shares.length && shares.every(share => share > 0) && shares.reduce((sum, share) => sum + share, 0) === 10_000, "Original quote creator allocation differs.");
+  // registerLaunch binds the original allocation. Recipient rotations never change this hash.
+  const configuration = keccak256(encodeAbiParameters(parseAbiParameters("bytes32,uint256,address,address,address,address,bytes32,address,address[],uint16[]"),
+    [block.release.economicsPolicyId, 4663n, pins.ledger.address, pins.poolManager.address, pins.sharedHook.address, pins.host.address, launch.launchId, launch.quoteAsset, wallets, shares]));
+  same(args.configurationHash, configuration, "Quote launch registration configuration");
+  return configuration;
+}
 async function boundLaunch(client: ModuleEngineClient, block: BoundBlock, tokenValue: Address): Promise<ModuleEngineLaunchRecord> {
   const token = moduleAddress(tokenValue, "engine.token"), host = block.release.contracts.host.address;
   const id = moduleHash(await read(client, host, "launchIdOf", [token], block.blockNumber, moduleEngineHostAbi), "launchId");
@@ -137,12 +161,13 @@ async function boundLaunch(client: ModuleEngineClient, block: BoundBlock, tokenV
   same(expectedToken, token, "Factory CREATE2 token identity");
   same(contextHash, keccak256(encodeAbiParameters(parseAbiParameters(ENGINE_CONTEXT), [contextFor(block.release, r)])), "Engine context");
   if (isModuleEngineAnyQuoteRelease(block.release)) {
-    const [asset, configuration, poolId, enginePoolId] = await Promise.all([
+    const [asset, configuration, poolId, enginePoolId, ledgerConfiguration] = await Promise.all([
       read(client, block.release.contracts.ledger.address, "quoteAsset", [id], block.blockNumber, moduleEngineAnyQuoteLedgerAbi),
       read(client, block.release.contracts.ledger.address, "configurationHash", [id], block.blockNumber, moduleEngineAnyQuoteLedgerAbi),
       read(client, host, "poolIdOf", [id], block.blockNumber, moduleEngineAnyQuoteHostAbi), read(client, r.engine, "poolId", [], block.blockNumber),
+      anyQuoteLedgerConfiguration(client, block, r),
     ]);
-    same(asset, r.quoteAsset, "Ledger quote asset"); same(configuration, r.configurationHash, "Ledger configuration"); same(poolId, enginePoolId, "Shared pool registration");
+    same(asset, r.quoteAsset, "Ledger quote asset"); same(configuration, ledgerConfiguration, "Ledger configuration"); same(poolId, enginePoolId, "Shared pool registration");
   }
   return r;
 }

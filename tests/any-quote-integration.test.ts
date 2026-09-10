@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
-import { decodeAbiParameters, decodeFunctionData, encodeAbiParameters, encodeEventTopics, encodeFunctionResult, getAddress, getCreate2Address, keccak256, parseAbiParameters, type Hex, type TransactionReceipt } from "viem";
+import { decodeAbiParameters, decodeFunctionData, encodeAbiParameters, encodeEventTopics, encodeFunctionResult, getAddress, getCreate2Address, keccak256, parseAbi, parseAbiParameters, type Hex, type TransactionReceipt } from "viem";
 import { fixture, ACCOUNT, CODE, CODE_HASH, QUOTE, TOKEN, addr, hash } from "./module-engine-fixture";
 import { moduleEngineReleaseIdentity, computeModuleEngineReleaseDigest, computeModuleEngineHostManifestHash, type ModuleEngineAnyQuoteReleaseIdentity } from "@/lib/module-engine/catalog";
 import { MODULE_ENGINE_ANY_QUOTE_SOURCE_VERSION, MODULE_ENGINE_ANY_QUOTE_SOURCE_ID, MODULE_ENGINE_ANY_QUOTE_PROFILE, MODULE_ENGINE_ANY_QUOTE_PROFILE_ID, MODULE_ENGINE_ANY_QUOTE_ECONOMICS_POLICY_ID } from "@/lib/module-engine/profile";
@@ -10,7 +10,7 @@ import { anyQuoteEvidenceHashV1, anyQuoteModulePoolKeyV1, anyQuotePoolIdV1, buil
 import { planAnyQuoteInitialPriceV1, encodeAnyQuoteConfigurationV1 } from "@/lib/module-engine/any-quote/price";
 import { anyQuoteLaunchIntent, anyQuoteMinimumOutput, anyQuotePoolFor, assertAnyQuoteConfiguration, assertAnyQuoteLaunchPreparation, predictAnyQuoteToken, type AnyQuoteLaunchPreparation, type AnyQuoteTradeQuote } from "@/lib/module-engine/any-quote/integration";
 import { compileModuleEngineLaunch, predictModuleEngineAddress } from "@/lib/module-engine/operation-plan";
-import { prepareModuleEngineAnyQuoteSwap, prepareModuleEngineClaim, readModuleEngineAdministration, readModuleEngineFeeControls, prepareModuleEngineFeeChange, revalidateModuleEngineTransaction, releaseModuleEnginePreparation, verifyModuleEngineLaunchReceipt } from "@/lib/module-engine/client";
+import { prepareModuleEngineAnyQuoteSwap, prepareModuleEngineClaim, readModuleEngineLaunch, readModuleEngineAdministration, readModuleEngineFeeControls, prepareModuleEngineFeeChange, revalidateModuleEngineTransaction, releaseModuleEnginePreparation, verifyModuleEngineLaunchReceipt } from "@/lib/module-engine/client";
 import { ENGINE_CONTEXT, moduleEngineAnyQuoteLedgerAbi, moduleEngineHostAbi, moduleEngineLaunchParameters, moduleEnginePlanParameters } from "@/lib/module-engine/abi";
 import { readAnyQuoteLaunchPreview, readAnyQuoteReadiness } from "@/lib/server/module-engine/any-quote";
 import { anyQuoteJsonRequest } from "@/lib/server/module-engine/any-quote-http";
@@ -23,6 +23,7 @@ vi.mock("@/lib/module-engine/any-quote/types", async importOriginal => {
     poolManagerCodeHash: keccak256("0x60006000"), universalRouterCodeHash: keccak256("0x60006000") } };
 });
 
+const registrationAbi = parseAbi(["event QuoteLaunchRegistered(bytes32 indexed launchId,address indexed asset,bytes32 configurationHash,address[] creatorWallets,uint16[] creatorSharesBps)"]);
 function sharedFixture() {
   const f = fixture();
   const identity: ModuleEngineAnyQuoteReleaseIdentity = { ...moduleEngineReleaseIdentity(f.release), sourceVersion: MODULE_ENGINE_ANY_QUOTE_SOURCE_VERSION,
@@ -36,6 +37,17 @@ function sharedFixture() {
   m.release = identity; m.catalogDefinition = { ...m.catalogDefinition, interface: "quote-shared-v1", configurationAbi: ANY_QUOTE_CONFIGURATION_ABI, schema: createAnyQuoteConfigurationSchema(identity), defaults: {} };
   f.template.manifestHash = computeModuleEngineHostManifestHash(f.template.manifest);
   let platformWallet = addr(99);
+  // Exact AnyQuoteLedgerV1.registerLaunch ABI; this commitment is independent of Host config bytes.
+  const ledgerConfigurationHash = keccak256(encodeAbiParameters(parseAbiParameters("bytes32,uint256,address,address,address,address,bytes32,address,address[],uint16[]"),
+    [release.economicsPolicyId, 4663n, release.contracts.ledger.address, identity.contracts.poolManager.address, identity.contracts.sharedHook.address, f.host, f.launch.launchId, QUOTE, [ACCOUNT], [10_000]]));
+  const feeState = { configurationHash: ledgerConfigurationHash, creatorWallets: [ACCOUNT] };
+  const registration = { address: release.contracts.ledger.address, blockNumber: 100n, blockHash: f.blockHash, transactionHash: hash(199), transactionIndex: 0, logIndex: 0, removed: false,
+    topics: encodeEventTopics({ abi: registrationAbi, eventName: "QuoteLaunchRegistered", args: { launchId: f.launch.launchId, asset: QUOTE } }),
+    data: encodeAbiParameters(parseAbiParameters("bytes32,address[],uint16[]"), [ledgerConfigurationHash, [ACCOUNT], [10_000]]) };
+  f.client.getLogs = vi.fn(async input => {
+    expect(input).toMatchObject({ address: release.contracts.ledger.address, args: { launchId: f.launch.launchId, asset: QUOTE }, fromBlock: 1n, toBlock: 100n, strict: true });
+    return [registration];
+  }) as NonNullable<typeof f.client.getLogs>;
   const originalRead = vi.mocked(f.client.readContract).getMockImplementation()!;
   vi.mocked(f.client.readContract).mockImplementation(async input => {
     const fn = input.functionName;
@@ -54,7 +66,8 @@ function sharedFixture() {
     if (fn === "PROTOCOL_FEE_BPS" || fn === "AUTHOR_POOL_FEE_BPS" || fn === "feeTerms" || fn === "claimable") throw new Error("Native fee ABI used for quote asset");
     if (fn === "platformFeeBps") return 30;
     if (fn === "quoteAsset") return QUOTE;
-    if (fn === "configurationHash") return f.launch.configurationHash;
+    if (fn === "configurationHash") return feeState.configurationHash;
+    if (fn === "creatorRecipients") return [feeState.creatorWallets, [10_000], 0n];
     if (fn === "poolIdOf" || fn === "poolId") return hash(801);
     if (fn === "claimableQuote" || fn === "claimedBy") { expect(input.args).toEqual([QUOTE, ACCOUNT]); return fn === "claimableQuote" ? f.state.claimable : f.state.claimed; }
     if (fn === "contributionByLaunch") return 2n;
@@ -79,7 +92,7 @@ function sharedFixture() {
     ...encodeAnyQuoteConfigurationV1({ sharedHook: identity.contracts.sharedHook.address, quoteAsset: QUOTE, initialTick: price.initialTick, validUntil: BigInt(expiry), priceEvidenceHash }), initialTick: price.initialTick, validUntil: expiry,
     actualFdvUsd: price.actualFdvUsd, evidenceHash: "0x", initialBuy: null };
   preview.evidenceHash = anyQuoteEvidenceHashV1({ ...preview, evidenceHash: undefined });
-  return { ...f, release, identity, intent, preview, setPlatformWallet: (next: Hex) => { platformWallet = next; } };
+  return { ...f, release, identity, intent, preview, registration, feeState, setPlatformWallet: (next: Hex) => { platformWallet = next; } };
 }
 
 function tradeFixture(buy: boolean) {
@@ -106,6 +119,43 @@ function tradeFixture(buy: boolean) {
 }
 
 describe("Any Quote financial integration", () => {
+  it("binds the real ledger commitment separately from Host config and retains claims after creator rotation", async () => {
+    const f = sharedFixture();
+    expect(f.feeState.configurationHash).not.toBe(f.launch.configurationHash);
+    await expect(readModuleEngineLaunch({ ...f, token: TOKEN })).resolves.toEqual(f.launch);
+    f.feeState.creatorWallets = [addr(111)];
+    const admin = await readModuleEngineAdministration({ ...f, account: ACCOUNT, token: TOKEN });
+    expect(admin.fees.creatorWallets).toEqual([addr(111)]);
+    await expect(prepareModuleEngineClaim({ ...f, account: ACCOUNT, token: TOKEN, recipient: ACCOUNT })).resolves.toMatchObject({ kind: "claim", minimumAmount: 9n });
+  });
+  it("rejects the Host hash in ledger storage and rejects changed original recipients", async () => {
+    const f = sharedFixture(), original = f.feeState.configurationHash;
+    f.feeState.configurationHash = f.launch.configurationHash;
+    await expect(readModuleEngineLaunch({ ...f, token: TOKEN })).rejects.toThrow("Ledger configuration differs");
+    f.feeState.configurationHash = original;
+    f.registration.data = encodeAbiParameters(parseAbiParameters("bytes32,address[],uint16[]"), [original, [addr(111)], [10_000]]);
+    await expect(readModuleEngineLaunch({ ...f, token: TOKEN })).rejects.toThrow("Quote launch registration configuration differs");
+  });
+  it("keeps Host configuration independently bound to the derived launch ID", async () => {
+    const f = sharedFixture(); f.launch.configurationHash = hash(991);
+    await expect(readModuleEngineLaunch({ ...f, token: TOKEN })).rejects.toThrow("Derived launch ID differs");
+  });
+  it.each(["missing", "duplicate", "foreign-ledger", "foreign-launch", "foreign-asset", "removed", "future-block", "forked-block"])("rejects invalid original quote registration evidence: %s", async mutation => {
+    const f = sharedFixture();
+    if (mutation === "missing" || mutation === "duplicate") f.client.getLogs = vi.fn(async () => mutation === "missing" ? [] : [f.registration, f.registration]) as NonNullable<typeof f.client.getLogs>;
+    if (mutation === "foreign-ledger") f.registration.address = addr(991);
+    if (mutation === "foreign-launch" || mutation === "foreign-asset") f.registration.topics = encodeEventTopics({ abi: registrationAbi, eventName: "QuoteLaunchRegistered", args: { launchId: mutation === "foreign-launch" ? hash(991) : f.launch.launchId, asset: mutation === "foreign-asset" ? addr(991) : QUOTE } });
+    if (mutation === "removed") f.registration.removed = true;
+    if (mutation === "future-block") f.registration.blockNumber = 101n;
+    if (mutation === "forked-block") f.registration.blockHash = hash(991);
+    await expect(readModuleEngineLaunch({ ...f, token: TOKEN })).rejects.toThrow(/quote launch registration/i);
+  });
+  it("requires registration log access only for the Any Quote client", async () => {
+    const f = sharedFixture(); delete f.client.getLogs;
+    await expect(readModuleEngineLaunch({ ...f, token: TOKEN })).rejects.toThrow("registration logs are unavailable");
+    const legacy = fixture();
+    await expect(readModuleEngineLaunch({ ...legacy, token: TOKEN })).resolves.toEqual(legacy.launch);
+  });
   it.each([true, false])("prepares and revalidates the full final ETH route with its reviewed minimum (buy=%s)", async buy => {
     const f = tradeFixture(buy), prepared = await prepareModuleEngineAnyQuoteSwap({ ...f, account: ACCOUNT });
     expect(prepared.kind).toBe("swap"); if (prepared.kind !== "swap") throw new Error("Unexpected funding approval");
