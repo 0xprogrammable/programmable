@@ -1,4 +1,4 @@
-import { encodeFunctionData, decodeFunctionResult, keccak256, parseAbi } from 'viem';
+import { encodeFunctionData, decodeFunctionResult, getContractAddress, keccak256, parseAbi } from 'viem';
 import { assertRobinhoodFoundationRpcProviders } from '../robinhood-custom-launch-owner-envelope-core.mjs';
 import { resolveReviewedRobinhoodProviderCommitments } from '../robinhood-custom-launch-provider-commitment-custody.mjs';
 import { OFFICIAL, address, bytes, canonicalJson, digest, exactKeys, hash, hexQuantity, need, uint } from './core.mjs';
@@ -59,6 +59,17 @@ async function getter(providers, target, signature, block) {
   return decodeFunctionResult({ abi, functionName: fn, data: result });
 }
 function requirePair(providers) { need(Array.isArray(providers) && providers.length === 2 && providers[0].trustDomain !== providers[1].trustDomain && providers[0].providerId !== providers[1].providerId, 'Independent provider quorum required'); }
+// Reused by the Any Quote observer; transport remains the same read-only method inventory.
+export const deploymentRpc = Object.freeze({ quantity, pair, same, publicBindings, commonBlock, readCode, getter, requirePair });
+function directCreation(plan, step) {
+  if (step.to !== null) return false;
+  need(plan.schemaVersion === 'programmable.module-engine-any-quote-deployment-plan.v1'
+    && plan.identityCandidate?.sourceVersion === 'module-engine-any-quote-v1' && step.index === 1 && step.role === 'host'
+    && step.deploymentKind === 'create' && step.nonce === String(BigInt(plan.parameters.ownerNonce) + 1n)
+    && address(getContractAddress({ from: step.sender, nonce: BigInt(step.nonce) })) === step.target,
+  'Direct creation requires the exact Any Quote Host and reserved nonce');
+  return true;
+}
 export async function observeStage(plan, stepIndex, providers) {
   requirePair(providers); const step = plan.steps[stepIndex]; need(step, 'Unknown deployment stage'); const block = await commonBlock(providers);
   for (const pin of Object.values(OFFICIAL)) await readCode(providers, pin, block.number);
@@ -91,11 +102,13 @@ export function walletRequest(plan, observation, ceilings) {
   for (const key of Object.keys(ceilings)) uint(ceilings[key], key, key !== 'maxPriorityFeePerGas');
   need(observation.state === 'vacant-simulated', 'Only a vacant simulated stage can be armed');
   const step = plan.steps[observation.stepIndex]; need(step, 'Unknown stage');
+  const create = directCreation(plan, step);
+  if (step.nonce !== undefined) need(observation.nonce === step.nonce, 'Observed owner nonce differs from deployment plan');
   need(BigInt(observation.gasLimit) <= BigInt(ceilings.maxGas), 'Gas estimate exceeds the owner-reviewed gas limit');
   const maxFee = BigInt(ceilings.maxFeePerGas), priority = BigInt(ceilings.maxPriorityFeePerGas);
   need(priority <= maxFee && 2n * BigInt(observation.baseFeePerGas) + priority <= maxFee, 'Fee ceiling cannot safely cover the current base fee');
   need(BigInt(observation.minimumBalance) >= BigInt(observation.gasLimit) * maxFee, 'Deployer has insufficient native ETH for maximum gas cost');
-  return { chainId: '0x1237', from: step.sender, to: step.to, value: '0x0', data: step.data, nonce: hexQuantity(observation.nonce),
+  return { chainId: '0x1237', from: step.sender, ...(create ? {} : { to: step.to }), value: '0x0', data: step.data, nonce: hexQuantity(observation.nonce),
     gas: hexQuantity(observation.gasLimit), maxFeePerGas: hexQuantity(maxFee), maxPriorityFeePerGas: hexQuantity(priority), accessList: [], type: '0x2' };
 }
 export async function prepareWalletRequest(plan, stepIndex, providers, ceilings, stageObserver = observeStage) {
@@ -115,14 +128,18 @@ export async function revalidateWalletRequest(plan, prepared, providers, ceiling
 }
 export async function observeReceipt(plan, entry, providers) {
   requirePair(providers); const txHash = hash(entry.transactionHash, 'transactionHash'); const step = plan.steps[entry.stepIndex]; need(step, 'Unknown receipt stage');
+  const create = directCreation(plan, step);
   const txs = await pair(providers, 'eth_getTransactionByHash', [txHash]); need(txs[0] && txs[1], 'Transaction not observed by both providers');
-  const tx = same(txs.map(t => ({ hash: t.hash, from: address(t.from), to: address(t.to), input: bytes(t.input), value: t.value, nonce: t.nonce, chainId: t.chainId, type: t.type, gas: t.gas,
+  const tx = same(txs.map(t => ({ hash: t.hash, from: address(t.from), to: create && t.to === null ? null : address(t.to), input: bytes(t.input), value: t.value, nonce: t.nonce, chainId: t.chainId, type: t.type, gas: t.gas,
     maxFeePerGas: t.maxFeePerGas, maxPriorityFeePerGas: t.maxPriorityFeePerGas, blockHash: t.blockHash, blockNumber: t.blockNumber })), 'transaction');
   const request = entry.request; need(tx.hash === txHash && tx.from === step.sender && tx.to === step.to && tx.input === step.data && quantity(tx.value) === 0n && quantity(tx.chainId) === 4663n && quantity(tx.type) === 2n, 'Receipt transaction does not match the deployment');
   need(tx.nonce === request.nonce && tx.gas === request.gas && tx.maxFeePerGas === request.maxFeePerGas && tx.maxPriorityFeePerGas === request.maxPriorityFeePerGas, 'Wallet changed the reviewed nonce or gas fields');
+  if (step.nonce !== undefined) need(quantity(tx.nonce) === BigInt(step.nonce), 'Creation nonce differs from the sealed plan');
   const receipts = await pair(providers, 'eth_getTransactionReceipt', [txHash]);
   if (!receipts[0] || !receipts[1]) return { status: 'pending', transactionHash: txHash };
-  const receipt = same(receipts.map(r => ({ transactionHash: r.transactionHash, blockHash: r.blockHash, blockNumber: r.blockNumber, status: r.status, gasUsed: r.gasUsed, transactionIndex: r.transactionIndex })), 'receipt');
+  const receipt = same(receipts.map(r => ({ transactionHash: r.transactionHash, blockHash: r.blockHash, blockNumber: r.blockNumber, status: r.status, gasUsed: r.gasUsed, transactionIndex: r.transactionIndex,
+    ...(create ? { contractAddress: address(r.contractAddress) } : {}) })), 'receipt');
+  if (create) need(receipt.contractAddress === step.target, 'Host receipt created a different address');
   need(receipt.transactionHash === txHash && receipt.blockHash === tx.blockHash && receipt.blockNumber === tx.blockNumber, 'Transaction/receipt inclusion mismatch');
   const blocks = await pair(providers, 'eth_getBlockByNumber', [receipt.blockNumber, false]);
   need(blocks.every(block => block?.hash === receipt.blockHash && block.transactions.includes(txHash)), 'Receipt is not in the canonical block');

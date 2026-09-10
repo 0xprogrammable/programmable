@@ -15,7 +15,8 @@ const exact = (value, keys, label) => {
 /** Dispatch only by an authenticated release schema/version, never by token, symbol or contributor code. */
 export function sourceProfile(release, wire) {
   const native = ['module-native-v1', 'module-native-v2'].includes(release.sourceVersion);
-  need(native || release.sourceVersion === 'module-engine-v1', 'Unsupported launch source profile');
+  const anyQuote = release.sourceVersion === 'module-engine-any-quote-v1';
+  need(native || release.sourceVersion === 'module-engine-v1' || anyQuote && wire.isModuleEngineAnyQuoteRelease(release), 'Unsupported launch source profile');
   const abi = native ? wire.moduleNativeLaunchAbiFor(release) : wire.moduleEngineHostAbi;
   const eventName = native ? 'ModuleNativeLaunched' : 'EngineLaunchBound';
   const event = abi.find(item => item.type === 'event' && item.name === eventName);
@@ -66,7 +67,7 @@ export function releaseInventory(files, wire) {
 }
 export function checkpointEntry(release, nextBlock, blockHash, checkedAt) {
   return { schemaVersion: ENTRY_SCHEMA, chainId: 4663, releaseDigest: release.releaseDigest, sourceVersion: release.sourceVersion,
-    sourceAddress: release.contracts[release.sourceVersion === 'module-engine-v1' ? 'host' : 'launcher'].address,
+    sourceAddress: release.contracts[['module-engine-v1', 'module-engine-any-quote-v1'].includes(release.sourceVersion) ? 'host' : 'launcher'].address,
     nextBlock: String(nextBlock), blockHash, checkedAt };
 }
 export function bindCheckpointEntry(value, release) {
@@ -143,7 +144,8 @@ export function engineLaunchIdentity({ release, receipt, log, publication, revis
   const launchId = keccak256(encodeAbiParameters(parseAbiParameters('uint256,address,address,bytes32,bytes32'), [4663n, host, a.token, a.revisionId, configHash]));
   const planHash = keccak256(encodeAbiParameters(wire.moduleEnginePlanParameters, [4663n, host, a.creator, p]));
   need(same(launchId, a.launchId) && same(planHash, a.planHash), 'Engine launch/plan hash differs');
-  const context = { host, launchId, token: a.token, creator: a.creator, quoteAsset: a.quoteAsset, feeCollector: host };
+  const anyQuote = wire.isModuleEngineAnyQuoteRelease?.(release) === true;
+  const context = { host, launchId, token: a.token, creator: a.creator, quoteAsset: a.quoteAsset, feeCollector: anyQuote ? release.contracts.ledger.address : host };
   const constructorArguments = encodeAbiParameters(wire.moduleEngineConstructorParameters, [context, p.configuration]);
   const creationCode = `${p.creationCode}${constructorArguments.slice(2)}`;
   need((creationCode.length - 2) / 2 <= 49152 && same(keccak256(creationCode), a.initCodeHash)
@@ -155,7 +157,8 @@ export function engineLaunchIdentity({ release, receipt, log, publication, revis
   const graffiti = keccak256(encodeAbiParameters(parseAbiParameters('string,address,bytes32'), ['programmable.module-engine.token.v1', a.creator, p.creatorSalt]));
   const tokenSalt = keccak256(encodeAbiParameters(parseAbiParameters('string,string,uint8,address,bytes32'), [p.name, p.symbol, 18, host, graffiti]));
   need(same(getCreate2Address({ from: release.contracts.tokenFactory.address, salt: tokenSalt, bytecodeHash: release.tokenCreationCodeHash }), a.token), 'Engine token CREATE2 differs');
-  return { launch: a, parameters: p, context, graffiti, runtime, constructorArguments, creationCode, manifest };
+  return { launch: a, parameters: p, context, graffiti, runtime, constructorArguments, creationCode, manifest,
+    ...(anyQuote ? { anyQuoteRelease: release } : {}) };
 }
 
 /** Existing reviewed resource interfaces only. Unknown/custom child-contract profiles remain closed. */
@@ -182,6 +185,27 @@ export function engineResourceCommitment(identity, state) {
     need(same(encodeAbiParameters(abi, [quote, unlock]), p.configuration) && (same(quote, zeroAddress) || same(quote, a.quoteAsset))
       && state.unlockTime === unlock, 'Escrow resources differ');
     hash = keccak256(encodeAbiParameters(parseAbiParameters('address,uint256'), [a.quoteAsset, unlock]));
+  } else if (manifest.catalogDefinition.interface === 'quote-shared-v1') {
+    const release = identity.anyQuoteRelease;
+    need(release?.sourceVersion === 'module-engine-any-quote-v1' && p.configuration.length === 514, 'Authenticated Any Quote source and exact configuration required');
+    const abi = parseAbiParameters('(bytes32 schemaId,address poolManager,bytes32 poolManagerCodeHash,address sharedHook,address quoteAsset,int24 initialTick,uint64 validUntil,bytes32 priceEvidenceHash)');
+    const [config] = decodeAbiParameters(abi, p.configuration), pins = release.contracts;
+    need(same(encodeAbiParameters(abi, [config]), p.configuration)
+      && same(config.schemaId, keccak256(toHex('programmable.any-quote.configuration.v1')))
+      && same(config.poolManager, pins.poolManager.address) && same(config.poolManagerCodeHash, pins.poolManager.runtimeCodeHash)
+      && same(config.sharedHook, pins.sharedHook.address) && same(config.quoteAsset, a.quoteAsset)
+      && config.validUntil > 0n && config.priceEvidenceHash !== zeroHash && config.initialTick > -887200
+      && config.initialTick < 887200 && config.initialTick % 200 === 0, 'Any Quote configuration binding differs');
+    const currencies = [a.token, a.quoteAsset].sort((x, y) => x.toLowerCase().localeCompare(y.toLowerCase()));
+    const poolId = keccak256(encodeAbiParameters(parseAbiParameters('address,address,uint24,int24,address'), [...currencies, 0, 200, pins.sharedHook.address]));
+    const quote0 = a.quoteAsset.toLowerCase() < a.token.toLowerCase(), lower = quote0 ? -887200 : config.initialTick, upper = quote0 ? config.initialTick : 887200;
+    need(same(state.poolId, poolId) && state.initialTick === config.initialTick && state.tickLower === lower && state.tickUpper === upper
+      && state.lockedLiquidity > 0n && state.lockedLiquidity <= ((1n << 128n) - 1n) / 8873n
+      && state.lockedTokenDust >= 0n && state.lockedTokenDust < 10n ** 27n
+      && Number.isInteger(state.quoteDecimals) && state.quoteDecimals >= 0 && state.quoteDecimals <= 36,
+    'Any Quote locked position resources differ');
+    hash = keccak256(encodeAbiParameters(parseAbiParameters('bytes32,int24,int24,uint128,uint256,uint8'),
+      [poolId, lower, upper, state.lockedLiquidity, state.lockedTokenDust, state.quoteDecimals]));
   } else if (manifest.catalogDefinition.interface === 'quote-v1') {
     need(manifest.revision.fixedConfigurationHash !== zeroHash, 'Quote resources require reviewed fixed configuration');
     const currencies = [a.token, a.quoteAsset].sort((x, y) => x.toLowerCase().localeCompare(y.toLowerCase()));

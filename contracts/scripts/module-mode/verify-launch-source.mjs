@@ -134,7 +134,7 @@ export function validatePublished(target, value, recompilation) {
     plan: { sourceCommit: target.sourceCommit, contracts: { [target.role]: { address: target.address, runtime: target.runtime, runtimeCodeHash: keccak256(target.runtime) } } },
     build: { artifacts: { [target.role]: artifact }, standardInputs: { [target.role]: input } },
     constructorArguments: target.constructorArguments, creation: target.creation, recompilation }, aligned.value);
-  return { ...result, ...(target.sourceProfile === 'module-engine-v1' ? { sourceCommit: undefined, releaseSourceCommit: target.sourceCommit,
+  return { ...result, ...(['module-engine-v1', 'module-engine-any-quote-v1'].includes(target.sourceProfile) ? { sourceCommit: undefined, releaseSourceCommit: target.sourceCommit,
     providerClassification: 'NO_METADATA_HASH_PROVIDER_MATCH' } : {}),
     sourceUrl: `${SOURCIFY_BASE}/v2/contract/4663/${target.address}`, comparison: result.independentByteComparison,
     ...(Object.keys(aligned.bindings).length ? { providerImmutableIdRelabelling: aligned.bindings } : {}),
@@ -357,7 +357,7 @@ export async function engineBuild(entry, publication, context) {
   const input = { ...standard, settings: { ...standard.settings,
     outputSelection: { '*': { '*': ['abi', 'metadata', 'evm.bytecode', 'evm.deployedBytecode'], '': ['ast'] } } } };
   const result = await compile(input, binary), target = sourceTarget({ role: 'engine', file: expected.sourcePath,
-    name: expected.contractName, sourceCommit: release.sourceCommit, sourceProfile: 'module-engine-v1' }, input, result);
+    name: expected.contractName, sourceCommit: release.sourceCommit, sourceProfile: release.sourceVersion }, input, result);
   need(same(`0x${target.artifact.evm.bytecode.object}`, expected.creationBytecode)
     && same(`0x${target.artifact.evm.deployedBytecode.object}`, expected.runtimeTemplate)
     && canonicalJson(target.artifact.abi) === canonicalJson(expected.abi)
@@ -457,6 +457,19 @@ async function bindEngineLaunch(entry, log, tokenBuild, context) {
     creation, transactionHash: log.transactionHash, requestDigest: publication.requestDigest,
     manifestHash: publication.template.manifestHash, reviewDigest: publication.template.reviewDigest, artifactDigest: identity.manifest.source.artifactDigest };
   const token = { ...tokenBuild, address: a.token, runtime: tokenRuntime, constructorArguments: '0x', creationCode: `0x${tokenBuild.artifact.evm.bytecode.object}`, creation, transactionHash: log.transactionHash };
+  if (identity.anyQuoteRelease) {
+    const fields = { poolId: 'bytes32', initialTick: 'int24', tickLower: 'int24', tickUpper: 'int24', lockedLiquidity: 'uint128', lockedTokenDust: 'uint256', quoteDecimals: 'uint8' };
+    const values = await readCalls(Object.entries(fields).map(([name, type]) => call(a.engine, `function ${name}() view returns (${type})`)), request, context.stateBlock);
+    const state = Object.fromEntries(Object.keys(fields).map((name, i) => [name, values[i]]));
+    const resourcesHash = engineResourceCommitment(identity, state);
+    const bindings = { sharedHook: release.contracts.sharedHook.address, poolManager: release.contracts.poolManager.address };
+    const actual = await readCalls(Object.keys(bindings).map(name => call(a.engine, `function ${name}() view returns (address)`)), request, context.stateBlock);
+    for (const [i, name] of Object.keys(bindings).entries()) need(same(actual[i], bindings[name]), `Any Quote engine ${name} differs`);
+    engine.resources = { profile: 'quote-shared-v1', resourcesHash, poolId: state.poolId, sharedHook: bindings.sharedHook,
+      tickLower: state.tickLower, tickUpper: state.tickUpper, lockedLiquidity: String(state.lockedLiquidity), lockedTokenDust: String(state.lockedTokenDust),
+      quoteDecimals: state.quoteDecimals, additionalSourceTargets: [] };
+    return [token, engine];
+  }
   if (identity.manifest.catalogDefinition.interface === 'quote-v1') return [token, engine, await quoteResources(identity, release, log, receipt, creation, context)];
   const fields = identity.manifest.catalogDefinition.interface === 'settlement-v1' ? ['minimumWindow', 'maximumWindow']
     : identity.manifest.catalogDefinition.interface === 'escrow-v1' ? ['unlockTime'] : [];
@@ -516,12 +529,13 @@ export async function releaseCode(release, block, context) {
     need(values[i] !== '0x' && same(keccak256(values[i]), release.contracts[role].runtimeCodeHash), `Released ${role} code hash differs at scan block`);
     return [role, values[i]];
   }));
-  const engine = release.sourceVersion === 'module-engine-v1';
+  const engine = ['module-engine-v1', 'module-engine-any-quote-v1'].includes(release.sourceVersion);
   const legacy = release.sourceVersion === 'module-native-v1';
   const [version] = await readCalls([call(release.contracts[engine ? 'host' : 'launcher'].address,
     engine ? 'function SOURCE_VERSION() view returns (bytes32)' : legacy ? 'function launchIdentityVersion() view returns (uint256)'
       : 'function sourceVersion() view returns (string)')], context.request, block);
-  need(same(version, engine ? keccak256(toHex('programmable.module-engine.evm.v1')) : legacy ? 1n : release.sourceVersion), 'Released source version getter differs');
+  need(same(version, engine ? release.sourceVersion === 'module-engine-v1' ? keccak256(toHex('programmable.module-engine.evm.v1'))
+    : context.wire.moduleEngineSourceId(release) : legacy ? 1n : release.sourceVersion), 'Released source version getter differs');
   return code;
 }
 async function writeCheckpoint(file, state) {
