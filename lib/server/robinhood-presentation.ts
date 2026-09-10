@@ -14,6 +14,13 @@ import { hashProjectMetadata, validateProjectMetadata } from "@/packages/launch/
 const FINALIZED_FEED = "https://api.programmable.market/v4/chains/4663/finalized-custom-launches";
 const DEX_PAIRS = "https://api.dexscreener.com/latest/dex/pairs/robinhood/";
 const MAIN_TOKEN = "0xc60ba256b44334a0cd2c7242e98b88f031abb006";
+// Platform-provided display links supplement the immutable launch metadata.
+const SUPPLEMENTAL_TOKEN_LINKS: Readonly<Record<string, RobinhoodCoinPresentation["links"]>> = {
+  "0x34cd7dd63c550a78a3228c199474189b88565ac9": [
+    { label: "Website", url: "https://www.arbithook.app/" },
+    { label: "X", url: "https://x.com/arbit_hook" },
+  ],
+};
 const MAX_RESPONSE_BYTES = 2_000_000;
 const MAX_METADATA_PAGES = 8;
 const MAX_TOKENS = 50;
@@ -299,6 +306,9 @@ export async function readRobinhoodPresentations(tokens: readonly RobinhoodLaunc
       for (const link of [...PROGRAMMABLE_MAIN_TOKEN_PRESENTATION.links, ...PROGRAMMABLE_MAIN_TOKEN_PRESENTATION.supplementalLinks]) {
         if (!links.some(existing => existing.label === labels[link.kind])) links.push({ label: labels[link.kind], url: link.url });
       }
+    }
+    for (const link of SUPPLEMENTAL_TOKEN_LINKS[key] ?? []) {
+      if (!links.some(existing => existing.label === link.label || existing.url === link.url)) links.push(link);
     }
     return {
       tokenAddress: token.tokenAddress,
