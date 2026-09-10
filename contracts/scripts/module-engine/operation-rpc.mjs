@@ -66,6 +66,10 @@ async function familyBindings(plan, providers, block, c, api) {
 }
 function launchStep(plan) { return plan.steps.find(s => s.kind === 'engine-launch'); }
 function launchContext(plan, expected) { return { host: plan.identity.contracts.host.address, launchId: expected.launchId, token: expected.token, creator: expected.creator, quoteAsset: expected.quoteAsset, feeCollector: plan.identity.contracts.host.address }; }
+function tokenGraffiti(plan, creator, creatorSalt, api) {
+  const domain = api.isModuleEngineAnyQuoteRelease(plan.identity) ? 'programmable.module-engine.any-quote-token.v1' : 'programmable.module-engine.token.v1';
+  return keccak256(encodeAbiParameters(parseAbiParameters('string,address,bytes32'), [domain, creator, creatorSalt]));
+}
 async function boundLaunch(plan, step, providers, block, c, api) {
   const pins = plan.identity.contracts, host = pins.host.address, expected = step.expectation;
   const actual = launchShape(await c.read(providers, host, api.moduleEngineHostAbi, 'getLaunch', [expected.launchId], block));
@@ -78,7 +82,7 @@ async function boundLaunch(plan, step, providers, block, c, api) {
   for (const [name, expectedValue] of [['name', parameters.name], ['symbol', parameters.symbol], ['decimals', 18], ['totalSupply', 1000000000n * 10n ** 18n]])
     equal(await c.read(providers, expected.token, api.moduleEngineReadAbi, name, [], block), expectedValue, `Engine token ${name}`);
   equal(address(await c.read(providers, expected.token, api.moduleEngineReadAbi, 'creator', [], block)), host, 'Engine token creator');
-  const graffiti = keccak256(encodeAbiParameters(parseAbiParameters('string,address,bytes32'), ['programmable.module-engine.token.v1', expected.creator, parameters.creatorSalt]));
+  const graffiti = tokenGraffiti(plan, expected.creator, parameters.creatorSalt, api);
   equal(await c.read(providers, expected.token, api.moduleEngineReadAbi, 'graffiti', [], block), graffiti, 'Engine token graffiti');
   equal(address(await c.read(providers, pins.tokenFactory.address, api.moduleEngineReadAbi, 'getUERC20Address', [parameters.name, parameters.symbol, 18, host, graffiti], block)), expected.token, 'Factory token identity');
   equal(await c.read(providers, expected.engine, api.moduleEngineReadAbi, 'contextHash', [], block), keccak256(encodeAbiParameters(parseAbiParameters(api.ENGINE_CONTEXT), [launchContext(plan, expected)])), 'Engine instance context');
@@ -119,7 +123,7 @@ export async function assertEngineOperationPreflight(plan, stepIndex, providers,
   await revisionBindings(plan, providers, block.number, c, api);
   if (launching) {
     const p = launchStep(plan).arguments[0], expected = step.expectation;
-    const graffiti = keccak256(encodeAbiParameters(parseAbiParameters('string,address,bytes32'), ['programmable.module-engine.token.v1', plan.owner, p.creatorSalt]));
+    const graffiti = tokenGraffiti(plan, plan.owner, p.creatorSalt, api);
     const prediction = await c.read(providers, plan.identity.contracts.host.address, api.moduleEngineHostAbi, 'predictTokenAddress', [p.name, p.symbol, plan.owner, p.creatorSalt], block.number);
     equal([address(prediction[0]), prediction[1]], [expected.token, graffiti], 'Actual Host token prediction');
     for (const target of [expected.token, expected.engine]) {
