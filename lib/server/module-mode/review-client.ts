@@ -9,7 +9,7 @@ import { isWebsiteAdminWallet } from "@/lib/admin-access";
 import configuredNativeReviewRelease from "@/config/module-mode/review-release.json";
 import configuredEngineReviewRelease from "@/config/module-engine/review-release.json";
 import { computeModuleModeReleaseDigest, moduleHash, moduleRecord, MODULE_MODE_SOURCE_VERSION_V2 } from "@/lib/module-mode/release";
-import { isReviewId, parseReviewAttempt, parseReviewJob, parseReviewPlan, reviewDigest, reviewRecord, parseReviewQueueItem, type ReviewDetail } from "@/lib/module-mode/review-contract";
+import { isReviewId, parseReviewAttempt, parseReviewJob, parseReviewPlan, parseReviewSourceCorrection, reviewDigest, reviewRecord, parseReviewQueueItem, type ReviewDetail } from "@/lib/module-mode/review-contract";
 import { nativeCanonicalJson } from "@/lib/module-mode/native-catalog";
 import { unsupportedManagementCapabilities } from "@/lib/module-mode/management-manifest";
 import { validateModuleSubmissionRequest, MODULE_TRANSPORT_LIMITS } from "@/packages/classic-modules/src/open-transport.mjs";
@@ -18,8 +18,9 @@ import { createWalletAdminBffAssertionV2, requireWalletAdminBffAssertionKeyV2 } 
 import { parseStrictJson } from "../projection-target/canonical-json";
 import { createModuleModeHostManifest, computeModuleModeHostManifestHash, type ModuleModeCatalogDefinition, type ModuleModeHostReleaseIdentity } from "./catalog";
 import { validateModuleReviewDecisionCommandV1, validateModuleReviewDecisionRecordV1 } from "./review-decision-wire-v1";
+import { bindModuleSourceCorrectionReceipt, isModuleCorrectionIdempotencyKey, MODULE_SOURCE_CORRECTION_LIMIT, parseModuleSourceCorrectionCommand, parseModuleSourceCorrectionReceipt, type ModuleSourceCorrectionCommand } from "./review-source-correction";
 
-type Operation = "list" | "detail" | "source" | "plan" | "manifest" | "decision";
+type Operation = "list" | "detail" | "source" | "plan" | "manifest" | "decision" | "correction" | "correction-status";
 const BACKEND_PATH = "/v1/wallet-admin/module-review";
 const HEADERS = { "Cache-Control": "no-store", "Content-Type": "application/json; charset=utf-8", "X-Content-Type-Options": "nosniff", Vary: "Authorization, X-Privy-Identity-Token" };
 const BROWSER_LIMIT = 3 * 1024 * 1024;
@@ -67,16 +68,17 @@ export function createModuleReviewClient(input: {
   const assertionKey = requireWalletAdminBffAssertionKeyV2(input.bffAssertionKeyV2, input.websiteToken);
   return { async handle(request: Request, operation: Operation, id?: string): Promise<Response> {
     try {
-      const mutation = ["plan", "manifest", "decision"].includes(operation);
+      const mutation = ["plan", "manifest", "decision", "correction"].includes(operation);
       if (request.method !== (mutation ? "POST" : "GET")) fail(405, "METHOD_NOT_ALLOWED");
       const url = new URL(request.url);
-      const allowedQuery = mutation ? [] : ["walletAddress", ...(operation === "list" ? ["cursor"] : [])];
+      const allowedQuery = mutation ? [] : ["walletAddress", ...(operation === "list" ? ["cursor"] : []), ...(operation === "correction-status" ? ["idempotencyKey"] : [])];
       if (url.hash || [...url.searchParams.keys()].some((key) => !allowedQuery.includes(key)) || [...url.searchParams.keys()].some((key) => url.searchParams.getAll(key).length !== 1)) fail(400, "MODULE_REVIEW_REQUEST_INVALID");
       if (operation !== "list" && !isReviewId(id)) fail(400, "MODULE_REVIEW_ID_INVALID");
       if (mutation) jsonHeader(request);
       const principal = await input.authenticator.authenticate(request);
-      const bodyBytes = mutation ? await bytes(request, BROWSER_LIMIT) : null;
-      const body = bodyBytes ? userInput(() => reviewRecord(parsed(bodyBytes, BROWSER_LIMIT))) : null;
+      const browserLimit = operation === "correction" ? MODULE_SOURCE_CORRECTION_LIMIT + 256 : BROWSER_LIMIT;
+      const bodyBytes = mutation ? await bytes(request, browserLimit) : null;
+      const body = bodyBytes ? userInput(() => reviewRecord(parsed(bodyBytes, browserLimit))) : null;
       const rawWallet = mutation ? body?.walletAddress : url.searchParams.get("walletAddress");
       if (typeof rawWallet !== "string" || !isAddress(rawWallet) || BigInt(rawWallet) === 0n) fail(400, "wallet_address_invalid");
       const wallet = getAddress(rawWallet).toLowerCase() as `0x${string}`;
@@ -115,7 +117,17 @@ export function createModuleReviewClient(input: {
         if (!Array.isArray(detail.decisions) || detail.decisions.length > 1000 || detail.decisions.some((decision) => !validateModuleReviewDecisionRecordV1(decision) || !same(decision.subject, job.subject))) fail(502, "MODULE_REVIEW_DECISION_INVALID");
         const attempts = detail.attempts ?? [];
         if (!Array.isArray(attempts) || attempts.length > 24) fail(502, "MODULE_REVIEW_ATTEMPTS_INVALID");
-        return { detail: { schemaVersion: "programmable.modules.website-review-detail.v1", job, decisions: detail.decisions as ReviewDetail["decisions"], attempts: attempts.map((item) => parseReviewAttempt(item, job.subject)), source: { descriptor: checked.request.descriptor, packageId: checked.packageId, familyId: checked.familyId, files: checked.request.files.map((file) => ({ path: file.path, sha256: file.sha256, bytes: Buffer.from(file.bytes, "base64").byteLength })) } }, sourceRaw: sourceResponse.raw };
+        let sourceCorrection: ReviewDetail["sourceCorrection"];
+        if (Object.hasOwn(detail, "sourceCorrection")) {
+          try { sourceCorrection = detail.sourceCorrection === null ? null : parseReviewSourceCorrection(detail.sourceCorrection); }
+          catch { fail(502, "MODULE_REVIEW_SOURCE_CORRECTION_INVALID"); }
+          if (sourceCorrection && (sourceCorrection.submissionId !== id || sourceCorrection.requestDigest !== job.subject.requestDigest
+            || sourceCorrection.principalId !== job.subject.principalId || sourceCorrection.author !== job.subject.author
+            || sourceCorrection.rewardWallet !== checked.request.descriptor.rewardWallet.toLowerCase() || sourceCorrection.familyId !== checked.familyId
+            || sourceCorrection.packageId !== checked.packageId || sourceCorrection.version !== checked.request.descriptor.version
+            || sourceCorrection.parentSubmissionId !== checked.request.supersedesSubmissionId)) fail(502, "MODULE_REVIEW_SOURCE_CORRECTION_INVALID");
+        }
+        return { detail: { schemaVersion: "programmable.modules.website-review-detail.v1", job, decisions: detail.decisions as ReviewDetail["decisions"], attempts: attempts.map((item) => parseReviewAttempt(item, job.subject)), source: { descriptor: checked.request.descriptor, packageId: checked.packageId, familyId: checked.familyId, files: checked.request.files.map((file) => ({ path: file.path, sha256: file.sha256, bytes: Buffer.from(file.bytes, "base64").byteLength })) }, ...(sourceCorrection === undefined ? {} : { sourceCorrection }) }, sourceRaw: sourceResponse.raw };
       };
       const validateManifest = (text: unknown, detail: ReviewDetail) => {
         if (typeof text !== "string" || Buffer.byteLength(text) > 2 * 1024 * 1024) fail(400, "MODULE_REVIEW_MANIFEST_REQUIRED");
@@ -159,6 +171,43 @@ export function createModuleReviewClient(input: {
       const { detail, sourceRaw } = await loadDetail();
       if (operation === "detail") return response(200, detail);
       if (operation === "source") return new Response(Uint8Array.from(sourceRaw), { headers: { ...HEADERS, "Content-Disposition": `attachment; filename="module-${id}.json"` } });
+      if (operation === "correction" || operation === "correction-status") {
+        const command = operation === "correction" ? userInput(() => {
+          reviewRecord(body, ["walletAddress", "command"]);
+          if (Buffer.byteLength(JSON.stringify(body!.command)) > MODULE_SOURCE_CORRECTION_LIMIT) fail(413, "MODULE_SOURCE_CORRECTION_TOO_LARGE");
+          return parseModuleSourceCorrectionCommand(body!.command);
+        }) : undefined;
+        const key = command?.idempotencyKey ?? url.searchParams.get("idempotencyKey");
+        if (!isModuleCorrectionIdempotencyKey(key)) fail(400, "MODULE_SOURCE_CORRECTION_KEY_INVALID");
+        const receiptFor = (upstream: { value: unknown; status: number }, expectedCommand?: ModuleSourceCorrectionCommand) => {
+          try {
+            const receipt = parseModuleSourceCorrectionReceipt(upstream.value);
+            if (![200, 201].includes(upstream.status) || receipt.created !== (upstream.status === 201)) fail(502, "MODULE_REVIEW_SOURCE_CORRECTION_INVALID");
+            bindModuleSourceCorrectionReceipt(receipt, detail, wallet, expectedCommand);
+            return receipt;
+          } catch { return fail(502, "MODULE_REVIEW_SOURCE_CORRECTION_INVALID"); }
+        };
+        // Resolve a committed attempt before checking a revision that may have advanced afterwards.
+        let previous: Awaited<ReturnType<typeof call>> | undefined;
+        try { previous = await call(`${BACKEND_PATH}/${id}/corrections?idempotencyKey=${encodeURIComponent(key)}`, "GET", undefined, 16_384); }
+        catch (error) { if (!(operation === "correction" && error instanceof ReviewHttpError && error.status === 404 && error.code === "MODULE_CORRECTION_NOT_FOUND")) throw error; }
+        if (previous) {
+          const receipt = receiptFor(previous);
+          if (command && receipt.sourceCorrection.commandDigest !== reviewDigest("programmable.modules.source-correction-command.v1", command)) fail(409, "MODULE_SOURCE_CORRECTION_IDEMPOTENCY_CONFLICT");
+          return response(200, command ? receiptFor(previous, command) : receipt);
+        }
+        if (!command || command.requestDigest !== detail.job.subject.requestDigest || command.expectedReviewRevision !== detail.job.reviewRevision) fail(409, "MODULE_REVIEW_REVISION_CONFLICT");
+        if (wallet === detail.job.subject.author) fail(403, "MODULE_REVIEW_SELF_DECISION_FORBIDDEN");
+        if (detail.sourceCorrection || !["awaiting_plan", "build_failed", "changes_requested", "built"].includes(detail.job.state)
+          || command.version === detail.source.descriptor.version) fail(409, "MODULE_CORRECTION_REVISION_CONFLICT");
+        const files = new Map(detail.source.files.map(file => [file.path, file]));
+        for (const change of command.files) {
+          const original = files.get(change.path);
+          if (change.expectedSha256 === null ? original !== undefined : original?.sha256 !== change.expectedSha256) fail(409, "MODULE_SOURCE_CORRECTION_SOURCE_CONFLICT");
+        }
+        const upstream = await call(`${BACKEND_PATH}/${id}/corrections`, "POST", command, 16_384);
+        return response(upstream.status, receiptFor(upstream, command));
+      }
       if (wallet === detail.job.subject.author) fail(403, "MODULE_REVIEW_SELF_DECISION_FORBIDDEN");
       if (operation === "plan") {
         userInput(() => reviewRecord(body, ["walletAddress", "expectedReviewRevision", "planJson"]));

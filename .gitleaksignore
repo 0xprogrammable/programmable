@@ -4,3 +4,5 @@
 # False positive: Solidity position-liquidity assignment, not an API credential.
 28fcea6ee143e5a259e50a3d22b50c744c2e9e54:contracts/src/MemeLaunchV4.sol:generic-api-key:316
 1ea44bd6b6552a51194a4f82c01d41abb9f87d89:contracts/src/MemeLaunchV4.sol:generic-api-key:316
+# False positive: public idempotency-key example in correction documentation.
+f2908f9f146ab634a7f6f54449c0bf8526c5c4b7:ops/module-mode-publication/README.md:generic-api-key:38

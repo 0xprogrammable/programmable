@@ -1,4 +1,5 @@
 import { runEnginePublication } from "./main-engine";
+import { runSourceCorrection } from "./correction";
 import { readFile, mkdir, writeFile, lstat, realpath } from "node:fs/promises";
 import path from "node:path";
 import { moduleHash } from "../../lib/module-mode/release";
@@ -10,15 +11,17 @@ import { publicationRpc, readPublicationOwner, observePublicationReadback, type 
 
 interface Context { repositoryRoot: string; providers: () => Promise<(Omit<PublicationProvider, "rpc"> & { url: string })[]> }
 export async function run(args: string[], context: Context) {
-  const command = args.shift(); need(["manifest", "prepare", "export"].includes(command ?? ""), "Use manifest, prepare or export");
+  const command = args.shift(); need(["manifest", "prepare", "export", "correct-source"].includes(command ?? ""), "Use manifest, prepare, export or correct-source");
   const options: Record<string, string> = {};
-  const required = ["identity", "definition", "submission", "session-file", "output", ...(command === "export" ? ["transactions"] : [])];
-  const allowed = new Set([...required, "fee-eligibility"]);
+  const required = command === "correct-source" ? ["correction-file", "submission", "session-file", "output"]
+    : ["identity", "definition", "submission", "session-file", "output", ...(command === "export" ? ["transactions"] : [])];
+  const allowed = new Set([...required, ...(command === "correct-source" ? [] : ["fee-eligibility"])]);
   for (let i = 0; i < args.length; i += 2) {
     const key = args[i].slice(2);
     need(args[i].startsWith("--") && allowed.has(key) && args[i + 1] && !Object.hasOwn(options, key), "Unexpected or duplicate publication option"); options[key] = args[i + 1];
   }
   need(required.every(key => Object.hasOwn(options, key)), "Missing publication options");
+  if (command === "correct-source") return runSourceCorrection(options, context.repositoryRoot);
   const read = async (key: string, maximum = 2 * 1024 * 1024) => exactJson(await readFile(options[key]), maximum);
   const identity = await read("identity") as ModuleModeHostReleaseIdentity;
   const definition = await read("definition") as ModuleModeCatalogDefinition;
