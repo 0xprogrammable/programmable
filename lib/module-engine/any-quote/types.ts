@@ -43,10 +43,19 @@ export type AnyQuoteAmmHopV1 =
   | { protocol: "V2"; tokenIn: Address; tokenOut: Address; pool: Address }
   | { protocol: "V3"; tokenIn: Address; tokenOut: Address; pool: Address; fee: number }
   | { protocol: "V4"; tokenIn: Address; tokenOut: Address; poolId: Hex; key: AnyQuotePoolKeyV1; hookData: Hex };
+export type AnyQuoteV4PoolCandidateV1 = { poolId: Hex; key: AnyQuotePoolKeyV1 };
+/** Server-owned discovery may use an existing graph/index adapter. These are only pool keys:
+ * readiness independently verifies state and obtains both directional quotes. */
+export type AnyQuoteV4DiscoveryV1 = {
+  schema: "programmable.any-quote.v4-candidates.v1";
+  chainId: 4663;
+  poolManager: Address;
+  routes: readonly (readonly Extract<AnyQuoteAmmHopV1, { protocol: "V4" }>[])[];
+};
 
 /** Typed discovery output. A route quote is not proof of ERC20 transfers or of the composed trade. */
 export type AnyQuoteExternalRouteV1 = {
-  provider: "uniswap-trading-api" | "weth-identity";
+  provider: "uniswap-trading-api" | "uniswap-v4-initialize" | "uniswap-v4-discovery" | "weth-identity";
   chainId: 4663;
   tokenIn: Address;
   tokenOut: Address;

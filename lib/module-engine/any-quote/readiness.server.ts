@@ -9,6 +9,7 @@ import {
 } from "./types";
 import { anyQuoteEvidenceHashV1, parseAnyQuoteExternalRouteV1, requireAnyQuoteNativeUnlockRouteV1, validateAnyQuoteExternalRouteV1 } from "./route";
 import { anyQuoteRationalV1, multiplyAnyQuoteRationalsV1, parseAnyQuoteDecimalV1 } from "./price";
+import { ANY_QUOTE_V4_MAX_POOL_CANDIDATES, anyQuoteV4CandidateHopV1, createAnyQuoteV4InitializeDiscoveryV1, parseAnyQuoteV4DiscoveryV1 } from "./discovery.server";
 
 const QUOTE_URL = "https://trade-api.gateway.uniswap.org/v1/quote";
 const ASSETS_URL = "https://api.robinhood.com/rhj/assets";
@@ -39,8 +40,8 @@ export type AnyQuoteReadinessOptionsV1 = {
   fetchImpl?: typeof fetch;
   now?: bigint;
   timeoutMs?: number;
-  /** An already integrated trusted discovery adapter may supply the same official API response.
-   * Its hops are still parsed, factory/PoolKey verified and requoted on both RPCs. */
+  /** Server-owned adapter: either the official API wire or AnyQuoteV4DiscoveryV1 pool candidates.
+   * Discovery never grants execution authority; all keys/state/quotes are independently verified. */
   discoverExternalRoute?: (input: { tokenIn: Address; tokenOut: Address; amountIn: bigint }) => Promise<unknown>;
 };
 
@@ -81,12 +82,18 @@ async function context(options: AnyQuoteReadinessOptionsV1) {
   const checkpoint = await agreed("eth_getBlockByNumber", [toHex(height), false], tradeBlockV1);
   if (BigInt(checkpoint.timestamp) > now + 10n || now - BigInt(checkpoint.timestamp) > 60n) throw new AnyQuoteErrorV1("PROVIDER_CHECKPOINT_STALE");
   const block = { blockHash: checkpoint.hash, requireCanonical: true };
-  const code = async (address: Address) => agreed("eth_getCode", [address, block], bytes);
+  // Repeated quote sizes and both directions share immutable reads only within this checkpoint.
+  const reads = new Map<string, Promise<unknown>>();
+  const cached = <T>(key: string, read: () => Promise<T>): Promise<T> => {
+    if (!reads.has(key)) reads.set(key, read());
+    return reads.get(key) as Promise<T>;
+  };
+  const code = async (address: Address) => cached(`code:${address.toLowerCase()}`, () => agreed("eth_getCode", [address, block], bytes));
   const call = async (to: Address, signature: string, args: readonly unknown[] = []) => {
     const abi: Abi = parseAbi([signature]), functionName = /^function ([A-Za-z0-9_]+)/.exec(signature)?.[1];
     if (!functionName) throw new AnyQuoteErrorV1("INVALID_READ_CALL");
     const data = encodeFunctionData({ abi, functionName, args });
-    return decodeFunctionResult({ abi, functionName, data: await agreed("eth_call", [{ to, data }, block], bytes) });
+    return cached(`call:${to.toLowerCase()}:${data}`, async () => decodeFunctionResult({ abi, functionName, data: await agreed("eth_call", [{ to, data }, block], bytes) }));
   };
   const pin = async (address: Address, hash: Hex) => {
     if (keccak256(await code(address)).toLowerCase() !== hash.toLowerCase()) throw new AnyQuoteErrorV1("INFRASTRUCTURE_RUNTIME_MISMATCH");
@@ -95,7 +102,9 @@ async function context(options: AnyQuoteReadinessOptionsV1) {
     pin(INFRA.universalRouter, INFRA.universalRouterCodeHash), pin(INFRA.poolManager, INFRA.poolManagerCodeHash),
     pin(INFRA.stateView, INFRA.stateViewCodeHash), pin(INFRA.v4Quoter, INFRA.v4QuoterCodeHash),
   ]);
-  return { now, checkpoint, block, code, call, pin };
+  let discovery: ReturnType<typeof createAnyQuoteV4InitializeDiscoveryV1> | undefined;
+  return { now, checkpoint, block, code, call, pin,
+    discovery: () => discovery ??= createAnyQuoteV4InitializeDiscoveryV1({ checkpoint, agreed }) };
 }
 type Context = Awaited<ReturnType<typeof context>>;
 
@@ -165,21 +174,86 @@ async function quoteHops(hops: readonly AnyQuoteAmmHopV1[], amountIn: bigint, ct
   return amount;
 }
 
-async function discover(input: { tokenIn: Address; tokenOut: Address; amountIn: bigint }, ctx: Context, options: AnyQuoteReadinessOptionsV1) {
+type DiscoveryInput = { tokenIn: Address; tokenOut: Address; amountIn: bigint };
+type V4Hop = Extract<AnyQuoteAmmHopV1, { protocol: "V4" }>;
+async function boundedMap<T, R>(values: readonly T[], read: (value: T) => Promise<R>) {
+  const result: PromiseSettledResult<R>[] = [];
+  for (let start = 0; start < values.length; start += 4) result.push(...await Promise.allSettled(values.slice(start, start + 4).map(read)));
+  return result;
+}
+
+async function chooseNativeCandidate(paths: readonly (readonly V4Hop[])[], input: DiscoveryInput, ctx: Context,
+  provider: "uniswap-v4-initialize" | "uniswap-v4-discovery") {
+  if (paths.length > ANY_QUOTE_V4_MAX_POOL_CANDIDATES) throw new AnyQuoteErrorV1("V4_DISCOVERY_CANDIDATE_LIMIT");
+  const buy = anyQuoteSameAddressV1(input.tokenIn, ANY_QUOTE_WETH);
+  const outcomes = await boundedMap(paths, async hops => {
+    const expectedIn = buy ? ANY_QUOTE_NATIVE : input.tokenIn, expectedOut = buy ? input.tokenOut : ANY_QUOTE_NATIVE;
+    if (hops.length === 0 || !anyQuoteSameAddressV1(hops[0].tokenIn, expectedIn)
+      || !anyQuoteSameAddressV1(hops[hops.length - 1].tokenOut, expectedOut)) throw new AnyQuoteErrorV1("V4_DISCOVERY_ROUTE_MISMATCH");
+    const seen = new Set([expectedIn.toLowerCase()]);
+    for (let i = 0; i < hops.length; i++) {
+      if ((i > 0 && !anyQuoteSameAddressV1(hops[i - 1].tokenOut, hops[i].tokenIn)) || seen.has(hops[i].tokenOut.toLowerCase())) throw new AnyQuoteErrorV1("V4_DISCOVERY_ROUTE_MISMATCH");
+      seen.add(hops[i].tokenOut.toLowerCase());
+    }
+    const spots = await Promise.all(hops.map(hop => inspectHop(hop, ctx)));
+    const amountOut = await quoteHops(hops, input.amountIn, ctx);
+    const route: AnyQuoteExternalRouteV1 = { provider, chainId: 4663, tokenIn: input.tokenIn, tokenOut: input.tokenOut,
+      amountIn: input.amountIn.toString(), amountOut: amountOut.toString(), hops, checkpoint: ctx.checkpoint,
+      validUntil: (ctx.now + ROUTE_LIFETIME).toString(), evidenceHash: "0x" };
+    requireAnyQuoteNativeUnlockRouteV1(route, buy ? "buy" : "sell");
+    return { route: { ...route, evidenceHash: anyQuoteEvidenceHashV1({ ...route, evidenceHash: undefined }) },
+      spot: spots.reduce(multiplyAnyQuoteRationalsV1, anyQuoteRationalV1(1n, 1n)) };
+  });
+  return outcomes.flatMap(value => value.status === "fulfilled" ? [value.value] : [])
+    .sort((a, b) => BigInt(a.route.amountOut) > BigInt(b.route.amountOut) ? -1 : BigInt(a.route.amountOut) < BigInt(b.route.amountOut) ? 1 : a.route.evidenceHash.localeCompare(b.route.evidenceHash))[0] ?? null;
+}
+
+async function discoverNativeV4(input: DiscoveryInput, ctx: Context) {
+  const buy = anyQuoteSameAddressV1(input.tokenIn, ANY_QUOTE_WETH), quote = buy ? input.tokenOut : input.tokenIn;
+  const discovery = ctx.discovery(), nativePools = await discovery.nativePools(quote);
+  const direct = await chooseNativeCandidate(nativePools.map(pool => [anyQuoteV4CandidateHopV1(pool, buy ? ANY_QUOTE_NATIVE : quote)]), input, ctx, "uniswap-v4-initialize");
+  if (direct) return direct;
+  const adjacent = await discovery.adjacentPools(quote);
+  const inspected = await boundedMap(adjacent, async pool => {
+    const hop = anyQuoteV4CandidateHopV1(pool, quote);
+    if (anyQuoteSameAddressV1(hop.tokenOut, ANY_QUOTE_NATIVE) || anyQuoteSameAddressV1(hop.tokenOut, ANY_QUOTE_WETH)) return null;
+    await inspectHop(hop, ctx);
+    return { pool, intermediate: hop.tokenOut };
+  });
+  const live = inspected.flatMap(value => value.status === "fulfilled" && value.value ? [value.value] : []);
+  const intermediates = [...new Set(live.map(value => value.intermediate))];
+  if (intermediates.length > 8) throw new AnyQuoteErrorV1("V4_DISCOVERY_INTERMEDIATE_LIMIT");
+  const native = new Map(await Promise.all(intermediates.map(async asset => [asset, await discovery.nativePools(asset)] as const)));
+  const paths = live.flatMap(({ pool, intermediate }) => (native.get(intermediate) ?? []).map(first => buy
+    ? [anyQuoteV4CandidateHopV1(first, ANY_QUOTE_NATIVE), anyQuoteV4CandidateHopV1(pool, intermediate)]
+    : [anyQuoteV4CandidateHopV1(pool, quote), anyQuoteV4CandidateHopV1(first, intermediate)]));
+  const routed = await chooseNativeCandidate(paths, input, ctx, "uniswap-v4-initialize");
+  if (!routed) throw new AnyQuoteErrorV1("NATIVE_V4_EXECUTABLE_ROUTE_UNAVAILABLE");
+  return routed;
+}
+
+async function discover(input: DiscoveryInput, ctx: Context, options: AnyQuoteReadinessOptionsV1) {
   if (anyQuoteSameAddressV1(input.tokenIn, input.tokenOut) && anyQuoteSameAddressV1(input.tokenIn, ANY_QUOTE_WETH)) {
     const value: AnyQuoteExternalRouteV1 = { provider: "weth-identity", chainId: 4663, ...input,
       amountIn: input.amountIn.toString(), amountOut: input.amountIn.toString(), hops: [], checkpoint: ctx.checkpoint,
       validUntil: (ctx.now + ROUTE_LIFETIME).toString(), evidenceHash: "0x" };
     return { route: { ...value, evidenceHash: anyQuoteEvidenceHashV1(value) }, spot: anyQuoteRationalV1(1n, 1n) };
   }
-  if (!options.discoverExternalRoute && (!options.apiKey || !/^[\x21-\x7e]{16,512}$/.test(options.apiKey))) throw new AnyQuoteErrorV1("UNISWAP_API_CONFIGURATION_PENDING");
+  if (!options.discoverExternalRoute && (!options.apiKey || !/^[\x21-\x7e]{16,512}$/.test(options.apiKey))) return discoverNativeV4(input, ctx);
   const raw = options.discoverExternalRoute ? await options.discoverExternalRoute(input) : await fetchJson(QUOTE_URL, options, {
     type: "EXACT_INPUT", amount: input.amountIn.toString(), tokenInChainId: 4663, tokenOutChainId: 4663,
     tokenIn: input.tokenIn, tokenOut: input.tokenOut, swapper: PROBE_OWNER, recipient: PROBE_OWNER,
     protocols: ["V2", "V3", "V4"], hooksOptions: "V4_HOOKS_INCLUSIVE", routingPreference: "BEST_PRICE", slippageTolerance: 1,
     permitAmount: "EXACT", generatePermitAsTransaction: false,
   });
+  if (raw && typeof raw === "object" && "schema" in raw) {
+    const discovered = parseAnyQuoteV4DiscoveryV1(raw);
+    const result = await chooseNativeCandidate(discovered.routes, input, ctx, "uniswap-v4-discovery");
+    if (!result) throw new AnyQuoteErrorV1("NATIVE_V4_EXECUTABLE_ROUTE_UNAVAILABLE");
+    return result;
+  }
   const parsed = parseAnyQuoteExternalRouteV1(raw, { ...input, checkpoint: ctx.checkpoint, validUntil: ctx.now + ROUTE_LIFETIME });
+  requireAnyQuoteNativeUnlockRouteV1(parsed, anyQuoteSameAddressV1(input.tokenIn, ANY_QUOTE_WETH) ? "buy" : "sell");
   const spots = await Promise.all(parsed.hops.map(hop => inspectHop(hop, ctx)));
   const amountOut = await quoteHops(parsed.hops, input.amountIn, ctx);
   const route = { ...parsed, amountOut: amountOut.toString() };
