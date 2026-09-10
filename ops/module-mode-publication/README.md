@@ -35,7 +35,7 @@ The correction file contains exactly:
   "requestDigest": "0x…",
   "version": "0.1.1-pm.1",
   "reason": "Explain the concrete defect and the bounded correction.",
-  "idempotencyKey": "unique-correction-key-0001",
+  "idempotencyKey": "<unique idempotency key>",
   "files": [
     {
       "path": "src/Example.sol",
