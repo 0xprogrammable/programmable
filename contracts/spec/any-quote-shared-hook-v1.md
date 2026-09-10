@@ -1,0 +1,31 @@
+# Any Quote shared hook integration
+
+Implementation contract, 10 September 2026. Not a deployment or approval receipt.
+
+The authoritative product plan is the workspace artifact `outputs/any-quote-priority-20260910/DECISIONS.md`. This profile preserves existing Module Engine review, creator, revision and token identities, and adds an immutable shared V4 hook with an immutable LP engine per launch.
+
+## Fixed interfaces
+
+- `AnyQuoteTypesV1.Configuration` is the canonical 256-byte configuration. It binds schema, PoolManager address/runtime, shared hook, quote asset, signed initial tick, expiration and price evidence. The host checks the infrastructure, time and mathematical bounds. The price evidence is an offchain provenance commitment, not an oracle attestation validated by the contract. Website/API prepare approximately $5,000 FDV using trustworthy reference prices and bind the exact result into the user's launch intent. No silent repricing.
+- Chain 4663, 1 billion tokens with 18 decimals, tick spacing 200, own LP fee zero. The new profile has its own schema and economics identity. Old fixed-configuration profiles retain their rules.
+- `AnyQuoteSharedHookV1(IPoolManager manager, address host, address rewardAdmin)` creates `AnyQuoteLedgerV1(manager, host, rewardAdmin)` in its constructor. The ledger authenticates its deploying hook. The immutable host creates the shared hook using a mined CREATE2 salt; the deployment plan predicts the host's CREATE address from the bounded executor nonce before mining. No post-deployment pointer setters or global Registry ownership transfer.
+- `registerPool` uses `AnyQuoteTypesV1.PoolRegistration`. Only the immutable host registers; the hook passes the reward registration to its ledger. Pool registration precedes engine initialization atomically. Initialization checks the exact initializer, key and initial tick.
+- The whole fixed 30 bps is credited to `0xD88539d3c4C460136a733A3Fd60cf6BF269079da`. Family/author identity remains review provenance; this new economic policy does not use the old 10/20 distribution. Creator buy/sell fees are separate, fixed on launch, 0 through 1,000 bps. Existing launch-policy 100-bps steps remain.
+- Fee backing uses PoolManager ERC-6909 claims. The hook mints claims to the ledger after checking actual Core deltas, then accrues the exact fees. Later claims burn ERC-6909 and transfer the same quote asset. No token transfers, reward-recipient callbacks or Registry lookups during accrual.
+- Carry is isolated by pool and buy/sell direction. Two separately rounded fees share the gross quote basis. Exact-output inversion uses a bounded candidate search; the net function is not assumed monotone. Carry is committed exactly once in `afterSwap`.
+- The hook allows normal external V4 routers without privileged hook data. Flags: beforeInitialize, beforeSwap, afterSwap, beforeSwapReturnDelta and afterSwapReturnDelta. The hook has no function that calls PoolManager.swap itself. Reject partial fills consistently and expose this limit in route preparation.
+- `AnyQuoteLPModuleV1` retains the canonical `ModuleEngineTypesV1.Context` constructor and `IModuleEngineV1` lifecycle, but is not a hook. It owns one permanently locked LP position, exposes its pool identity and has no remove/rescue/mint/upgrade path. Optional host exact-input swaps are convenience entrypoints; fees remain inside the pool callbacks.
+- `ModuleEngineAnyQuoteHostV1` retains existing revision binding and `EngineLaunchBound`/`EngineLaunchParametersBound` signatures. Initial buy is optional. Native initial buy must execute atomically after initialization via the pinned Universal Router, bind actor/recipient/final minimum/deadline and reject excess funding. No host-only fee collection, no hidden extra native fee.
+- Preserve `claimQuoteTo`, `claimQuoteFor`, `claimableQuote`, creator recipients and future-only recipient rotation. Platform recipient is initially fixed by this version; only its own beneficiary or the explicit reward admin may redirect future base credits. Existing credits remain at the old wallet. Recipient rotation must not affect swap validity.
+
+## Routing identity
+
+Use the existing production Chain 4663 profile: Universal Router 2.1.1 at `0x06AfBA43Fd06227fA663b0DAecF536f6EaA6bf99`. Installed SDK address lookup currently returns a superseded deployment and must not choose the router. Compose validated external AMM paths with the known new V4 PoolKey; exclude asynchronous order routes. Uniswap's API discovers the external leg. Complete calldata and final minimum output must be verified before signing.
+
+## Events
+
+Preserve canonical Engine launch and operation events. Add `SharedQuotePoolBound` with indexed poolId, launchId and token plus quoteAsset, engine, revisionId, familyId, configurationHash, initialTick and creator fee rates. Add `QuotePoolSwap` with indexed poolId, launchId and swapSender plus buy, exactInput, grossQuote, platformQuote, creatorQuote and Core amount0/amount1. `swapSender` identifies a router or engine, not necessarily the user. Existing claim/recipient events remain available to the indexer.
+
+## Release boundaries
+
+Contracts, protected review, catalog, source indexing, route/price preparation, frontend, executor and deployment bindings must agree on this version before activation. Registry family registration still requires its current owner. Exact accepted revision publication can later use a narrowly bound host permit if implemented and reviewed; no unrestricted hot-wallet authority is implied. Funding and finality evidence are separate from local tests.
