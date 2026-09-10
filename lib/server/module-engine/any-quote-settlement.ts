@@ -86,7 +86,9 @@ export async function verifyAnyQuoteLaunchSettlementV1(input: {
     for (const recipient of recipients) {
       const probe = buildAnyQuoteSettlementProbeV1({ owner: input.account, recipient, externalRoute: route, deadline: input.deadline, now: input.now });
       const transaction = { ...probe.transaction, value: toHex(probe.amountIn) };
-      const trace = await rpc("debug_traceCall", [transaction, toHex(BigInt(route.checkpoint.number)), { tracer: "callTracer", timeout: "10s" }], tradeTraceV1);
+      // Bind execution itself to A: a numbered trace can execute at B even if the subsequent
+      // canonical read returns A again. Providers without hash-reference support stay inconclusive.
+      const trace = await rpc("debug_traceCall", [transaction, ref, { tracer: "callTracer", timeout: "10s" }], tradeTraceV1);
       await canonical();
       verified.push(verifyAnyQuoteSettlementTraceV1(probe, trace));
     }

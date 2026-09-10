@@ -3,7 +3,7 @@ import { decodeFunctionData, parseAbi, type Address } from "viem";
 import { anyQuotePoolIdV1, buildAnyQuoteSettlementProbeV1 } from "@/lib/module-engine/any-quote/route";
 import { ANY_QUOTE_INFRASTRUCTURE, ANY_QUOTE_NATIVE, ANY_QUOTE_WETH, type AnyQuoteExternalRouteV1 } from "@/lib/module-engine/any-quote/types";
 import { verifyAnyQuoteLaunchSettlementV1, verifyAnyQuoteSettlementTraceV1 } from "@/lib/server/module-engine/any-quote-settlement";
-import { tradeTraceV1 } from "@/lib/server/custom-launch/routed-trade-rpc-v1";
+import { tradeTraceV1, type TradeRpcV1 } from "@/lib/server/custom-launch/routed-trade-rpc-v1";
 import { settlementRpcFixture } from "./any-quote-settlement-fixture";
 vi.mock("server-only", () => ({}));
 const address = (n: number) => `0x${n.toString(16).padStart(40, "0")}` as Address;
@@ -45,11 +45,41 @@ describe("Any Quote launch settlement admission", () => {
     const traces = f.calls.filter(c => c.method === "debug_traceCall"); expect(traces).toHaveLength(4);
     for (const call of traces) {
       expect(call.params).toHaveLength(3); expect(call.params[2]).toEqual({ tracer: "callTracer", timeout: "10s" });
+      expect(call.params[1]).toEqual({ blockHash: route.checkpoint.hash, requireCanonical: true });
       expect(call.params[0]).toMatchObject({ from: owner, to: ANY_QUOTE_INFRASTRUCTURE.universalRouter });
     }
     const zeroFees = settlementRpcFixture(route, treasury);
     await verifyAnyQuoteLaunchSettlementV1({ ...input, buyCreatorFeeBps: 0, rpcs: zeroFees.rpcs });
     expect(zeroFees.calls.filter(c => c.method === "debug_traceCall")).toHaveLength(2);
+  });
+  it("does not attribute a same-height A/B/A trace to the checkpoint from the final block read", async () => {
+    const atA = settlementRpcFixture(route, treasury), atB = settlementRpcFixture(route, treasury);
+    atB.state.recipientAdjustment = -1n;
+    const launch = { ...input, creatorWallets: [], buyCreatorFeeBps: 0, sellCreatorFeeBps: 0 };
+    await expect(verifyAnyQuoteLaunchSettlementV1({ ...launch, rpcs: atA.rpcs })).resolves.toMatch(/^0x[0-9a-f]{64}$/);
+    const transition = (forceOldNumericReference: boolean) => {
+      const traceReferences: unknown[] = [], postChecks: number[] = [];
+      const rpcs = [0, 1].map(provider => (async (method, params) => {
+        if (method === "debug_traceCall") {
+          // Both providers see B at this height during tracing; A is canonical again by the
+          // final numbered-block read. B's payout cannot be attributed to A's earlier reads.
+          const actualParams = forceOldNumericReference ? [params[0], "0x64", params[2]] : params;
+          traceReferences.push(actualParams[1]);
+          if (typeof actualParams[1] !== "string") throw Error("requested checkpoint A is temporarily noncanonical");
+          return atB.rpcs[provider](method, actualParams);
+        }
+        if (method === "eth_getBlockByNumber") postChecks.push(provider);
+        return atA.rpcs[provider](method, params);
+      }) satisfies TradeRpcV1) as unknown as readonly [TradeRpcV1, TradeRpcV1];
+      return { rpcs, traceReferences, postChecks };
+    };
+    const old = transition(true);
+    await expect(verifyAnyQuoteLaunchSettlementV1({ ...launch, rpcs: old.rpcs })).rejects.toMatchObject({ code: "QUOTE_SETTLEMENT_AMOUNT_MISMATCH", status: "incompatible" });
+    expect(old.traceReferences).toEqual(["0x64", "0x64"]); expect(old.postChecks).toEqual([0, 1]);
+    const bound = transition(false);
+    await expect(verifyAnyQuoteLaunchSettlementV1({ ...launch, rpcs: bound.rpcs })).rejects.toMatchObject({ code: "QUOTE_SETTLEMENT_EXECUTION_INCONCLUSIVE", status: "inconclusive" });
+    expect(bound.traceReferences).toEqual(Array(2).fill({ blockHash: route.checkpoint.hash, requireCanonical: true }));
+    expect(bound.postChecks).toEqual([]);
   });
   it("does not create funding or diagnose a reorg/provider failure as token incompatibility", async () => {
     const f = settlementRpcFixture(route, treasury); f.state.balance = 999n;
@@ -59,5 +89,14 @@ describe("Any Quote launch settlement admission", () => {
     await expect(verifyAnyQuoteLaunchSettlementV1({ ...input, rpcs: stale.rpcs })).rejects.toMatchObject({ status: "inconclusive" });
     const failed = async () => { throw Error("private provider detail"); };
     await expect(verifyAnyQuoteLaunchSettlementV1({ ...input, rpcs: [failed, failed] })).rejects.toMatchObject({ code: "QUOTE_SETTLEMENT_EXECUTION_INCONCLUSIVE", status: "inconclusive" });
+  });
+  it("keeps unsupported hash-reference tracing inconclusive without a numbered fallback", async () => {
+    const f = settlementRpcFixture(route, treasury), references: unknown[] = [];
+    const rpcs = [0, 1].map(provider => (async (method, params) => {
+      if (method === "debug_traceCall") { references.push(params[1]); throw Object.assign(Error("unsupported block object"), { code: -32602 }); }
+      return f.rpcs[provider](method, params);
+    }) satisfies TradeRpcV1) as unknown as readonly [TradeRpcV1, TradeRpcV1];
+    await expect(verifyAnyQuoteLaunchSettlementV1({ ...input, rpcs })).rejects.toMatchObject({ code: "QUOTE_SETTLEMENT_EXECUTION_INCONCLUSIVE", status: "inconclusive" });
+    expect(references).toEqual(Array(2).fill({ blockHash: route.checkpoint.hash, requireCanonical: true }));
   });
 });
