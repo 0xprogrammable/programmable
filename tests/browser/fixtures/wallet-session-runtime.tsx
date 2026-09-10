@@ -22,7 +22,7 @@ type FixtureWallet = {
   isConnected: () => Promise<boolean>;
   switchChain: (chainId: number) => Promise<void>;
   disconnect: () => Promise<void>;
-  getEthereumProvider: () => Promise<{ request: (input: { method: string }) => Promise<string | string[]> }>;
+  getEthereumProvider: () => Promise<{ request: (input: { method: string; params?: unknown[] }) => Promise<string | number | string[] | null> }>;
 };
 type FixtureState = {
   ready: boolean;
@@ -37,7 +37,9 @@ type FixtureState = {
   delayedNetworkSwitch: boolean;
   waitingNetworkSwitches: number;
   providerAccountOverride: string | null;
-  providerChainOverride: string | null;
+  providerChainOverride: string | number | null;
+  refreshedUser: FixtureUser | null;
+  delayedUserRefresh: boolean;
   delayedLogoutReadback: boolean;
   clipboardMode: "native" | "denied" | "delayed";
   waitingClipboardWrites: number;
@@ -61,11 +63,19 @@ const pendingNetworkSwitches: { resolve: () => void; reject: (error: Error) => v
 function wallet(address: string, linked = true, connectedAt = 1, initialChain = "eip155:4663"): FixtureWallet {
   let networkChain = initialChain;
   const provider = {
-    request: async ({ method }: { method: string }) => {
+    request: async ({ method, params }: { method: string; params?: unknown[] }) => {
       record(method, { address });
       if (method === "eth_chainId") return state.providerChainOverride
         ?? `0x${Number(networkChain.slice("eip155:".length)).toString(16)}`;
       if (method === "eth_accounts") return [state.providerAccountOverride ?? address];
+      if (method === "wallet_switchEthereumChain") {
+        const chainId = (params?.[0] as { chainId: string }).chainId;
+        networkChain = `eip155:${Number(chainId)}`;
+        update({ providerChainOverride: null, wallets: state.wallets.map((candidate) =>
+          candidate.getEthereumProvider === getEthereumProvider ? { ...candidate, chainId: networkChain } : candidate) });
+        await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+        return null;
+      }
       return forbidden();
     },
   };
@@ -107,6 +117,7 @@ let state: FixtureState = {
   isOpen: false, calls: [], delayedLocks: false, waitingLocks: 0,
   delayedNetworkSwitch: false, waitingNetworkSwitches: 0,
   providerAccountOverride: null, providerChainOverride: null,
+  refreshedUser: null, delayedUserRefresh: false,
   delayedLogoutReadback: false,
   clipboardMode: "native", waitingClipboardWrites: 0,
 };
@@ -215,7 +226,14 @@ const logout = async () => {
 };
 const getAccessToken = async () => null;
 export const getIdentityToken = async () => null;
-const refreshUser = async () => state.user;
+const pendingUserRefreshes: (() => void)[] = [];
+const refreshUser = async () => {
+  record("refreshUser");
+  const refreshed = state.refreshedUser ?? state.user;
+  if (state.delayedUserRefresh) await new Promise<void>((resolve) => pendingUserRefreshes.push(resolve));
+  if (refreshed?.id === state.user?.id) update({ user: refreshed });
+  return refreshed;
+};
 const reauthorize = async () => { record("reauthorize"); };
 
 export function PrivyProvider({ children }: { children: ReactNode }) { return children; }
@@ -246,6 +264,7 @@ function chooseScenario(scenario: string) {
   const base = {
     ready: true, authenticated: true, walletsReady: true, isOpen: false, calls: [],
     providerAccountOverride: null, providerChainOverride: null,
+    refreshedUser: null, delayedUserRefresh: false,
     delayedLogoutReadback: false,
   };
   switch (scenario) {
@@ -319,6 +338,12 @@ export function FixtureControls() {
     }}>Resolve clipboard</button>
     <output aria-label="Pending clipboard writes">{current.waitingClipboardWrites}</output>
     <button onClick={() => update({ delayedLogoutReadback: true })}>Delay logout readback</button>
+    <button onClick={() => update({ refreshedUser: alphaBoth })}>Link wallet B on server</button>
+    <button onClick={() => update({ delayedUserRefresh: true })}>Delay user refresh</button>
+    <button onClick={() => {
+      update({ delayedUserRefresh: false });
+      pendingUserRefreshes.splice(0).forEach((resolve) => resolve());
+    }}>Finish user refresh</button>
     <button onClick={() => update({ authenticated: false, user: null, delayedLogoutReadback: false })}>Finish logout readback</button>
     <button onClick={() => update({ wallets: state.wallets.map((candidate) => wallet(
       candidate.address, candidate.linked, candidate.connectedAt + 1, candidate.chainId,
@@ -346,6 +371,14 @@ export function FixtureControls() {
     }}>Reject network switch</button>
     <button onClick={() => update({ providerAccountOverride: accountC })}>Return a different provider account</button>
     <button onClick={() => update({ providerChainOverride: "0x1237" })}>Return the wrong provider network</button>
+    <button onClick={() => update({ providerChainOverride: "0x1" })}>Simulate stale Robinhood cache</button>
+    <label>Provider chain format <select aria-label="Provider chain format" defaultValue="hex" onChange={(event) => {
+      const formats: Record<string, string | number | null> = { hex: null, decimal: "1", number: 1, padded: "0x0001", caip: "eip155:1" };
+      update({ providerChainOverride: formats[event.target.value] });
+    }}>
+      <option value="hex">Hex</option><option value="decimal">Decimal</option>
+      <option value="number">Number</option><option value="padded">Padded hex</option><option value="caip">CAIP</option>
+    </select></label>
     <output aria-label="Pending network switches">{current.waitingNetworkSwitches}</output>
     <output aria-label="SDK calls">{JSON.stringify(current.calls)}</output>
     <output aria-label="SDK user">{current.user?.id ?? "anonymous"}</output>
@@ -357,6 +390,11 @@ export function FixtureControls() {
         update({ wallets: [connected], isOpen: false });
         connectCallbacks.onSuccess({ wallet: connected });
       }}>Complete wallet A reconnect</button>
+      <button onClick={() => {
+        const connected = wallet(accountB, false);
+        update({ wallets: [connected], isOpen: false });
+        connectCallbacks.onSuccess({ wallet: connected });
+      }}>Complete wallet B reconnect</button>
       <button onClick={() => {
         update({ isOpen: false });
         linkCallbacks.onError("linked_to_another_user");

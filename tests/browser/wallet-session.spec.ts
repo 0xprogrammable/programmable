@@ -482,8 +482,9 @@ for (const width of [1440, 390, 320]) {
     await expectMethods(page, ["linkWallet"]);
     await expect(page.getByRole("dialog")).toHaveCount(1);
     await page.getByRole("button", { name: "Reject linking foreign account", exact: true }).click();
-    await expect(dialog.getByRole("alert")).toHaveText("This wallet belongs to another account. Sign out, then sign in with that wallet.");
-    await expect(dialog.getByRole("button", { name: "Reconnect wallet", exact: true })).toBeVisible();
+    await expect(dialog.getByRole("alert")).toHaveText("This wallet is linked to another account. Switch accounts to use it.");
+    await expect(dialog.getByRole("button", { name: "Switch account", exact: true })).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "Connect linked wallet", exact: true })).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(dialog).toHaveCount(0);
   });
@@ -514,7 +515,61 @@ test("only an authenticated account without a linked wallet starts the SDK link 
   await expectMethods(page, ["linkWallet"]);
   await expect(page.getByRole("dialog")).toHaveCount(1);
   await page.getByRole("button", { name: "Reject linking foreign account", exact: true }).click();
-  await expect(page.getByRole("alert")).toHaveText("This wallet belongs to another account. Sign out, then sign in with that wallet.");
+  await expect(page.getByRole("alert")).toHaveText("This wallet is linked to another account. Switch accounts to use it.");
+});
+
+for (const width of [1440, 390]) {
+  test(`an unlinked wallet can switch accounts without a reconnect loop at ${width}px`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 844 });
+    await open(page, "/launch/modules");
+    await scenario(page, "linked-disconnected");
+    await page.getByRole("button", { name: "Delay logout readback", exact: true }).click();
+    await page.getByRole("button", { name: "Open account", exact: true }).click();
+    await page.getByRole("button", { name: "Complete wallet B reconnect", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Connect wallet", exact: true });
+    await expect(dialog.getByRole("alert")).toHaveText("This wallet is not linked to your signed-in account.");
+    await expect(page.getByLabel("Selected account", { exact: true })).toHaveText("none");
+    await expectMethods(page, ["connectWallet", "refreshUser"]);
+    expect(await dialog.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath(`wallet-account-recovery-${width}.png`) });
+    await dialog.getByRole("button", { name: "Switch account", exact: true }).click();
+    await expect(page.getByLabel("Session authenticated", { exact: true })).toHaveText("false");
+    expect((await calls(page)).filter((call) => call.method === "login")).toHaveLength(0);
+    await page.getByRole("button", { name: "Finish logout readback", exact: true }).click();
+    await expect(page.getByRole("dialog", { name: "SDK wallet dialog", exact: true })).toBeVisible();
+    expect((await calls(page)).filter((call) => call.method === "login")).toHaveLength(1);
+    await page.getByRole("button", { name: "Complete wallet B login", exact: true }).click();
+    await expect(page.getByLabel("Selected account", { exact: true })).toHaveText(accountB);
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(page.getByLabel("Wallet busy", { exact: true })).toHaveText("false");
+  });
+}
+
+test("reconnecting refreshes stale account ownership before reporting a mismatch", async ({ page }) => {
+  await open(page);
+  await scenario(page, "linked-disconnected");
+  await page.getByRole("button", { name: "Link wallet B on server", exact: true }).click();
+  await page.getByRole("button", { name: "Open account", exact: true }).click();
+  await page.getByRole("button", { name: "Complete wallet B reconnect", exact: true }).click();
+  await expect(page.getByLabel("Selected account", { exact: true })).toHaveText(accountB);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expectMethods(page, ["connectWallet", "refreshUser"]);
+});
+
+test("an ownership refresh cannot revive a previous user's reconnect attempt", async ({ page }) => {
+  await open(page);
+  await scenario(page, "linked-disconnected");
+  await page.getByRole("button", { name: "Link wallet B on server", exact: true }).click();
+  await page.getByRole("button", { name: "Delay user refresh", exact: true }).click();
+  await page.getByRole("button", { name: "Open account", exact: true }).click();
+  await page.getByRole("button", { name: "Complete wallet B reconnect", exact: true }).click();
+  await expectMethods(page, ["connectWallet", "refreshUser"]);
+  await page.getByRole("button", { name: "Change SDK user, keep old wallets", exact: true }).click();
+  await page.getByRole("button", { name: "Finish user refresh", exact: true }).click();
+  await expect(page.getByLabel("Wallet busy", { exact: true })).toHaveText("false");
+  await expect(page.getByLabel("Selected account", { exact: true })).toHaveText("none");
+  await expect(page.getByLabel("SDK user", { exact: true })).toHaveText("fixture-user-beta");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 
 test("the SDK modal suppresses an existing application wallet dialog", async ({ page }) => {
@@ -708,6 +763,30 @@ test("a normal network update can replace the SDK wrapper while preserving its c
   expect(methods.filter((method) => method === "switchChain")).toHaveLength(1);
   expect(methods).toEqual(expect.arrayContaining(["eth_chainId", "eth_accounts"]));
   expect(methods).not.toContain("forbidden-wallet-operation");
+});
+
+for (const format of ["decimal", "number", "padded", "caip"]) {
+  test(`network switching accepts the provider's ${format} chain ID without changing wallet ownership`, async ({ page }) => {
+    await open(page);
+    await page.getByLabel("Provider chain format", { exact: true }).selectOption(format);
+    await page.getByRole("button", { name: "Request Ethereum wallet network", exact: true }).click();
+    await expectNetworkResults(page, [true]);
+    await expect(page.getByLabel("Selected account", { exact: true })).toHaveText(accountA);
+    expect((await calls(page)).some((call) => call.method === "eth_accounts")).toBe(true);
+  });
+}
+
+test("a stale Robinhood SDK cache switches the actual provider before reporting success", async ({ page }) => {
+  await open(page, "/launch/modules");
+  await page.getByRole("button", { name: "Simulate stale Robinhood cache", exact: true }).click();
+  await expect(page.getByLabel("Module wallet step", { exact: true })).toHaveText("prepare");
+  await page.getByRole("button", { name: "Request Robinhood wallet network", exact: true }).click();
+  await expectNetworkResults(page, [true]);
+  const methods = (await calls(page)).map((call) => call.method);
+  expect(methods.filter((method) => method === "wallet_switchEthereumChain")).toHaveLength(1);
+  expect(methods).not.toContain("switchChain");
+  expect(methods).not.toContain("forbidden-wallet-operation");
+  await expect(page.getByLabel("Selected account", { exact: true })).toHaveText(accountA);
 });
 
 test("duplicate requests do not open a second SDK network switch", async ({ page }) => {

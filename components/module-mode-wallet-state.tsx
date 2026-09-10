@@ -2,6 +2,7 @@ import { sha256, type Address, type Hex } from "viem";
 import { useCallback, useMemo, useSyncExternalStore } from "react";
 
 import { ROBINHOOD_CHAIN_ID } from "@/lib/chains";
+import { walletChainIdsEqual } from "@/lib/wallet-chain-id";
 import type { ModuleModeDraft } from "@/lib/module-mode/builder";
 import type { ModuleNativeWalletTransaction, PreparedModuleNativeTransaction } from "@/lib/module-mode/native-client";
 import type { PreparedModuleEngineTransaction } from "@/lib/module-engine/client";
@@ -59,7 +60,7 @@ export interface ModuleModeWalletSnapshot {
 }
 
 export function isModuleModeChain(chainId: string | undefined) {
-  return Boolean(chainId && /^(?:0x[0-9a-f]+|[1-9]\d*)$/i.test(chainId) && BigInt(chainId) === 4663n);
+  return walletChainIdsEqual(chainId, ROBINHOOD_CHAIN_ID);
 }
 
 export function moduleModeWalletStep(wallet: ModuleModeWalletSnapshot): "connect" | "switch" | "prepare" {

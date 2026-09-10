@@ -564,6 +564,18 @@ describe("wallet recovery state", () => {
     expect(getIdentityToken).toHaveBeenCalledTimes(1);
   });
 
+  it.each([4663, "4663", "0x1237", "0x01237", "eip155:4663"])("accepts Robinhood provider chain ID %s before a wallet action", async (chainId) => {
+    const request = vi.fn(async (method: "eth_chainId" | "eth_accounts") =>
+      method === "eth_chainId" ? chainId : [`0x${"a".repeat(40)}`]);
+    await expect(subject.assertExternalWalletAuthorityCurrent({
+      expectedAccount: `0x${"a".repeat(40)}`,
+      expectedChainId: "0x1237",
+      networkName: "Robinhood Chain",
+      request,
+    })).resolves.toBeUndefined();
+    expect(request.mock.calls.map(([method]) => method)).toEqual(["eth_chainId", "eth_accounts"]);
+  });
+
   it("fails closed when an external provider mutates chain before a wallet action", async () => {
     const request = vi.fn(async (method: "eth_chainId" | "eth_accounts") =>
       method === "eth_chainId"
@@ -928,6 +940,6 @@ describe("wallet recovery state", () => {
     expect(walletProvider.getWalletOpenAction(pending, false, true)).toBe("wait");
     expect(walletProvider.getWalletOpenAction("manage", false, true)).toBe("reconnect");
     expect(subject.getWalletLoginErrorMessage("linked_to_another_user"))
-      .toBe("This wallet belongs to another account. Sign out, then sign in with that wallet.");
+      .toBe("This wallet is linked to another account. Switch accounts to use it.");
   });
 });
