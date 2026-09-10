@@ -99,12 +99,17 @@ describe("Any Quote exact transaction recovery", () => {
   });
   it("admits recovery only when the compiler proves V4 unlock deltas", async () => {
     const f = harness("swap");
-    if (String(f.compiled!.balanceAccounting.mode) === "unlock-deltas") {
-      await expect(f.recover()).resolves.toMatchObject({ kind: "swap" });
-      expect(verifyModuleEngineAnyQuoteSwapReceipt).toHaveBeenCalledWith(expect.objectContaining({ minimumOutput: 900n, quote: expect.objectContaining({ buy: true, recipient: f.recipient }) }));
-    } else {
-      await expect(f.recover()).rejects.toThrow("canonical complete ETH route");
-      expect(verifyModuleEngineAnyQuoteSwapReceipt).not.toHaveBeenCalled();
-    }
+    expect(f.compiled!.balanceAccounting.mode).toBe("unlock-deltas");
+    await expect(f.recover()).resolves.toMatchObject({ kind: "swap" });
+    expect(verifyModuleEngineAnyQuoteSwapReceipt).toHaveBeenCalledWith(expect.objectContaining({ minimumOutput: 900n, quote: expect.objectContaining({ buy: true, recipient: f.recipient }) }));
+  });
+  it.each(["recipient", "minimumOutput", "deadline", "calldata"])("rejects a changed swap %s even when its persisted hash was validly recomputed", async field => {
+    const f = harness("swap");
+    if (field === "recipient") Object.assign(f.prepared, { recipient: addr(777) });
+    if (field === "minimumOutput") Object.assign(f.prepared, { minimumOutput: 901n });
+    if (field === "deadline") Object.assign(f.prepared, { expiresAt: 1_000_119n });
+    if (field === "calldata") { Object.assign(f.prepared.transaction, { data: "0x1234" }); f.tx.input = "0x1234"; }
+    await expect(f.recover()).rejects.toThrow("canonical complete ETH route");
+    expect(verifyModuleEngineAnyQuoteSwapReceipt).not.toHaveBeenCalled();
   });
 });
