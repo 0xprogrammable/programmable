@@ -4,28 +4,27 @@ import { assertOpenConstraints, type OpenConstraint } from "@/packages/classic-m
 import { validateOpenPackage, type OpenSourcePackage } from "@/packages/classic-modules/src/open-packages.mjs";
 import type { FieldDisplay } from "@/lib/module-mode/builder";
 import { nativeCanonicalJson, nativeJson } from "@/lib/module-mode/native-catalog";
-import { MODULE_MODE_ECONOMICS_POLICY_V2, MODULE_MODE_FINALITY_POLICY, moduleAddress, moduleBytes, moduleHash, moduleInteger, moduleRecord, moduleUint } from "@/lib/module-mode/release";
+import { MODULE_MODE_FINALITY_POLICY, moduleAddress, moduleBytes, moduleHash, moduleInteger, moduleRecord, moduleUint } from "@/lib/module-mode/release";
 import { validateModuleEngineConfigurationAbi } from "./configuration";
+import { MODULE_ENGINE_RELEASE_SCHEMA, MODULE_ENGINE_PROFILE, moduleEngineSourceId, moduleEngineContractRoles,
+  type ModuleEngineReleaseProfile, type ModuleEngineNativeReleaseProfile,
+  type ModuleEngineAnyQuoteReleaseProfile } from "./profile";
+import { validateAnyQuoteManifestProfile } from "./any-quote-configuration";
+export * from "./profile";
 
-export const MODULE_ENGINE_RELEASE_SCHEMA = "programmable.module-engine.release.v1" as const;
-export const MODULE_ENGINE_SOURCE_VERSION = "module-engine-v1" as const;
-export const MODULE_ENGINE_SOURCE_ID = keccak256(toHex("programmable.module-engine.evm.v1"));
-export const MODULE_ENGINE_PROFILE = "programmable.module-engine-solidity@1" as const;
 export const MODULE_ENGINE_CONFIGURATION_CODEC = "programmable.engine-abi@1" as const;
 export const MODULE_ENGINE_HOST_MANIFEST_DOMAIN = "programmable.module-engine.host-manifest.v1" as const;
 export const MODULE_ENGINE_AVAILABILITY_SCHEMA = "programmable.module-engine.availability.v1" as const;
-export const MODULE_ENGINE_CONTRACTS = ["host", "registry", "tokenFactory", "launchPolicy", "ledger", "poolManager"] as const;
 export const ENGINE_ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as Address;
 export const ENGINE_ZERO_HASH = `0x${"00".repeat(32)}` as Hex;
-export type ModuleEngineContractPin = Readonly<{ address: Address; runtimeCodeHash: Hex }>;
-export interface ModuleEngineReleaseIdentity {
-  schemaVersion: typeof MODULE_ENGINE_RELEASE_SCHEMA; sourceVersion: typeof MODULE_ENGINE_SOURCE_VERSION;
-  engineProfile: typeof MODULE_ENGINE_PROFILE; chainId: 4663; sourceCommit: string; startBlock: string;
-  tokenCreationCodeHash: Hex; economicsPolicyId: Hex;
+interface ModuleEngineReleaseFields {
+  chainId: 4663; sourceCommit: string; startBlock: string; tokenCreationCodeHash: Hex;
   finalityPolicy: typeof MODULE_MODE_FINALITY_POLICY; releaseDigest: Hex;
-  contracts: Record<typeof MODULE_ENGINE_CONTRACTS[number], ModuleEngineContractPin>;
 }
-export interface ModuleEngineRelease extends ModuleEngineReleaseIdentity {
+export type ModuleEngineNativeReleaseIdentity = ModuleEngineReleaseFields & ModuleEngineNativeReleaseProfile;
+export type ModuleEngineAnyQuoteReleaseIdentity = ModuleEngineReleaseFields & ModuleEngineAnyQuoteReleaseProfile;
+export type ModuleEngineReleaseIdentity = ModuleEngineReleaseFields & ModuleEngineReleaseProfile;
+export type ModuleEngineRelease = ModuleEngineReleaseIdentity & {
   enabled: true; status: "active"; deploymentEvidenceDigest: Hex; sourceVerificationDigest: Hex; lifecycleEvidenceDigest: Hex;
 }
 export interface ModuleEnginePermission { operationId: Hex; inputRoles: number; outputRoles: number; authorization: 0 | 1 }
@@ -48,7 +47,7 @@ export interface ModuleEngineConfigurationComponent { readonly name: string; rea
 export interface ModuleEngineConfigurationArgument { readonly path: readonly string[]; readonly type: string; readonly components?: readonly ModuleEngineConfigurationComponent[] }
 export interface ModuleEngineCatalogDefinition {
   id: string; title: string; summary: string; detail: string; version: string;
-  interface: "quote-v1" | "escrow-v1" | "settlement-v1" | "custom-v1";
+  interface: "quote-v1" | "quote-shared-v1" | "escrow-v1" | "settlement-v1" | "custom-v1";
   source: { path: string; sha256: string }; schema: OpenConfigSchema; defaults: OpenConfigValue;
   configurationAbi: readonly ModuleEngineConfigurationArgument[];
   constraints: readonly OpenConstraint[]; fields?: Record<string, FieldDisplay>;
@@ -72,13 +71,14 @@ export function moduleEngineOptionalHash(value: unknown, label: string): Hex {
 }
 function identity(value: unknown): ModuleEngineReleaseIdentity {
   const r = moduleRecord(nativeJson(value), IDENTITY_KEYS, "engine.release");
-  need(r.schemaVersion === MODULE_ENGINE_RELEASE_SCHEMA && r.sourceVersion === MODULE_ENGINE_SOURCE_VERSION
-    && r.engineProfile === MODULE_ENGINE_PROFILE && r.chainId === 4663 && r.finalityPolicy === MODULE_MODE_FINALITY_POLICY, "Unsupported engine release/profile.");
+  moduleEngineSourceId(r);
+  need(r.chainId === 4663 && r.finalityPolicy === MODULE_MODE_FINALITY_POLICY, "Unsupported engine release/profile.");
   need(typeof r.sourceCommit === "string" && /^[a-f0-9]{40}$/.test(r.sourceCommit), "Invalid source commit.");
   moduleUint(r.startBlock, "engine.startBlock", true); moduleHash(r.tokenCreationCodeHash, "engine.tokenCreationCodeHash");
-  same(moduleHash(r.economicsPolicyId, "engine.economicsPolicyId"), MODULE_MODE_ECONOMICS_POLICY_V2, "Economics policy");
-  const pins = moduleRecord(r.contracts, MODULE_ENGINE_CONTRACTS, "engine.contracts"); const addresses = new Set<string>();
-  for (const role of MODULE_ENGINE_CONTRACTS) {
+  moduleHash(r.economicsPolicyId, "engine.economicsPolicyId");
+  const roles = moduleEngineContractRoles(r);
+  const pins = moduleRecord(r.contracts, roles, "engine.contracts"); const addresses = new Set<string>();
+  for (const role of roles) {
     const pin = moduleRecord(pins[role], ["address", "runtimeCodeHash"], `engine.${role}`);
     const address = moduleAddress(pin.address, role); moduleHash(pin.runtimeCodeHash, role); need(!addresses.has(address), "Duplicate release address."); addresses.add(address);
   }
@@ -109,7 +109,7 @@ export function bindModuleEngineDefinition(value: unknown): ModuleEngineCatalogD
   moduleRecord(raw, ["id", "title", "summary", "detail", "version", "interface", "source", "schema", "defaults", "configurationAbi", "constraints", ...(Object.hasOwn(raw, "fields") ? ["fields"] : [])], "engine.definition");
   need(typeof raw.id === "string" && /^[a-z][a-z0-9_.-]{1,127}$/.test(raw.id), "Invalid template ID.");
   need([raw.title, raw.summary, raw.detail, raw.version].every(item => typeof item === "string" && item.length > 0 && item.length <= 4000), "Invalid template text.");
-  need(["quote-v1", "escrow-v1", "settlement-v1", "custom-v1"].includes(raw.interface), "Unsupported presentation profile.");
+  need(["quote-v1", "quote-shared-v1", "escrow-v1", "settlement-v1", "custom-v1"].includes(raw.interface), "Unsupported presentation profile.");
   moduleRecord(raw.source, ["path", "sha256"], "engine.source");
   need(typeof raw.source.path === "string" && raw.source.path.length <= 300 && /^[a-f0-9]{64}$/.test(raw.source.sha256), "Invalid source path/hash.");
   assertOpenConfigSchema(raw.schema); assertOpenConstraints(raw.constraints);
@@ -171,6 +171,7 @@ export function computeModuleEngineHostManifestHash(value: ModuleEngineHostManif
   const envelope = moduleRecord(nativeJson(value), ["domain", "manifest"], "engine.hostManifest"); need(envelope.domain === MODULE_ENGINE_HOST_MANIFEST_DOMAIN, "Wrong host manifest domain.");
   const m = moduleRecord(envelope.manifest, ["release", "catalogDefinition", "configurationCodec", "source", "revision"], "engine.manifest");
   bindModuleEngineReleaseIdentity(m.release); bindModuleEngineDefinition(m.catalogDefinition); bindModuleEngineRevision(m.revision); bindSource(m.source);
+  validateAnyQuoteManifestProfile(m.release, m.catalogDefinition as ModuleEngineCatalogDefinition, m.revision as ModuleEngineRevisionDefinition);
   need(m.configurationCodec === MODULE_ENGINE_CONFIGURATION_CODEC, "Wrong configuration codec.");
   return keccak256(toHex(nativeCanonicalJson(envelope)));
 }
