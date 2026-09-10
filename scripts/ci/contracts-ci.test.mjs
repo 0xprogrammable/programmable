@@ -30,6 +30,10 @@ test("build, release, and analysis retain all existing contract checks without a
     "contracts/scripts/module-native-v2/deployment.test.mjs",
     "contracts/scripts/module-engine/deployment.test.mjs",
     "contracts/scripts/module-engine/quote-deployment.test.mjs",
+    "contracts/scripts/module-engine/any-quote-deployment.test.mjs",
+    "scripts/test/any-quote-readiness-discovery.test.mjs",
+    "scripts/test/any-quote-route-price.test.mjs",
+    "scripts/test/any-quote-route-runtime.test.mjs",
   ].join(" ")));
   const starterBuild = "forge build --root ../packages/classic-modules/examples/native-program";
   assert.equal(commands.filter((command) => command === starterBuild).length, 1);

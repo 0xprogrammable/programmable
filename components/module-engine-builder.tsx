@@ -15,6 +15,9 @@ import { configurationFromForm, configurationToForm, defaultSchemaValue, parseEx
 import { moduleAddress, moduleBytes } from "@/lib/module-mode/release";
 import { ENGINE_ZERO_ADDRESS, ENGINE_ZERO_HASH, moduleEngineOptionalHash, parseModuleEngineAvailability, type ModuleEngineAvailability, type ModuleEngineCatalogDefinition } from "@/lib/module-engine/catalog";
 import { createModuleEngineClient, ENGINE_OPERATIONS, moduleEngineDepositIntent, moduleEngineSettlementRequestIntent, moduleEngineTradeIntent, prepareModuleEngineApproval, prepareModuleEngineLaunch, readModuleEngineQuoteAsset, type ModuleEngineApprovalRequired, type ModuleEngineClient, type ModuleEngineOperationIntent, type PreparedModuleEngineTransaction } from "@/lib/module-engine/client";
+import { isModuleEngineAnyQuoteRelease } from "@/lib/module-engine/profile";
+import { prepareModuleEngineAnyQuoteLaunch } from "@/lib/module-engine/any-quote/integration-client";
+import { anyQuoteUserMessage, ModuleEngineAnyQuoteAsset, useAnyQuoteAssetAvailability } from "./module-engine-any-quote-asset";
 import { ModuleEnginePicker } from "./module-engine-library";
 import { ModuleEngineCustomOperationFields } from "./module-engine-custom-operation";
 import { emptyModuleEngineCustomOperation, moduleEngineCustomOperationIntent } from "@/lib/module-engine/custom-operation";
@@ -41,7 +44,7 @@ const readHydrated = () => true;
 const readServerHydrated = () => false;
 
 function freshSalt() { return toHex(crypto.getRandomValues(new Uint8Array(32))); }
-function message(error: unknown) { return error instanceof Error ? error.message.replace(/^Module engine: /, "") : "The launch could not be prepared."; }
+function message(error: unknown) { return anyQuoteUserMessage(error, error instanceof Error ? error.message.replace(/^Module engine: /, "") : "The launch could not be prepared."); }
 function fixedConfiguration(schema: ModuleEngineCatalogDefinition["schema"]): boolean { return schema.binding?.mode === "fixed" || schema.type === "record" && Object.keys(schema.fields).length > 0 && Object.values(schema.fields).every(fixedConfiguration); }
 
 /** Configuration and wallet controls extend the existing Module Mode flow; no independent wallet is created. */
@@ -70,11 +73,14 @@ export function ModuleEngineBuilder({ availability: raw, client: suppliedClient,
   const definition = template?.manifest.manifest.catalogDefinition, revision = template?.manifest.manifest.revision;
   const fixedQuote = revision && revision.fixedQuoteAsset !== ENGINE_ZERO_ADDRESS ? revision.fixedQuoteAsset : null;
   const quoteAsset = fixedQuote ?? quote; const form = definition ? forms[definition.id] ?? moduleEngineInitialForm(definition) : {};
-  const needsInitial = revision && revision.initialOperationId !== ENGINE_ZERO_HASH, spot = definition?.interface === "quote-v1";
+  const anyQuote = Boolean(availability?.release && isModuleEngineAnyQuoteRelease(availability.release) && definition?.interface === "quote-shared-v1");
+  const anyQuoteAvailability = useAnyQuoteAssetAvailability({ enabled: anyQuote, releaseDigest: availability?.release?.releaseDigest, templateId: definition?.id, quoteAsset });
+  const readyQuote = anyQuoteAvailability.status === "compatible" && anyQuoteAvailability.result?.status === "compatible" ? anyQuoteAvailability.result : null;
+  const needsInitial = !anyQuote && revision && revision.initialOperationId !== ENGINE_ZERO_HASH, spot = definition?.interface === "quote-v1" || anyQuote;
   const initialPermission = revision?.operationPermissions.find(permission => permission.operationId === revision.initialOperationId);
   const customInitial = Boolean(needsInitial && !(spot && revision?.initialOperationId === ENGINE_OPERATIONS.buy) && !(definition?.interface === "escrow-v1" && revision?.initialOperationId === ENGINE_OPERATIONS.deposit) && !(definition?.interface === "settlement-v1" && revision?.initialOperationId === ENGINE_OPERATIONS.request));
   const customLaunch = definition?.interface === "custom-v1";
-  const quoteVerified = quoteState && quoteState.address.toLowerCase() === quoteAsset.toLowerCase() && quoteState.account.toLowerCase() === wallet.account?.toLowerCase();
+  const quoteVerified = anyQuote ? Boolean(readyQuote) : quoteState && quoteState.address.toLowerCase() === quoteAsset.toLowerCase() && quoteState.account.toLowerCase() === wallet.account?.toLowerCase();
   const step = moduleModeWalletStep(wallet), errorFocus = useRef<HTMLParagraphElement>(null);
   useEffect(() => { if (error) errorFocus.current?.focus(); }, [error]);
   function changeImage(value: ModuleModeImage, resource: ModuleModeImageResource | null) { if (resource) imageUrls.current.add(resource.objectUrl); edit(() => { setImage(value); setImageResource(resource); uploadedImage.current = null; setImageUri(value.kind === "uri" ? value.uri : ""); }); }
@@ -90,7 +96,7 @@ export function ModuleEngineBuilder({ availability: raw, client: suppliedClient,
     if (imageBusy) return; setBusy(true); setError(null); setNotice(null);
     try {
       const account = moduleAddress(wallet.account, "account"); assertModuleModeWalletUnchanged(wallet, account);
-      if (!quoteVerified || !quoteState) throw new Error("Check the quote asset before reviewing the launch.");
+      if (!quoteVerified || (anyQuote ? !readyQuote : !quoteState)) throw new Error(anyQuote ? "Wait for current token availability before reviewing the launch." : "Check the quote asset before reviewing the launch.");
       const social = validateModuleSocialLinks(socialLinks);
       if (!social.ok) { if (coinDetails.current) coinDetails.current.open = true; setSocialIssues(social.issues); if (social.issues.some(issue => /\/(discord|github|gitbook)$/.test(issue.path))) setMoreLinks(true); throw new Error(social.issues[0]!.message); }
       setSocialIssues([]);
@@ -103,7 +109,7 @@ export function ModuleEngineBuilder({ availability: raw, client: suppliedClient,
         uploadedImage.current = { hash: image.sha256, account, uri: resolvedImage }; setImageUri(resolvedImage);
       }
       salts.current ??= { creator: freshSalt(), engine: freshSalt() };
-      const initialOperation = needsInitial ? ({ token, quoteAsset }: { token: Address; quoteAsset: Address }): ModuleEngineOperationIntent => {
+      const initialOperation = needsInitial && quoteState ? ({ token, quoteAsset }: { token: Address; quoteAsset: Address }): ModuleEngineOperationIntent => {
         if (customInitial) {
           if (!initialPermission) throw new Error("The initial action is missing its reviewed permission.");
           return moduleEngineCustomOperationIntent({ permission: initialPermission, form: customInitialForm, account, token, quoteAsset, quoteDecimals: quoteState.decimals });
@@ -114,7 +120,10 @@ export function ModuleEngineBuilder({ availability: raw, client: suppliedClient,
         if (revision.initialOperationId === ENGINE_OPERATIONS.request) { if (!obligation.trim()) throw new Error("Describe the obligation reference."); return moduleEngineSettlementRequestIntent({ quoteAsset, actor: account, beneficiary: moduleAddress(beneficiary, "beneficiary"), amount: inputAmount, refundAfter: BigInt(utcDateTimeToSeconds(refundTime)), obligationHash: keccak256(toHex(obligation.trim())) }); }
         throw new Error("The required initial operation needs its reviewed operation interface.");
       } : undefined;
-      const result = await prepareModuleEngineLaunch({ client, availability, templateId: definition.id, account, quoteAsset: quoteState.address, name, symbol, description, imageUri: resolvedImage, socialLinks: social.links, configuration: configurationFromForm(definition.schema, form, definition.fields), creatorSalt: customLaunch && creatorSaltInput.trim() ? moduleEngineOptionalHash(creatorSaltInput.trim(), "creator salt") : salts.current.creator, engineSalt: customLaunch && engineSaltInput.trim() ? moduleEngineOptionalHash(engineSaltInput.trim(), "engine salt") : salts.current.engine, ...(customLaunch ? { launchData: moduleBytes(launchData.trim(), "initialization data", 16_384) } : {}), creatorWallets: [account], creatorSharesBps: [10_000], buyCreatorFeeBps: Number(buyFee) * 100, sellCreatorFeeBps: Number(sellFee) * 100, initialOperation });
+      const coin = { client, availability, templateId: definition.id, account, name, symbol, description, imageUri: resolvedImage, socialLinks: social.links, creatorSalt: customLaunch && creatorSaltInput.trim() ? moduleEngineOptionalHash(creatorSaltInput.trim(), "creator salt") : salts.current.creator, engineSalt: customLaunch && engineSaltInput.trim() ? moduleEngineOptionalHash(engineSaltInput.trim(), "engine salt") : salts.current.engine, creatorWallets: [account], creatorSharesBps: [10_000], buyCreatorFeeBps: Number(buyFee) * 100, sellCreatorFeeBps: Number(sellFee) * 100 };
+      const result = anyQuote && readyQuote
+        ? await prepareModuleEngineAnyQuoteLaunch({ ...coin, quoteAsset: readyQuote.quoteAsset, readiness: readyQuote, initialBuyWei: amount.trim() ? BigInt(parseExactUnits(amount.trim(), 18)) : 0n, slippageBps: 100 })
+        : await prepareModuleEngineLaunch({ ...coin, quoteAsset: quoteState!.address, configuration: configurationFromForm(definition.schema, form, definition.fields), ...(customLaunch ? { launchData: moduleBytes(launchData.trim(), "initialization data", 16_384) } : {}), initialOperation });
       if (result.kind === "approval-required") setApproval(result); else setPrepared(result);
     } catch (caught) { setError(message(caught)); } finally { setBusy(false); }
   }
@@ -132,8 +141,8 @@ export function ModuleEngineBuilder({ availability: raw, client: suppliedClient,
 
   const tokenImageSource = moduleModeImageSource(image, imageResource)
     ?? (imageUri ? moduleModeImageSource({ kind: "uri", uri: imageUri, contentVerified: false }, null) : null);
-  const quoteLabel = spot ? "Trading token" : "Funding token";
-  const quoteShort = quoteAsset ? `${quoteAsset.slice(0, 6)}…${quoteAsset.slice(-4)}` : "Not chosen";
+  const quoteLabel = anyQuote ? "Pool pair" : spot ? "Trading token" : "Funding token";
+  const quoteShort = readyQuote?.token.symbol || (quoteAsset ? `${quoteAsset.slice(0, 6)}…${quoteAsset.slice(-4)}` : "Not chosen");
 
   return <div className={`${styles.page} ${engineStyles.root} ${engineStyles.builderRoot}`}>
     <div className={engineStyles.pageTop}><a href="/launch"><ArrowLeft size={16} aria-hidden="true" />Back</a></div>
@@ -171,7 +180,19 @@ export function ModuleEngineBuilder({ availability: raw, client: suppliedClient,
                 <div><strong>{definition.title}</strong><p>{definition.summary}</p></div>
                 <button type="button" className={engineStyles.changeModule} disabled={!hydrated || busy || imageBusy || blocked} onClick={() => setPickerOpen(true)} aria-haspopup="dialog">Change</button>
               </div>
-              <Disclosure className={engineStyles.moduleSettings} key={`settings-${definition.id}`}>
+              {anyQuote ? <>
+                <ModuleEngineAnyQuoteAsset value={quoteAsset} availability={anyQuoteAvailability} onChange={value => edit(() => setQuote(value))} />
+                <div className={`${styles.field} ${engineStyles.anyQuoteInitialBuy}`}>
+                  <label htmlFor="engine-amount">Initial buy <span>Optional</span></label>
+                  <div className={engineStyles.anyQuoteAmount}><input id="engine-amount" aria-label="Initial buy in ETH" inputMode="decimal" placeholder="0" autoComplete="off" value={amount} onChange={event => edit(() => setAmount(event.target.value))} aria-describedby="engine-amount-help" /><span aria-hidden="true">ETH</span></div>
+                  <p id="engine-amount-help" className={styles.help}>Buy your coin in the launch transaction. Leave blank to launch without a buy.</p>
+                </div>
+                <p className={engineStyles.sectionNote}>1 billion coins · approximately $5,000 starting value · permanently locked liquidity.</p>
+                <Disclosure className={engineStyles.moduleAbout}>
+                  <summary><span>About this module</span><ChevronDown size={16} aria-hidden="true" /></summary>
+                  <div className={engineStyles.detailsBody}><p>{definition.detail}</p><p>The starting value is a price estimate, not deposited funds. ETH conversion and gas costs are additional.</p>{versionContent}</div>
+                </Disclosure>
+              </> : <Disclosure className={engineStyles.moduleSettings} key={`settings-${definition.id}`}>
                 <summary><span>Module settings</span><ChevronDown size={16} aria-hidden="true" /></summary>
                 <div className={engineStyles.detailsBody}>
                 <div className={styles.field}>
@@ -192,10 +213,16 @@ export function ModuleEngineBuilder({ availability: raw, client: suppliedClient,
                   <div className={engineStyles.detailsBody}><p>{definition.detail}</p>{versionContent}</div>
                 </Disclosure>
                 </div>
-              </Disclosure>
+              </Disclosure>}
             </section>
 
-            <Disclosure className={`${engineStyles.launchSettings} ${engineStyles.optionalDetails}`}>
+            {anyQuote ? <Disclosure className={`${engineStyles.launchSettings} ${engineStyles.optionalDetails}`}>
+              <summary><span>Creator fees</span><span className={engineStyles.optionalLabel}>{buyFee}% buy · {sellFee}% sell</span><ChevronDown size={16} aria-hidden="true" /></summary>
+              <div className={engineStyles.detailsBody}>
+                <div className={styles.twoFields}>{[["buy", buyFee, setBuyFee], ["sell", sellFee, setSellFee]].map(([side, value, setValue]) => <div className={styles.field} key={side as string}><label htmlFor={`engine-${side}-fee`}>{side === "buy" ? "Buy" : "Sell"} fee</label><select id={`engine-${side}-fee`} value={value as string} onChange={event => edit(() => (setValue as (value: string) => void)(event.target.value))}>{Array.from({ length: 11 }, (_, i) => <option key={i} value={String(i)}>{i}%</option>)}</select></div>)}</div>
+                <p className={styles.help}>Your creator fees are separate from the fixed 0.3% module fee on every buy and sell. All fees accrue in the pool pair token. Creator rates stay fixed after launch.</p>
+              </div>
+            </Disclosure> : <Disclosure className={`${engineStyles.launchSettings} ${engineStyles.optionalDetails}`}>
               <summary><span>Launch settings</span><ChevronDown size={16} aria-hidden="true" /></summary>
               <div className={engineStyles.detailsBody}>
               {needsInitial && customInitial && initialPermission ? <div className={engineStyles.initialAction}><h3>First action</h3><ModuleEngineCustomOperationFields id="engine-initial-action" permission={initialPermission} value={customInitialForm} account={wallet.account} onChange={value => edit(() => setCustomInitialForm(value))} /></div> : null}
@@ -236,11 +263,11 @@ export function ModuleEngineBuilder({ availability: raw, client: suppliedClient,
               </Disclosure> : null}
               {!needsInitial && !spot && !customLaunch ? <p className={engineStyles.sectionNote}>No starting funds required.</p> : null}
               </div>
-            </Disclosure>
+            </Disclosure>}
           </fieldset>
           <div className={engineStyles.launchFooter}>
-            {step === "prepare" && !quoteVerified ? <p>Check the token in Module settings to continue.</p> : null}
-            {connectedAction ? <button type="button" className={styles.primaryButton} disabled={!hydrated} onClick={() => void connectedAction()}>{step === "connect" ? "Connect wallet" : "Switch to Robinhood Chain"}<ArrowUpRight size={18} aria-hidden="true" /></button> : <button type="submit" className={styles.primaryButton} id="engine-launch-review" disabled={!hydrated || busy || imageBusy || blocked || !quoteVerified}>{imageBusy ? "Preparing image…" : busy ? "Checking launch…" : "Review launch"}<ArrowUpRight size={18} aria-hidden="true" /></button>}
+            {anyQuote ? <p>0.3% module fee per buy and sell, plus your creator fees.</p> : step === "prepare" && !quoteVerified ? <p>Check the token in Module settings to continue.</p> : null}
+            {connectedAction ? <button type="button" className={styles.primaryButton} disabled={!hydrated} onClick={event => { event.preventDefault(); void connectedAction(); }}>{step === "connect" ? "Connect wallet" : "Switch to Robinhood Chain"}<ArrowUpRight size={18} aria-hidden="true" /></button> : <button type="submit" className={styles.primaryButton} id="engine-launch-review" disabled={!hydrated || busy || imageBusy || blocked || !quoteVerified}>{imageBusy ? "Preparing image…" : busy ? "Checking launch…" : "Review launch"}<ArrowUpRight size={18} aria-hidden="true" /></button>}
           </div>
         </form>
 
@@ -260,15 +287,16 @@ export function ModuleEngineBuilder({ availability: raw, client: suppliedClient,
           <dl className={engineStyles.previewFacts}>
             <div><dt>{quoteLabel}</dt><dd title={quoteAsset || undefined}>{quoteShort}</dd></div>
             {spot || customLaunch ? <div><dt>{customLaunch ? "Fee settings" : "Creator fees"}</dt><dd>{buyFee}% buy · {sellFee}% sell</dd></div> : null}
+            {anyQuote ? <><div><dt>Buy and sell with</dt><dd>ETH</dd></div><div><dt>Module fee</dt><dd>0.3%</dd></div><div><dt>Initial buy</dt><dd>{amount.trim() ? `${amount} ETH` : "None"}</dd></div></> : null}
             {needsInitial && !customInitial ? <div><dt>{spot ? "First buy" : "Starting funds"}</dt><dd>{amount.trim() ? `${amount} tokens` : "Not set"}</dd></div> : null}
           </dl>
           </div>
           <Link href="/developers/modules" className={engineStyles.buildLink}><Puzzle size={16} aria-hidden="true" />Build your own module<ArrowUpRight size={16} aria-hidden="true" /></Link>
         </aside>
       </div>
-      <ModuleEnginePicker open={pickerOpen} templates={availability.templates} selectedId={definition.id} disabled={!hydrated || busy || imageBusy || blocked} onClose={() => setPickerOpen(false)} onSelect={item => { edit(() => { setSelected(item.manifest.manifest.catalogDefinition.id); setQuoteState(null); salts.current = null; setCustomInitialForm(emptyModuleEngineCustomOperation()); setCreatorSaltInput(""); setEngineSaltInput(""); setLaunchData("0x"); setBuyFee("0"); setSellFee("0"); }); setPickerOpen(false); }} />
+      <ModuleEnginePicker open={pickerOpen} templates={availability.templates} selectedId={definition.id} disabled={!hydrated || busy || imageBusy || blocked} onClose={() => setPickerOpen(false)} onSelect={item => { edit(() => { setSelected(item.manifest.manifest.catalogDefinition.id); setQuoteState(null); setAmount(""); salts.current = null; setCustomInitialForm(emptyModuleEngineCustomOperation()); setCreatorSaltInput(""); setEngineSaltInput(""); setLaunchData("0x"); setBuyFee("0"); setSellFee("0"); }); setPickerOpen(false); }} />
       {approval && !prepared ? <section className={engineStyles.notice} role="status"><p>Allow the launch contract to use exactly {quoteState ? formatUnits(approval.amount, quoteState.decimals) : approval.amount.toString()} quote tokens to fund this launch.</p><button id="engine-approval-review" className={styles.secondaryButton} type="button" disabled={busy || blocked} onClick={() => void prepareApproval()}>{approval.currentAllowance > 0n ? "Review allowance reset" : "Review exact approval"}</button></section> : null}
-      {prepared ? <ModuleEngineTransactionReview prepared={prepared} busy={busy} disabled={blocked || step !== "prepare"} onEdit={backToEdit} onConfirm={() => void confirm()} quoteAsset={quoteState?.address} quoteDecimals={quoteState?.decimals} tradeFees={spot || customLaunch} genericAction={customInitial} showLaunchInputs={customLaunch}>{prepared.kind === "launch" ? <div className={engineStyles.launchSummary}><strong>{name} · {symbol}</strong><p>{description}</p><p className={styles.help}>Image: {imageUri || MODULE_DEFAULT_TOKEN_IMAGE}</p>{checkedSocial.ok ? <dl className={styles.reviewRows}>{socialFields.filter(({ key }) => checkedSocial.links[key]).map(({ key, label }) => <div key={key}><dt>{label}</dt><dd>{checkedSocial.links[key]}</dd></div>)}</dl> : null}</div> : null}</ModuleEngineTransactionReview> : null}
+      {prepared ? <ModuleEngineTransactionReview prepared={prepared} busy={busy} disabled={blocked || step !== "prepare"} onEdit={backToEdit} onConfirm={() => void confirm()} quoteAsset={readyQuote?.quoteAsset ?? quoteState?.address} quoteDecimals={readyQuote?.token.decimals ?? quoteState?.decimals} quoteSymbol={readyQuote?.token.symbol} anyQuote={anyQuote} tradeFees={spot || customLaunch} genericAction={customInitial} showLaunchInputs={customLaunch}>{prepared.kind === "launch" ? <div className={engineStyles.launchSummary}><strong>{name} · {symbol}</strong><p>{description}</p><p className={styles.help}>Image: {imageUri || MODULE_DEFAULT_TOKEN_IMAGE}</p>{checkedSocial.ok ? <dl className={styles.reviewRows}>{socialFields.filter(({ key }) => checkedSocial.links[key]).map(({ key, label }) => <div key={key}><dt>{label}</dt><dd>{checkedSocial.links[key]}</dd></div>)}</dl> : null}</div> : null}</ModuleEngineTransactionReview> : null}
     </>}
     {blocked ? <p className={engineStyles.notice} role="status">{blockedReason ?? "Resolve your pending wallet operation before sending another transaction."}</p> : null}
     {error ? <p ref={errorFocus} tabIndex={-1} className={styles.fieldError} role="alert">{error}</p> : null}{notice ? <p className={engineStyles.notice} role="status">{notice}</p> : null}

@@ -18,6 +18,18 @@ export async function createEngineLifecyclePlan(release, canaries) {
     const launchTransactionHash = uniqueTransaction(canary.launchTransactionHash), manifestHash = hash(canary.manifestHash), nonces = new Set();
     need(Array.isArray(canary.operations) && canary.operations.length >= 1 && canary.operations.length <= 16, 'One to sixteen actual operation references required');
     const operations = canary.operations.map(operation => {
+      if (release.sourceVersion === 'module-engine-any-quote-v1') {
+        need(['quote-pool-swap', 'quote-claim'].includes(operation.kind), 'Canonical Any Quote swap or claim reference required');
+        exactKeys(operation, operation.kind === 'quote-pool-swap' ? ['kind', 'transactionHash', 'logIndex', 'poolId', 'buy']
+          : ['kind', 'transactionHash', 'logIndex', 'asset', 'beneficiary', 'recipient'], 'Any Quote lifecycle reference');
+        need(Number.isSafeInteger(operation.logIndex) && operation.logIndex >= 0, 'Canonical receipt log index required');
+        const transactionHash = uniqueTransaction(operation.transactionHash);
+        if (operation.kind === 'quote-pool-swap') {
+          need(typeof operation.buy === 'boolean', 'Explicit swap direction required');
+          return { kind: operation.kind, transactionHash, logIndex: operation.logIndex, poolId: hash(operation.poolId), buy: operation.buy };
+        }
+        return { kind: operation.kind, transactionHash, logIndex: operation.logIndex, asset: address(operation.asset), beneficiary: address(operation.beneficiary), recipient: address(operation.recipient) };
+      }
       exactKeys(operation, ['transactionHash', 'operationId', 'actor', 'nonce'], 'Engine operation reference');
       const transactionHash = uniqueTransaction(operation.transactionHash), actor = address(operation.actor), nonce = uint(operation.nonce, 'operation nonce');
       const key = `${actor}:${nonce}`; need(!nonces.has(key), 'Duplicate actor operation nonce'); nonces.add(key);

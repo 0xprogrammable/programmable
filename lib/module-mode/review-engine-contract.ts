@@ -1,10 +1,13 @@
 // Pure validation of the protected backend engine profile. No source compilation or execution occurs here.
-import { bytesToHex, encodeAbiParameters, getContractAddress, hexToBytes, keccak256, parseAbi, toFunctionSelector, type Hex } from "viem";
+import { bytesToHex, decodeAbiParameters, encodeAbiParameters, getContractAddress, hexToBytes, keccak256, parseAbi, toFunctionSelector, type Hex } from "viem";
 import { nativeCanonicalJson, nativeJson } from "./native-catalog";
 import { parseModuleEngineConfigurationAbi } from "../module-engine/configuration";
 import { reviewDigest as moduleReviewDigestV1, parseReviewSubject, type ReviewSubject as ModuleReviewSubjectV1 } from "./review-contract";
 import { MODULE_ENGINE_QUOTE_ENVIRONMENT_V1, MODULE_ENGINE_QUOTE_NVDA_ENVIRONMENT_V1 } from "./review-engine-types";
-import { MODULE_ENGINE_BUILD_SCHEMA_V1, MODULE_ENGINE_PLAN_SCHEMA_V1, MODULE_ENGINE_CONFIGURATION_CODEC_V1, MODULE_ENGINE_CONTEXT_ABI_V1, MODULE_ENGINE_CONSTRUCTOR_ABI_V1, type ModuleEngineBuildArtifactV1, type ModuleEngineBuildPlanV1, type ModuleEngineContractArtifactV1, type ModuleEngineCompiledCaseV1, type ModuleEngineTestResultV1 } from "./review-engine-types";
+import { MODULE_ENGINE_BUILD_SCHEMA_V1, MODULE_ENGINE_PLAN_SCHEMA_V1, MODULE_ENGINE_CONFIGURATION_CODEC_V1, MODULE_ENGINE_CONTEXT_ABI_V1, MODULE_ENGINE_CONSTRUCTOR_ABI_V1, type ModuleEngineBuildArtifactV1, type ModuleEngineBuildPlanV1, type ModuleEngineContractArtifactV1, type ModuleEngineCompiledCaseV1, type ModuleEngineTestResultV1, type ModuleEngineTestEnvironmentV1 } from "./review-engine-types";
+import { MODULE_ENGINE_SHARED_QUOTE_ENVIRONMENT_V1, MODULE_ENGINE_SHARED_QUOTE_REVIEW_LEDGER_V1,
+  MODULE_ENGINE_SHARED_QUOTE_CONFIGURATION_ABI_V1, MODULE_ENGINE_SHARED_QUOTE_REVIEW_AREAS_V1,
+  MODULE_ENGINE_SHARED_QUOTE_CHECKS_V1, MODULE_ENGINE_SHARED_QUOTE_POLICY_V1, MODULE_ENGINE_SHARED_QUOTE_REVIEW_INFRASTRUCTURE_V1 } from "./review-engine-shared-quote";
 type ModuleDigestV1 = Hex;
 export const ENGINE_REVIEW_COMPILER = Object.freeze({version:"0.8.26+commit.8a97fa7a",binarySha256:"sha256:35ba6661f3bdaed995fc7af14c405502290cf681b3fd062fe8738cfdf6db14ed",imageDigest:"sha256:d8e448a56fc63242f70026718378bd4b00f8c82e78d20eefb199224a4d8e33d8"});
 export const MODULE_REVIEW_LIMITS_V1 = {sourceBytes:4*1024*1024,standardJsonBytes:5242880,creationBytes:49152,runtimeBytes:24576,configBytes:16384,artifactBytes:2*1024*1024};
@@ -52,23 +55,29 @@ function subjectValid(subject: ModuleReviewSubjectV1) {
 }
 function testEnvironmentValid(value: unknown) {
   const environment = exact(value, ["profile", "sourceDigest"]);
-  need([MODULE_ENGINE_QUOTE_ENVIRONMENT_V1, MODULE_ENGINE_QUOTE_NVDA_ENVIRONMENT_V1].some(installed =>
+  need([MODULE_ENGINE_QUOTE_ENVIRONMENT_V1, MODULE_ENGINE_QUOTE_NVDA_ENVIRONMENT_V1, MODULE_ENGINE_SHARED_QUOTE_ENVIRONMENT_V1].some(installed =>
     environment.profile === installed.profile && environment.sourceDigest === installed.sourceDigest), "MODULE_ENGINE_TEST_ENVIRONMENT_INVALID");
 }
 
 export function validateModuleEngineBuildPlanV1(value: unknown, subject: ModuleReviewSubjectV1): ModuleEngineBuildPlanV1 {
   subjectValid(subject);
   const p = exact(value, ["schemaVersion", "submissionId", "requestDigest", "engineComponentId", "configurationCodec", "configurationAbi", "immutableBindings", "operationPermissions", "moneyRights", "coinRights", "testEconomics", "executionGas", "cases", ...(Object.hasOwn(object(value), "testEnvironment") ? ["testEnvironment"] : [])]);
-  if(Object.hasOwn(p,"testEnvironment")) testEnvironmentValid(p.testEnvironment);
+  if (Object.hasOwn(p, "testEnvironment")) testEnvironmentValid(p.testEnvironment);
+  const sharedQuote = p.testEnvironment && object(p.testEnvironment).profile === MODULE_ENGINE_SHARED_QUOTE_ENVIRONMENT_V1.profile;
   need(p.schemaVersion === MODULE_ENGINE_PLAN_SCHEMA_V1 && p.submissionId === subject.submissionId && p.requestDigest === subject.requestDigest, "MODULE_ENGINE_SUBJECT_MISMATCH");
   need(p.configurationCodec === MODULE_ENGINE_CONFIGURATION_CODEC_V1, "MODULE_ENGINE_CODEC_UNSUPPORTED");
   parseModuleEngineConfigurationAbi(p.configurationAbi);
+  if (sharedQuote) need(json(p.configurationAbi) === json(MODULE_ENGINE_SHARED_QUOTE_CONFIGURATION_ABI_V1), "MODULE_ENGINE_SHARED_QUOTE_ABI_MISMATCH");
   need(typeof p.engineComponentId === "string" && IDENTIFIER.test(p.engineComponentId), "MODULE_ENGINE_TARGET_INVALID");
   need(Number.isSafeInteger(p.executionGas) && Number(p.executionGas) >= 50_000 && Number(p.executionGas) <= 3_000_000, "MODULE_ENGINE_GAS_INVALID");
   need(Number.isInteger(p.moneyRights) && Number(p.moneyRights) >= 0 && Number(p.moneyRights) <= 7 && p.coinRights === 0, "MODULE_ENGINE_RIGHTS_INVALID");
   const economics = exact(p.testEconomics, ["platformBps", "buyCreatorBps", "sellCreatorBps"]);
   need(economics.platformBps === 10 || economics.platformBps === 30, "MODULE_ENGINE_TEST_ECONOMICS_INVALID");
   for (const key of ["buyCreatorBps", "sellCreatorBps"]) need(Number.isInteger(economics[key]) && Number(economics[key]) >= 0 && Number(economics[key]) <= 2000 - Number(economics.platformBps), "MODULE_ENGINE_TEST_ECONOMICS_INVALID");
+  if (sharedQuote) {
+    for (const key of ["buyCreatorBps", "sellCreatorBps"]) need(Number(economics[key]) <= 1000 && Number(economics[key]) % 100 === 0, "MODULE_ENGINE_TEST_ECONOMICS_INVALID");
+  }
+  if (sharedQuote) need(economics.platformBps === 30 && p.moneyRights === 3, "MODULE_ENGINE_SHARED_QUOTE_ECONOMICS_INVALID");
   need(Array.isArray(p.operationPermissions) && p.operationPermissions.length > 0 && p.operationPermissions.length <= 32, "MODULE_ENGINE_PERMISSIONS_INVALID");
   const permissions = new Set<string>();
   for (const raw of p.operationPermissions) {
@@ -77,6 +86,13 @@ export function validateModuleEngineBuildPlanV1(value: unknown, subject: ModuleR
     permissions.add(permission.operationId);
     for (const key of ["inputRoles", "outputRoles"]) need(Number.isInteger(permission[key]) && Number(permission[key]) >= 0 && Number(permission[key]) <= 7, "MODULE_ENGINE_PERMISSIONS_INVALID");
     need((Number(permission.inputRoles) & ~Number(p.moneyRights)) === 0 && (permission.authorization === 0 || permission.authorization === 1), "MODULE_ENGINE_PERMISSIONS_INVALID");
+  }
+  if (sharedQuote) {
+    const expected = [
+      { operationId: keccak256(new TextEncoder().encode("spot.buy.exact-input.v1")), inputRoles: 2, outputRoles: 1, authorization: 0 },
+      { operationId: keccak256(new TextEncoder().encode("spot.sell.exact-input.v1")), inputRoles: 1, outputRoles: 2, authorization: 0 },
+    ].sort((a,b) => a.operationId.localeCompare(b.operationId));
+    need(json([...p.operationPermissions].sort((a,b) => String(object(a).operationId).localeCompare(String(object(b).operationId)))) === json(expected), "MODULE_ENGINE_SHARED_QUOTE_PERMISSIONS_INVALID");
   }
   need(Array.isArray(p.immutableBindings) && p.immutableBindings.length <= 128, "MODULE_ENGINE_IMMUTABLE_BINDINGS_INVALID");
   const immutableIds = new Set<string>();
@@ -100,6 +116,7 @@ export function validateModuleEngineBuildPlanV1(value: unknown, subject: ModuleR
     need(typeof c.expectedResourcesHash === "string" && DIGEST.test(c.expectedResourcesHash), "MODULE_ENGINE_RESOURCES_INVALID");
     need(c.expectedDeployment === "success" || c.expectedDeployment === "revert", "MODULE_ENGINE_CASE_INVALID");
     if (c.fixedConfiguration !== undefined) need(typeof c.fixedConfiguration === "boolean", "MODULE_ENGINE_ADMISSION_INVALID");
+    if (sharedQuote) need(c.fixedConfiguration !== true, "MODULE_ENGINE_SHARED_QUOTE_DYNAMIC_CONFIGURATION_REQUIRED");
     if (c.rawConfigBytes !== undefined) { need(c.expectedDeployment === "revert", "MODULE_ENGINE_NEGATIVE_CONFIG_INVALID"); hex(c.rawConfigBytes); }
     need(Array.isArray(c.operations) && c.operations.length <= 16, "MODULE_ENGINE_OPERATIONS_INVALID");
     need(c.expectedDeployment === "success" ? c.operations.length > 0 : c.operations.length === 0, "MODULE_ENGINE_OPERATION_COVERAGE_MISSING");
@@ -136,6 +153,7 @@ export function validateModuleEngineBuildPlanV1(value: unknown, subject: ModuleR
   for (const permission of p.operationPermissions) if (object(permission).authorization === 1)
     need(p.cases.some(raw => (object(raw).operations as unknown[]).some(rawOperation => { const operation = object(rawOperation); return operation.operationId === object(permission).operationId && operation.actor === "user" && operation.expectedOutcome === "revert"; })), "MODULE_ENGINE_AUTHORIZATION_EVIDENCE_MISSING");
   need(positive && new TextEncoder().encode(json(value)).length <= 256 * 1024, "MODULE_ENGINE_PLAN_INVALID");
+  if (sharedQuote) need(new Set(p.cases.filter(c => object(c).expectedDeployment === "success").map(c => object(c).quoteAsset)).size >= 2, "MODULE_ENGINE_SHARED_QUOTE_ASSET_COVERAGE_MISSING");
   return JSON.parse(json(value)) as ModuleEngineBuildPlanV1;
 }
 
@@ -198,8 +216,16 @@ export function materializeModuleEngineRuntimeV1(engine: ModuleEngineContractArt
   }
   return bytesToHex(runtime);
 }
-export function validateModuleEngineTestResultsV1(results: ModuleEngineTestResultV1, requestDigest: ModuleDigestV1, planDigest: ModuleDigestV1, cases: readonly ModuleEngineCompiledCaseV1[]) {
-  exact(results, ["schemaVersion", "requestDigest", "planDigest", "harnessDigest", "execution", "cases", "allRequiredChecksPassed"]);
+export function validateModuleEngineTestResultsV1(results: ModuleEngineTestResultV1, requestDigest: ModuleDigestV1, planDigest: ModuleDigestV1, cases: readonly ModuleEngineCompiledCaseV1[], environment?: ModuleEngineTestEnvironmentV1) {
+  const sharedQuote = environment?.profile === MODULE_ENGINE_SHARED_QUOTE_ENVIRONMENT_V1.profile;
+  exact(results, ["schemaVersion", "requestDigest", "planDigest", "harnessDigest", "execution", "cases", "allRequiredChecksPassed", ...(sharedQuote ? ["sharedQuoteChecks"] : [])]);
+  if (sharedQuote) {
+    need(Array.isArray(results.sharedQuoteChecks) && results.sharedQuoteChecks.length === cases.length, "MODULE_ENGINE_SHARED_QUOTE_EVIDENCE_MISSING");
+    results.sharedQuoteChecks.forEach((checks, i) => {
+      exact(checks, ["id", ...MODULE_ENGINE_SHARED_QUOTE_CHECKS_V1]);
+      need(checks.id === cases[i]!.id && MODULE_ENGINE_SHARED_QUOTE_CHECKS_V1.every(key => checks[key] === (cases[i]!.expectedDeployment === "success" ? true : null)), "MODULE_ENGINE_SHARED_QUOTE_TESTS_FAILED");
+    });
+  }
   need(results.schemaVersion === "programmable.modules.engine-test-results.v1" && results.execution === "isolated-docker-anvil" && results.requestDigest === requestDigest && results.planDigest === planDigest && DIGEST.test(results.harnessDigest), "MODULE_ENGINE_TEST_SUBJECT_MISMATCH");
   need(results.allRequiredChecksPassed === true && Array.isArray(results.cases) && results.cases.length === cases.length, "MODULE_ENGINE_TESTS_FAILED");
   results.cases.forEach((r: ModuleEngineTestResultV1["cases"][number], i: number) => {
@@ -223,7 +249,8 @@ export function parseEngineReviewArtifact(value: unknown, subject: ModuleReviewS
   need(json(parseReviewSubject(raw.subject))===json(subject) && raw.approved===false && raw.registryApproved===false && raw.available===false,"MODULE_ENGINE_BUILD_AUTHORITY_INVALID");
   for(const field of ["packageId","familyId","sourceManifestHash","planDigest","configurationSchemaHash"]) need(typeof raw[field]==="string" && DIGEST.test(raw[field]),"MODULE_ENGINE_BUILD_IDENTITY_INVALID");
   need(typeof raw.rewardWallet==="string" && ADDRESS.test(raw.rewardWallet),"MODULE_ENGINE_REWARD_INVALID");
-  need(json(raw.reviewRequired)===json(MODULE_ENGINE_REVIEW_AREAS_V1),"MODULE_ENGINE_REVIEW_COVERAGE_INVALID");
+  const sharedQuote = raw.testEnvironment !== undefined && object(raw.testEnvironment).profile === MODULE_ENGINE_SHARED_QUOTE_ENVIRONMENT_V1.profile;
+  need(json(raw.reviewRequired)===json(sharedQuote ? [...MODULE_ENGINE_REVIEW_AREAS_V1, ...MODULE_ENGINE_SHARED_QUOTE_REVIEW_AREAS_V1] : MODULE_ENGINE_REVIEW_AREAS_V1),"MODULE_ENGINE_REVIEW_COVERAGE_INVALID");
   need(raw.configurationCodec===MODULE_ENGINE_CONFIGURATION_CODEC_V1,"MODULE_ENGINE_CODEC_UNSUPPORTED"); parseModuleEngineConfigurationAbi(raw.configurationAbi);
   const artifact=raw as unknown as ModuleEngineBuildArtifactV1;
   if(Object.hasOwn(raw,"testEnvironment")) testEnvironmentValid(raw.testEnvironment);
@@ -240,12 +267,26 @@ export function parseEngineReviewArtifact(value: unknown, subject: ModuleReviewS
     need(json(engine)===json(rebuilt) && artifact.cases.length===plan.cases.length,"MODULE_ENGINE_BUILD_CONTRACT_MISMATCH");
   }
   for(const [i,c] of artifact.cases.entries()) {
-    const context={host:MODULE_ENGINE_REVIEW_HOST_V1,launchId:moduleReviewDigestV1("programmable.modules.engine-review-launch.v1",{requestDigest:subject.requestDigest,caseId:c.id}),token:c.token,creator:MODULE_ENGINE_REVIEW_ACTOR_V1,quoteAsset:c.quoteAsset,feeCollector:MODULE_ENGINE_REVIEW_HOST_V1};
+    if (sharedQuote && c.expectedDeployment === "success") {
+      const binding = exact(c.sharedQuoteConfiguration, ["sourceConfigBytes", "sourceConfigHash"]);
+      hex(binding.sourceConfigBytes, 256, 256);
+      need(keccak256(binding.sourceConfigBytes) === binding.sourceConfigHash, "MODULE_ENGINE_SHARED_QUOTE_SOURCE_CONFIGURATION_MISMATCH");
+      const [schemaId, manager, managerCodeHash, hook, quote, tick, validUntil, priceHash] = decodeAbiParameters(MODULE_ENGINE_SHARED_QUOTE_CONFIGURATION_ABI_V1, binding.sourceConfigBytes);
+      const timestamp = BigInt(c.operations[0]?.timestamp ?? 1800000000);
+      need(schemaId === MODULE_ENGINE_SHARED_QUOTE_POLICY_V1.configurationSchemaId && ADDRESS.test(manager.toLowerCase()) && managerCodeHash !== `0x${"0".repeat(64)}`
+        && ADDRESS.test(hook.toLowerCase()) && quote.toLowerCase() === c.quoteAsset && tick % 200 === 0 && tick > -887200 && tick < 887200
+        && validUntil >= timestamp && validUntil <= timestamp + 180n && priceHash !== `0x${"0".repeat(64)}`, "MODULE_ENGINE_SHARED_QUOTE_CONFIGURATION_INVALID");
+      const infrastructure = MODULE_ENGINE_SHARED_QUOTE_REVIEW_INFRASTRUCTURE_V1;
+      const expected = encodeAbiParameters(MODULE_ENGINE_SHARED_QUOTE_CONFIGURATION_ABI_V1, [schemaId, infrastructure.poolManager, infrastructure.poolManagerCodeHash,
+        infrastructure.sharedHook, quote, tick, validUntil, priceHash]);
+      need(c.configBytes === expected, "MODULE_ENGINE_SHARED_QUOTE_SOURCE_CONFIGURATION_MISMATCH");
+    } else need(!Object.hasOwn(c, "sharedQuoteConfiguration"), "MODULE_ENGINE_SHARED_QUOTE_SOURCE_CONFIGURATION_UNEXPECTED");
+    const context={host:MODULE_ENGINE_REVIEW_HOST_V1,launchId:moduleReviewDigestV1("programmable.modules.engine-review-launch.v1",{requestDigest:subject.requestDigest,caseId:c.id}),token:c.token,creator:MODULE_ENGINE_REVIEW_ACTOR_V1,quoteAsset:c.quoteAsset,feeCollector:sharedQuote ? MODULE_ENGINE_SHARED_QUOTE_REVIEW_LEDGER_V1 : MODULE_ENGINE_REVIEW_HOST_V1};
     hex(c.configBytes); const args=encodeAbiParameters(MODULE_ENGINE_CONSTRUCTOR_ABI_V1,[context,c.configBytes]);
     need(json(c.context)===json(context) && c.contextHash===keccak256(encodeAbiParameters([{type:"tuple",components:MODULE_ENGINE_CONTEXT_ABI_V1}],[context])) && c.configHash===keccak256(c.configBytes) && c.constructorArgs===args && c.constructorHash===keccak256(args) && c.initCodeHash===keccak256(`${engine.creationBytecode}${args.slice(2)}`) && c.runtimeBytecode===materializeModuleEngineRuntimeV1(engine,args) && c.runtimeCodeHash===keccak256(c.runtimeBytecode),"MODULE_ENGINE_INSTANCE_BINDING_INVALID");
     if(plan) for(const [key,value] of Object.entries(plan.cases[i])) need(json(object(c)[key])===json(value),"MODULE_ENGINE_BUILD_CASE_MISMATCH");
   }
-  validateModuleEngineTestResultsV1(artifact.tests,subject.requestDigest,artifact.planDigest,artifact.cases);
+  validateModuleEngineTestResultsV1(artifact.tests,subject.requestDigest,artifact.planDigest,artifact.cases,artifact.testEnvironment);
   need(new TextEncoder().encode(json(artifact)).length<=MODULE_REVIEW_LIMITS_V1.artifactBytes,"MODULE_ENGINE_ARTIFACT_TOO_LARGE");
   return artifact;
 }

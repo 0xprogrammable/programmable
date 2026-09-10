@@ -36,15 +36,18 @@ export function readIndexedWebsiteSourceExpectations(root = process.cwd()) {
     ...json("config/module-mode/historical-releases.json").releases.map(({ release }) => release),
     ...json("config/module-engine/historical-releases.json").releases.map(({ release }) => release),
   ].map((release) => {
-    const sourceAddress = release.sourceVersion === "module-engine-v1"
+    const engine = ["module-engine-v1", "module-engine-any-quote-v1"].includes(release.sourceVersion);
+    const sourceAddress = engine
       ? release.contracts?.host?.address : release.contracts?.launcher?.address;
     if (release.chainId !== 4663 ||
-      !["module-native-v1", "module-native-v2", "module-engine-v1"].includes(release.sourceVersion) ||
+      !["module-native-v1", "module-native-v2", "module-engine-v1", "module-engine-any-quote-v1"].includes(release.sourceVersion) ||
       !ADDRESS.test(sourceAddress ?? "") || !HASH.test(release.releaseDigest ?? "") ||
       !/^[1-9][0-9]{0,19}$/u.test(release.startBlock ?? "")) {
       throw new Error("indexed website Robinhood release identity is invalid");
     }
-    return Object.freeze({ source: release.sourceVersion, sourceAddress: sourceAddress.toLowerCase(),
+    // The saved index uses one Engine transport. Keep the configured authentication
+    // version distinct; the immutable release digest still binds that exact version.
+    return Object.freeze({ source: engine ? "module-engine-v1" : release.sourceVersion, sourceVersion: release.sourceVersion, sourceAddress: sourceAddress.toLowerCase(),
       releaseDigest: release.releaseDigest.toLowerCase(), startBlock: release.startBlock });
   });
   const robinhood = json("contracts/deployments/robinhood-custom-launch-v1.json");

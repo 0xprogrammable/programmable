@@ -10,7 +10,8 @@ import { a, h } from "./fixtures/module-mode-evidence";
 import { WEBSITE_ADMIN_WALLET } from "../lib/admin-access";
 import { MODULE_MODE_ECONOMICS_POLICY_V2, MODULE_MODE_FINALITY_POLICY } from "../lib/module-mode/release";
 import { MODULE_ENGINE_CONTRACTS, MODULE_ENGINE_SOURCE_ID, computeModuleEngineReleaseDigest, type ModuleEngineReleaseIdentity } from "../lib/module-engine/catalog";
-import { ENGINE_REVISION, moduleEngineHostAbi, moduleEngineReadAbi } from "../lib/module-engine/abi";
+import { ENGINE_REVISION, moduleEngineHostAbi, moduleEngineReadAbi, moduleEngineAnyQuoteHostAbi, moduleEngineAnyQuoteHookAbi, moduleEngineAnyQuoteLedgerAbi } from "../lib/module-engine/abi";
+import { MODULE_ENGINE_ANY_QUOTE_SOURCE_ID, MODULE_ENGINE_ANY_QUOTE_PROFILE_ID, MODULE_ENGINE_ANY_QUOTE_ECONOMICS_POLICY_ID } from "../lib/module-engine/profile";
 import { parseReviewJob, parseReviewPlan, reviewDigest, type ReviewJob, type ReviewAttempt } from "../lib/module-mode/review-contract";
 import type { ModuleEngineBuildArtifactV1, ModuleEngineBuildPlanV1 } from "../lib/module-mode/review-engine-types";
 import { MODULE_ENGINE_CONTEXT_ABI_V1, MODULE_ENGINE_CONSTRUCTOR_ABI_V1 } from "../lib/module-mode/review-engine-types";
@@ -127,6 +128,42 @@ function providers(f: Awaited<ReturnType<typeof fixture>>, plan: EnginePublicati
 }
 
 describe("Engine publication through the existing authenticated operator", () => {
+  it("reads all nine Any Quote runtime pins and the shared hook/ledger/guard source links before publication export", async () => {
+    const f = await fixture(), runtime = "0x60016002" as Hex;
+    const fields = { ...f.release, sourceVersion: "module-engine-any-quote-v1" as const, engineProfile: "robinhood-any-quote.shared-hook.v1" as const,
+      economicsPolicyId: MODULE_ENGINE_ANY_QUOTE_ECONOMICS_POLICY_ID, contracts: { ...f.release.contracts,
+        sharedHook: { address: a(501), runtimeCodeHash: keccak256(runtime) }, universalRouter: { address: a(502), runtimeCodeHash: keccak256(runtime) },
+        nativeRouteGuard: { address: a(503), runtimeCodeHash: keccak256(runtime) } } };
+    const release = { ...fields, releaseDigest: computeModuleEngineReleaseDigest(fields) }, pins = release.contracts;
+    for (const role of ["sharedHook", "universalRouter", "nativeRouteGuard"] as const) f.codes.set(pins[role].address, runtime);
+    const block = { number: "0x100", hash: h(600), timestamp: `0x${Math.floor(Date.now() / 1000).toString(16)}` };
+    let bad = "";
+    const rpc = async (method: string, params: unknown[]) => {
+      if (method === "eth_chainId") return "0x1237";
+      if (method === "eth_getBlockByNumber") return block;
+      if (method === "eth_getCode") return bad === String(params[0]) ? "0x6000" : f.codes.get(String(params[0]));
+      const call = params[0] as { to: Address; data: Hex };
+      const abi = call.to === pins.host.address ? moduleEngineAnyQuoteHostAbi : call.to === pins.sharedHook.address ? moduleEngineAnyQuoteHookAbi
+        : call.to === pins.ledger.address ? moduleEngineAnyQuoteLedgerAbi : moduleEngineReadAbi;
+      const decoded = decodeFunctionData({ abi, data: call.data }), name = decoded.functionName;
+      const links: Record<string, string> = call.to === pins.host.address ? {
+        SOURCE_VERSION: MODULE_ENGINE_ANY_QUOTE_SOURCE_ID, registry: pins.registry.address, tokenFactory: pins.tokenFactory.address, launchPolicy: pins.launchPolicy.address,
+        ledger: pins.ledger.address, sharedHook: pins.sharedHook.address, nativeRouteGuard: pins.nativeRouteGuard.address,
+        NATIVE_ROUTE_GUARD_CODE_HASH: pins.nativeRouteGuard.runtimeCodeHash, quotePoolManager: pins.poolManager.address, quotePoolManagerCodeHash: pins.poolManager.runtimeCodeHash,
+        UNIVERSAL_ROUTER: pins.universalRouter.address, UNIVERSAL_ROUTER_CODE_HASH: pins.universalRouter.runtimeCodeHash, quoteFeeProfileId: MODULE_ENGINE_ANY_QUOTE_PROFILE_ID,
+      } : call.to === pins.sharedHook.address ? { host: pins.host.address, ledger: pins.ledger.address, poolManager: pins.poolManager.address }
+        : call.to === pins.ledger.address ? { host: pins.host.address, hook: pins.sharedHook.address, poolManager: pins.poolManager.address, ECONOMICS_POLICY_ID: release.economicsPolicyId }
+          : { owner: reviewer };
+      const result = bad === `${call.to}:${name}` ? name === "SOURCE_VERSION" ? MODULE_ENGINE_SOURCE_ID : pins.host.address : links[name];
+      return encodeFunctionResult({ abi, functionName: name, result: result as never });
+    };
+    const p = [0, 1].map(i => ({ providerId: `any-quote-${i}`, trustDomain: `any-quote-${i}.invalid`, endpointCommitment: `sha256:${h(i + 90).slice(2)}`, rpc })) as PublicationProvider[];
+    expect(await readEnginePublicationOwner(release, p)).toBe(reviewer);
+    for (const mutation of [pins.sharedHook.address, pins.universalRouter.address, pins.nativeRouteGuard.address,
+      `${pins.host.address}:SOURCE_VERSION`, `${pins.host.address}:nativeRouteGuard`, `${pins.ledger.address}:hook`]) {
+      bad = mutation; await expect(readEnginePublicationOwner(release, p)).rejects.toThrow();
+    }
+  });
   it("reads all eight scoped source aliases through the authenticated reader and canonical accepted publication", async () => {
     const f = await fixture(true), input = moduleEngineStandardInputV1(f.source, f.subject, f.plan);
     for (const prefix of scopedPrefixes) {

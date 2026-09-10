@@ -228,14 +228,17 @@ test('Quote WETH bindings traverse the shared RPC transport for both slots and p
       && call.params[1] === f.blockNumber).length, 2, 'Both providers verify the bound implementation runtime');
   }
 });
-test('Shared RPC transport blocks write, signing, debug and impersonation methods before transport', async () => {
+test('Shared RPC transport blocks writes, signing, unbounded traces and impersonation before transport', async () => {
   let requests = 0;
   const rpc = rpcClient('https://provider.invalid/rpc', 'fixture', async () => { requests++; throw new Error('Unexpected transport'); });
   for (const method of ['eth_sendTransaction', 'eth_sendRawTransaction', 'eth_sign', 'eth_signTransaction', 'personal_sign',
-    'eth_signTypedData_v4', 'wallet_sendCalls', 'debug_traceTransaction', 'debug_traceCall', 'anvil_impersonateAccount',
+    'eth_signTypedData_v4', 'wallet_sendCalls', 'debug_traceTransaction', 'anvil_impersonateAccount',
     'hardhat_impersonateAccount', 'anvil_setStorageAt', 'hardhat_setStorageAt', 'evm_setAutomine']) {
     await assert.rejects(rpc(method, []), /RPC method is outside the read-only inventory/);
   }
+  // Any Quote permits only a fully bound callTracer simulation; an unbound call
+  // still fails before transport, under the stricter parameter validator.
+  await assert.rejects(rpc('debug_traceCall', []), /Trace requires a canonical block hash and no overrides/);
   assert.equal(requests, 0);
 });
 test('Both stages use one bound block for real dependency links, CREATE2 simulation and gas estimates', async () => {

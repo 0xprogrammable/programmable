@@ -62,3 +62,23 @@ export const moduleEngineResourcesAbi = parseAbi([
     "event Initialize(bytes32 indexed id,address indexed currency0,address indexed currency1,uint24 fee,int24 tickSpacing,address hooks,uint160 sqrtPriceX96,int24 tick)",
 ]);
 export const MODULE_ENGINE_INDEX_ABI_V1 = [...moduleEngineHostAbi, ...moduleEngineReadAbi, ...moduleEngineResourcesAbi];
+export const anyQuoteConfigurationParameters = parseAbiParameters("(bytes32 schemaId,address poolManager,bytes32 poolManagerCodeHash,address sharedHook,address quoteAsset,int24 initialTick,uint64 validUntil,bytes32 priceEvidenceHash) configuration");
+/** Separate source profile; these names never reinterpret the existing native ledger reads. */
+export const MODULE_ENGINE_ANY_QUOTE_INDEX_ABI_V1 = [...MODULE_ENGINE_INDEX_ABI_V1, ...parseAbi([
+    "function host() view returns (address)", "function sharedHook() view returns (address)",
+    "function nativeRouteGuard() view returns (address)", "function NATIVE_ROUTE_GUARD_CODE_HASH() view returns (bytes32)",
+    "function quotePoolManager() view returns (address)", "function quotePoolManagerCodeHash() view returns (bytes32)",
+    "function UNIVERSAL_ROUTER() view returns (address)", "function UNIVERSAL_ROUTER_CODE_HASH() view returns (bytes32)",
+    "function quoteFeeProfileId() view returns (bytes32)",
+    "function quoteAsset(bytes32 launchId) view returns (address)",
+    "function poolIdOf(bytes32 launchId) view returns (bytes32)", "function poolIdOfLaunch(bytes32 launchId) view returns (bytes32)",
+    "function poolConfig(bytes32 poolId) view returns ((bytes32 launchId,bytes32 revisionId,bytes32 familyId,bytes32 configurationHash,address token,address quoteAsset,address initializer,int24 initialTick,uint16 buyCreatorFeeBps,uint16 sellCreatorFeeBps))",
+    "function initialTick() view returns (int24)", "function tickLower() view returns (int24)", "function tickUpper() view returns (int24)",
+    "function lockedLiquidity() view returns (uint128)",
+    "event SharedQuotePoolBound(bytes32 indexed poolId,bytes32 indexed launchId,address indexed token,address quoteAsset,address engine,bytes32 revisionId,bytes32 familyId,bytes32 configurationHash,int24 initialTick,uint16 buyCreatorFeeBps,uint16 sellCreatorFeeBps)",
+    "event QuotePoolSwap(bytes32 indexed poolId,bytes32 indexed launchId,address indexed swapSender,bool buy,bool exactInput,uint256 grossQuote,uint256 platformQuote,uint256 creatorQuote,int128 coreAmount0,int128 coreAmount1)",
+    "event QuoteLaunchRegistered(bytes32 indexed launchId,address indexed asset,bytes32 configurationHash,address[] creatorWallets,uint16[] creatorSharesBps)",
+    "event QuoteFeesAccrued(bytes32 indexed launchId,address indexed asset,uint256 platform,uint256 creator,uint256 credited)",
+    "event QuoteRewardCredited(bytes32 indexed launchId,address indexed asset,address indexed beneficiary,uint256 amount)",
+    "event QuoteFeesClaimed(address indexed asset,address indexed beneficiary,address indexed recipient,uint256 amount)",
+])];

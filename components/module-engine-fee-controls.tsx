@@ -65,23 +65,32 @@ function RecipientForms({ snapshot, disabled, onPrepare }: { snapshot: ModuleEng
           authority={snapshot.actor === snapshot.treasury ? "Your connected wallet is the ledger treasury." : "Your connected wallet is the ledger reward administrator."} onPrepare={recipients => onPrepare({ kind: "replace-creators", recipients })} />
       </details> : null}
     </div>
-    <div><h3>Author fee wallets</h3><p className={styles.help}>Only the registered author can change the fee wallet of a family. The change applies across all coins using that family in this registry. It does not transfer authorship or existing claims.</p>
+    {snapshot.quoteFees ? <div><h3>Module fee recipient</h3>
+      <dl className={styles.reviewRows}><div><dt>Current wallet · full 0.3%</dt><dd>{snapshot.treasury}{snapshot.treasury === snapshot.actor ? " · Your wallet" : ""}</dd></div></dl>
+      <p className={styles.help}>The entire module fee accrues in each pool pair token. Changing this wallet affects future fees across this module version. Existing claims stay with the wallets that earned them. The 0.3% rate stays fixed.</p>
+      {admin ? <details className={engineStyles.details}><summary>Change module fee wallet</summary>
+        <WalletChangeForm labels={["New module fee wallet"]} initial={[snapshot.treasury]} disabled={disabled}
+          authority={snapshot.actor === snapshot.treasury ? "Your connected wallet is the current module fee recipient." : "Your connected wallet is the ledger reward administrator."}
+          onPrepare={wallets => onPrepare({ kind: "rotate-platform", recipient: wallets[0] })} />
+      </details> : null}
+    </div> : null}
+    {snapshot.authors.length > 0 ? <div><h3>Author fee wallets</h3><p className={styles.help}>Only the registered author can change the fee wallet of a family. The change applies across all coins using that family in this registry. It does not transfer authorship or existing claims.</p>
       {snapshot.authors.map((author, index) => <div key={author.familyId}><dl className={styles.reviewRows}><div><dt>Author {index + 1}</dt><dd>{author.author}</dd></div><div><dt>Current fee wallet</dt><dd>{author.wallet}</dd></div></dl>
         <details className={engineStyles.details}><summary>{author.author === snapshot.actor ? "Change my author fee wallet" : "Author family details"}{snapshot.authors.length > 1 ? " · family " + (index + 1) : ""}</summary>
           <p className={styles.help}>Family <code>{author.familyId}</code></p>
           {author.author === snapshot.actor ? <WalletChangeForm labels={["New author fee wallet" + (snapshot.authors.length > 1 ? " · family " + (index + 1) : "")]} initial={[author.wallet]} disabled={disabled} authority="Your connected wallet is the registered author of this family." onPrepare={wallets => onPrepare({ kind: "rotate-author", familyId: author.familyId, recipient: wallets[0] })} /> : <p className={styles.help}>The registered author must connect to change this fee wallet.</p>}
         </details>
       </div>)}
-    </div>
+    </div> : null}
   </div>;
 }
 
 export function ModuleEngineFeeChangeReview({ prepared }: { prepared: PreparedModuleEngineFeeChange }) {
   const changes = prepared.kind === "replace-creators" ? prepared.previousWallets.map((previousWallet, index) => ({ previousWallet, recipient: prepared.recipients[index], label: "Recipient " + (index + 1), share: prepared.sharesBps[index] }))
-    : [{ previousWallet: prepared.previousWallet, recipient: prepared.recipient, label: prepared.kind === "rotate-author" ? "Author fee wallet" : "Recipient " + (prepared.index + 1), share: prepared.kind === "rotate-creator" ? prepared.shareBps : null }];
+    : [{ previousWallet: prepared.previousWallet, recipient: prepared.recipient, label: prepared.kind === "rotate-author" ? "Author fee wallet" : prepared.kind === "rotate-platform" ? "Module fee wallet" : "Recipient " + (prepared.index + 1), share: prepared.kind === "rotate-creator" ? prepared.shareBps : null }];
   return <div className={engineStyles.launchSummary}>
-    <p className={styles.help}>{prepared.kind === "rotate-author" ? "This changes future author fees for the whole family across all coins using this registry. Existing claims and authorship stay unchanged." : "This changes future creator fees for this coin. Fixed shares, existing claims and author fee wallets stay unchanged."}</p>
-    <dl className={styles.reviewRows}><div><dt>Your authority</dt><dd>{prepared.kind === "rotate-author" ? "Registered author" : prepared.kind === "rotate-creator" ? "Current recipient of this slot" : prepared.authority === "treasury" ? "Ledger treasury" : "Ledger reward administrator"}</dd></div>
+    <p className={styles.help}>{prepared.kind === "rotate-author" ? "This changes future author fees for the whole family across all coins using this registry. Existing claims and authorship stay unchanged." : prepared.kind === "rotate-platform" ? "This changes the recipient of future module fees across this module version. The full 0.3% fee still accrues in each pool pair token. Existing claims stay with the wallets that earned them." : "This changes future creator fees for this coin. Fixed shares, existing claims and author fee wallets stay unchanged."}</p>
+    <dl className={styles.reviewRows}><div><dt>Your authority</dt><dd>{prepared.kind === "rotate-author" ? "Registered author" : prepared.kind === "rotate-creator" ? "Current recipient of this slot" : prepared.authority === "treasury" ? prepared.kind === "rotate-platform" ? "Current module fee recipient" : "Ledger treasury" : "Ledger reward administrator"}</dd></div>
       {changes.map(item => <div key={item.label}><dt>{item.label}{item.share !== null ? " · " + formatUnits(BigInt(item.share), 2) + "%" : ""}</dt><dd><div>Current: {item.previousWallet}</div><div>New: {item.recipient}</div></dd></div>)}
       {prepared.kind === "rotate-author" ? <div><dt>Family</dt><dd>{prepared.familyId}</dd></div> : null}
     </dl>
@@ -95,7 +104,7 @@ export function ModuleEngineFeeChangeReceipt({ result }: { result: ModuleEngineR
   return <section className={styles.formPanel} aria-label="Confirmed fee recipients"><h2>Confirmed fee recipients</h2>
     <p className={styles.help}>The transaction was mined. These are its verified recipient changes. Finality is still pending.</p>
     {result.feeChange.previewChanged ? <p role="status" className={engineStyles.notice}>A permitted wallet change was mined after your preview. The transaction replaced the actual recipients shown below.</p> : null}
-    <dl className={styles.reviewRows}>{result.feeChange.changes.map((change, index) => <div key={index}><dt>{change.familyId ? "Author family" : "Recipient " + ((change.index ?? index) + 1)}{change.familyId ? <div>{change.familyId}</div> : null}</dt><dd><div>Previous: {change.previousWallet}</div><div>New: {change.recipient}</div></dd></div>)}</dl>
+    <dl className={styles.reviewRows}>{result.feeChange.changes.map((change, index) => <div key={index}><dt>{change.familyId ? "Author family" : result.kind === "rotate-platform" ? "Module fee recipient" : "Recipient " + ((change.index ?? index) + 1)}{change.familyId ? <div>{change.familyId}</div> : null}</dt><dd><div>Previous: {change.previousWallet}</div><div>New: {change.recipient}</div></dd></div>)}</dl>
     {result.feeChange.subsequentlyChanged ? <p role="status" className={engineStyles.notice}>A later change is already visible in the same block. Refresh fee recipients to see the current wallets.</p> : null}
   </section>;
 }

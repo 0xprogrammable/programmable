@@ -26,6 +26,7 @@ export function feeFixture() {
       receipt.logs.push({ address: prepared.transaction.to, blockHash: receipt.blockHash, blockNumber: receipt.blockNumber, transactionHash: receipt.transactionHash, transactionIndex: 0, removed: false, logIndex: receipt.logs.length,
         topics: encodeEventTopics({ abi, eventName, args } as never) as TransactionReceipt["logs"][number]["topics"], data: encodeAbiParameters(event.inputs.filter(item => !item.indexed), event.inputs.filter(item => !item.indexed).map(item => args[item.name!])) });
     }
+    if (prepared.kind === "rotate-platform") throw new Error("Use the Any Quote ledger fixture for platform rotation.");
     if (prepared.kind === "rotate-author") {
       log(moduleEngineAuthorWalletAbi, "AuthorWalletChanged", { familyId: prepared.familyId, previousWallet: state.authorWallet, wallet: prepared.recipient }); state.authorWallet = prepared.recipient;
     } else if (prepared.kind === "rotate-creator") {

@@ -1,7 +1,8 @@
-import { decodeEventLog, decodeFunctionResult, encodeFunctionData, type Address, type Hex } from "viem";
+import { decodeEventLog, decodeFunctionResult, encodeFunctionData, type Abi, type Address, type Hex } from "viem";
 import { moduleAddress, moduleBytes, moduleHash } from "../../lib/module-mode/release";
-import { moduleEngineHostAbi, moduleEngineReadAbi } from "../../lib/module-engine/abi";
-import { MODULE_ENGINE_CONTRACTS, MODULE_ENGINE_SOURCE_ID, type ModuleEngineReleaseIdentity } from "../../lib/module-engine/catalog";
+import { moduleEngineHostAbi, moduleEngineReadAbi, moduleEngineAnyQuoteHostAbi, moduleEngineAnyQuoteHookAbi, moduleEngineAnyQuoteLedgerAbi } from "../../lib/module-engine/abi";
+import { type ModuleEngineReleaseIdentity } from "../../lib/module-engine/catalog";
+import { isModuleEngineAnyQuoteRelease, moduleEngineContractRoles, moduleEngineSourceId, MODULE_ENGINE_ANY_QUOTE_PROFILE_ID } from "../../lib/module-engine/profile";
 import { assertEnginePublicationPlan, type EnginePublicationPlan } from "./core-engine";
 import { acceptedDecision, need, same, type AuthenticatedReview } from "./review";
 import { code, closing, equalRead, quantity, readPublicationReceipt, record, snapshot, type PublicationProvider } from "./rpc";
@@ -16,14 +17,36 @@ async function reader(providers: PublicationProvider[], address: Address, name: 
 }
 async function releaseBindings(release: ModuleEngineReleaseIdentity, providers: PublicationProvider[], block: Hex) {
   need(quantity(block)>=BigInt(release.startBlock),"Engine release start block not reached");
-  for(const name of MODULE_ENGINE_CONTRACTS) await code(providers,release.contracts[name].address,block,release.contracts[name].runtimeCodeHash);
+  const contracts: Partial<Record<ReturnType<typeof moduleEngineContractRoles>[number], { address: Address; runtimeCodeHash: Hex }>> = release.contracts;
+  for(const name of moduleEngineContractRoles(release)) {
+    const pin = contracts[name]; need(pin, `Engine ${name} runtime pin missing`);
+    await code(providers,pin.address,block,pin.runtimeCodeHash);
+  }
   const host=release.contracts.host.address,ledger=release.contracts.ledger.address;
-  need(await hostGetter(providers,host,"SOURCE_VERSION",[],block)===MODULE_ENGINE_SOURCE_ID,"Engine source version differs");
+  need(await hostGetter(providers,host,"SOURCE_VERSION",[],block)===moduleEngineSourceId(release),"Engine source version differs");
   for(const name of ["registry","ledger","tokenFactory","launchPolicy"] as const)
     need(moduleAddress(await hostGetter(providers,host,name,[],block),`engine.${name}`)===release.contracts[name].address,"Engine contract relationship differs");
-  for(const [name,target] of [["hook",host],["registry",release.contracts.registry.address],["poolManager",release.contracts.poolManager.address]] as const)
-    need(moduleAddress(await reader(providers,ledger,name,[],block),`ledger.${name}`)===target,"Engine ledger relationship differs");
-  need(await reader(providers,ledger,"ECONOMICS_POLICY_ID",[],block)===release.economicsPolicyId,"Engine economics policy differs");
+  if (isModuleEngineAnyQuoteRelease(release)) {
+    const pins = release.contracts;
+    const read = async (target: Address, abi: Abi, functionName: string) => {
+      const data = encodeFunctionData({ abi, functionName });
+      return decodeFunctionResult({ abi, functionName, data: moduleBytes(await equalRead(providers, "eth_call", [{ to: target, data }, block]), "anyQuote.getter", 4096) });
+    };
+    for (const [name, expected] of [["sharedHook", pins.sharedHook.address], ["nativeRouteGuard", pins.nativeRouteGuard.address],
+      ["NATIVE_ROUTE_GUARD_CODE_HASH", pins.nativeRouteGuard.runtimeCodeHash], ["quotePoolManager", pins.poolManager.address],
+      ["quotePoolManagerCodeHash", pins.poolManager.runtimeCodeHash], ["UNIVERSAL_ROUTER", pins.universalRouter.address],
+      ["UNIVERSAL_ROUTER_CODE_HASH", pins.universalRouter.runtimeCodeHash], ["quoteFeeProfileId", MODULE_ENGINE_ANY_QUOTE_PROFILE_ID]])
+      need(String(await read(host, moduleEngineAnyQuoteHostAbi, name)).toLowerCase() === expected, `Any Quote Host ${name} differs`);
+    for (const [name, target] of [["host", host], ["ledger", ledger], ["poolManager", pins.poolManager.address]])
+      need(String(await read(pins.sharedHook.address, moduleEngineAnyQuoteHookAbi, name)).toLowerCase() === target, `Any Quote hook ${name} differs`);
+    for (const [name, target] of [["host", host], ["hook", pins.sharedHook.address], ["poolManager", pins.poolManager.address]])
+      need(String(await read(ledger, moduleEngineAnyQuoteLedgerAbi, name)).toLowerCase() === target, `Any Quote ledger ${name} differs`);
+    need(await read(ledger, moduleEngineAnyQuoteLedgerAbi, "ECONOMICS_POLICY_ID") === release.economicsPolicyId, "Any Quote economics policy differs");
+  } else {
+    for(const [name,target] of [["hook",host],["registry",release.contracts.registry.address],["poolManager",release.contracts.poolManager.address]] as const)
+      need(moduleAddress(await reader(providers,ledger,name,[],block),`ledger.${name}`)===target,"Engine ledger relationship differs");
+    need(await reader(providers,ledger,"ECONOMICS_POLICY_ID",[],block)===release.economicsPolicyId,"Engine economics policy differs");
+  }
   return moduleAddress(await reader(providers,release.contracts.registry.address,"owner",[],block),"engine.registry.owner");
 }
 export async function readEnginePublicationOwner(release: ModuleEngineReleaseIdentity, providers: PublicationProvider[]) {
