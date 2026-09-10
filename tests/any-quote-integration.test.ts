@@ -216,16 +216,19 @@ describe("Any Quote source identity lifecycle preparation", () => {
     await expect(verifyAnyQuoteLifecycleReceiptV1({ ...f, identity: f.identity, preparation, receipt })).resolves.toMatchObject({ kind: "swap", outputAmount: "2000", finalized: false });
     await expect(verifyAnyQuoteLifecycleReceiptV1({ ...f, identity: f.identity, preparation, receipt: { ...receipt, logs: receipt.logs.slice(0, 1) } })).rejects.toThrow("below the signed minimum");
   });
-  it.each(["valid", "missing-transfer", "duplicate-transfer", "wrong-source", "wrong-amount", "unchanged-total"])("binds claim receipts to actual PoolManager transfer and ledger total: %s", async mutation => {
+  it.each(["valid", "irrelevant-zero-transfer", "irrelevant-positive-transfer", "missing-transfer", "duplicate-transfer", "wrong-source", "wrong-recipient", "wrong-amount", "zero-payment", "unchanged-total"])("binds claim receipts to actual PoolManager transfer and ledger total: %s", async mutation => {
     const f = sharedFixture(); lifecycleHistory(f);
     const preparation = await prepareAnyQuoteLifecycleClaimV1({ ...f, identity: f.identity, account: ACCOUNT, token: TOKEN, recipient: ACCOUNT });
     if ("kind" in preparation) throw new Error("Unexpected funding");
     const read = vi.mocked(f.client.readContract).getMockImplementation()!;
     vi.mocked(f.client.readContract).mockImplementation(async value => value.functionName === "claimedBy" && value.blockNumber === 101n ? mutation === "unchanged-total" ? 4n : 13n : read(value));
-    const transfer = lifecycleLog(QUOTE, erc20Abi, "Transfer", { from: mutation === "wrong-source" ? f.identity.contracts.ledger.address : f.identity.contracts.poolManager.address, to: ACCOUNT, value: mutation === "wrong-amount" ? 8n : 9n });
-    const logs = [lifecycleLog(f.identity.contracts.ledger.address, moduleEngineAnyQuoteLedgerAbi, "QuoteFeesClaimed", { asset: QUOTE, beneficiary: ACCOUNT, recipient: ACCOUNT, amount: 9n }), ...(mutation === "missing-transfer" ? [] : [transfer]), ...(mutation === "duplicate-transfer" ? [transfer] : [])];
+    const transfer = lifecycleLog(QUOTE, erc20Abi, "Transfer", { from: mutation === "wrong-source" ? f.identity.contracts.ledger.address : f.identity.contracts.poolManager.address,
+      to: mutation === "wrong-recipient" ? addr(777) : ACCOUNT, value: mutation === "wrong-amount" ? 8n : mutation === "zero-payment" ? 0n : 9n });
+    const irrelevant = mutation === "irrelevant-zero-transfer" || mutation === "irrelevant-positive-transfer"
+      ? [lifecycleLog(QUOTE, erc20Abi, "Transfer", { from: addr(777), to: addr(778), value: mutation === "irrelevant-zero-transfer" ? 0n : 1n })] : [];
+    const logs = [lifecycleLog(f.identity.contracts.ledger.address, moduleEngineAnyQuoteLedgerAbi, "QuoteFeesClaimed", { asset: QUOTE, beneficiary: ACCOUNT, recipient: ACCOUNT, amount: 9n }), ...(mutation === "missing-transfer" ? [] : [transfer]), ...(mutation === "duplicate-transfer" ? [transfer] : []), ...irrelevant];
     const receipt = lifecycleReceipt(f, preparation, logs), result = verifyAnyQuoteLifecycleReceiptV1({ ...f, identity: f.identity, preparation: JSON.parse(JSON.stringify(preparation)), receipt });
-    if (mutation === "valid") {
+    if (mutation === "valid" || mutation === "irrelevant-zero-transfer") {
       await expect(result).resolves.toMatchObject({ kind: "claim", outputAmount: "9", blockNumber: "101" });
       await expect(verifyModuleEngineClaimReceipt({ ...f, launch: f.launch, account: ACCOUNT, recipient: ACCOUNT, minimumAmount: 9n, claimedBefore: 4n, receipt })).resolves.toMatchObject({ outputAmount: 9n });
       const clock = vi.spyOn(Date, "now").mockReturnValue(Number(BigInt(preparation.prepared.expiresAt) + 3_600n) * 1000);

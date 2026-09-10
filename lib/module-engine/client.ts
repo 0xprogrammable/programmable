@@ -765,7 +765,8 @@ async function verifyModuleEngineClaimReceiptAt(input: Omit<Parameters<typeof ve
   if (quoteFees) same(args.asset, launch.quoteAsset, "Claim quote asset"); else same(args.caller, input.account, "Claim caller");
   same(args.recipient, input.recipient, "Claim recipient"); const outputAmount = uint(args.amount, "claimed amount", true); need(outputAmount >= input.minimumAmount, "Claim is below the reviewed balance.");
   if (quoteFees) {
-    const transfers = events(input.receipt, launch.quoteAsset, "Transfer", erc20Abi);
+    // Zero-value token events do not pay a claim; every positive movement must be the exact payment.
+    const transfers = events(input.receipt, launch.quoteAsset, "Transfer", erc20Abi).filter(transfer => uint(transfer.value, "quote claim transfer") > 0n);
     need(transfers.length === 1, "Expected one exact quote claim transfer.");
     same(transfers[0].from, block.release.contracts.poolManager.address, "Claim transfer source"); same(transfers[0].to, input.recipient, "Claim transfer recipient");
     need(uint(transfers[0].value, "quote claim transfer", true) === outputAmount, "Claim transfer differs from the ledger amount.");
