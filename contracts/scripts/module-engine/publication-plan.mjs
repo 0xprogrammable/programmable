@@ -30,6 +30,9 @@ export async function bindEngineReview(bundle, identity) {
   const source = api.validateModuleSubmissionRequest(bundle.source); need(source.ok, 'Invalid engine source package');
   need(api.validateModuleReviewDecisionRecordV1(bundle.review), 'Invalid engine review decision');
   const review = bundle.review, subject = api.parseReviewSubject(review.subject), artifact = api.parseReviewArtifact(bundle.artifact, subject), buildPlan = api.parseReviewPlan(bundle.buildPlan, subject);
+  if (api.isModuleEngineAnyQuoteRelease(identity)) need(subject.author === '0x2bb333d48dfaf1596d9036671d2e43168994249e'
+    && source.familyId === '0x6e348066f0f7596b0efa2013f5b96b0846390a32cf8b86706b2b06c8eaf935cc',
+  'Any Quote accepted revision must preserve its original author and family');
   need(artifact.schemaVersion === 'programmable.modules.engine-build.v1' && buildPlan.schemaVersion === 'programmable.modules.engine-build-plan.v1', 'Protected engine profile required');
   api.verifyModuleEngineBuildArtifactV1(artifact, subject, buildPlan, source.request);
   need(review.command.outcome === 'accept' && review.command.artifactDigest === artifact.artifactDigest

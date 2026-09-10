@@ -18,11 +18,25 @@ async function releaseBindings(plan, providers, block, c, api) {
   const pins = plan.identity.contracts, host = pins.host.address, ledger = pins.ledger.address;
   need(c.quantity(block) >= BigInt(plan.identity.startBlock), 'Engine release start block not reached');
   const read = (to, name, args = [], abi = api.moduleEngineReadAbi) => c.read(providers, to, abi, name, args, block);
-  equal(await read(host, 'SOURCE_VERSION', [], api.moduleEngineHostAbi), api.MODULE_ENGINE_SOURCE_ID, 'Engine source version');
+  equal(await read(host, 'SOURCE_VERSION', [], api.moduleEngineHostAbi), api.moduleEngineSourceId(plan.identity), 'Engine source version');
   for (const name of ['registry', 'ledger', 'tokenFactory', 'launchPolicy']) equal(address(await read(host, name, [], api.moduleEngineHostAbi)), pins[name].address, `Engine ${name}`);
-  for (const [name, role] of [['hook', 'host'], ['registry', 'registry'], ['poolManager', 'poolManager']]) equal(address(await read(ledger, name)), pins[role].address, `Engine ledger ${name}`);
-  equal(await read(ledger, 'ECONOMICS_POLICY_ID'), plan.identity.economicsPolicyId, 'Engine economics policy');
-  need(await read(ledger, 'PROTOCOL_FEE_BPS') === 10 && await read(ledger, 'AUTHOR_POOL_FEE_BPS') === 20, 'Engine fee policy constants differ');
+  if (api.isModuleEngineAnyQuoteRelease(plan.identity)) {
+    need(plan.schemaVersion === ENGINE_PUBLICATION_OPERATOR_SCHEMA, 'Any Quote launches and trades use the existing public website/API preparation');
+    for (const [name, expected] of [['sharedHook', pins.sharedHook.address], ['nativeRouteGuard', pins.nativeRouteGuard.address],
+      ['NATIVE_ROUTE_GUARD_CODE_HASH', pins.nativeRouteGuard.runtimeCodeHash], ['quotePoolManager', pins.poolManager.address],
+      ['quotePoolManagerCodeHash', pins.poolManager.runtimeCodeHash], ['UNIVERSAL_ROUTER', pins.universalRouter.address],
+      ['UNIVERSAL_ROUTER_CODE_HASH', pins.universalRouter.runtimeCodeHash], ['quoteFeeProfileId', api.MODULE_ENGINE_ANY_QUOTE_PROFILE_ID]])
+      equal((await read(host, name, [], api.moduleEngineAnyQuoteHostAbi)).toLowerCase(), expected, `Any Quote Host ${name}`);
+    for (const [name, role] of [['host', 'host'], ['ledger', 'ledger'], ['poolManager', 'poolManager']])
+      equal(address(await read(pins.sharedHook.address, name, [], api.moduleEngineAnyQuoteHookAbi)), pins[role].address, `Any Quote hook ${name}`);
+    for (const [name, role] of [['host', 'host'], ['hook', 'sharedHook'], ['poolManager', 'poolManager']])
+      equal(address(await read(ledger, name, [], api.moduleEngineAnyQuoteLedgerAbi)), pins[role].address, `Any Quote ledger ${name}`);
+    equal(await read(ledger, 'ECONOMICS_POLICY_ID', [], api.moduleEngineAnyQuoteLedgerAbi), plan.identity.economicsPolicyId, 'Any Quote economics policy');
+  } else {
+    for (const [name, role] of [['hook', 'host'], ['registry', 'registry'], ['poolManager', 'poolManager']]) equal(address(await read(ledger, name)), pins[role].address, `Engine ledger ${name}`);
+    equal(await read(ledger, 'ECONOMICS_POLICY_ID'), plan.identity.economicsPolicyId, 'Engine economics policy');
+    need(await read(ledger, 'PROTOCOL_FEE_BPS') === 10 && await read(ledger, 'AUTHOR_POOL_FEE_BPS') === 20, 'Engine fee policy constants differ');
+  }
   const owner = address(await read(pins.registry.address, 'owner'));
   if (plan.schemaVersion === ENGINE_PUBLICATION_OPERATOR_SCHEMA) need(owner === plan.owner, 'Current Registry EOA owner differs');
 }

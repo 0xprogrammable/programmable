@@ -137,5 +137,5 @@ test('Engine lifecycle plan accepts only bounded actual transaction references a
   await assert.rejects(createEngineLifecyclePlan(release, injected), /unexpected keys/);
   const duplicate = structuredClone(canaries); duplicate[0].operations[0].transactionHash = duplicate[0].launchTransactionHash;
   await assert.rejects(createEngineLifecyclePlan(release, duplicate), /Duplicate lifecycle/);
-  await assert.rejects(createEngineLifecyclePlan({ ...release, sourceVersion: 'module-native-v2' }, canaries), /Unsupported engine/);
+  await assert.rejects(createEngineLifecyclePlan({ ...release, sourceVersion: 'module-native-v2' }, canaries), /Unsupported (?:engine|source)/);
 });

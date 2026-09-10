@@ -27,7 +27,17 @@ function recovery(transactionHash) {
 async function load() {
   state = await api('/state'); $('stage').textContent = `Deployment ${state.stepIndex + 1} of ${state.totalSteps}`; $('title').textContent = names[state.role] || state.role;
   for (const [id, value] of Object.entries({ target: state.target, recipient: state.transactionRecipient, commit: state.sourceCommit, digest: state.planDigest, 'operator-commit': state.uiCheck ? 'Local preview; source authority not asserted' : state.operatorSourceCommit, initcode: state.initcodeHash, runtime: state.runtime.runtimeCodeHash })) $(id).textContent = value;
-  if (state.sourceVersion === 'module-engine-quote-v1' && state.planSchema === 'programmable.module-engine-quote-deployment-plan.v1') {
+  if (state.sourceVersion === 'module-engine-any-quote-v1' && state.planSchema === 'programmable.module-engine-any-quote-deployment-plan.v1') {
+    $('title').textContent = state.role === 'nativeRouteGuard' ? 'Any Quote route guard' : 'Any Quote host and shared hook';
+    $('recipient').textContent = state.transactionRecipient ?? `Contract creation at wallet nonce ${state.reservedNonce}`;
+    $('minimum-row').hidden = true;
+    $('economics-summary').textContent = 'Every Any Quote pool credits the complete fixed 30 bps to the platform recipient in its quote asset. Separate creator fees are fixed at launch from 0 to 1,000 bps. The pool LP fee is zero. External conversion fees and gas are separate.';
+    for (const [label, wallet] of [['Deployer · pays gas', state.owner], ['Review authority', state.parameters.reviewAuthority], ['30 bps recipient', state.economics.platformRecipient], ['Future reward recipient admin', state.economics.rewardAdmin]]) row($('wallets'), label, wallet);
+    $('quote-dependencies').hidden = false;
+    for (const [role, pin] of Object.entries(state.anyQuoteInfrastructure)) {
+      row($('quote-pins'), `${role} address`, pin.address); row($('quote-pins'), `${role} runtime hash`, pin.runtimeCodeHash);
+    }
+  } else if (state.sourceVersion === 'module-engine-quote-v1' && state.planSchema === 'programmable.module-engine-quote-deployment-plan.v1') {
     $('title').textContent = state.role === 'positionPlanner' ? 'Quote liquidity planner' : 'Quote to ETH converter';
     $('minimum-row').hidden = true; $('wallets-title').textContent = 'Gas payer'; row($('wallets'), 'Deployer · pays gas', state.owner);
     $('economics-summary').textContent = 'This step deploys shared liquidity or fee conversion infrastructure. Neither contract has administrative permissions. Template approval and publication require separate reviews.';

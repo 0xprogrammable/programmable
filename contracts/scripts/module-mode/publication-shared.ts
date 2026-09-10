@@ -17,3 +17,5 @@ export { validateModuleReviewDecisionRecordV1 } from '../../../lib/server/module
 export { createEngineHostPreparation, prepareEnginePublication, engineRegistryRevision } from '../../../ops/module-mode-publication/core-engine';
 export { computeModuleEngineReleaseDigest } from '../../../lib/module-engine/catalog';
 export { materializeModuleEngineRuntime } from '../../../lib/module-engine/operation-plan';
+export { isModuleEngineAnyQuoteRelease, moduleEngineSourceId, MODULE_ENGINE_ANY_QUOTE_PROFILE_ID } from '../../../lib/module-engine/profile';
+export { moduleEngineAnyQuoteHostAbi, moduleEngineAnyQuoteHookAbi, moduleEngineAnyQuoteLedgerAbi } from '../../../lib/module-engine/abi';
