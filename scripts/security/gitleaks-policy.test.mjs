@@ -13,6 +13,21 @@ const creationHash = "0x445809d9f7a34e959de4a96dec1e1beddfb265755bf28c57c42744ad
 const reviewAsset = "0xe7f1725e7734ce288f8367e1bb143e90bb3f0512";
 const material = createHash("sha256").update("gitleaks negative control only").digest("hex");
 const catalog = "config/module-engine/catalog.json";
+const anyQuoteIndexFixture = "tests/fixtures/module-engine-any-quote-index.json";
+// Public synthetic index evidence includes both sides of the final salt-domain correction.
+const anyQuoteAddresses = [
+  "0xd803cd624d58e1f31d1043f630953e6dbdf6a128",
+  "0x38665576617c205e3cac17a3eefa8bd6475dcc34",
+];
+const [creation, runtime] = [
+  "0xd2ee78b8bc95f6a8df6f94c6e4c0a49d77639f5b7697eaf06b0c6b6b38134766",
+  "0x21f0bf03dc072ce066e4a72c64fee2b8178bcabc2a69853977b29c45240460c2",
+];
+const anyQuotePublicFields = [
+  ...anyQuoteAddresses.flatMap((value) => [{ token: value }, { primaryToken: value }]),
+  { tokenCreationCodeHash: creation },
+  { tokenRuntimeCodeHash: runtime },
+];
 const hashPaths = [
   "config/module-engine/robinhood.json",
   catalog,
@@ -101,4 +116,40 @@ test("keeps public values detectable in adjacent or unlisted paths", (t) => {
     [`${hashPaths[2]}.backup`]: { tokenCreationCodeHash: creationHash },
   };
   assertFiles(scan(t, files), Object.keys(files));
+});
+
+test("accepts exact current and historical public Any Quote index fixture fields", (t) => {
+  assert.deepEqual(scan(t, { [anyQuoteIndexFixture]: anyQuotePublicFields }), []);
+});
+
+test("detects a credential beside all allowed Any Quote fields on the same JSON line", (t) => {
+  assertFiles(scan(t, {
+    [anyQuoteIndexFixture]: { evidence: anyQuotePublicFields, apiKey: material },
+  }), [anyQuoteIndexFixture]);
+});
+
+test("keeps each exact Any Quote public value detectable under a credential field", (t) => {
+  for (const fields of anyQuotePublicFields) {
+    const value = Object.values(fields)[0];
+    assertFiles(scan(t, { [anyQuoteIndexFixture]: { ...fields, apiKey: value } }), [anyQuoteIndexFixture]);
+  }
+});
+
+test("detects replacement values under each allowed Any Quote field name", (t) => {
+  for (const fields of anyQuotePublicFields) {
+    const [field, value] = Object.entries(fields)[0];
+    const replacement = `0x${material.slice(0, value.length - 2)}`;
+    assertFiles(scan(t, { [anyQuoteIndexFixture]: { [field]: replacement } }), [anyQuoteIndexFixture]);
+  }
+});
+
+test("keeps every Any Quote public fixture field detectable in adjacent and unlisted paths", (t) => {
+  for (const fields of anyQuotePublicFields) {
+    const files = {
+      "tests/fixtures/module-engine-any-quote-index-next.json": fields,
+      [`${anyQuoteIndexFixture}.backup`]: fields,
+      "config/module-engine/any-quote-index.json": fields,
+    };
+    assertFiles(scan(t, files), Object.keys(files));
+  }
 });

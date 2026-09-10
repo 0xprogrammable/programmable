@@ -417,3 +417,18 @@ condition = "AND"
 regexTarget = "match"
 paths = ['''^config/module-engine/catalog\.json$''']
 regexes = ['''^token":\s*"0xe7f1725e7734ce288f8367e1bb143e90bb3f0512"$''']
+
+[[allowlists]]
+description = "Synthetic Any Quote index evidence pins exact public CREATE2 token identities from the current and historical salt domains and public bytecode commitments"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "match"
+paths = ['''^tests/fixtures/module-engine-any-quote-index\.json$''']
+regexes = [
+  '''^token":\s*"0xd803cd624d58e1f31d1043f630953e6dbdf6a128"$''',
+  '''^primaryToken":\s*"0xd803cd624d58e1f31d1043f630953e6dbdf6a128"$''',
+  '''^tokenCreationCodeHash":\s*"0xd2ee78b8bc95f6a8df6f94c6e4c0a49d77639f5b7697eaf06b0c6b6b38134766"$''',
+  '''^token":\s*"0x38665576617c205e3cac17a3eefa8bd6475dcc34"$''',
+  '''^tokenRuntimeCodeHash":\s*"0x21f0bf03dc072ce066e4a72c64fee2b8178bcabc2a69853977b29c45240460c2"$''',
+  '''^primaryToken":\s*"0x38665576617c205e3cac17a3eefa8bd6475dcc34"$''',
+]
