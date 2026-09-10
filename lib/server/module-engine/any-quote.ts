@@ -104,14 +104,8 @@ export async function readAnyQuoteLaunchPreview(input: AnyQuoteLaunchPreviewInpu
     const compiled = await compileModuleEngineLaunch({ ...input, ...intent, configuration: {}, anyQuotePreparation: preview,
       initialOperation: () => ({ operationId: ANY_QUOTE_NATIVE_BUY_OPERATION_ID, recipient: intent.account, inputAsset: ANY_QUOTE_NATIVE, inputAmount: BigInt(intent.initialBuyWei), outputAsset: predictedToken, minimumOutput: 1n, data: compiledRoute.nativeBuyOperationData! }) }, release, template.manifest, readiness.token.decimals, BigInt(validUntil));
     const transaction = { from: intent.account, to: release.contracts.host.address, data: encodeFunctionData({ abi: moduleEngineHostAbi, functionName: "launch", args: [compiled.parameters] }), value: toHex(BigInt(intent.initialBuyWei)) };
-    const rpc = agreedTradeRpcV1(rpcs(deps)), ref = { blockHash: readiness.checkpoint.hash, requireCanonical: true };
-    // CONTRACT_BALANCE must never spend old router holdings, including in this preview.
-    await Promise.all(compiledRoute.balanceAccounting.assets.filter(asset => !anyQuoteSameAddressV1(asset, predictedToken)).map(async asset => {
-      const balance = anyQuoteSameAddressV1(asset, ANY_QUOTE_NATIVE)
-        ? await rpc("eth_getBalance", [compiledRoute.transaction.to, ref], value => BigInt(String(value)))
-        : await rpc("eth_call", [{ to: asset, data: encodeFunctionData({ abi: erc20Abi, functionName: "balanceOf", args: [compiledRoute.transaction.to] }) }, ref], value => decodeFunctionResult({ abi: erc20Abi, functionName: "balanceOf", data: String(value) as Hex }));
-      if (balance !== 0n) throw new AnyQuoteErrorV1("ROUTER_INTERMEDIATE_BALANCE");
-    }));
+    const rpc = agreedTradeRpcV1(rpcs(deps));
+    if (String(compiledRoute.balanceAccounting.mode) !== "unlock-deltas") throw new AnyQuoteErrorV1("ROUTE_ACCOUNTING_UNSUPPORTED");
     const trace = await rpc("debug_traceCall", [transaction, toHex(BigInt(readiness.checkpoint.number)), { tracer: "callTracer", timeout: "10s" }], tradeTraceV1);
     if (trace.failed || trace.type !== "CALL" || !anyQuoteSameAddressV1(trace.from, intent.account) || !trace.to || !anyQuoteSameAddressV1(trace.to, transaction.to)
       || trace.input !== transaction.data.toLowerCase() || BigInt(trace.value) !== BigInt(intent.initialBuyWei)) throw new AnyQuoteErrorV1("INITIAL_BUY_EXECUTION_INCONCLUSIVE");

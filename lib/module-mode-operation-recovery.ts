@@ -6,8 +6,12 @@ import { parseModuleModeAvailability } from "./module-mode/native-catalog";
 import { bindActiveModuleModeRelease, moduleHash, type ModuleModeRelease } from "./module-mode/release";
 import { parseModuleModeOperation, type ModuleModeOperation } from "./module-mode-operation-store";
 import { bindActiveModuleEngineRelease, ENGINE_ZERO_HASH, parseModuleEngineAvailability, type ModuleEngineRelease } from "./module-engine/catalog";
-import { moduleEngineAuthorWalletAbi, moduleEngineHostAbi, moduleEnginePlanParameters } from "./module-engine/abi";
-import { ModuleEngineTransactionRevertedError, readModuleEngineLaunch, verifyModuleEngineFeeChangeReceipt, type ModuleEngineFeeChange, verifyModuleEngineApprovalReceipt, verifyModuleEngineClaimReceipt, verifyModuleEngineLaunchReceipt, verifyModuleEngineOperationReceipt, type ModuleEngineClient, type ModuleEngineOperation, type ModuleEngineReceiptResult } from "./module-engine/client";
+import { isModuleEngineAnyQuoteRelease } from "./module-engine/profile";
+import { ANY_QUOTE_INFRASTRUCTURE } from "./module-engine/any-quote/types";
+import { anyQuotePoolFor } from "./module-engine/any-quote/integration";
+import { buildAnyQuoteSwapV1 } from "./module-engine/any-quote/route";
+import { moduleEngineAnyQuoteLedgerAbi, moduleEnginePermit2Abi, moduleEngineAuthorWalletAbi, moduleEngineHostAbi, moduleEnginePlanParameters } from "./module-engine/abi";
+import { ModuleEngineTransactionRevertedError, readModuleEngineLaunch, verifyModuleEngineAnyQuoteSwapReceipt, verifyModuleEngineFeeChangeReceipt, type ModuleEngineFeeChange, verifyModuleEngineApprovalReceipt, verifyModuleEngineClaimReceipt, verifyModuleEngineLaunchReceipt, verifyModuleEngineOperationReceipt, type ModuleEngineClient, type ModuleEngineOperation, type ModuleEngineReceiptResult } from "./module-engine/client";
 
 function requireMatch(condition: unknown, label: string): asserts condition {
   if (!condition) throw new Error(`The transaction does not match the saved ${label}. Check the hash in your wallet activity.`);
@@ -107,7 +111,10 @@ export async function recoverModuleEngineOperation(input: {
   requireMatch(sha256(tx.input) === operation.calldataHash && tx.value === BigInt(operation.value), "transaction data and value");
   requireMatch(same(tx.blockHash, receipt.blockHash) && same(block.hash, receipt.blockHash) && tx.blockNumber === receipt.blockNumber && block.number === receipt.blockNumber, "canonical block");
   requireMatch(receipt.blockNumber > BigInt(operation.preparedBlock) && receipt.blockNumber >= BigInt(release.startBlock), "preparation block");
-  const target = operation.kind === "approve" ? operation.token : operation.kind === "rotate-author" ? release.contracts.registry.address
+  if (operation.version === 5) requireMatch(isModuleEngineAnyQuoteRelease(release), "shared quote source");
+  const target = operation.version === 5 && operation.kind === "swap" && isModuleEngineAnyQuoteRelease(release) ? release.contracts.universalRouter.address
+    : operation.version === 5 && operation.approval?.allowanceKind === "permit2" ? ANY_QUOTE_INFRASTRUCTURE.permit2
+    : operation.kind === "approve" ? operation.token : operation.kind === "rotate-author" ? release.contracts.registry.address
     : operation.kind === "claim" || operation.version === 3 ? release.contracts.ledger.address : release.contracts.host.address;
   requireMatch(same(operation.target, target), "engine release contract");
   const readBoundLaunch = async () => {
@@ -119,11 +126,35 @@ export async function recoverModuleEngineOperation(input: {
   };
 
   let result: ModuleEngineReceiptResult;
-  if (operation.version === 3) {
+  if (operation.version === 5) {
+    requireMatch(isModuleEngineAnyQuoteRelease(release), "shared quote source");
+    if (operation.kind === "swap") {
+      requireMatch(operation.swap && operation.launch, "shared quote swap binding");
+      const saved = operation.swap, pool = anyQuotePoolFor(operation.token, saved.quoteAsset, release.contracts.sharedHook.address);
+      const compiled = buildAnyQuoteSwapV1({ pool, owner: operation.account, recipient: saved.recipient, side: saved.buy ? "buy" : "sell", amountIn: BigInt(saved.inputAmount), minimumAmountOut: BigInt(saved.minimumOutput), deadline: BigInt(saved.deadline), externalRoute: saved.externalRoute, now: BigInt(saved.deadline) - 1n });
+      requireMatch(String(compiled.balanceAccounting.mode) === "unlock-deltas" && same(compiled.transaction.to, tx.to) && same(compiled.transaction.data, tx.input) && BigInt(compiled.transaction.value) === tx.value, "canonical complete ETH route");
+      if (receipt.status === "reverted") throw new ModuleEngineTransactionRevertedError(transactionHash, receipt.blockNumber, receipt.blockHash);
+      requireMatch(receipt.status === "success", "receipt status");
+      const launch = await readBoundLaunch(); requireMatch(same(launch.quoteAsset, saved.quoteAsset), "swap quote asset");
+      result = await verifyModuleEngineAnyQuoteSwapReceipt({ client: input.client, release, launch, quote: { pool, buy: saved.buy, recipient: saved.recipient }, minimumOutput: BigInt(saved.minimumOutput), receipt });
+    } else {
+      requireMatch(operation.approval && tx.value === 0n && same(operation.approval.spender, ANY_QUOTE_INFRASTRUCTURE.permit2), "bounded Permit2 funding");
+      const saved = operation.approval;
+      if (saved.allowanceKind === "permit2") requireMatch(saved.expiration && same(saved.permit2Spender, release.contracts.universalRouter.address), "Permit2 router and expiry");
+      const data = saved.allowanceKind === "permit2"
+        ? encodeFunctionData({ abi: moduleEnginePermit2Abi, functionName: "approve", args: [operation.token, release.contracts.universalRouter.address, BigInt(saved.amount), Number(saved.expiration)] })
+        : encodeFunctionData({ abi: erc20Abi, functionName: "approve", args: [saved.spender, BigInt(saved.amount)] });
+      requireMatch(same(data, tx.input), "canonical bounded approval");
+      if (receipt.status === "reverted") throw new ModuleEngineTransactionRevertedError(transactionHash, receipt.blockNumber, receipt.blockHash);
+      requireMatch(receipt.status === "success", "receipt status");
+      await readModuleEngineLaunch({ client: input.client, release, token: operation.token, blockNumber: receipt.blockNumber });
+      result = await verifyModuleEngineApprovalReceipt({ client: input.client, release, account: operation.account, token: operation.token, amount: BigInt(saved.amount), spender: saved.spender, allowanceKind: saved.allowanceKind, ...(saved.allowanceKind === "permit2" ? { permit2Spender: release.contracts.universalRouter.address, expiration: BigInt(saved.expiration!) } : {}), receipt });
+    }
+  } else if (operation.version === 3) {
     const saved = operation.feeChange;
     const change: ModuleEngineFeeChange = saved.kind === "replace-creators" ? { ...saved, expectedAdminRevision: BigInt(saved.expectedAdminRevision), deadline: BigInt(saved.deadline) } : saved;
     requireMatch(change.kind === operation.kind && tx.value === 0n, "fee change kind and value");
-    const data = change.kind === "rotate-author"
+    const data = change.kind === "rotate-platform" ? encodeFunctionData({ abi: moduleEngineAnyQuoteLedgerAbi, functionName: "changePlatformWallet", args: [change.recipient] }) : change.kind === "rotate-author"
       ? encodeFunctionData({ abi: moduleEngineAuthorWalletAbi, functionName: "changeAuthorWallet", args: [change.familyId, change.recipient] })
       : change.kind === "rotate-creator"
         ? encodeFunctionData({ abi: managementCoreAbi, functionName: "changeCreatorWallet", args: [operation.launch.launchId, BigInt(change.index), change.recipient] })
@@ -142,12 +173,18 @@ export async function recoverModuleEngineOperation(input: {
     result = await verifyModuleEngineApprovalReceipt({ client: input.client, release, account: operation.account, token: operation.token, amount: BigInt(operation.approval.amount), receipt });
   } else if (operation.kind === "claim") {
     requireMatch(operation.claim && tx.value === 0n, "engine fee claim");
-    const decoded = decodeFunctionData({ abi: managementCoreAbi, data: tx.input });
-    requireMatch(decoded.functionName === "claimTo" && decoded.args.length === 1 && same(decoded.args[0], operation.claim.recipient), "engine claim recipient");
-    requireMatch(same(encodeFunctionData({ abi: managementCoreAbi, functionName: "claimTo", args: decoded.args }), tx.input), "canonical engine claim data");
+    const shared = isModuleEngineAnyQuoteRelease(release), launch = await readBoundLaunch();
+    if (shared) {
+      const decoded = decodeFunctionData({ abi: moduleEngineAnyQuoteLedgerAbi, data: tx.input });
+      requireMatch(decoded.functionName === "claimQuoteTo" && same(decoded.args[0], launch.quoteAsset) && same(decoded.args[1], operation.claim.recipient), "quote claim asset and recipient");
+      requireMatch(same(encodeFunctionData({ abi: moduleEngineAnyQuoteLedgerAbi, functionName: "claimQuoteTo", args: decoded.args }), tx.input), "canonical quote claim data");
+    } else {
+      const decoded = decodeFunctionData({ abi: managementCoreAbi, data: tx.input });
+      requireMatch(decoded.functionName === "claimTo" && decoded.args.length === 1 && same(decoded.args[0], operation.claim.recipient), "engine claim recipient");
+      requireMatch(same(encodeFunctionData({ abi: managementCoreAbi, functionName: "claimTo", args: decoded.args }), tx.input), "canonical engine claim data");
+    }
     if (receipt.status === "reverted") throw new ModuleEngineTransactionRevertedError(transactionHash, receipt.blockNumber, receipt.blockHash);
     requireMatch(receipt.status === "success", "receipt status");
-    const launch = await readBoundLaunch();
     result = await verifyModuleEngineClaimReceipt({ client: input.client, release, launch, account: operation.account, recipient: operation.claim.recipient,
       minimumAmount: BigInt(operation.claim.minimumAmount), claimedBefore: BigInt(operation.claim.claimedBefore), receipt });
   } else {

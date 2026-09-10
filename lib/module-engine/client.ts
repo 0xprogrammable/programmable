@@ -1,4 +1,4 @@
-import { concatHex, decodeAbiParameters, decodeEventLog, decodeFunctionResult, encodeAbiParameters, encodeEventTopics, encodeFunctionData, erc20Abi, getCreate2Address, keccak256, parseAbi, parseAbiParameters, toHex, type Abi, type Address, type Hex, type TransactionReceipt, type PublicClient } from "viem";
+import { concatHex, decodeAbiParameters, decodeEventLog, decodeFunctionResult, encodeAbiParameters, encodeEventTopics, encodeFunctionData, erc20Abi, getCreate2Address, keccak256, parseAbi, parseAbiParameters, toHex, type Abi, type Address, type Hex, type TransactionReceipt } from "viem";
 import { compileOpenConfig, type OpenConfigValue } from "@/packages/classic-modules/src/open-config.mjs";
 import { createModuleNativeClient, type ModuleNativeClient, type ModuleNativeWalletTransaction } from "@/lib/module-mode/native-client";
 import { nativeCanonicalJson } from "@/lib/module-mode/native-catalog";
@@ -16,7 +16,7 @@ import anyQuoteChainProfile from "@/contracts/spec/robinhood-custom-launch/chain
 import { compileModuleEngineLaunch, moduleEngineOperation as operationFor } from "./operation-plan";
 export { materializeModuleEngineRuntime, predictModuleEngineAddress } from "./operation-plan";
 
-export type ModuleEngineClient = ModuleNativeClient & Partial<Pick<PublicClient, "getBalance">>;
+export type ModuleEngineClient = ModuleNativeClient;
 export const createModuleEngineClient = createModuleNativeClient;
 export interface ModuleEngineOperation { operationId: Hex; actor: Address; recipient: Address; inputAsset: Address; inputAmount: bigint; outputAsset: Address; minimumOutput: bigint; deadline: bigint; nonce: bigint; data: Hex }
 export type ModuleEngineOperationIntent = Omit<ModuleEngineOperation, "actor" | "nonce" | "deadline">;
@@ -51,7 +51,7 @@ export type PreparedModuleEngineFeeChange = PreparedBase & Readonly<{ token: Add
 export interface PreparedModuleEngineSwap extends PreparedBase {
   readonly kind: "swap"; readonly token: Address; readonly quoteAsset: Address; readonly quoteDecimals: number;
   readonly launchId: Hex; readonly revisionId: Hex; readonly planHash: Hex; readonly buy: boolean; readonly recipient: Address;
-  readonly inputAmount: bigint; readonly outputAmount: bigint; readonly minimumOutput: bigint;
+  readonly inputAmount: bigint; readonly outputAmount: bigint; readonly minimumOutput: bigint; readonly externalRoute: AnyQuoteTradeQuote["externalRoute"];
 }
 export type PreparedModuleEngineTransaction = PreparedModuleEngineSwap | PreparedModuleEngineLaunch | PreparedModuleEngineOperation | PreparedModuleEngineApproval | PreparedModuleEngineClaim | PreparedModuleEngineFeeChange;
 export function isModuleEngineFeeTransaction(prepared: PreparedModuleEngineTransaction): prepared is PreparedModuleEngineFeeChange { return ["rotate-platform", "rotate-creator", "replace-creators", "rotate-author"].includes(prepared.kind); }
@@ -226,7 +226,7 @@ export async function prepareModuleEngineLaunch(input: PrepareModuleEngineLaunch
       const route = buildAnyQuoteSwapV1({ pool: preview.pool, owner: account, recipient: account, side: "buy", amountIn: BigInt(preview.intent.initialBuyWei), minimumAmountOut: BigInt(preview.initialBuy.minimumOutput), deadline: expiresAt, externalRoute: preview.initialBuy.externalRoute, now: block.timestamp });
       need(BigInt(preview.initialBuy.minimumOutput) === anyQuoteMinimumOutput(BigInt(preview.initialBuy.output), preview.intent.slippageBps), "Initial buy output limit differs.");
       equal(Object.fromEntries(Object.entries(initialOperation).map(([key, value]) => [key, typeof value === "bigint" ? value.toString() : value])), Object.fromEntries(Object.entries({ operationId: ANY_QUOTE_NATIVE_BUY_OPERATION_ID, actor: account, recipient: account, inputAsset: ZERO, inputAmount: BigInt(preview.intent.initialBuyWei), outputAsset: predictedToken, minimumOutput: BigInt(preview.initialBuy.minimumOutput), deadline: expiresAt, nonce: 0n, data: route.nativeBuyOperationData }).map(([key, value]) => [key, typeof value === "bigint" ? value.toString() : value])), "Exact initial ETH buy");
-      await assertAnyQuoteRouterBalances(input.client, block, route.balanceAccounting.assets, predictedToken);
+      await assertAnyQuoteRouteAccounting(input.client, block, route.balanceAccounting, predictedToken);
     } else need(initialOperation.operationId === ZERO_HASH, "Initial buy was not requested.");
   }
   const predicted = await read(input.client, host, "predictTokenAddress", [parameters.name, parameters.symbol, account, parameters.creatorSalt], block.blockNumber, moduleEngineHostAbi) as readonly [Address, Hex];
@@ -245,7 +245,7 @@ export async function prepareModuleEngineLaunch(input: PrepareModuleEngineLaunch
     if (input.anyQuotePreparation?.initialBuy) {
       const p = input.anyQuotePreparation;
       const route = buildAnyQuoteSwapV1({ pool: p.pool, owner: account, recipient: account, side: "buy", amountIn: BigInt(p.intent.initialBuyWei), minimumAmountOut: BigInt(p.initialBuy!.minimumOutput), deadline: expiresAt, externalRoute: p.initialBuy!.externalRoute, now: current.timestamp });
-      await assertAnyQuoteRouterBalances(input.client, current, route.balanceAccounting.assets, predictedToken);
+      await assertAnyQuoteRouteAccounting(input.client, current, route.balanceAccounting, predictedToken);
     }
     const fresh = await simulate(input.client, current, transaction); const currentLaunch = launchRecord(decodeFunctionResult({ abi: moduleEngineHostAbi, functionName: "launch", data: fresh.data }));
     for (const key of ["launchId", "planHash", "token", "engine", "engineCodeHash", "configurationHash"] as const) same(currentLaunch[key], result[key], `Current launch ${key}`);
@@ -357,17 +357,13 @@ export async function observeModuleEngineReceipt(prepared: PreparedModuleEngineT
   const result = await binding.receipt(receipt); same((await client.getBlock({ blockNumber: receipt.blockNumber })).hash, receipt.blockHash, "Canonical receipt after readback"); return result;
 }
 
-async function assertAnyQuoteRouterBalances(client: ModuleEngineClient, block: BoundBlock, assets: readonly Address[], unbornToken?: Address) {
+async function assertAnyQuoteRouteAccounting(client: ModuleEngineClient, block: BoundBlock, accounting: { mode: string }, unbornToken?: Address) {
   need(isModuleEngineAnyQuoteRelease(block.release), "Shared quote release required.");
-  const router = block.release.contracts.universalRouter.address;
-  await Promise.all(assets.map(async asset => {
-    if (unbornToken && asset.toLowerCase() === unbornToken.toLowerCase()) {
-      const deployed = await client.getCode({ address: asset, blockNumber: block.blockNumber });
-      need(!deployed || deployed === "0x", "This token was already launched. Open its existing coin."); return;
-    }
-    if (asset === ZERO) { need(client.getBalance, "Router native balance reader is unavailable."); need(await client.getBalance({ address: router, blockNumber: block.blockNumber }) === 0n, "Router has an existing ETH balance. Refresh the route later."); }
-    else need(uint(await read(client, asset, "balanceOf", [router], block.blockNumber), "router balance") === 0n, "Router has an existing intermediate balance. Refresh the route later.");
-  }));
+  need(accounting.mode === "unlock-deltas", "This route cannot isolate the funded swap from existing router balances. Try another route.");
+  if (unbornToken) {
+    const deployed = await client.getCode({ address: unbornToken, blockNumber: block.blockNumber });
+    need(!deployed || deployed === "0x", "This token was already launched. Open its existing coin.");
+  }
 }
 
 /** The server chooses the route; the browser independently reconstructs every executable byte. */
@@ -399,27 +395,31 @@ export async function prepareModuleEngineAnyQuoteSwap(input: { client: ModuleEng
     return null;
   };
   const required = await approval(block); if (required) return required;
-  await assertAnyQuoteRouterBalances(input.client, block, compiled.balanceAccounting.assets);
+  await assertAnyQuoteRouteAccounting(input.client, block, compiled.balanceAccounting);
   const transaction = tx(account, compiled.transaction.to, compiled.transaction.data, BigInt(compiled.transaction.value), quote.buy ? "buy" : "sell", quote.buy ? "Buy with ETH through the pool quote asset" : "Sell to ETH through the pool quote asset");
   const simulation = await simulate(input.client, block, transaction, true), quoteDecimals = Number(await read(input.client, launch.quoteAsset, "decimals", [], block.blockNumber));
   const prepared: PreparedModuleEngineSwap = { sourceKind: "module-engine-v1", kind: "swap", account, releaseDigest: release.releaseDigest, blockNumber: block.blockNumber, expiresAt, gasEstimate: simulation.gasEstimate,
     transaction: { ...transaction, gas: toHex(simulation.gasEstimate * 12n / 10n) }, token: launch.token, quoteAsset: launch.quoteAsset, quoteDecimals, launchId: launch.launchId, revisionId: launch.revisionId, planHash: launch.planHash,
-    buy: quote.buy, recipient: quote.recipient, inputAmount, outputAmount, minimumOutput };
+    buy: quote.buy, recipient: quote.recipient, inputAmount, outputAmount, minimumOutput, externalRoute: quote.externalRoute };
   return bind(prepared, { client: input.client, release, refresh: async () => {
     const current = await assertModuleEngineRelease({ client: input.client, release }); need(current.timestamp < expiresAt, "Trade quote expired. Get a new quote.");
     const live = await boundLaunch(input.client, current, launch.token); same(live.planHash, launch.planHash, "Trade launch plan");
     need(!await approval(current), "Sell allowance changed. Review the approval again.");
-    await assertAnyQuoteRouterBalances(input.client, current, compiled.balanceAccounting.assets); await simulate(input.client, current, transaction, true);
-  }, receipt: async receipt => {
-    const current = await receiptBlock(input.client, release, receipt), live = await boundLaunch(input.client, current, launch.token); same(live.planHash, launch.planHash, "Trade launch plan");
-    const swaps = events(receipt, release.contracts.sharedHook.address, "QuotePoolSwap", moduleEngineAnyQuoteHookAbi).filter(e => e.poolId === quote.pool.poolId);
-    need(swaps.length === 1, "Expected one swap in the selected module pool."); const swap = swaps[0]; same(swap.launchId, launch.launchId, "Swap launch"); same(swap.swapSender, release.contracts.universalRouter.address, "Swap router"); need(swap.buy === quote.buy && swap.exactInput === true, "Swap direction differs.");
-    // Receipt success and reconstructed final router minimum prove ETH settlement. Do not invent an ETH output from token Core deltas.
-    let output: bigint | undefined;
-    if (quote.buy) { output = events(receipt, launch.token, "Transfer", erc20Abi).filter(e => String(e.from).toLowerCase() === release.contracts.poolManager.address.toLowerCase() && String(e.to).toLowerCase() === quote.recipient.toLowerCase()).reduce((sum, e) => sum + uint(e.value, "received tokens"), 0n); need(output >= minimumOutput, "Final token transfer is below the signed minimum."); }
-    await canonical(input.client, current); return receiptResult(receipt, "swap", { token: launch.token, launch: live, ...(output === undefined ? {} : { outputAmount: output }) });
-  } });
+    await assertAnyQuoteRouteAccounting(input.client, current, compiled.balanceAccounting); await simulate(input.client, current, transaction, true);
+  }, receipt: receipt => verifyModuleEngineAnyQuoteSwapReceipt({ client: input.client, release, launch, quote, minimumOutput, receipt }) });
 }
+export async function verifyModuleEngineAnyQuoteSwapReceipt(input: { client: ModuleEngineClient; release: ModuleEngineRelease; launch: ModuleEngineLaunchRecord; quote: Pick<AnyQuoteTradeQuote, "pool" | "buy" | "recipient">; minimumOutput: bigint; receipt: TransactionReceipt }): Promise<ModuleEngineReceiptResult> {
+  const { release, launch, quote, minimumOutput, receipt } = input;
+  need(isModuleEngineAnyQuoteRelease(release), "Shared quote receipt source differs.");
+  const current = await receiptBlock(input.client, release, receipt), live = await boundLaunch(input.client, current, launch.token); same(live.planHash, launch.planHash, "Trade launch plan");
+  const swaps = events(receipt, release.contracts.sharedHook.address, "QuotePoolSwap", moduleEngineAnyQuoteHookAbi).filter(e => e.poolId === quote.pool.poolId);
+  need(swaps.length === 1, "Expected one swap in the selected module pool."); const swap = swaps[0]; same(swap.launchId, launch.launchId, "Swap launch"); same(swap.swapSender, release.contracts.universalRouter.address, "Swap router"); need(swap.buy === quote.buy && swap.exactInput === true, "Swap direction differs.");
+  // Receipt success and reconstructed final router minimum prove ETH settlement. Do not invent an ETH output from token Core deltas.
+  let output: bigint | undefined;
+  if (quote.buy) { output = events(receipt, launch.token, "Transfer", erc20Abi).filter(e => String(e.from).toLowerCase() === release.contracts.poolManager.address.toLowerCase() && String(e.to).toLowerCase() === quote.recipient.toLowerCase()).reduce((sum, e) => sum + uint(e.value, "received tokens"), 0n); need(output >= minimumOutput, "Final token transfer is below the signed minimum."); }
+  await canonical(input.client, current); return receiptResult(receipt, "swap", { token: launch.token, launch: live, ...(output === undefined ? {} : { outputAmount: output }) });
+}
+
 
 export function moduleEngineTradeIntent(input: { buy: boolean; token: Address; quoteAsset: Address; recipient: Address; inputAmount: bigint; minimumOutput: bigint; minimumEthFees: bigint; sqrtPriceLimitX96?: bigint; conversionRoute: Hex }): ModuleEngineOperationIntent {
   need(input.inputAmount > 0n && input.minimumOutput > 0n && input.minimumEthFees > 0n, "Set positive trade input, output and ETH fee conversion limits.");
@@ -489,7 +489,7 @@ export interface ModuleEngineFeeControlsSnapshot {
 function creatorRecipients(value: unknown) {
   need(Array.isArray(value) && value.length === 3, "Invalid creator recipients.");
   const [wallets, shares, revision] = value;
-  need(Array.isArray(wallets) && wallets.length >= 1 && wallets.length <= 16 && Array.isArray(shares) && shares.length === wallets.length, "Invalid creator recipient count.");
+  need(Array.isArray(wallets) && wallets.length >= 1 && wallets.length <= 10 && Array.isArray(shares) && shares.length === wallets.length, "Invalid creator recipient count.");
   need(shares.every(share => Number.isInteger(share) && share > 0 && share <= 10_000) && shares.reduce((sum, share) => sum + share, 0) === 10_000, "Invalid fixed creator shares.");
   return { creatorWallets: wallets.map(wallet => moduleAddress(wallet, "creator wallet")), creatorSharesBps: shares as number[], adminRevision: uint(revision, "admin revision") };
 }
@@ -560,7 +560,7 @@ export async function prepareModuleEngineFeeChange(input: { client: ModuleEngine
   else if (change.kind === "rotate-creator") data = encodeFunctionData({ abi: ledgerAbi(block.release), functionName: "changeCreatorWallet", args: [launch.launchId, BigInt(change.index), change.recipient] });
   else if (change.kind === "replace-creators") data = encodeFunctionData({ abi: ledgerAbi(block.release), functionName: "replaceCreatorWallets", args: [launch.launchId, [...change.recipients], change.expectedAdminRevision, change.deadline] });
   else data = encodeFunctionData({ abi: moduleEngineAuthorWalletAbi, functionName: "changeAuthorWallet", args: [change.familyId, change.recipient] });
-  const transaction = tx(account, target, data, 0n, "manage", change.kind === "rotate-author" ? "Change your family's future author fee wallet; accrued claims stay with their current wallets" : "Change future creator fee recipients; fixed shares and accrued claims stay unchanged");
+  const transaction = tx(account, target, data, 0n, "manage", change.kind === "rotate-platform" ? "Change the future 0.3% platform fee recipient; accrued quote claims stay with their current wallets" : change.kind === "rotate-author" ? "Change your family's future author fee wallet; accrued claims stay with their current wallets" : "Change future creator fee recipients; fixed shares and accrued claims stay unchanged");
   const simulation = await simulate(input.client, block, transaction, true);
   const prepared: PreparedModuleEngineFeeChange = { ...change, sourceKind: "module-engine-v1", account, releaseDigest: release.releaseDigest, blockNumber: block.blockNumber,
     expiresAt, gasEstimate: simulation.gasEstimate, transaction: { ...transaction, gas: toHex(simulation.gasEstimate * 12n / 10n) }, token: launch.token, launchId: launch.launchId, revisionId: launch.revisionId, planHash: launch.planHash };

@@ -46,7 +46,7 @@ export function anyQuoteLaunchIntent(input: AnyQuoteLaunchIntent): AnyQuoteLaunc
   const hash = (v: Hex) => { if (!/^0x[0-9a-f]{64}$/i.test(v)) throw new AnyQuoteErrorV1("INVALID_HASH"); return v.toLowerCase() as Hex; };
   if (!/^(0|[1-9][0-9]{0,38})$/.test(input.initialBuyWei) || BigInt(input.initialBuyWei) >= 1n << 128n) throw new AnyQuoteErrorV1("INVALID_AMOUNT");
   if (!input.templateId || input.templateId.length > 128 || !input.name.trim() || !/^[A-Za-z0-9]{1,11}$/.test(input.symbol.trim())) throw new AnyQuoteErrorV1("INVALID_LAUNCH_INTENT");
-  if (!Array.isArray(input.creatorWallets) || input.creatorWallets.length < 1 || input.creatorWallets.length > 16 || input.creatorWallets.length !== input.creatorSharesBps.length
+  if (!Array.isArray(input.creatorWallets) || input.creatorWallets.length < 1 || input.creatorWallets.length > 10 || input.creatorWallets.length !== input.creatorSharesBps.length
     || input.creatorSharesBps.some(n => !Number.isInteger(n) || n <= 0 || n > 10_000) || input.creatorSharesBps.reduce((a, b) => a + b, 0) !== 10_000) throw new AnyQuoteErrorV1("INVALID_CREATOR_SHARES");
   const creatorWallets = input.creatorWallets.map(a => anyQuoteAddressV1(a).toLowerCase() as Address);
   if (new Set(creatorWallets).size !== creatorWallets.length) throw new AnyQuoteErrorV1("INVALID_CREATOR_SHARES");

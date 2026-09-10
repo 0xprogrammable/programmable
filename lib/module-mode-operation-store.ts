@@ -1,12 +1,15 @@
 import { sha256, toHex, type Address, type Hex } from "viem";
 import type { ModuleNativeAuthorWalletChange, PreparedModuleNativeLaunch, PreparedModuleNativeManagement } from "./module-mode/native-client";
 import type { ModuleEngineFeeChange, PreparedModuleEngineTransaction } from "./module-engine/client";
+import { validateAnyQuoteExternalRouteV1 } from "./module-engine/any-quote/route";
+import type { AnyQuoteExternalRouteV1 } from "./module-engine/any-quote/types";
 import { moduleAddress, moduleHash, moduleRecord, moduleUint } from "./module-mode/release";
 
 const PREFIX = "programmable:module-operation:v1:4663:";
 const CHANGE = "programmable:module-operation-change";
 const UNAVAILABLE = "storage-unavailable";
 const MAX_RECORD_LENGTH = 4_096;
+const MAX_ROUTE_RECORD_LENGTH = 32_768;
 
 type NativeRecoveryPreparation = PreparedModuleNativeLaunch | PreparedModuleNativeManagement;
 type EngineRecoveryPreparation = PreparedModuleEngineTransaction;
@@ -53,7 +56,13 @@ export type ModuleEngineFeeWalletOperation = OperationBinding & Readonly<{
   launch: Readonly<{ launchId: Hex; revisionId: Hex; planHash: Hex }>;
   feeChange: SavedModuleEngineFeeChange;
 }>;
-export type ModuleEngineWalletOperation = ModuleEngineWalletOperationV2 | ModuleEngineFeeWalletOperation;
+export type ModuleEngineRouteWalletOperation = OperationBinding & Readonly<{
+  version: 5; sourceKind: "module-engine-v1"; kind: "swap" | "approve";
+  launch: Readonly<{ launchId: Hex; revisionId: Hex; planHash: Hex }> | null;
+  swap: Readonly<{ buy: boolean; recipient: Address; quoteAsset: Address; inputAmount: string; minimumOutput: string; deadline: string; externalRoute: AnyQuoteExternalRouteV1 }> | null;
+  approval: Readonly<{ spender: Address; amount: string; allowanceKind: "erc20" | "permit2"; permit2Spender: Address | null; expiration: string | null }> | null;
+}>;
+export type ModuleEngineWalletOperation = ModuleEngineWalletOperationV2 | ModuleEngineFeeWalletOperation | ModuleEngineRouteWalletOperation;
 export type ModuleModeOperation = ModuleNativeWalletOperation | ModuleEngineWalletOperation;
 
 type StorageLike = Pick<Storage, "getItem" | "setItem" | "removeItem">;
@@ -74,8 +83,10 @@ function identity(record: object): Hex {
 
 /** Storage is a recovery hint, never a signable preparation or release authorization. */
 export function parseModuleModeOperation(raw: string, account: string): ModuleModeOperation {
-  if (raw.length > MAX_RECORD_LENGTH) throw new Error("The saved transaction record cannot be read. Check your wallet activity before continuing.");
+  if (raw.length > MAX_ROUTE_RECORD_LENGTH) throw new Error("The saved transaction record cannot be read. Check your wallet activity before continuing.");
   const decoded = JSON.parse(raw);
+  if (decoded?.version === 5) return parseEngineRouteOperation(decoded, account);
+  if (raw.length > MAX_RECORD_LENGTH) throw new Error("The saved transaction record is too large.");
   if (decoded?.version === 4) return parseNativeAuthorOperation(decoded, account);
   if (decoded?.version === 3) return parseEngineFeeOperation(decoded, account);
   if (decoded?.version === 2) return parseEngineOperation(decoded, account);
@@ -156,7 +167,13 @@ function parseEngineFeeOperation(decoded: unknown, account: string): ModuleEngin
   const launch = Object.freeze({ launchId: moduleHash(rawLaunch.launchId, "launchId"), revisionId: moduleHash(rawLaunch.revisionId, "revisionId"), planHash: moduleHash(rawLaunch.planHash, "planHash") });
   const kind = value.kind;
   let feeChange: SavedModuleEngineFeeChange;
-  if (kind === "rotate-creator" || kind === "rotate-author") {
+  if (kind === "rotate-platform") {
+    const change = moduleRecord(value.feeChange, ["kind", "previousWallet", "recipient", "authority"], "platformOperation.change");
+    const previousWallet = moduleAddress(change.previousWallet, "previous wallet"), recipient = moduleAddress(change.recipient, "new wallet");
+    if (change.kind !== kind || previousWallet === recipient || !["treasury", "reward-admin"].includes(String(change.authority))
+      || (change.authority === "treasury" && previousWallet !== actor)) throw new Error("The saved platform recipient is invalid.");
+    feeChange = Object.freeze({ kind, previousWallet, recipient, authority: change.authority as "treasury" | "reward-admin" });
+  } else if (kind === "rotate-creator" || kind === "rotate-author") {
     const change = moduleRecord(value.feeChange, kind === "rotate-creator" ? ["kind", "index", "previousWallet", "recipient", "shareBps"] : ["kind", "familyId", "author", "previousWallet", "recipient"], "feeOperation.change");
     const previousWallet = moduleAddress(change.previousWallet, "previous wallet"), recipient = moduleAddress(change.recipient, "new wallet");
     if (change.kind !== kind || recipient === previousWallet) throw new Error("The saved wallet change is invalid.");
@@ -183,6 +200,31 @@ function parseEngineFeeOperation(decoded: unknown, account: string): ModuleEngin
   return Object.freeze({ ...bound, id, transactionHash: value.transactionHash === null ? null : moduleHash(value.transactionHash, "transactionHash") });
 }
 
+function parseEngineRouteOperation(decoded: unknown, account: string): ModuleEngineRouteWalletOperation {
+  const value = moduleRecord(decoded, ["version", "sourceKind", "id", "kind", "chainId", "account", "target", "value", "calldataHash", "releaseDigest", "preparedBlock", "createdAtMs", "token", "launch", "swap", "approval", "transactionHash"], "routeOperation");
+  if (value.version !== 5 || value.sourceKind !== "module-engine-v1" || value.chainId !== 4663 || !["swap", "approve"].includes(String(value.kind)) || !Number.isSafeInteger(value.createdAtMs) || Number(value.createdAtMs) <= 0) throw new Error("The saved route operation is invalid.");
+  const actor = moduleAddress(value.account, "account"); if (actor !== moduleAddress(account, "expected account")) throw new Error("The saved transaction belongs to a different wallet.");
+  let launch: ModuleEngineRouteWalletOperation["launch"] = null, swap: ModuleEngineRouteWalletOperation["swap"] = null, approval: ModuleEngineRouteWalletOperation["approval"] = null;
+  if (value.kind === "swap") {
+    const savedLaunch = moduleRecord(value.launch, ["launchId", "revisionId", "planHash"], "routeOperation.launch");
+    launch = { launchId: moduleHash(savedLaunch.launchId, "launchId"), revisionId: moduleHash(savedLaunch.revisionId, "revisionId"), planHash: moduleHash(savedLaunch.planHash, "planHash") };
+    const saved = moduleRecord(value.swap, ["buy", "recipient", "quoteAsset", "inputAmount", "minimumOutput", "deadline", "externalRoute"], "routeOperation.swap");
+    if (typeof saved.buy !== "boolean" || value.approval !== null) throw new Error("The saved swap is invalid.");
+    const externalRoute = saved.externalRoute as AnyQuoteExternalRouteV1; validateAnyQuoteExternalRouteV1(externalRoute);
+    swap = { buy: saved.buy, recipient: moduleAddress(saved.recipient, "recipient"), quoteAsset: moduleAddress(saved.quoteAsset, "quoteAsset"), inputAmount: moduleUint(saved.inputAmount, "inputAmount", true), minimumOutput: moduleUint(saved.minimumOutput, "minimumOutput", true), deadline: moduleUint(saved.deadline, "deadline", true), externalRoute };
+    if (String(value.value) !== (swap.buy ? swap.inputAmount : "0")) throw new Error("The saved swap funding differs.");
+  } else {
+    const saved = moduleRecord(value.approval, ["spender", "amount", "allowanceKind", "permit2Spender", "expiration"], "routeOperation.approval");
+    if (value.launch !== null || value.swap !== null || value.value !== "0" || !["erc20", "permit2"].includes(String(saved.allowanceKind))) throw new Error("The saved route approval is invalid.");
+    if (saved.allowanceKind === "erc20" && (saved.permit2Spender !== null || saved.expiration !== null)) throw new Error("The saved token approval is invalid.");
+    approval = { spender: moduleAddress(saved.spender, "spender"), amount: moduleUint(saved.amount, "amount"), allowanceKind: saved.allowanceKind as "erc20" | "permit2",
+      permit2Spender: saved.allowanceKind === "permit2" ? moduleAddress(saved.permit2Spender, "permit2Spender") : null, expiration: saved.allowanceKind === "permit2" ? moduleUint(saved.expiration, "expiration", true) : null };
+  }
+  const bound = { version: 5 as const, sourceKind: "module-engine-v1" as const, kind: value.kind as "swap" | "approve", chainId: 4663 as const, account: actor, target: moduleAddress(value.target, "target"), value: moduleUint(value.value, "value"), calldataHash: moduleHash(value.calldataHash, "calldataHash"), releaseDigest: moduleHash(value.releaseDigest, "releaseDigest"), preparedBlock: moduleUint(value.preparedBlock, "preparedBlock", true), createdAtMs: Number(value.createdAtMs), token: moduleAddress(value.token, "token"), launch, swap, approval };
+  const id = moduleHash(value.id, "id"); if (identity(bound) !== id) throw new Error("The saved transaction record changed. Check your wallet activity before continuing.");
+  return Object.freeze({ ...bound, id, transactionHash: value.transactionHash === null ? null : moduleHash(value.transactionHash, "transactionHash") });
+}
+
 /** Persist before the provider is invoked. No TTL can turn an unknown broadcast into permission to resend. */
 export function beginModuleModeOperation(prepared: NativeRecoveryPreparation, suppliedRuntime?: StoreRuntime): Promise<ModuleNativeWalletOperation>;
 export function beginModuleModeOperation(prepared: EngineRecoveryPreparation, suppliedRuntime?: StoreRuntime): Promise<ModuleEngineWalletOperation>;
@@ -191,13 +233,22 @@ export async function beginModuleModeOperation(prepared: RecoveryPreparation, su
   const store = suppliedRuntime ?? runtime();
   if ("sourceKind" in prepared) {
     if (prepared.sourceKind !== "module-engine-v1") throw new Error("The transaction source is unsupported.");
-    if (prepared.kind === "rotate-creator" || prepared.kind === "replace-creators" || prepared.kind === "rotate-author") {
-      const feeChange: SavedModuleEngineFeeChange = prepared.kind === "rotate-creator" ? { kind: prepared.kind, index: prepared.index, previousWallet: prepared.previousWallet, recipient: prepared.recipient, shareBps: prepared.shareBps }
+    if (prepared.kind === "rotate-platform" || prepared.kind === "rotate-creator" || prepared.kind === "replace-creators" || prepared.kind === "rotate-author") {
+      const feeChange: SavedModuleEngineFeeChange = prepared.kind === "rotate-platform" ? { kind: prepared.kind, previousWallet: prepared.previousWallet, recipient: prepared.recipient, authority: prepared.authority } : prepared.kind === "rotate-creator" ? { kind: prepared.kind, index: prepared.index, previousWallet: prepared.previousWallet, recipient: prepared.recipient, shareBps: prepared.shareBps }
         : prepared.kind === "rotate-author" ? { kind: prepared.kind, familyId: prepared.familyId, author: prepared.author, previousWallet: prepared.previousWallet, recipient: prepared.recipient }
           : { kind: prepared.kind, previousWallets: prepared.previousWallets, recipients: prepared.recipients, sharesBps: prepared.sharesBps, expectedAdminRevision: prepared.expectedAdminRevision.toString(), deadline: prepared.deadline.toString(), authority: prepared.authority };
       const bound = { version: 3 as const, sourceKind: "module-engine-v1" as const, kind: prepared.kind, chainId: 4663 as const, account: moduleAddress(prepared.account, "account"),
         target: moduleAddress(prepared.transaction.to, "target"), value: BigInt(prepared.transaction.value).toString(), calldataHash: sha256(prepared.transaction.data), releaseDigest: prepared.releaseDigest, preparedBlock: prepared.blockNumber.toString(), createdAtMs: store.now(),
         token: prepared.token, launch: { launchId: prepared.launchId, revisionId: prepared.revisionId, planHash: prepared.planHash }, feeChange };
+      return persistOperation(prepared, bound, store);
+    }
+    if (prepared.kind === "swap" || (prepared.kind === "approve" && prepared.allowanceKind)) {
+      const bound = { version: 5 as const, sourceKind: "module-engine-v1" as const, kind: prepared.kind, chainId: 4663 as const,
+        account: moduleAddress(prepared.account, "account"), target: moduleAddress(prepared.transaction.to, "target"), value: BigInt(prepared.transaction.value).toString(),
+        calldataHash: sha256(prepared.transaction.data), releaseDigest: prepared.releaseDigest, preparedBlock: prepared.blockNumber.toString(), createdAtMs: store.now(), token: moduleAddress(prepared.token, "token"),
+        launch: prepared.kind === "swap" ? { launchId: prepared.launchId, revisionId: prepared.revisionId, planHash: prepared.planHash } : null,
+        swap: prepared.kind === "swap" ? { buy: prepared.buy, recipient: moduleAddress(prepared.recipient, "recipient"), quoteAsset: moduleAddress(prepared.quoteAsset, "quoteAsset"), inputAmount: prepared.inputAmount.toString(), minimumOutput: prepared.minimumOutput.toString(), deadline: prepared.expiresAt.toString(), externalRoute: prepared.externalRoute } : null,
+        approval: prepared.kind === "approve" ? { spender: moduleAddress(prepared.spender, "spender"), amount: prepared.amount.toString(), allowanceKind: prepared.allowanceKind!, permit2Spender: prepared.permit2Spender ? moduleAddress(prepared.permit2Spender, "permit2Spender") : null, expiration: prepared.expiration?.toString() ?? null } : null };
       return persistOperation(prepared, bound, store);
     }
     const bound = { version: 2 as const, sourceKind: "module-engine-v1" as const, kind: prepared.kind, chainId: 4663 as const, account: moduleAddress(prepared.account, "operation.account"),
