@@ -1,15 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
 import { decodeAbiParameters, decodeFunctionData, encodeAbiParameters, encodeEventTopics, encodeFunctionResult, getAddress, getCreate2Address, keccak256, parseAbiParameters, type Hex, type TransactionReceipt } from "viem";
-import { fixture, ACCOUNT, CODE_HASH, QUOTE, TOKEN, addr, hash } from "./module-engine-fixture";
+import { fixture, ACCOUNT, CODE, CODE_HASH, QUOTE, TOKEN, addr, hash } from "./module-engine-fixture";
 import { moduleEngineReleaseIdentity, computeModuleEngineReleaseDigest, computeModuleEngineHostManifestHash, type ModuleEngineAnyQuoteReleaseIdentity } from "@/lib/module-engine/catalog";
 import { MODULE_ENGINE_ANY_QUOTE_SOURCE_VERSION, MODULE_ENGINE_ANY_QUOTE_SOURCE_ID, MODULE_ENGINE_ANY_QUOTE_PROFILE, MODULE_ENGINE_ANY_QUOTE_PROFILE_ID, MODULE_ENGINE_ANY_QUOTE_ECONOMICS_POLICY_ID } from "@/lib/module-engine/profile";
 import { ANY_QUOTE_CONFIGURATION_ABI, createAnyQuoteConfigurationSchema } from "@/lib/module-engine/any-quote-configuration";
-import { ANY_QUOTE_INFRASTRUCTURE, ANY_QUOTE_NATIVE, ANY_QUOTE_NATIVE_BUY_OPERATION_ID } from "@/lib/module-engine/any-quote/types";
-import { anyQuoteEvidenceHashV1 } from "@/lib/module-engine/any-quote/route";
+import { ANY_QUOTE_INFRASTRUCTURE, ANY_QUOTE_NATIVE, ANY_QUOTE_NATIVE_BUY_OPERATION_ID, ANY_QUOTE_WETH } from "@/lib/module-engine/any-quote/types";
+import { anyQuoteEvidenceHashV1, anyQuoteModulePoolKeyV1, anyQuotePoolIdV1, buildAnyQuoteSwapV1 } from "@/lib/module-engine/any-quote/route";
 import { planAnyQuoteInitialPriceV1, encodeAnyQuoteConfigurationV1 } from "@/lib/module-engine/any-quote/price";
-import { anyQuoteLaunchIntent, anyQuoteMinimumOutput, anyQuotePoolFor, assertAnyQuoteConfiguration, assertAnyQuoteLaunchPreparation, predictAnyQuoteToken, type AnyQuoteLaunchPreparation } from "@/lib/module-engine/any-quote/integration";
+import { anyQuoteLaunchIntent, anyQuoteMinimumOutput, anyQuotePoolFor, assertAnyQuoteConfiguration, assertAnyQuoteLaunchPreparation, predictAnyQuoteToken, type AnyQuoteLaunchPreparation, type AnyQuoteTradeQuote } from "@/lib/module-engine/any-quote/integration";
 import { compileModuleEngineLaunch, predictModuleEngineAddress } from "@/lib/module-engine/operation-plan";
-import { prepareModuleEngineClaim, readModuleEngineAdministration, readModuleEngineFeeControls, prepareModuleEngineFeeChange, revalidateModuleEngineTransaction, verifyModuleEngineLaunchReceipt } from "@/lib/module-engine/client";
+import { prepareModuleEngineAnyQuoteSwap, prepareModuleEngineClaim, readModuleEngineAdministration, readModuleEngineFeeControls, prepareModuleEngineFeeChange, revalidateModuleEngineTransaction, releaseModuleEnginePreparation, verifyModuleEngineLaunchReceipt } from "@/lib/module-engine/client";
 import { ENGINE_CONTEXT, moduleEngineAnyQuoteLedgerAbi, moduleEngineHostAbi, moduleEngineLaunchParameters, moduleEnginePlanParameters } from "@/lib/module-engine/abi";
 import { readAnyQuoteLaunchPreview, readAnyQuoteReadiness } from "@/lib/server/module-engine/any-quote";
 import { anyQuoteJsonRequest } from "@/lib/server/module-engine/any-quote-http";
@@ -81,7 +82,52 @@ function sharedFixture() {
   return { ...f, release, identity, intent, preview, setPlatformWallet: (next: Hex) => { platformWallet = next; } };
 }
 
+function tradeFixture(buy: boolean) {
+  const f = sharedFixture(), pool = anyQuotePoolFor(TOKEN, QUOTE, f.identity.contracts.sharedHook.address), expiry = f.preview.validUntil;
+  const key = { currency0: ANY_QUOTE_NATIVE, currency1: QUOTE, fee: 3000, tickSpacing: 60, hooks: ANY_QUOTE_NATIVE };
+  const quote: AnyQuoteTradeQuote = { schemaVersion: "programmable.any-quote.trade-quote.v1", releaseDigest: f.release.releaseDigest, templateId: f.intent.templateId,
+    account: ACCOUNT, token: TOKEN, quoteAsset: QUOTE, recipient: ACCOUNT, buy, inputAmount: "1000", output: "2000", minimumOutput: "1980", slippageBps: 100,
+    validUntil: expiry, checkpoint: f.preview.readiness.checkpoint, pool, evidenceHash: "0x",
+    externalRoute: { provider: "uniswap-trading-api", chainId: 4663, tokenIn: buy ? ANY_QUOTE_WETH : QUOTE, tokenOut: buy ? QUOTE : ANY_QUOTE_WETH,
+      amountIn: buy ? "1000" : "3000", amountOut: buy ? "3000" : "2000", validUntil: expiry, checkpoint: f.preview.readiness.checkpoint, evidenceHash: hash(821),
+      hops: [{ protocol: "V4", tokenIn: buy ? ANY_QUOTE_NATIVE : QUOTE, tokenOut: buy ? QUOTE : ANY_QUOTE_NATIVE, poolId: anyQuotePoolIdV1(key), key, hookData: "0x" }] } };
+  quote.evidenceHash = anyQuoteEvidenceHashV1({ ...quote, evidenceHash: undefined });
+  const allowance = { amount: 1000n, expiration: Number(expiry) }, originalRead = vi.mocked(f.client.readContract).getMockImplementation()!;
+  vi.mocked(f.client.readContract).mockImplementation(async input => {
+    if (input.functionName === "poolIdOf" || input.functionName === "poolId") return pool.poolId;
+    if (input.functionName === "poolKey") return anyQuoteModulePoolKeyV1(pool);
+    if (input.functionName === "allowance" && input.address?.toLowerCase() === ANY_QUOTE_INFRASTRUCTURE.permit2.toLowerCase()) return [allowance.amount, allowance.expiration, 0];
+    return originalRead(input);
+  });
+  const permit2Runtime = readFileSync(new URL("../scripts/test/any-quote-route-permit2.hex", import.meta.url), "utf8").trim() as Hex;
+  vi.mocked(f.client.getCode).mockImplementation(async ({ address }) => address.toLowerCase() === ANY_QUOTE_INFRASTRUCTURE.permit2.toLowerCase() ? permit2Runtime : CODE);
+  vi.mocked(f.client.call).mockImplementation(async input => { expect(input.to?.toLowerCase()).toBe(f.identity.contracts.universalRouter.address); return { data: "0x" }; });
+  return { ...f, quote, allowance };
+}
+
 describe("Any Quote financial integration", () => {
+  it.each([true, false])("prepares and revalidates the full final ETH route with its reviewed minimum (buy=%s)", async buy => {
+    const f = tradeFixture(buy), prepared = await prepareModuleEngineAnyQuoteSwap({ ...f, account: ACCOUNT });
+    expect(prepared.kind).toBe("swap"); if (prepared.kind !== "swap") throw new Error("Unexpected funding approval");
+    const expected = buildAnyQuoteSwapV1({ pool: f.quote.pool, owner: ACCOUNT, recipient: ACCOUNT, side: buy ? "buy" : "sell", amountIn: 1000n, minimumAmountOut: 1980n, deadline: BigInt(f.quote.validUntil), externalRoute: f.quote.externalRoute, now: f.state.timestamp });
+    expect(prepared.transaction.data).toBe(expected.transaction.data); expect(BigInt(prepared.transaction.value)).toBe(buy ? 1000n : 0n);
+    expect(prepared).toMatchObject({ minimumOutput: 1980n, outputAmount: 2000n, quoteAsset: QUOTE });
+    await expect(revalidateModuleEngineTransaction(prepared, ACCOUNT)).resolves.toEqual(prepared.transaction);
+    await expect(revalidateModuleEngineTransaction(prepared, ACCOUNT)).rejects.toThrow("fresh, verified");
+    releaseModuleEnginePreparation(prepared); // Simulate an explicit wallet rejection, which alone permits a new attempt.
+    f.state.timestamp = BigInt(f.quote.validUntil);
+    await expect(revalidateModuleEngineTransaction(prepared, ACCOUNT)).rejects.toThrow("expired");
+  });
+  it("uses the UERC20 Permit2 allowance and requires only a finite router approval when needed", async () => {
+    const f = tradeFixture(false); f.state.allowance = (1n << 256n) - 1n; f.allowance.amount = 999n;
+    await expect(prepareModuleEngineAnyQuoteSwap({ ...f, account: ACCOUNT })).resolves.toMatchObject({ kind: "approval-required", allowanceKind: "permit2", amount: 1000n, currentAllowance: 999n, permit2Spender: f.identity.contracts.universalRouter.address });
+    expect(f.client.call).not.toHaveBeenCalled();
+    f.allowance.amount = 1000n;
+    const prepared = await prepareModuleEngineAnyQuoteSwap({ ...f, account: ACCOUNT });
+    if (prepared.kind !== "swap") throw new Error("Exact allowance should fund the sell");
+    f.allowance.expiration = Number(f.state.timestamp);
+    await expect(revalidateModuleEngineTransaction(prepared, ACCOUNT)).rejects.toThrow("Sell allowance changed");
+  });
   it("matches the final AnyQuote host token graffiti domain while preserving native token predictions", async () => {
     const f = sharedFixture(), compiled = await compileModuleEngineLaunch({ ...f.launchInput, configuration: {}, anyQuotePreparation: f.preview }, f.release, f.template.manifest, 36, BigInt(f.preview.validUntil));
     const expectedGraffiti = keccak256(encodeAbiParameters(parseAbiParameters("string,address,bytes32"), ["programmable.module-engine.any-quote-token.v1", ACCOUNT, f.intent.creatorSalt]));
