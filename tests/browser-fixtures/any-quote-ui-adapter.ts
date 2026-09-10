@@ -24,7 +24,7 @@ export async function prepareModuleEngineAnyQuoteLaunch(input: Omit<PrepareModul
   const expiresAt = BigInt(Math.floor(Date.now() / 1_000) + 120);
   const outputAmount = input.initialBuyWei * 1_000n, minimumOutput = outputAmount * 99n / 100n;
   return { sourceKind: "module-engine-v1", kind: "launch", account: input.account, releaseDigest: release.releaseDigest, blockNumber: 100n, expiresAt, gasEstimate: 400_000n,
-    transaction: { from: input.account, to: release.contracts.host.address, value: toHex(input.initialBuyWei), data: "0x" }, predictedToken: TOKEN, engine: addr(900), launchId: hash(10), revisionId: hash(11), planHash: hash(12), configurationHash: hash(13), engineCodeHash: hash(14), quoteAsset: input.quoteAsset, quoteDecimals: 18,
+    transaction: { chainId: 4663, action: "launch", description: "Local Any Quote UI test", from: input.account, to: release.contracts.host.address, value: toHex(input.initialBuyWei), data: "0x" }, predictedToken: TOKEN, engine: addr(900), launchId: hash(10), revisionId: hash(11), planHash: hash(12), configurationHash: hash(13), engineCodeHash: hash(14), quoteAsset: input.quoteAsset, quoteDecimals: 18,
     initialOperation: { operationId: input.initialBuyWei > 0n ? keccak256(toHex("spot.buy.native-exact-input.v1")) : zeroHash, actor: ACCOUNT, recipient: ACCOUNT, inputAsset: native, inputAmount: input.initialBuyWei, outputAsset: TOKEN, minimumOutput, deadline: expiresAt, nonce: 0n, data: "0x" as Hex },
     platformFeeBps: 30, buyCreatorFeeBps: input.buyCreatorFeeBps, sellCreatorFeeBps: input.sellCreatorFeeBps,
     anyQuote: { initialBuyWei: input.initialBuyWei, outputAmount, minimumOutput, actualFdvUsd: { numerator: "499925", denominator: "100" } } };

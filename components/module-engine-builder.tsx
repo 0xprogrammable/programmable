@@ -17,7 +17,7 @@ import { ENGINE_ZERO_ADDRESS, ENGINE_ZERO_HASH, moduleEngineOptionalHash, parseM
 import { createModuleEngineClient, ENGINE_OPERATIONS, moduleEngineDepositIntent, moduleEngineSettlementRequestIntent, moduleEngineTradeIntent, prepareModuleEngineApproval, prepareModuleEngineLaunch, readModuleEngineQuoteAsset, type ModuleEngineApprovalRequired, type ModuleEngineClient, type ModuleEngineOperationIntent, type PreparedModuleEngineTransaction } from "@/lib/module-engine/client";
 import { isModuleEngineAnyQuoteRelease } from "@/lib/module-engine/profile";
 import { prepareModuleEngineAnyQuoteLaunch } from "@/lib/module-engine/any-quote/integration-client";
-import { ModuleEngineAnyQuoteAsset, useAnyQuoteAssetAvailability } from "./module-engine-any-quote-asset";
+import { anyQuoteUserMessage, ModuleEngineAnyQuoteAsset, useAnyQuoteAssetAvailability } from "./module-engine-any-quote-asset";
 import { ModuleEnginePicker } from "./module-engine-library";
 import { ModuleEngineCustomOperationFields } from "./module-engine-custom-operation";
 import { emptyModuleEngineCustomOperation, moduleEngineCustomOperationIntent } from "@/lib/module-engine/custom-operation";
@@ -44,7 +44,7 @@ const readHydrated = () => true;
 const readServerHydrated = () => false;
 
 function freshSalt() { return toHex(crypto.getRandomValues(new Uint8Array(32))); }
-function message(error: unknown) { return error instanceof Error ? error.message.replace(/^Module engine: /, "") : "The launch could not be prepared."; }
+function message(error: unknown) { return anyQuoteUserMessage(error, error instanceof Error ? error.message.replace(/^Module engine: /, "") : "The launch could not be prepared."); }
 function fixedConfiguration(schema: ModuleEngineCatalogDefinition["schema"]): boolean { return schema.binding?.mode === "fixed" || schema.type === "record" && Object.keys(schema.fields).length > 0 && Object.values(schema.fields).every(fixedConfiguration); }
 
 /** Configuration and wallet controls extend the existing Module Mode flow; no independent wallet is created. */

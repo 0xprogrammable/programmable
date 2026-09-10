@@ -15,6 +15,18 @@ export interface AnyQuoteAssetAvailability {
   retry: () => void;
 }
 
+export function anyQuoteUserMessage(error: unknown, fallback: string): string {
+  const failure = error as { code?: unknown; status?: unknown } | null;
+  if (typeof failure?.code !== "string" || !["incompatible", "inconclusive"].includes(String(failure.status))) return fallback;
+  if (failure.code === "INVALID_ADDRESS") return "Enter a valid token address on Robinhood Chain.";
+  if (failure.code === "INVALID_AMOUNT") return "Enter a valid amount to continue.";
+  if (failure.code === "OUTPUT_TOO_SMALL") return "This amount is too small for the current route. Increase the amount and try again.";
+  if (failure.code === "MODULE_UNAVAILABLE") return "This module is temporarily unavailable. Please try again.";
+  if (failure.status === "incompatible") return "Der Token ist leider nicht verfügbar.";
+  if (/EXPIRED|STATE_CHANGED|PREVIEW_MISMATCH/.test(failure.code)) return "Your quote changed or expired. Review again for a current price and route.";
+  return "The price and route could not be confirmed. Please try again.";
+}
+
 /** Displayed readiness always belongs to this release, template and CA, never the previous request. */
 export function useAnyQuoteAssetAvailability({ enabled, releaseDigest, templateId, quoteAsset }: {
   enabled: boolean; releaseDigest?: Hex; templateId?: string; quoteAsset: string;

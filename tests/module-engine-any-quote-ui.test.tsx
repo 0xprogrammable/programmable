@@ -2,15 +2,15 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { ModuleEngineBuilder } from "@/components/module-engine-builder";
-import { ModuleEngineAnyQuoteAsset } from "@/components/module-engine-any-quote-asset";
+import { anyQuoteUserMessage, ModuleEngineAnyQuoteAsset } from "@/components/module-engine-any-quote-asset";
 import { ModuleEngineTransactionReview } from "@/components/module-engine-transaction-review";
 import { ModuleEngineFeeChangeReview } from "@/components/module-engine-fee-controls";
-import type { PreparedModuleEngineClaim, PreparedModuleEngineFeeChange, PreparedModuleEngineSwap } from "@/lib/module-engine/client";
+import type { PreparedModuleEngineApproval, PreparedModuleEngineClaim, PreparedModuleEngineFeeChange, PreparedModuleEngineSwap } from "@/lib/module-engine/client";
 import { anyQuoteUiFixture } from "./module-engine-any-quote-ui-fixture";
 import { ACCOUNT, QUOTE, TOKEN, addr, hash } from "./module-engine-fixture";
 
 const actions = { wallet: { authenticated: false, sessionReady: true }, onConnect: vi.fn(), onSwitch: vi.fn(), onSubmit: vi.fn() };
-const base = { sourceKind: "module-engine-v1" as const, account: ACCOUNT, releaseDigest: hash(1), blockNumber: 100n, expiresAt: BigInt(Math.floor(Date.now() / 1_000) + 120), gasEstimate: 200_000n, transaction: { from: ACCOUNT, to: addr(2), data: "0x" as const, value: "0x0" as const }, token: TOKEN, launchId: hash(3), revisionId: hash(4), planHash: hash(5) };
+const base = { sourceKind: "module-engine-v1" as const, account: ACCOUNT, releaseDigest: hash(1), blockNumber: 100n, expiresAt: BigInt(Math.floor(Date.now() / 1_000) + 120), gasEstimate: 200_000n, transaction: { chainId: 4663 as const, action: "manage" as const, description: "Local Any Quote UI test", from: ACCOUNT, to: addr(2), data: "0x" as const, value: "0x0" as const }, token: TOKEN, launchId: hash(3), revisionId: hash(4), planHash: hash(5) };
 
 describe("Any Quote LP visible economic and availability boundaries", () => {
   it("offers one CA and optional ETH buy before connecting, without pool, quote-funding or fee-conversion inputs", () => {
@@ -30,6 +30,11 @@ describe("Any Quote LP visible economic and availability boundaries", () => {
     const unavailable = renderToStaticMarkup(<ModuleEngineAnyQuoteAsset value={QUOTE} onChange={vi.fn()} availability={{ status: "incompatible", result: { status: "incompatible", chainId: 4663, quoteAsset: QUOTE, code: "NON_ERC20", retryable: false }, retry: vi.fn() }} />);
     expect(unavailable).toContain('aria-invalid="true"'); expect(unavailable).toContain("Der Token ist leider nicht verfügbar.");
   });
+  it("keeps typed provider and expiry diagnostics understandable without mislabeling incompatibility", () => {
+    expect(anyQuoteUserMessage({ code: "QUOTER_RUNTIME_MISMATCH", status: "inconclusive" }, "internal")).toBe("The price and route could not be confirmed. Please try again.");
+    expect(anyQuoteUserMessage({ code: "READINESS_EXPIRED", status: "inconclusive" }, "internal")).toContain("Review again");
+    expect(anyQuoteUserMessage(new Error("Insufficient ETH balance."), "Insufficient ETH balance.")).toBe("Insufficient ETH balance.");
+  });
   it.each([true, false])("reviews the final ETH direction instead of quote-funded host data (buy=%s)", buy => {
     const prepared: PreparedModuleEngineSwap = { ...base, kind: "swap", buy, quoteAsset: QUOTE, quoteDecimals: 6, recipient: ACCOUNT, inputAmount: 10n ** 18n, outputAmount: 2n * 10n ** 18n, minimumOutput: 19n * 10n ** 17n };
     const html = renderToStaticMarkup(<ModuleEngineTransactionReview prepared={prepared} anyQuote busy={false} onConfirm={vi.fn()} onEdit={vi.fn()} />);
@@ -41,6 +46,11 @@ describe("Any Quote LP visible economic and availability boundaries", () => {
     const html = renderToStaticMarkup(<ModuleEngineTransactionReview prepared={prepared} anyQuote quoteAsset={QUOTE} quoteDecimals={6} busy={false} onConfirm={vi.fn()} onEdit={vi.fn()} />);
     expect(html).toContain("Review reward claim"); expect(html).toContain("1.25 pool pair tokens"); expect(html).toContain(QUOTE);
     expect(html).not.toContain("1.25 ETH");
+  });
+  it("shows both the allowance manager and authorized router with a bounded approval expiry", () => {
+    const prepared: PreparedModuleEngineApproval = { ...base, kind: "approve", spender: addr(700), permit2Spender: addr(701), amount: 2n * 10n ** 18n, allowanceKind: "permit2", expiration: base.expiresAt };
+    const html = renderToStaticMarkup(<ModuleEngineTransactionReview prepared={prepared} anyQuote busy={false} onConfirm={vi.fn()} onEdit={vi.fn()} />);
+    expect(html).toContain("2 tokens"); expect(html).toContain("Allowance manager"); expect(html).toContain("Authorized swap router"); expect(html).toContain(addr(701)); expect(html).toContain("Allowance expires"); expect(html).not.toContain("token base units");
   });
   it("reviews platform rotation as future module fees with historical claims retained", () => {
     const prepared: PreparedModuleEngineFeeChange = { ...base, kind: "rotate-platform", previousWallet: ACCOUNT, recipient: addr(77), authority: "treasury" };

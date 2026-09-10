@@ -12,6 +12,7 @@ import { quoteModuleEngineAnyQuoteTrade } from "@/lib/module-engine/any-quote/in
 import { createModuleEngineClient, ENGINE_OPERATIONS, isModuleEngineFeeTransaction, prepareModuleEngineFeeChange, type ModuleEngineFeeChangeIntent, type ModuleEngineReceiptResult, moduleEngineDepositIntent, moduleEngineSettlementPaymentIntent, moduleEngineSettlementRequestIntent, moduleEngineTradeIntent, moduleEngineWithdrawalIntent, prepareModuleEngineApproval, prepareModuleEngineClaim, prepareModuleEngineOperation, quoteModuleEngineTrade, readModuleEngineAdministration, readModuleEngineQuoteAsset, type ModuleEngineAdministration, type ModuleEngineApprovalRequired, type ModuleEngineClient, type PreparedModuleEngineTransaction } from "@/lib/module-engine/client";
 import { ModuleEngineTransactionReview, type ModuleEngineWalletActions } from "./module-engine-transaction-review";
 import { ModuleEngineFeeControls, ModuleEngineFeeChangeReceipt } from "./module-engine-fee-controls";
+import { anyQuoteUserMessage } from "./module-engine-any-quote-asset";
 import { ModuleEngineCustomOperationFields } from "./module-engine-custom-operation";
 import { emptyModuleEngineCustomOperation, moduleEngineCustomOperationIntent } from "@/lib/module-engine/custom-operation";
 import styles from "@/components/module-mode-builder.module.css";
@@ -20,7 +21,7 @@ import engineStyles from "./module-engine-ui.module.css";
 export interface ModuleEngineConsoleProps extends ModuleEngineWalletActions { release: ModuleEngineRelease; template: ModuleEngineTemplate; token: Address; client?: ModuleEngineClient; statusContent?: ReactNode }
 type Action = "buy" | "sell" | "deposit" | "withdraw" | "request" | "fulfill" | "refund";
 const labels: Record<Action, string> = { buy: "Buy tokens", sell: "Sell tokens", deposit: "Deposit quote tokens", withdraw: "Withdraw your deposit", request: "Create a funded request", fulfill: "Fulfill this request", refund: "Refund this request" };
-const humanError = (caught: unknown) => caught instanceof Error ? caught.message.replace(/^Module engine: /, "") : "The current coin state could not be verified. Please try again.";
+const humanError = (caught: unknown) => anyQuoteUserMessage(caught, caught instanceof Error ? caught.message.replace(/^Module engine: /, "") : "The current coin state could not be verified. Please try again.");
 export function ModuleEngineConsole({ release, template, token, client: suppliedClient, wallet, onConnect, onSwitch, onSubmit, blocked, blockedReason, statusContent }: ModuleEngineConsoleProps) {
   const client = useMemo(() => suppliedClient ?? createModuleEngineClient(), [suppliedClient]);
   const [snapshot, setSnapshot] = useState<(ModuleEngineAdministration & { releaseDigest: Hex }) | null>(null); const [action, setAction] = useState<Action | null>(null);
