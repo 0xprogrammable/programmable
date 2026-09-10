@@ -12,6 +12,8 @@ describe("Any Quote canonical engine lane", () => {
     for (const f of evidence.cases) {
       const launch = normalizeModuleEngineLaunchV1(f.range.launches[0].evidence, bindActiveModuleEngineRelease(f.release));
       expect(launch).toEqual(f.normalized);
+      // Final Host _graffiti uses programmable.module-engine.any-quote-token.v1.
+      expect(launch.token).toBe("0xd803cd624d58e1f31d1043f630953e6dbdf6a128");
       const row = moduleEnginePublicLaunch(launch, f.range.launches[0].launchedAt);
       expect(isRobinhoodEngineLaunch(row)).toBe(true);
       expect(row).toMatchObject({ sourceKind: "module-engine-v1", protocolFeeBps: 30, authorPoolFeeBps: 0, platformFeeBps: 30,

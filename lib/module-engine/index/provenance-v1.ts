@@ -163,7 +163,7 @@ export function normalizeModuleEngineLaunchV1(value: unknown, profile: ModuleEng
     const name = text(p.name, "engine.name", 64), symbol = text(p.symbol, "engine.symbol", 16);
     for (const [getter, expected] of [["name", name], ["symbol", symbol], ["decimals", 18], ["totalSupply", "1000000000000000000000000000"], ["creator", pins.host.address]] as const)
         equal(state.take(token, getter), expected, `engine.token.${getter}`);
-    const graffiti = keccak256(encodeAbiParameters(parseAbiParameters("string,address,bytes32"), ["programmable.module-engine.token.v1", creator, optionalHash(p.creatorSalt, "engine.creatorSalt")]));
+    const graffiti = keccak256(encodeAbiParameters(parseAbiParameters("string,address,bytes32"), [anyQuote ? "programmable.module-engine.any-quote-token.v1" : "programmable.module-engine.token.v1", creator, optionalHash(p.creatorSalt, "engine.creatorSalt")]));
     equal(state.take(token, "graffiti"), graffiti, "engine.token.graffiti");
     const tokenSalt = keccak256(encodeAbiParameters(parseAbiParameters("string,string,uint8,address,bytes32"), [name, symbol, 18, pins.host.address, graffiti]));
     equal(getCreate2Address({ from: pins.tokenFactory.address, salt: tokenSalt, bytecodeHash: release.tokenCreationCodeHash }).toLowerCase(), token, "engine.token.create2");
