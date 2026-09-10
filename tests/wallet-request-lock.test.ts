@@ -140,7 +140,11 @@ describe("production wallet request lock", () => {
     const refreshedAuthority = entrypoint.indexOf("await assertAuthority();", validation);
     expect(authority).toBeGreaterThan(lock); expect(validation).toBeGreaterThan(authority);
     expect(refreshedAuthority).toBeGreaterThan(validation); expect(entrypoint.indexOf('method: "eth_sendTransaction"')).toBeGreaterThan(refreshedAuthority);
-    expect(entrypoint).toContain("current.walletCapability !== boundWallet"); expect(entrypoint).toContain("walletRequestAttempted: false");
+    expect(entrypoint).toContain("walletSessionGenerationRef.current !== expectedGeneration");
+    expect(entrypoint).toContain("current.walletCapability?.getEthereumProvider !== boundWallet.getEthereumProvider");
+    expect(entrypoint).toContain("current.walletCapability?.switchChain !== boundWallet.switchChain");
+    expect(entrypoint).toContain("walletRequestAttempted: false");
+    expect(entrypoint.indexOf("await getWalletProviderOnChain({")).toBeGreaterThan(lock);
     expect(entrypoint).not.toContain("switchChain(");
   });
 

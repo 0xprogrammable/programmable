@@ -32,8 +32,8 @@ export async function createWalletSessionServer() {
           const moduleWalletStep = moduleModeWalletStep({account:value.wallet?.account, chainId:value.wallet?.chainId,
             authenticated:value.authenticated, sessionReady:value.sessionReady});
           const [networkResults, setNetworkResults] = useState([]);
-          const switchNetwork = () => {
-            void value.switchNetwork('1').then(
+          const switchNetwork = (chainId = '1') => {
+            void value.switchNetwork(chainId).then(
               result => setNetworkResults(previous => [...previous, result]),
               () => setNetworkResults(previous => [...previous, 'rejected']),
             );
@@ -58,7 +58,8 @@ export async function createWalletSessionServer() {
             <output aria-label="Module continue calls">{moduleContinuations}</output>
             <output aria-label="Module wallet step">{moduleWalletStep}</output>
             <button onClick={value.openWallet}>Open account</button>
-            <button onClick={switchNetwork}>Request Ethereum wallet network</button>
+            <button onClick={() => switchNetwork()}>Request Ethereum wallet network</button>
+            <button onClick={() => switchNetwork('4663')}>Request Robinhood wallet network</button>
             <button onClick={() => void value.disconnect({showDialogOnFailure:false})}>Sign out of app</button>
             <FixtureControls/>
             {location.pathname === '/launch/modules' ? <ModuleModeBuilder launchAction={{label:'Continue module fixture',

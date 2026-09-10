@@ -111,7 +111,7 @@ describe("wallet login lock", () => {
       /onError: \(errorCode\) => \{\s+settleWalletLoginAttempt\(\);/u,
     );
     expect(provider).toContain(
-      "loginPending || (!providerSettled && !providerTimedOut)",
+      "loginPending || (accountSwitchRequested && !providerTimedOut) || (!providerSettled && !providerTimedOut)",
     );
     expect(provider).not.toContain("walletLoginExpiryTimerRef");
     expect(provider).toContain('? "Opening wallet"');
