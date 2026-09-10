@@ -56,3 +56,47 @@ export const moduleEngineAuthorWalletAbi = parseAbi([
   "function changeAuthorWallet(bytes32 familyId,address rewardWallet)",
   "event AuthorWalletChanged(bytes32 indexed familyId,address indexed previousWallet,address indexed wallet)",
 ]);
+
+/** Shared-quote source ABI. These selectors are deliberately separate from native Host/Ledger V1. */
+export const moduleEngineAnyQuoteHostAbi = [...moduleEngineHostAbi.filter(item => !(item.type === "function" && item.name === "feeTerms")), ...parseAbi([
+  "function sharedHook() view returns (address)",
+  "function nativeRouteGuard() view returns (address)",
+  "function NATIVE_ROUTE_GUARD_CODE_HASH() view returns (bytes32)",
+  "function quotePoolManager() view returns (address)",
+  "function quotePoolManagerCodeHash() view returns (bytes32)",
+  "function UNIVERSAL_ROUTER() view returns (address)",
+  "function UNIVERSAL_ROUTER_CODE_HASH() view returns (bytes32)",
+  "function quoteFeeProfileId() view returns (bytes32)",
+  "function poolIdOf(bytes32 launchId) view returns (bytes32)",
+])] as const;
+export const moduleEngineAnyQuoteHookAbi = parseAbi([
+  "function host() view returns (address)", "function ledger() view returns (address)", "function poolManager() view returns (address)",
+  "function poolKey(bytes32 poolId) view returns ((address currency0,address currency1,uint24 fee,int24 tickSpacing,address hooks))",
+  "function poolConfig(bytes32 poolId) view returns ((bytes32 launchId,bytes32 revisionId,bytes32 familyId,bytes32 configurationHash,address token,address quoteAsset,address initializer,int24 initialTick,uint16 buyCreatorFeeBps,uint16 sellCreatorFeeBps))",
+  "function previewGrossFees(bytes32 poolId,bool buy,uint256 grossQuote) view returns (uint256 platformQuote,uint256 creatorQuote,uint16 nextPlatformRemainder,uint16 nextCreatorRemainder)",
+  "event QuotePoolSwap(bytes32 indexed poolId,bytes32 indexed launchId,address indexed swapSender,bool buy,bool exactInput,uint256 grossQuote,uint256 platformQuote,uint256 creatorQuote,int128 amount0,int128 amount1)",
+  "event SharedQuotePoolBound(bytes32 indexed poolId,bytes32 indexed launchId,address indexed token,address quoteAsset,address engine,bytes32 revisionId,bytes32 familyId,bytes32 configurationHash,int24 initialTick,uint16 buyCreatorFeeBps,uint16 sellCreatorFeeBps)",
+]);
+export const moduleEngineAnyQuoteLedgerAbi = parseAbi([
+  "function host() view returns (address)", "function hook() view returns (address)", "function poolManager() view returns (address)",
+  "function ECONOMICS_POLICY_ID() view returns (bytes32)", "function platformFeeBps(bytes32 launchId) view returns (uint16)",
+  "function treasury() view returns (address)", "function rewardAdmin() view returns (address)",
+  "function quoteAsset(bytes32 launchId) view returns (address)", "function configurationHash(bytes32 launchId) view returns (bytes32)",
+  "function claimableQuote(address asset,address beneficiary) view returns (uint256)",
+  "function claimedBy(address asset,address beneficiary) view returns (uint256)",
+  "function contributionByLaunch(bytes32 launchId,address beneficiary) view returns (uint256)",
+  "function claimQuoteTo(address asset,address recipient) returns (uint256)",
+  "function claimQuoteFor(address asset,address beneficiary) returns (uint256)",
+  "function changePlatformWallet(address next)",
+  "event PlatformWalletChanged(address indexed previous,address indexed current,address indexed administrator)",
+  "function creatorRecipients(bytes32 launchId) view returns (address[] wallets,uint16[] sharesBps,uint256 adminRevision)",
+  "function changeCreatorWallet(bytes32 launchId,uint256 index,address next)",
+  "function replaceCreatorWallets(bytes32 launchId,address[] next,uint256 expectedRevision,uint256 deadline)",
+  "event QuoteFeesClaimed(address indexed asset,address indexed beneficiary,address indexed recipient,uint256 amount)",
+  "event CreatorWalletChanged(bytes32 indexed launchId,uint256 indexed index,address previous,address current,uint256 effectiveCreatorReceived)",
+  "event CreatorRecipientsReplaced(bytes32 indexed launchId,address indexed administrator,uint256 indexed revision,address[] wallets,uint256 effectiveCreatorReceived)",
+]);
+export const moduleEnginePermit2Abi = parseAbi([
+  "function allowance(address owner,address token,address spender) view returns (uint160 amount,uint48 expiration,uint48 nonce)",
+  "function approve(address token,address spender,uint160 amount,uint48 expiration)",
+]);

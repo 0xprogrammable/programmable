@@ -1,17 +1,22 @@
-import { concatHex, decodeAbiParameters, decodeEventLog, decodeFunctionResult, encodeAbiParameters, encodeEventTopics, encodeFunctionData, erc20Abi, getCreate2Address, keccak256, parseAbi, parseAbiParameters, toHex, type Abi, type Address, type Hex, type TransactionReceipt } from "viem";
+import { concatHex, decodeAbiParameters, decodeEventLog, decodeFunctionResult, encodeAbiParameters, encodeEventTopics, encodeFunctionData, erc20Abi, getCreate2Address, keccak256, parseAbi, parseAbiParameters, toHex, type Abi, type Address, type Hex, type TransactionReceipt, type PublicClient } from "viem";
 import { compileOpenConfig, type OpenConfigValue } from "@/packages/classic-modules/src/open-config.mjs";
 import { createModuleNativeClient, type ModuleNativeClient, type ModuleNativeWalletTransaction } from "@/lib/module-mode/native-client";
 import { nativeCanonicalJson } from "@/lib/module-mode/native-catalog";
 import { moduleAddress, moduleBytes, moduleHash, moduleRecord, moduleUint } from "@/lib/module-mode/release";
 import type { ModuleSocialLinks } from "@/lib/module-mode/token-metadata";
-import { ENGINE_CONTEXT, moduleEngineAuthorWalletAbi, moduleEngineHostAbi, moduleEngineLaunchParameters, moduleEngineLedgerAbi, moduleEnginePlanParameters, moduleEngineReadAbi, moduleEngineTradeLimitsParameters } from "./abi";
-import { bindActiveModuleEngineRelease, bindModuleEngineTemplate, ENGINE_ZERO_ADDRESS as ZERO, ENGINE_ZERO_HASH as ZERO_HASH, MODULE_ENGINE_CONTRACTS, MODULE_ENGINE_SOURCE_ID, moduleEngineOptionalHash, parseModuleEngineAvailability, type ModuleEngineAvailability, type ModuleEnginePermission, type ModuleEngineRelease, type ModuleEngineTemplate } from "./catalog";
+import { ENGINE_CONTEXT, moduleEngineAnyQuoteHostAbi, moduleEngineAnyQuoteHookAbi, moduleEngineAnyQuoteLedgerAbi, moduleEnginePermit2Abi, moduleEngineAuthorWalletAbi, moduleEngineHostAbi, moduleEngineLaunchParameters, moduleEngineLedgerAbi, moduleEnginePlanParameters, moduleEngineReadAbi, moduleEngineTradeLimitsParameters } from "./abi";
+import { bindActiveModuleEngineRelease, bindModuleEngineTemplate, ENGINE_ZERO_ADDRESS as ZERO, ENGINE_ZERO_HASH as ZERO_HASH, moduleEngineOptionalHash, parseModuleEngineAvailability, type ModuleEngineAvailability, type ModuleEnginePermission, type ModuleEngineRelease, type ModuleEngineTemplate } from "./catalog";
 import { encodeModuleEngineConfiguration } from "./configuration";
+import { isModuleEngineAnyQuoteRelease, moduleEngineContractRoles, moduleEngineSourceId, MODULE_ENGINE_ANY_QUOTE_PROFILE_ID } from "./profile";
+import { ANY_QUOTE_INFRASTRUCTURE, ANY_QUOTE_NATIVE_BUY_OPERATION_ID } from "./any-quote/types";
+import { assertAnyQuoteLaunchPreparation, anyQuoteMinimumOutput, type AnyQuoteTradeQuote, type AnyQuoteLaunchPreparation } from "./any-quote/integration";
+import { anyQuoteEvidenceHashV1, anyQuoteModulePoolKeyV1, buildAnyQuoteSwapV1 } from "./any-quote/route";
+import anyQuoteChainProfile from "@/contracts/spec/robinhood-custom-launch/chain-4663.v1.json";
 
 import { compileModuleEngineLaunch, moduleEngineOperation as operationFor } from "./operation-plan";
 export { materializeModuleEngineRuntime, predictModuleEngineAddress } from "./operation-plan";
 
-export type ModuleEngineClient = ModuleNativeClient;
+export type ModuleEngineClient = ModuleNativeClient & Partial<Pick<PublicClient, "getBalance">>;
 export const createModuleEngineClient = createModuleNativeClient;
 export interface ModuleEngineOperation { operationId: Hex; actor: Address; recipient: Address; inputAsset: Address; inputAmount: bigint; outputAsset: Address; minimumOutput: bigint; deadline: bigint; nonce: bigint; data: Hex }
 export type ModuleEngineOperationIntent = Omit<ModuleEngineOperation, "actor" | "nonce" | "deadline">;
@@ -23,26 +28,34 @@ interface PreparedBase {
 export interface PreparedModuleEngineLaunch extends PreparedBase {
   readonly kind: "launch"; readonly predictedToken: Address; readonly engine: Address; readonly launchId: Hex; readonly revisionId: Hex; readonly planHash: Hex;
   readonly configurationHash: Hex; readonly engineCodeHash: Hex; readonly quoteAsset: Address; readonly quoteDecimals: number; readonly initialOperation: Readonly<ModuleEngineOperation>;
+  readonly anyQuote?: { readonly initialBuyWei: bigint; readonly outputAmount: bigint; readonly minimumOutput: bigint; readonly actualFdvUsd: { numerator: string; denominator: string } };
   readonly platformFeeBps: 10 | 30; readonly buyCreatorFeeBps: number; readonly sellCreatorFeeBps: number;
 }
 export interface PreparedModuleEngineOperation extends PreparedBase {
   readonly kind: "execute"; readonly token: Address; readonly launchId: Hex; readonly revisionId: Hex; readonly planHash: Hex;
   readonly operation: Readonly<ModuleEngineOperation>; readonly result: Hex;
 }
-export interface PreparedModuleEngineApproval extends PreparedBase { readonly kind: "approve"; readonly token: Address; readonly spender: Address; readonly amount: bigint }
-export interface PreparedModuleEngineClaim extends PreparedBase { readonly kind: "claim"; readonly token: Address; readonly launchId: Hex; readonly revisionId: Hex; readonly planHash: Hex; readonly recipient: Address; readonly minimumAmount: bigint; readonly claimedBefore: bigint }
+export interface PreparedModuleEngineApproval extends PreparedBase { readonly kind: "approve"; readonly token: Address; readonly spender: Address; readonly amount: bigint; readonly allowanceKind?: "erc20" | "permit2"; readonly permit2Spender?: Address; readonly expiration?: bigint }
+export interface PreparedModuleEngineClaim extends PreparedBase { readonly kind: "claim"; readonly token: Address; readonly launchId: Hex; readonly revisionId: Hex; readonly planHash: Hex; readonly recipient: Address; readonly minimumAmount: bigint; readonly claimedBefore: bigint; readonly feeAsset?: Address; readonly feeDecimals?: number }
 export type ModuleEngineFeeChange =
+  | Readonly<{ kind: "rotate-platform"; previousWallet: Address; recipient: Address; authority: "treasury" | "reward-admin" }>
   | Readonly<{ kind: "rotate-creator"; index: number; previousWallet: Address; recipient: Address; shareBps: number }>
   | Readonly<{ kind: "replace-creators"; previousWallets: readonly Address[]; recipients: readonly Address[]; sharesBps: readonly number[]; expectedAdminRevision: bigint; deadline: bigint; authority: "treasury" | "reward-admin" }>
   | Readonly<{ kind: "rotate-author"; familyId: Hex; author: Address; previousWallet: Address; recipient: Address }>;
 export type ModuleEngineFeeChangeIntent =
+  | { kind: "rotate-platform"; recipient: Address }
   | { kind: "rotate-creator"; index: number; recipient: Address }
   | { kind: "replace-creators"; recipients: readonly Address[] }
   | { kind: "rotate-author"; familyId: Hex; recipient: Address };
 export type PreparedModuleEngineFeeChange = PreparedBase & Readonly<{ token: Address; launchId: Hex; revisionId: Hex; planHash: Hex }> & ModuleEngineFeeChange;
-export type PreparedModuleEngineTransaction = PreparedModuleEngineLaunch | PreparedModuleEngineOperation | PreparedModuleEngineApproval | PreparedModuleEngineClaim | PreparedModuleEngineFeeChange;
-export function isModuleEngineFeeTransaction(prepared: PreparedModuleEngineTransaction): prepared is PreparedModuleEngineFeeChange { return ["rotate-creator", "replace-creators", "rotate-author"].includes(prepared.kind); }
-export interface ModuleEngineApprovalRequired { kind: "approval-required"; token: Address; spender: Address; amount: bigint; currentAllowance: bigint }
+export interface PreparedModuleEngineSwap extends PreparedBase {
+  readonly kind: "swap"; readonly token: Address; readonly quoteAsset: Address; readonly quoteDecimals: number;
+  readonly launchId: Hex; readonly revisionId: Hex; readonly planHash: Hex; readonly buy: boolean; readonly recipient: Address;
+  readonly inputAmount: bigint; readonly outputAmount: bigint; readonly minimumOutput: bigint;
+}
+export type PreparedModuleEngineTransaction = PreparedModuleEngineSwap | PreparedModuleEngineLaunch | PreparedModuleEngineOperation | PreparedModuleEngineApproval | PreparedModuleEngineClaim | PreparedModuleEngineFeeChange;
+export function isModuleEngineFeeTransaction(prepared: PreparedModuleEngineTransaction): prepared is PreparedModuleEngineFeeChange { return ["rotate-platform", "rotate-creator", "replace-creators", "rotate-author"].includes(prepared.kind); }
+export interface ModuleEngineApprovalRequired { kind: "approval-required"; token: Address; spender: Address; amount: bigint; currentAllowance: bigint; allowanceKind?: "erc20" | "permit2"; permit2Spender?: Address; expiration?: bigint }
 export interface ModuleEngineReceiptResult {
   sourceKind: "module-engine-v1"; status: "mined"; finalized: false; indexed: false; kind: PreparedModuleEngineTransaction["kind"];
   transactionHash: Hex; blockNumber: bigint; blockHash: Hex; token?: Address; launch?: ModuleEngineLaunchRecord; outputAmount?: bigint;
@@ -79,13 +92,23 @@ export async function assertModuleEngineRelease(input: { client: ModuleEngineCli
   need(block.number !== null && block.hash !== null && block.number >= BigInt(release.startBlock), "Release block is unavailable.");
   if (input.blockNumber === undefined) need(Math.abs(Date.now() / 1000 - Number(block.timestamp)) <= 120, "RPC state is stale. Refresh before continuing.");
   const pins = release.contracts;
-  await Promise.all(MODULE_ENGINE_CONTRACTS.map(role => code(client, pins[role].address, pins[role].runtimeCodeHash, block.number!)));
+  await Promise.all(moduleEngineContractRoles(release).map(role => { const pin = (pins as Record<string, { address: Address; runtimeCodeHash: Hex }>)[role]; return code(client, pin.address, pin.runtimeCodeHash, block.number!); }));
   await Promise.all((["tokenFactory", "launchPolicy", "registry", "ledger"] as const).map(async role => same(await read(client, pins.host.address, role, [], block.number!, moduleEngineHostAbi), pins[role].address, `Host ${role}`)));
-  await Promise.all(([["hook", "host"], ["registry", "registry"], ["poolManager", "poolManager"]] as const).map(async ([getter, role]) => same(await read(client, pins.ledger.address, getter, [], block.number!), pins[role].address, `Ledger ${getter}`)));
-  same(await read(client, pins.host.address, "SOURCE_VERSION", [], block.number, moduleEngineHostAbi), MODULE_ENGINE_SOURCE_ID, "Host source version");
+  if (isModuleEngineAnyQuoteRelease(release)) {
+    const sharedHook = release.contracts.sharedHook;
+    await Promise.all(([["hook", sharedHook.address], ["host", pins.host.address], ["poolManager", pins.poolManager.address]] as const).map(async ([getter, expected]) => same(await read(client, pins.ledger.address, getter, [], block.number!, moduleEngineAnyQuoteLedgerAbi), expected, `Quote ledger ${getter}`)));
+    await Promise.all(([["host", pins.host.address], ["ledger", pins.ledger.address], ["poolManager", pins.poolManager.address]] as const).map(async ([getter, expected]) => same(await read(client, sharedHook.address, getter, [], block.number!, moduleEngineAnyQuoteHookAbi), expected, `Shared hook ${getter}`)));
+    await Promise.all(([["sharedHook", sharedHook.address], ["nativeRouteGuard", release.contracts.nativeRouteGuard.address], ["NATIVE_ROUTE_GUARD_CODE_HASH", release.contracts.nativeRouteGuard.runtimeCodeHash], ["quoteFeeProfileId", MODULE_ENGINE_ANY_QUOTE_PROFILE_ID], ["quotePoolManager", pins.poolManager.address], ["quotePoolManagerCodeHash", pins.poolManager.runtimeCodeHash], ["UNIVERSAL_ROUTER", release.contracts.universalRouter.address], ["UNIVERSAL_ROUTER_CODE_HASH", release.contracts.universalRouter.runtimeCodeHash]] as const).map(async ([getter, expected]) => same(await read(client, pins.host.address, getter, [], block.number!, moduleEngineAnyQuoteHostAbi), expected, `Quote host ${getter}`)));
+    same(release.contracts.universalRouter.address, ANY_QUOTE_INFRASTRUCTURE.universalRouter, "Pinned Universal Router");
+    same(release.contracts.universalRouter.runtimeCodeHash, ANY_QUOTE_INFRASTRUCTURE.universalRouterCodeHash, "Universal Router runtime");
+  } else {
+    await Promise.all(([["hook", "host"], ["registry", "registry"], ["poolManager", "poolManager"]] as const).map(async ([getter, role]) => same(await read(client, pins.ledger.address, getter, [], block.number!), pins[role].address, `Ledger ${getter}`)));
+    const [protocol, authors] = await Promise.all([read(client, pins.ledger.address, "PROTOCOL_FEE_BPS", [], block.number), read(client, pins.ledger.address, "AUTHOR_POOL_FEE_BPS", [], block.number)]);
+    need(protocol === 10 && authors === 20, "Ledger fee constants differ.");
+  }
+  same(await read(client, pins.host.address, "SOURCE_VERSION", [], block.number, moduleEngineHostAbi), moduleEngineSourceId(release), "Host source version");
   same(await read(client, pins.ledger.address, "ECONOMICS_POLICY_ID", [], block.number), release.economicsPolicyId, "Ledger economics policy");
-  const [protocol, authors, owner] = await Promise.all([read(client, pins.ledger.address, "PROTOCOL_FEE_BPS", [], block.number), read(client, pins.ledger.address, "AUTHOR_POOL_FEE_BPS", [], block.number), read(client, pins.registry.address, "owner", [], block.number)]);
-  need(protocol === 10 && authors === 20, "Ledger fee constants differ."); moduleAddress(owner, "registry.owner");
+  moduleAddress(await read(client, pins.registry.address, "owner", [], block.number), "registry.owner");
   const result = { release, blockNumber: block.number, blockHash: block.hash, timestamp: block.timestamp }; await canonical(client, result); return result;
 }
 function launchRecord(value: unknown): ModuleEngineLaunchRecord {
@@ -95,7 +118,8 @@ function launchRecord(value: unknown): ModuleEngineLaunchRecord {
   for (const key of ["creator", "token", "quoteAsset", "engine"]) result[key] = moduleAddress(r[key], key);
   result.buyCreatorFeeBps = fee(r.buyCreatorFeeBps); result.sellCreatorFeeBps = fee(r.sellCreatorFeeBps); return result as unknown as ModuleEngineLaunchRecord;
 }
-function contextFor(release: ModuleEngineRelease, r: Pick<ModuleEngineLaunchRecord, "launchId" | "token" | "creator" | "quoteAsset">) { return { host: release.contracts.host.address, launchId: r.launchId, token: r.token, creator: r.creator, quoteAsset: r.quoteAsset, feeCollector: release.contracts.host.address }; }
+function ledgerAbi(release: ModuleEngineRelease): Abi { return isModuleEngineAnyQuoteRelease(release) ? moduleEngineAnyQuoteLedgerAbi : moduleEngineLedgerAbi; }
+function contextFor(release: ModuleEngineRelease, r: Pick<ModuleEngineLaunchRecord, "launchId" | "token" | "creator" | "quoteAsset">) { return { host: release.contracts.host.address, launchId: r.launchId, token: r.token, creator: r.creator, quoteAsset: r.quoteAsset, feeCollector: isModuleEngineAnyQuoteRelease(release) ? release.contracts.ledger.address : release.contracts.host.address }; }
 async function boundLaunch(client: ModuleEngineClient, block: BoundBlock, tokenValue: Address): Promise<ModuleEngineLaunchRecord> {
   const token = moduleAddress(tokenValue, "engine.token"), host = block.release.contracts.host.address;
   const id = moduleHash(await read(client, host, "launchIdOf", [token], block.blockNumber, moduleEngineHostAbi), "launchId");
@@ -111,7 +135,16 @@ async function boundLaunch(client: ModuleEngineClient, block: BoundBlock, tokenV
   same(factoryToken, token, "Factory token address");
   const expectedToken = getCreate2Address({ from: block.release.contracts.tokenFactory.address, salt: keccak256(encodeAbiParameters(parseAbiParameters("string,string,uint8,address,bytes32"), [tokenName, tokenSymbol, 18, host, graffiti])), bytecodeHash: block.release.tokenCreationCodeHash });
   same(expectedToken, token, "Factory CREATE2 token identity");
-  same(contextHash, keccak256(encodeAbiParameters(parseAbiParameters(ENGINE_CONTEXT), [contextFor(block.release, r)])), "Engine context"); return r;
+  same(contextHash, keccak256(encodeAbiParameters(parseAbiParameters(ENGINE_CONTEXT), [contextFor(block.release, r)])), "Engine context");
+  if (isModuleEngineAnyQuoteRelease(block.release)) {
+    const [asset, configuration, poolId, enginePoolId] = await Promise.all([
+      read(client, block.release.contracts.ledger.address, "quoteAsset", [id], block.blockNumber, moduleEngineAnyQuoteLedgerAbi),
+      read(client, block.release.contracts.ledger.address, "configurationHash", [id], block.blockNumber, moduleEngineAnyQuoteLedgerAbi),
+      read(client, host, "poolIdOf", [id], block.blockNumber, moduleEngineAnyQuoteHostAbi), read(client, r.engine, "poolId", [], block.blockNumber),
+    ]);
+    same(asset, r.quoteAsset, "Ledger quote asset"); same(configuration, r.configurationHash, "Ledger configuration"); same(poolId, enginePoolId, "Shared pool registration");
+  }
+  return r;
 }
 export async function readModuleEngineLaunch(input: { client: ModuleEngineClient; release: ModuleEngineRelease; token: Address; blockNumber?: bigint }): Promise<ModuleEngineLaunchRecord> {
   const block = await assertModuleEngineRelease(input), result = await boundLaunch(input.client, block, input.token); await canonical(input.client, block); return result;
@@ -165,7 +198,7 @@ function active(value: ModuleEngineAvailability) { const result = parseModuleEng
 export interface PrepareModuleEngineLaunchInput {
   client: ModuleEngineClient; availability: ModuleEngineAvailability; templateId: string; account: Address; quoteAsset: Address;
   name: string; symbol: string; description: string; imageUri?: string; socialLinks?: ModuleSocialLinks;
-  configuration: OpenConfigValue; creatorSalt: Hex; engineSalt: Hex; launchData?: Hex;
+  configuration: OpenConfigValue; anyQuotePreparation?: AnyQuoteLaunchPreparation; creatorSalt: Hex; engineSalt: Hex; launchData?: Hex;
   creatorWallets: readonly Address[]; creatorSharesBps: readonly number[]; buyCreatorFeeBps: number; sellCreatorFeeBps: number;
   initialOperation?: (identity: { token: Address; quoteAsset: Address }) => ModuleEngineOperationIntent;
   deadlineSeconds?: number;
@@ -176,24 +209,44 @@ export async function prepareModuleEngineLaunch(input: PrepareModuleEngineLaunch
   const block = await assertModuleEngineRelease({ client: input.client, release }), template = await assertTemplate(input.client, block, rawTemplate, true), m = template.manifest.manifest;
   const quoteAsset = moduleAddress(input.quoteAsset, "quoteAsset"); if (m.revision.fixedQuoteAsset !== ZERO) same(quoteAsset, m.revision.fixedQuoteAsset, "Fixed quote asset");
   const quoteCode = await input.client.getCode({ address: quoteAsset, blockNumber: block.blockNumber }); need(quoteCode && quoteCode !== "0x", "Quote asset is not a deployed token.");
-  const quoteDecimals = Number(await read(input.client, quoteAsset, "decimals", [], block.blockNumber)); need(Number.isInteger(quoteDecimals) && quoteDecimals >= 0 && quoteDecimals <= 18, "Quote decimals are unsupported.");
-  const expiresAt = deadline(block.timestamp, input.deadlineSeconds);
+  const quoteDecimals = Number(await read(input.client, quoteAsset, "decimals", [], block.blockNumber)); need(Number.isInteger(quoteDecimals) && quoteDecimals >= 0 && quoteDecimals <= (isModuleEngineAnyQuoteRelease(release) ? 36 : 18), "Quote decimals are unsupported.");
+  const expiresAt = input.anyQuotePreparation ? BigInt(input.anyQuotePreparation.validUntil) : deadline(block.timestamp, input.deadlineSeconds);
+  if (isModuleEngineAnyQuoteRelease(release)) {
+    need(input.anyQuotePreparation, "A current Any Quote preview is required.");
+    assertAnyQuoteLaunchPreparation(input.anyQuotePreparation, { releaseDigest: release.releaseDigest, templateId: input.templateId, account, quoteAsset,
+      name: input.name, symbol: input.symbol, creatorSalt: input.creatorSalt, engineSalt: input.engineSalt, buyCreatorFeeBps: input.buyCreatorFeeBps, sellCreatorFeeBps: input.sellCreatorFeeBps,
+      creatorWallets: input.creatorWallets, creatorSharesBps: input.creatorSharesBps, initialBuyWei: input.anyQuotePreparation.intent.initialBuyWei, slippageBps: input.anyQuotePreparation.intent.slippageBps }, release, block.timestamp);
+  }
   const compiled = await compileModuleEngineLaunch(input, release, template.manifest, quoteDecimals, expiresAt);
   const { parameters, graffiti, predictedToken, launchId, configurationHash, constructorHash, initCodeHash, engineCodeHash, initialOperation, buyCreatorFeeBps, sellCreatorFeeBps, planHash } = compiled;
   const host = release.contracts.host.address, engineIdentity = { address: compiled.engine };
+  if (input.anyQuotePreparation) {
+    const preview = input.anyQuotePreparation;
+    if (preview.initialBuy) {
+      const route = buildAnyQuoteSwapV1({ pool: preview.pool, owner: account, recipient: account, side: "buy", amountIn: BigInt(preview.intent.initialBuyWei), minimumAmountOut: BigInt(preview.initialBuy.minimumOutput), deadline: expiresAt, externalRoute: preview.initialBuy.externalRoute, now: block.timestamp });
+      need(BigInt(preview.initialBuy.minimumOutput) === anyQuoteMinimumOutput(BigInt(preview.initialBuy.output), preview.intent.slippageBps), "Initial buy output limit differs.");
+      equal(Object.fromEntries(Object.entries(initialOperation).map(([key, value]) => [key, typeof value === "bigint" ? value.toString() : value])), Object.fromEntries(Object.entries({ operationId: ANY_QUOTE_NATIVE_BUY_OPERATION_ID, actor: account, recipient: account, inputAsset: ZERO, inputAmount: BigInt(preview.intent.initialBuyWei), outputAsset: predictedToken, minimumOutput: BigInt(preview.initialBuy.minimumOutput), deadline: expiresAt, nonce: 0n, data: route.nativeBuyOperationData }).map(([key, value]) => [key, typeof value === "bigint" ? value.toString() : value])), "Exact initial ETH buy");
+      await assertAnyQuoteRouterBalances(input.client, block, route.balanceAccounting.assets, predictedToken);
+    } else need(initialOperation.operationId === ZERO_HASH, "Initial buy was not requested.");
+  }
   const predicted = await read(input.client, host, "predictTokenAddress", [parameters.name, parameters.symbol, account, parameters.creatorSalt], block.blockNumber, moduleEngineHostAbi) as readonly [Address, Hex];
   same(predicted[1], graffiti, "Token graffiti"); same(predicted[0], predictedToken, "Predicted token");
-  if (initialOperation.operationId !== ZERO_HASH) { const required = await validateOperation(input.client, block, { launchId, revisionId: m.revision.packageId, creator: account, token: predictedToken, quoteAsset }, initialOperation, account); if (required) return required; }
+  if (initialOperation.operationId !== ZERO_HASH && !(isModuleEngineAnyQuoteRelease(release) && initialOperation.operationId === ANY_QUOTE_NATIVE_BUY_OPERATION_ID)) { const required = await validateOperation(input.client, block, { launchId, revisionId: m.revision.packageId, creator: account, token: predictedToken, quoteAsset }, initialOperation, account); if (required) return required; }
   const transaction = tx(account, host, encodeFunctionData({ abi: moduleEngineHostAbi, functionName: "launch", args: [parameters] }), initialOperation.inputAsset === ZERO ? initialOperation.inputAmount : 0n, "launch", `Launch ${parameters.symbol} with ${m.catalogDefinition.title}`);
   const simulated = await simulate(input.client, block, transaction), result = launchRecord(decodeFunctionResult({ abi: moduleEngineHostAbi, functionName: "launch", data: simulated.data }));
   for (const [key, expected] of Object.entries({ launchId, revisionId: m.revision.packageId, token: predictedToken, creator: account, quoteAsset, engine: engineIdentity.address, engineCodeHash, constructorHash, initCodeHash, configurationHash, planHash })) same(result[key as keyof ModuleEngineLaunchRecord], expected, `Simulated ${key}`);
   // Host V1 admits its immutable reviewed family list into Ledger V2. Its reused Registry V1
   // has no Native V2 familyFeeEligibility getter; the list itself selects the 10/30 bps policy.
-  const platformFeeBps = m.revision.eligibleFamilies.length > 0 ? 30 : 10;
-  const prepared: PreparedModuleEngineLaunch = { sourceKind: "module-engine-v1", kind: "launch", account, releaseDigest: release.releaseDigest, blockNumber: block.blockNumber, expiresAt, gasEstimate: simulated.gasEstimate, transaction: { ...transaction, gas: toHex(simulated.gasEstimate * 12n / 10n) }, predictedToken, engine: engineIdentity.address, launchId, revisionId: m.revision.packageId, planHash, configurationHash, engineCodeHash, quoteAsset, quoteDecimals, initialOperation, platformFeeBps, buyCreatorFeeBps, sellCreatorFeeBps };
+  const platformFeeBps = isModuleEngineAnyQuoteRelease(release) || m.revision.eligibleFamilies.length > 0 ? 30 : 10;
+  const prepared: PreparedModuleEngineLaunch = { sourceKind: "module-engine-v1", kind: "launch", account, releaseDigest: release.releaseDigest, blockNumber: block.blockNumber, expiresAt, gasEstimate: simulated.gasEstimate, transaction: { ...transaction, gas: toHex(simulated.gasEstimate * 12n / 10n) }, predictedToken, engine: engineIdentity.address, launchId, revisionId: m.revision.packageId, planHash, configurationHash, engineCodeHash, quoteAsset, quoteDecimals, initialOperation, platformFeeBps, buyCreatorFeeBps, sellCreatorFeeBps, ...(input.anyQuotePreparation ? { anyQuote: { initialBuyWei: BigInt(input.anyQuotePreparation.intent.initialBuyWei), outputAmount: BigInt(input.anyQuotePreparation.initialBuy?.output ?? "0"), minimumOutput: BigInt(input.anyQuotePreparation.initialBuy?.minimumOutput ?? "0"), actualFdvUsd: input.anyQuotePreparation.actualFdvUsd } } : {}) };
   return bind(prepared, { client: input.client, release, refresh: async () => {
     const current = await assertModuleEngineRelease({ client: input.client, release }); need(current.timestamp <= expiresAt, "Launch preview expired."); await assertTemplate(input.client, current, template, true);
-    if (initialOperation.operationId !== ZERO_HASH) need(!await validateOperation(input.client, current, { ...result }, initialOperation, account), "Initial funding approval changed.");
+    if (initialOperation.operationId !== ZERO_HASH && !(isModuleEngineAnyQuoteRelease(release) && initialOperation.operationId === ANY_QUOTE_NATIVE_BUY_OPERATION_ID)) need(!await validateOperation(input.client, current, { ...result }, initialOperation, account), "Initial funding approval changed.");
+    if (input.anyQuotePreparation?.initialBuy) {
+      const p = input.anyQuotePreparation;
+      const route = buildAnyQuoteSwapV1({ pool: p.pool, owner: account, recipient: account, side: "buy", amountIn: BigInt(p.intent.initialBuyWei), minimumAmountOut: BigInt(p.initialBuy!.minimumOutput), deadline: expiresAt, externalRoute: p.initialBuy!.externalRoute, now: current.timestamp });
+      await assertAnyQuoteRouterBalances(input.client, current, route.balanceAccounting.assets, predictedToken);
+    }
     const fresh = await simulate(input.client, current, transaction); const currentLaunch = launchRecord(decodeFunctionResult({ abi: moduleEngineHostAbi, functionName: "launch", data: fresh.data }));
     for (const key of ["launchId", "planHash", "token", "engine", "engineCodeHash", "configurationHash"] as const) same(currentLaunch[key], result[key], `Current launch ${key}`);
   }, receipt: receipt => verifyModuleEngineLaunchReceipt({ client: input.client, release, expected: result, receipt }) });
@@ -211,15 +264,24 @@ export async function prepareModuleEngineOperation(input: { client: ModuleEngine
     need(!await validateOperation(input.client, current, live, operation, account), "Input allowance changed."); await simulate(input.client, current, transaction);
   }, receipt: receipt => verifyModuleEngineOperationReceipt({ client: input.client, release, launch, operation, receipt }) });
 }
-export async function prepareModuleEngineApproval(input: { client: ModuleEngineClient; release: ModuleEngineRelease; account: Address; token: Address; amount: bigint }): Promise<PreparedModuleEngineApproval> {
+export async function prepareModuleEngineApproval(input: { client: ModuleEngineClient; release: ModuleEngineRelease; account: Address; token: Address; amount: bigint; spender?: Address; allowanceKind?: "erc20" | "permit2"; permit2Spender?: Address; expiration?: bigint }): Promise<PreparedModuleEngineApproval> {
   const account = moduleAddress(input.account, "account"), token = moduleAddress(input.token, "token"), amount = uint(input.amount, "approval amount"), release = freeze(bindActiveModuleEngineRelease(input.release)), block = await assertModuleEngineRelease({ client: input.client, release });
-  const tokenCode = await input.client.getCode({ address: token, blockNumber: block.blockNumber }); need(tokenCode && tokenCode !== "0x", "Approval asset has no contract."); const tokenHash = keccak256(tokenCode), spender = release.contracts.host.address;
+  const shared = isModuleEngineAnyQuoteRelease(release), allowanceKind = input.allowanceKind ?? "erc20";
+  const spender = shared ? ANY_QUOTE_INFRASTRUCTURE.permit2 : release.contracts.host.address;
+  if (input.spender) same(input.spender, spender, "Approval spender");
+  need(shared || allowanceKind === "erc20", "Permit2 is only used by shared-quote routing.");
+  if (shared) { await boundLaunch(input.client, block, token); await code(input.client, spender, anyQuoteChainProfile.contracts.uniswap.permit2.runtimeCodeHash as Hex, block.blockNumber); }
+  const tokenCode = await input.client.getCode({ address: token, blockNumber: block.blockNumber }); need(tokenCode && tokenCode !== "0x", "Approval asset has no contract."); const tokenHash = keccak256(tokenCode);
   const balance = uint(await read(input.client, token, "balanceOf", [account], block.blockNumber), "balance"); need(amount === 0n || amount <= balance, "Approval exceeds the available input balance.");
-  const transaction = tx(account, token, encodeFunctionData({ abi: erc20Abi, functionName: "approve", args: [spender, amount] }), 0n, "approve", amount === 0n ? "Reset the engine funding allowance" : "Approve the exact engine input amount");
-  const call = async (current: BoundBlock) => { const request = { account, to: token, data: transaction.data, value: 0n, blockNumber: current.blockNumber }; const [result, gasEstimate] = await Promise.all([input.client.call(request), input.client.estimateGas(request)]); need(result.data === undefined || result.data === "0x" || decodeFunctionResult({ abi: erc20Abi, functionName: "approve", data: result.data }) === true, "Token rejected the bounded approval."); need(gasEstimate > 0n && gasEstimate <= 1_000_000n, "Approval gas is outside the supported limit."); await canonical(input.client, current); return gasEstimate; };
-  const gasEstimate = await call(block), expiresAt = deadline(block.timestamp);
-  const prepared: PreparedModuleEngineApproval = { sourceKind: "module-engine-v1", kind: "approve", account, releaseDigest: release.releaseDigest, blockNumber: block.blockNumber, expiresAt, gasEstimate, transaction: { ...transaction, gas: toHex(gasEstimate * 12n / 10n) }, token, spender, amount };
-  return bind(prepared, { client: input.client, release, refresh: async () => { const current = await assertModuleEngineRelease({ client: input.client, release }); need(current.timestamp <= expiresAt, "Approval preview expired."); await code(input.client, token, tokenHash, current.blockNumber); await call(current); }, receipt: receipt => verifyModuleEngineApprovalReceipt({ client: input.client, release, account, token, amount, receipt }) });
+  const expiresAt = deadline(block.timestamp), permit2Spender = shared ? release.contracts.universalRouter.address : undefined;
+  const expiration = input.expiration ?? expiresAt;
+  if (allowanceKind === "permit2") { need(shared && amount < 1n << 160n && expiration > block.timestamp && expiration <= block.timestamp + 900n, "Invalid bounded Permit2 allowance."); if (input.permit2Spender) same(input.permit2Spender, permit2Spender, "Permit2 router"); }
+  const abi = allowanceKind === "permit2" ? moduleEnginePermit2Abi : erc20Abi;
+  const transaction = tx(account, allowanceKind === "permit2" ? spender : token, encodeFunctionData({ abi, functionName: "approve", args: allowanceKind === "permit2" ? [token, permit2Spender!, amount, Number(expiration)] : [spender, amount] }), 0n, "approve", allowanceKind === "permit2" ? "Approve this exact sell amount for the Universal Router with a short expiry" : amount === 0n ? "Reset the funding allowance" : "Approve the exact input amount");
+  const call = async (current: BoundBlock) => { const request = { account, to: transaction.to, data: transaction.data, value: 0n, blockNumber: current.blockNumber }; const [result, gasEstimate] = await Promise.all([input.client.call(request), input.client.estimateGas(request)]); need(result.data === undefined || result.data === "0x" || (allowanceKind === "erc20" && decodeFunctionResult({ abi: erc20Abi, functionName: "approve", data: result.data }) === true), "Token rejected the bounded approval."); need(gasEstimate > 0n && gasEstimate <= 1_000_000n, "Approval gas is outside the supported limit."); await canonical(input.client, current); return gasEstimate; };
+  const gasEstimate = await call(block);
+  const prepared: PreparedModuleEngineApproval = { sourceKind: "module-engine-v1", kind: "approve", account, releaseDigest: release.releaseDigest, blockNumber: block.blockNumber, expiresAt, gasEstimate, transaction: { ...transaction, gas: toHex(gasEstimate * 12n / 10n) }, token, spender, amount, ...(shared ? { allowanceKind, ...(allowanceKind === "permit2" ? { permit2Spender, expiration } : {}) } : {}) };
+  return bind(prepared, { client: input.client, release, refresh: async () => { const current = await assertModuleEngineRelease({ client: input.client, release }); need(current.timestamp <= expiresAt && (allowanceKind !== "permit2" || current.timestamp < expiration), "Approval preview expired."); await code(input.client, token, tokenHash, current.blockNumber); await call(current); }, receipt: receipt => verifyModuleEngineApprovalReceipt({ client: input.client, release, account, token, amount, spender, allowanceKind, permit2Spender, expiration, receipt }) });
 }
 export async function revalidateModuleEngineTransaction(prepared: PreparedModuleEngineTransaction, account: Address): Promise<ModuleNativeWalletTransaction> {
   const binding = preparations.get(prepared); need(binding && binding.state === "ready", "This is not a fresh, verified engine preparation."); same(account, prepared.account, "Selected wallet"); binding.state = "pending";
@@ -272,9 +334,16 @@ export async function verifyModuleEngineOperationReceipt(input: { client: Module
   const nonce = uint(await read(input.client, block.release.contracts.host.address, "nonces", [launch.launchId, input.operation.actor], block.blockNumber, moduleEngineHostAbi), "nonce"); need(nonce > input.operation.nonce, "Operation nonce was not consumed."); await canonical(input.client, block);
   return receiptResult(input.receipt, "execute", { token: launch.token, launch, outputAmount });
 }
-export async function verifyModuleEngineApprovalReceipt(input: { client: ModuleEngineClient; release: ModuleEngineRelease; account: Address; token: Address; amount: bigint; receipt: TransactionReceipt }): Promise<ModuleEngineReceiptResult> {
-  const block = await receiptBlock(input.client, input.release, input.receipt), allowance = uint(await read(input.client, input.token, "allowance", [input.account, block.release.contracts.host.address], block.blockNumber), "allowance");
-  need(allowance === input.amount, "Exact bounded approval is not visible at the receipt block."); await canonical(input.client, block); return receiptResult(input.receipt, "approve", { token: input.token });
+export async function verifyModuleEngineApprovalReceipt(input: { client: ModuleEngineClient; release: ModuleEngineRelease; account: Address; token: Address; amount: bigint; spender?: Address; allowanceKind?: "erc20" | "permit2"; permit2Spender?: Address; expiration?: bigint; receipt: TransactionReceipt }): Promise<ModuleEngineReceiptResult> {
+  const block = await receiptBlock(input.client, input.release, input.receipt), spender = input.spender ?? block.release.contracts.host.address;
+  if (input.allowanceKind === "permit2") {
+    const value = await read(input.client, spender, "allowance", [input.account, input.token, input.permit2Spender], block.blockNumber, moduleEnginePermit2Abi) as readonly [bigint, number, number];
+    need(value[0] === input.amount && BigInt(value[1]) === input.expiration, "Bounded Permit2 allowance is not visible at the receipt block.");
+  } else {
+    const allowance = uint(await read(input.client, input.token, "allowance", [input.account, spender], block.blockNumber), "allowance");
+    need(allowance === input.amount, "Exact bounded approval is not visible at the receipt block.");
+  }
+  await canonical(input.client, block); return receiptResult(input.receipt, "approve", { token: input.token });
 }
 export async function observeModuleEngineReceipt(prepared: PreparedModuleEngineTransaction, transactionHash: Hex): Promise<ModuleEngineReceiptResult> {
   const binding = preparations.get(prepared); need(binding && binding.state === "submitted", "Engine submission has no bound preparation."); same(transactionHash, binding.hash, "Submitted transaction hash");
@@ -286,6 +355,70 @@ export async function observeModuleEngineReceipt(prepared: PreparedModuleEngineT
   need(transaction.value === BigInt(prepared.transaction.value) && transaction.chainId === 4663 && transaction.blockNumber === receipt.blockNumber && block.number === receipt.blockNumber && receipt.blockNumber > prepared.blockNumber, "Transaction value, chain or block differs.");
   if (receipt.status === "reverted") throw new ModuleEngineTransactionRevertedError(transactionHash, receipt.blockNumber, receipt.blockHash);
   const result = await binding.receipt(receipt); same((await client.getBlock({ blockNumber: receipt.blockNumber })).hash, receipt.blockHash, "Canonical receipt after readback"); return result;
+}
+
+async function assertAnyQuoteRouterBalances(client: ModuleEngineClient, block: BoundBlock, assets: readonly Address[], unbornToken?: Address) {
+  need(isModuleEngineAnyQuoteRelease(block.release), "Shared quote release required.");
+  const router = block.release.contracts.universalRouter.address;
+  await Promise.all(assets.map(async asset => {
+    if (unbornToken && asset.toLowerCase() === unbornToken.toLowerCase()) {
+      const deployed = await client.getCode({ address: asset, blockNumber: block.blockNumber });
+      need(!deployed || deployed === "0x", "This token was already launched. Open its existing coin."); return;
+    }
+    if (asset === ZERO) { need(client.getBalance, "Router native balance reader is unavailable."); need(await client.getBalance({ address: router, blockNumber: block.blockNumber }) === 0n, "Router has an existing ETH balance. Refresh the route later."); }
+    else need(uint(await read(client, asset, "balanceOf", [router], block.blockNumber), "router balance") === 0n, "Router has an existing intermediate balance. Refresh the route later.");
+  }));
+}
+
+/** The server chooses the route; the browser independently reconstructs every executable byte. */
+export async function prepareModuleEngineAnyQuoteSwap(input: { client: ModuleEngineClient; release: ModuleEngineRelease; template: ModuleEngineTemplate; account: Address; quote: AnyQuoteTradeQuote }): Promise<PreparedModuleEngineSwap | ModuleEngineApprovalRequired> {
+  const release = freeze(bindActiveModuleEngineRelease(input.release)); need(isModuleEngineAnyQuoteRelease(release), "Shared quote release required.");
+  const quote = freeze(structuredClone(input.quote)), account = moduleAddress(input.account, "account"), block = await assertModuleEngineRelease({ client: input.client, release });
+  const launch = await boundLaunch(input.client, block, quote.token), template = await assertTemplate(input.client, block, input.template, false);
+  same(quote.releaseDigest, release.releaseDigest, "Trade release"); same(quote.account, account, "Trade wallet"); same(quote.quoteAsset, launch.quoteAsset, "Trade quote asset"); same(quote.token, launch.token, "Trade token");
+  same(launch.revisionId, template.manifest.manifest.revision.packageId, "Trade revision");
+  need(quote.schemaVersion === "programmable.any-quote.trade-quote.v1" && quote.templateId === template.manifest.manifest.catalogDefinition.id
+    && typeof quote.buy === "boolean" && quote.evidenceHash === anyQuoteEvidenceHashV1({ ...quote, evidenceHash: undefined }), "Trade preview differs.");
+  const inputAmount = uint(quote.inputAmount, "trade input", true), outputAmount = uint(quote.output, "trade output", true), minimumOutput = uint(quote.minimumOutput, "minimum output", true), expiresAt = uint(quote.validUntil, "trade expiry", true);
+  need(minimumOutput === anyQuoteMinimumOutput(outputAmount, quote.slippageBps), "Trade minimum differs from the reviewed slippage.");
+  same(quote.pool.token, launch.token, "Pool token"); same(quote.pool.quoteAsset, launch.quoteAsset, "Pool quote"); same(quote.pool.sharedHook, release.contracts.sharedHook.address, "Pool shared hook");
+  const poolKey = anyQuoteModulePoolKeyV1(quote.pool);
+  same(await read(input.client, release.contracts.host.address, "poolIdOf", [launch.launchId], block.blockNumber, moduleEngineAnyQuoteHostAbi), quote.pool.poolId, "Registered shared pool");
+  const registeredKey = await read(input.client, release.contracts.sharedHook.address, "poolKey", [quote.pool.poolId], block.blockNumber, moduleEngineAnyQuoteHookAbi);
+  equal(registeredKey, poolKey, "Shared hook pool key");
+  const compiled = buildAnyQuoteSwapV1({ pool: quote.pool, owner: account, recipient: quote.recipient, side: quote.buy ? "buy" : "sell", amountIn: inputAmount, minimumAmountOut: minimumOutput, deadline: expiresAt, externalRoute: quote.externalRoute, now: block.timestamp });
+  const approval = async (current: BoundBlock): Promise<ModuleEngineApprovalRequired | null> => {
+    if (quote.buy) return null;
+    const spender = ANY_QUOTE_INFRASTRUCTURE.permit2;
+    await code(input.client, spender, anyQuoteChainProfile.contracts.uniswap.permit2.runtimeCodeHash as Hex, current.blockNumber);
+    const [balance, tokenAllowance, allowance] = await Promise.all([read(input.client, launch.token, "balanceOf", [account], current.blockNumber), read(input.client, launch.token, "allowance", [account, spender], current.blockNumber), read(input.client, spender, "allowance", [account, launch.token, release.contracts.universalRouter.address], current.blockNumber, moduleEnginePermit2Abi)]);
+    need(uint(balance, "sell balance") >= inputAmount, "Insufficient token balance for this sell.");
+    const erc20Allowance = uint(tokenAllowance, "token allowance"), permitted = allowance as readonly [bigint, number, number];
+    if (erc20Allowance < inputAmount) return { kind: "approval-required", token: launch.token, spender, amount: inputAmount, currentAllowance: erc20Allowance, allowanceKind: "erc20" };
+    if (permitted[0] < inputAmount || BigInt(permitted[1]) < expiresAt) return { kind: "approval-required", token: launch.token, spender, permit2Spender: release.contracts.universalRouter.address, amount: inputAmount, currentAllowance: permitted[0], allowanceKind: "permit2", expiration: current.timestamp + 300n };
+    return null;
+  };
+  const required = await approval(block); if (required) return required;
+  await assertAnyQuoteRouterBalances(input.client, block, compiled.balanceAccounting.assets);
+  const transaction = tx(account, compiled.transaction.to, compiled.transaction.data, BigInt(compiled.transaction.value), quote.buy ? "buy" : "sell", quote.buy ? "Buy with ETH through the pool quote asset" : "Sell to ETH through the pool quote asset");
+  const simulation = await simulate(input.client, block, transaction, true), quoteDecimals = Number(await read(input.client, launch.quoteAsset, "decimals", [], block.blockNumber));
+  const prepared: PreparedModuleEngineSwap = { sourceKind: "module-engine-v1", kind: "swap", account, releaseDigest: release.releaseDigest, blockNumber: block.blockNumber, expiresAt, gasEstimate: simulation.gasEstimate,
+    transaction: { ...transaction, gas: toHex(simulation.gasEstimate * 12n / 10n) }, token: launch.token, quoteAsset: launch.quoteAsset, quoteDecimals, launchId: launch.launchId, revisionId: launch.revisionId, planHash: launch.planHash,
+    buy: quote.buy, recipient: quote.recipient, inputAmount, outputAmount, minimumOutput };
+  return bind(prepared, { client: input.client, release, refresh: async () => {
+    const current = await assertModuleEngineRelease({ client: input.client, release }); need(current.timestamp < expiresAt, "Trade quote expired. Get a new quote.");
+    const live = await boundLaunch(input.client, current, launch.token); same(live.planHash, launch.planHash, "Trade launch plan");
+    need(!await approval(current), "Sell allowance changed. Review the approval again.");
+    await assertAnyQuoteRouterBalances(input.client, current, compiled.balanceAccounting.assets); await simulate(input.client, current, transaction, true);
+  }, receipt: async receipt => {
+    const current = await receiptBlock(input.client, release, receipt), live = await boundLaunch(input.client, current, launch.token); same(live.planHash, launch.planHash, "Trade launch plan");
+    const swaps = events(receipt, release.contracts.sharedHook.address, "QuotePoolSwap", moduleEngineAnyQuoteHookAbi).filter(e => e.poolId === quote.pool.poolId);
+    need(swaps.length === 1, "Expected one swap in the selected module pool."); const swap = swaps[0]; same(swap.launchId, launch.launchId, "Swap launch"); same(swap.swapSender, release.contracts.universalRouter.address, "Swap router"); need(swap.buy === quote.buy && swap.exactInput === true, "Swap direction differs.");
+    // Receipt success and reconstructed final router minimum prove ETH settlement. Do not invent an ETH output from token Core deltas.
+    let output: bigint | undefined;
+    if (quote.buy) { output = events(receipt, launch.token, "Transfer", erc20Abi).filter(e => String(e.from).toLowerCase() === release.contracts.poolManager.address.toLowerCase() && String(e.to).toLowerCase() === quote.recipient.toLowerCase()).reduce((sum, e) => sum + uint(e.value, "received tokens"), 0n); need(output >= minimumOutput, "Final token transfer is below the signed minimum."); }
+    await canonical(input.client, current); return receiptResult(receipt, "swap", { token: launch.token, launch: live, ...(output === undefined ? {} : { outputAmount: output }) });
+  } });
 }
 
 export function moduleEngineTradeIntent(input: { buy: boolean; token: Address; quoteAsset: Address; recipient: Address; inputAmount: bigint; minimumOutput: bigint; minimumEthFees: bigint; sqrtPriceLimitX96?: bigint; conversionRoute: Hex }): ModuleEngineOperationIntent {
@@ -313,21 +446,22 @@ export interface ModuleEngineAdministration {
   permissions: readonly ModuleEnginePermission[];
   escrow?: { credit: bigint; unlockTime: bigint; totalLiability: bigint };
   settlement?: { minimumWindow: bigint; maximumWindow: bigint; totalLiability: bigint; request: ModuleEngineSettlementRequest | null; canFulfill: boolean; canRefund: boolean };
-  fees: { claimable: bigint; claimed: bigint; contributionByLaunch: bigint; treasury: Address; administrator: Address; creatorWallets: Address[]; creatorSharesBps: number[]; adminRevision: bigint; buyPlatformBps: number; sellPlatformBps: number; buyCreatorBps: number; sellCreatorBps: number };
+  fees: { feeAsset?: Address; feeDecimals?: number; claimable: bigint; claimed: bigint; contributionByLaunch: bigint; treasury: Address; administrator: Address; creatorWallets: Address[]; creatorSharesBps: number[]; adminRevision: bigint; buyPlatformBps: number; sellPlatformBps: number; buyCreatorBps: number; sellCreatorBps: number };
 }
 /** The displayed admin powers come from the bound contract and actor; catalog labels grant no powers. */
 export async function readModuleEngineAdministration(input: { client: ModuleEngineClient; release: ModuleEngineRelease; template: ModuleEngineTemplate; token: Address; account: Address; requestId?: Hex }): Promise<ModuleEngineAdministration> {
   const block = await assertModuleEngineRelease(input), launch = await boundLaunch(input.client, block, input.token), template = await assertTemplate(input.client, block, input.template, false), actor = moduleAddress(input.account, "account");
   same(launch.revisionId, template.manifest.manifest.revision.packageId, "Administration template");
-  const ledger = block.release.contracts.ledger.address, ledgerRead = (fn: string, args: readonly unknown[]) => read(input.client, ledger, fn, args, block.blockNumber, moduleEngineLedgerAbi);
+  const quoteFees = isModuleEngineAnyQuoteRelease(block.release), ledger = block.release.contracts.ledger.address, ledgerRead = (fn: string, args: readonly unknown[]) => read(input.client, ledger, fn, args, block.blockNumber, ledgerAbi(block.release));
+  const platform = quoteFees ? ledgerRead("platformFeeBps", [launch.launchId]) : null;
   const [claimable, claimed, contributed, treasury, administrator, recipients, quoteDecimals, buy, sell] = await Promise.all([
-    ledgerRead("claimable", [actor]), ledgerRead("claimedBy", [actor]), ledgerRead("contributionByPool", [launch.launchId, actor]), ledgerRead("treasury", []), ledgerRead("rewardAdmin", []), ledgerRead("creatorRecipients", [launch.launchId]), read(input.client, launch.quoteAsset, "decimals", [], block.blockNumber),
-    read(input.client, block.release.contracts.host.address, "feeTerms", [launch.launchId, true], block.blockNumber, moduleEngineHostAbi), read(input.client, block.release.contracts.host.address, "feeTerms", [launch.launchId, false], block.blockNumber, moduleEngineHostAbi),
+    ledgerRead(quoteFees ? "claimableQuote" : "claimable", quoteFees ? [launch.quoteAsset, actor] : [actor]), ledgerRead("claimedBy", quoteFees ? [launch.quoteAsset, actor] : [actor]), ledgerRead(quoteFees ? "contributionByLaunch" : "contributionByPool", [launch.launchId, actor]), ledgerRead("treasury", []), ledgerRead("rewardAdmin", []), ledgerRead("creatorRecipients", [launch.launchId]), read(input.client, launch.quoteAsset, "decimals", [], block.blockNumber),
+    platform ? platform.then(bps => [bps, launch.buyCreatorFeeBps]) : read(input.client, block.release.contracts.host.address, "feeTerms", [launch.launchId, true], block.blockNumber, moduleEngineHostAbi), platform ? platform.then(bps => [bps, launch.sellCreatorFeeBps]) : read(input.client, block.release.contracts.host.address, "feeTerms", [launch.launchId, false], block.blockNumber, moduleEngineHostAbi),
   ]);
   const [wallets, shares, adminRevision] = recipients as [Address[], number[], bigint], buyFees = buy as [number, number], sellFees = sell as [number, number];
-  need([10, 30].includes(buyFees[0]) && buyFees[0] === sellFees[0] && buyFees[1] === launch.buyCreatorFeeBps && sellFees[1] === launch.sellCreatorFeeBps, "Stored fee terms differ.");
+  need((quoteFees ? buyFees[0] === 30 : [10, 30].includes(buyFees[0])) && buyFees[0] === sellFees[0] && buyFees[1] === launch.buyCreatorFeeBps && sellFees[1] === launch.sellCreatorFeeBps, "Stored fee terms differ.");
   const result: ModuleEngineAdministration = { launch, blockNumber: block.blockNumber, timestamp: block.timestamp, quoteDecimals: Number(quoteDecimals), actor, permissions: template.manifest.manifest.revision.operationPermissions,
-    fees: { claimable: uint(claimable, "claimable"), claimed: uint(claimed, "claimed"), contributionByLaunch: uint(contributed, "contribution"), treasury: moduleAddress(treasury, "treasury"), administrator: moduleAddress(administrator, "administrator"), creatorWallets: wallets.map(wallet => moduleAddress(wallet, "creator recipient")), creatorSharesBps: shares, adminRevision: uint(adminRevision, "admin revision"), buyPlatformBps: buyFees[0], sellPlatformBps: sellFees[0], buyCreatorBps: buyFees[1], sellCreatorBps: sellFees[1] } };
+    fees: { ...(quoteFees ? { feeAsset: launch.quoteAsset, feeDecimals: Number(quoteDecimals) } : {}), claimable: uint(claimable, "claimable"), claimed: uint(claimed, "claimed"), contributionByLaunch: uint(contributed, "contribution"), treasury: moduleAddress(treasury, "treasury"), administrator: moduleAddress(administrator, "administrator"), creatorWallets: wallets.map(wallet => moduleAddress(wallet, "creator recipient")), creatorSharesBps: shares, adminRevision: uint(adminRevision, "admin revision"), buyPlatformBps: buyFees[0], sellPlatformBps: sellFees[0], buyCreatorBps: buyFees[1], sellCreatorBps: sellFees[1] } };
   const engineRead = (fn: string, args: readonly unknown[] = []) => read(input.client, launch.engine, fn, args, block.blockNumber);
   const profile = template.manifest.manifest.catalogDefinition.interface;
   if (profile === "escrow-v1") {
@@ -349,13 +483,13 @@ export function moduleEngineDepositIntent(quoteAsset: Address, actor: Address, a
 export interface ModuleEngineFeeControlsSnapshot {
   releaseDigest: Hex; launch: ModuleEngineLaunchRecord; actor: Address; blockNumber: bigint;
   creatorWallets: readonly Address[]; creatorSharesBps: readonly number[]; adminRevision: bigint;
-  treasury: Address; administrator: Address;
+  treasury: Address; administrator: Address; quoteFees?: boolean;
   authors: readonly { familyId: Hex; author: Address; wallet: Address }[];
 }
 function creatorRecipients(value: unknown) {
   need(Array.isArray(value) && value.length === 3, "Invalid creator recipients.");
   const [wallets, shares, revision] = value;
-  need(Array.isArray(wallets) && wallets.length >= 1 && wallets.length <= 10 && Array.isArray(shares) && shares.length === wallets.length, "Invalid creator recipient count.");
+  need(Array.isArray(wallets) && wallets.length >= 1 && wallets.length <= 16 && Array.isArray(shares) && shares.length === wallets.length, "Invalid creator recipient count.");
   need(shares.every(share => Number.isInteger(share) && share > 0 && share <= 10_000) && shares.reduce((sum, share) => sum + share, 0) === 10_000, "Invalid fixed creator shares.");
   return { creatorWallets: wallets.map(wallet => moduleAddress(wallet, "creator wallet")), creatorSharesBps: shares as number[], adminRevision: uint(revision, "admin revision") };
 }
@@ -367,11 +501,11 @@ async function feeFamilies(client: ModuleEngineClient, block: BoundBlock, launch
 async function feeControlsAt(input: { client: ModuleEngineClient; template: ModuleEngineTemplate; token: Address; account: Address }, block: BoundBlock): Promise<ModuleEngineFeeControlsSnapshot> {
   const launch = await boundLaunch(input.client, block, input.token), template = await assertTemplate(input.client, block, input.template, false);
   same(launch.revisionId, template.manifest.manifest.revision.packageId, "Fee controls revision");
-  const families = await feeFamilies(input.client, block, launch), ledger = block.release.contracts.ledger.address;
+  const families = isModuleEngineAnyQuoteRelease(block.release) ? [] : await feeFamilies(input.client, block, launch), ledger = block.release.contracts.ledger.address;
   const [recipients, treasury, administrator, authors] = await Promise.all([
-    read(input.client, ledger, "creatorRecipients", [launch.launchId], block.blockNumber, moduleEngineLedgerAbi),
-    read(input.client, ledger, "treasury", [], block.blockNumber, moduleEngineLedgerAbi),
-    read(input.client, ledger, "rewardAdmin", [], block.blockNumber, moduleEngineLedgerAbi),
+    read(input.client, ledger, "creatorRecipients", [launch.launchId], block.blockNumber, ledgerAbi(block.release)),
+    read(input.client, ledger, "treasury", [], block.blockNumber, ledgerAbi(block.release)),
+    read(input.client, ledger, "rewardAdmin", [], block.blockNumber, ledgerAbi(block.release)),
     Promise.all(families.map(async familyId => {
       const value = await read(input.client, block.release.contracts.registry.address, "families", [familyId], block.blockNumber, moduleEngineAuthorWalletAbi);
       need(Array.isArray(value) && value.length === 2, "Invalid registered author.");
@@ -379,13 +513,20 @@ async function feeControlsAt(input: { client: ModuleEngineClient; template: Modu
     })),
   ]);
   return { releaseDigest: block.release.releaseDigest, launch, actor: moduleAddress(input.account, "account"), blockNumber: block.blockNumber,
-    ...creatorRecipients(recipients), treasury: moduleAddress(treasury, "treasury"), administrator: moduleAddress(administrator, "administrator"), authors };
+    ...creatorRecipients(recipients), quoteFees: isModuleEngineAnyQuoteRelease(block.release), treasury: moduleAddress(treasury, "treasury"), administrator: moduleAddress(administrator, "administrator"), authors };
 }
 export async function readModuleEngineFeeControls(input: { client: ModuleEngineClient; release: ModuleEngineRelease; template: ModuleEngineTemplate; token: Address; account: Address }): Promise<ModuleEngineFeeControlsSnapshot> {
   const block = await assertModuleEngineRelease(input), result = await feeControlsAt(input, block);
   await canonical(input.client, block); return freeze(result);
 }
 function feeChangeFromIntent(intent: ModuleEngineFeeChangeIntent, snapshot: ModuleEngineFeeControlsSnapshot, expiresAt: bigint): ModuleEngineFeeChange {
+  if (intent.kind === "rotate-platform") {
+    moduleRecord(intent, ["kind", "recipient"], "platform fee change"); need(snapshot.quoteFees, "Platform rotation requires the quote-fee profile.");
+    const authority = snapshot.actor === snapshot.treasury ? "treasury" : "reward-admin";
+    same(snapshot.actor, authority === "treasury" ? snapshot.treasury : snapshot.administrator, "Platform recipient authority");
+    const recipient = moduleAddress(intent.recipient, "new platform wallet"); need(recipient !== snapshot.treasury, "Choose a different fee wallet.");
+    return { kind: intent.kind, previousWallet: snapshot.treasury, recipient, authority };
+  }
   if (intent.kind === "rotate-creator") {
     moduleRecord(intent, ["kind", "index", "recipient"], "fee change");
     need(Number.isInteger(intent.index) && intent.index >= 0 && intent.index < snapshot.creatorWallets.length, "Invalid creator slot.");
@@ -415,15 +556,16 @@ export async function prepareModuleEngineFeeChange(input: { client: ModuleEngine
   const change = feeChangeFromIntent(input.intent, snapshot, expiresAt), launch = snapshot.launch;
   const target = change.kind === "rotate-author" ? release.contracts.registry.address : release.contracts.ledger.address;
   let data: Hex;
-  if (change.kind === "rotate-creator") data = encodeFunctionData({ abi: moduleEngineLedgerAbi, functionName: "changeCreatorWallet", args: [launch.launchId, BigInt(change.index), change.recipient] });
-  else if (change.kind === "replace-creators") data = encodeFunctionData({ abi: moduleEngineLedgerAbi, functionName: "replaceCreatorWallets", args: [launch.launchId, [...change.recipients], change.expectedAdminRevision, change.deadline] });
+  if (change.kind === "rotate-platform") data = encodeFunctionData({ abi: moduleEngineAnyQuoteLedgerAbi, functionName: "changePlatformWallet", args: [change.recipient] });
+  else if (change.kind === "rotate-creator") data = encodeFunctionData({ abi: ledgerAbi(block.release), functionName: "changeCreatorWallet", args: [launch.launchId, BigInt(change.index), change.recipient] });
+  else if (change.kind === "replace-creators") data = encodeFunctionData({ abi: ledgerAbi(block.release), functionName: "replaceCreatorWallets", args: [launch.launchId, [...change.recipients], change.expectedAdminRevision, change.deadline] });
   else data = encodeFunctionData({ abi: moduleEngineAuthorWalletAbi, functionName: "changeAuthorWallet", args: [change.familyId, change.recipient] });
   const transaction = tx(account, target, data, 0n, "manage", change.kind === "rotate-author" ? "Change your family's future author fee wallet; accrued claims stay with their current wallets" : "Change future creator fee recipients; fixed shares and accrued claims stay unchanged");
   const simulation = await simulate(input.client, block, transaction, true);
   const prepared: PreparedModuleEngineFeeChange = { ...change, sourceKind: "module-engine-v1", account, releaseDigest: release.releaseDigest, blockNumber: block.blockNumber,
     expiresAt, gasEstimate: simulation.gasEstimate, transaction: { ...transaction, gas: toHex(simulation.gasEstimate * 12n / 10n) }, token: launch.token, launchId: launch.launchId, revisionId: launch.revisionId, planHash: launch.planHash };
   // Snapshot-derived intent is immutable; UI edits can never change the pending request.
-  const intent: ModuleEngineFeeChangeIntent = change.kind === "rotate-creator" ? { kind: change.kind, index: change.index, recipient: change.recipient }
+  const intent: ModuleEngineFeeChangeIntent = change.kind === "rotate-platform" ? { kind: change.kind, recipient: change.recipient } : change.kind === "rotate-creator" ? { kind: change.kind, index: change.index, recipient: change.recipient }
     : change.kind === "replace-creators" ? { kind: change.kind, recipients: [...change.recipients] }
     : { kind: change.kind, familyId: change.familyId, recipient: change.recipient };
   return bind(prepared, { client: input.client, release, refresh: async () => {
@@ -436,13 +578,24 @@ export async function prepareModuleEngineFeeChange(input: { client: ModuleEngine
     await simulate(input.client, current, transaction, true);
   }, receipt: receipt => verifyModuleEngineFeeChangeReceipt({ client: input.client, release, launch, account, change, receipt }) });
 }
+function normalizedCreatorEvent(args: Record<string, unknown>, release: ModuleEngineRelease): Record<string, unknown> {
+  return isModuleEngineAnyQuoteRelease(release) ? { ...args, poolId: args.launchId, previousWallet: args.previous, newWallet: args.current,
+    adminRevision: args.revision, effectiveCreatorFeesReceived: args.effectiveCreatorReceived } : args;
+}
 /** Receipt events prove this transaction; later same-block rotations are reported without inventing a failed send. */
 export async function verifyModuleEngineFeeChangeReceipt(input: { client: ModuleEngineClient; release: ModuleEngineRelease; launch: ModuleEngineLaunchRecord; account: Address; change: ModuleEngineFeeChange; receipt: TransactionReceipt }): Promise<ModuleEngineReceiptResult> {
   const block = await receiptBlock(input.client, input.release, input.receipt), launch = await boundLaunch(input.client, block, input.launch.token);
   same(launch.launchId, input.launch.launchId, "Fee change launch"); same(launch.revisionId, input.launch.revisionId, "Fee change revision"); same(launch.planHash, input.launch.planHash, "Fee change plan");
   const change = input.change, account = moduleAddress(input.account, "account"), ledger = block.release.contracts.ledger.address;
   const result: NonNullable<ModuleEngineReceiptResult["feeChange"]> = { changes: [], previewChanged: false, subsequentlyChanged: false };
-  if (change.kind === "rotate-author") {
+  if (change.kind === "rotate-platform") {
+    need(isModuleEngineAnyQuoteRelease(block.release), "Platform rotation source differs.");
+    same(input.receipt.to, ledger, "Platform ledger"); same(input.receipt.from, account, "Platform transaction wallet");
+    const args = event(input.receipt, ledger, "PlatformWalletChanged", moduleEngineAnyQuoteLedgerAbi);
+    same(args.administrator, account, "Platform rotation authority"); same(args.previous, change.previousWallet, "Previous platform wallet"); same(args.current, change.recipient, "New platform wallet");
+    const current = moduleAddress(await read(input.client, ledger, "treasury", [], block.blockNumber, moduleEngineAnyQuoteLedgerAbi), "current platform wallet");
+    result.changes = [{ previousWallet: change.previousWallet, recipient: change.recipient }]; result.subsequentlyChanged = current !== change.recipient;
+  } else if (change.kind === "rotate-author") {
     const registry = block.release.contracts.registry.address; same(input.receipt.to, registry, "Author registry"); same(input.receipt.from, account, "Author transaction wallet");
     need((await feeFamilies(input.client, block, launch)).includes(change.familyId), "Author family differs from the bound launch revision.");
     const args = event(input.receipt, registry, "AuthorWalletChanged", moduleEngineAuthorWalletAbi);
@@ -453,20 +606,20 @@ export async function verifyModuleEngineFeeChangeReceipt(input: { client: Module
     result.changes = [{ familyId: change.familyId, previousWallet, recipient: change.recipient }]; result.previewChanged = previousWallet !== change.previousWallet; result.subsequentlyChanged = currentWallet !== change.recipient;
   } else {
     same(input.receipt.to, ledger, "Creator ledger"); same(input.receipt.from, account, "Creator transaction wallet");
-    const current = creatorRecipients(await read(input.client, ledger, "creatorRecipients", [launch.launchId], block.blockNumber, moduleEngineLedgerAbi));
+    const current = creatorRecipients(await read(input.client, ledger, "creatorRecipients", [launch.launchId], block.blockNumber, ledgerAbi(block.release)));
     if (change.kind === "rotate-creator") {
-      const args = event(input.receipt, ledger, "CreatorWalletChanged", moduleEngineLedgerAbi);
+      const args = normalizedCreatorEvent(event(input.receipt, ledger, "CreatorWalletChanged", ledgerAbi(block.release)), block.release);
       same(args.poolId, launch.launchId, "Creator launch"); need(args.index === BigInt(change.index), "Creator slot differs."); same(args.previousWallet, account, "Creator self rotation"); same(args.previousWallet, change.previousWallet, "Old creator wallet"); same(args.newWallet, change.recipient, "New creator wallet");
       need(current.creatorSharesBps[change.index] === change.shareBps, "Fixed creator share changed.");
       result.changes = [{ index: change.index, previousWallet: change.previousWallet, recipient: change.recipient }]; result.subsequentlyChanged = current.creatorWallets[change.index] !== change.recipient;
     } else {
-      const args = event(input.receipt, ledger, "CreatorRecipientsReplaced", moduleEngineLedgerAbi);
+      const args = normalizedCreatorEvent(event(input.receipt, ledger, "CreatorRecipientsReplaced", ledgerAbi(block.release)), block.release);
       same(args.poolId, launch.launchId, "Creator launch"); same(args.administrator, account, "Creator administrator");
       need(args.adminRevision === change.expectedAdminRevision + 1n && current.adminRevision >= change.expectedAdminRevision + 1n, "Administrative revision was not advanced.");
       need(Array.isArray(args.wallets), "Invalid confirmed creator recipients.");
       equal(args.wallets.map(wallet => moduleAddress(wallet, "confirmed creator wallet")), change.recipients, "Confirmed creator recipients"); equal(current.creatorSharesBps, change.sharesBps, "Fixed creator shares");
-      const authority = await read(input.client, ledger, change.authority === "treasury" ? "treasury" : "rewardAdmin", [], block.blockNumber, moduleEngineLedgerAbi); same(authority, account, "Administrative authority");
-      const changes = events(input.receipt, ledger, "CreatorWalletChanged", moduleEngineLedgerAbi), previous = [...change.recipients], seen = new Set<number>();
+      const authority = await read(input.client, ledger, change.authority === "treasury" ? "treasury" : "rewardAdmin", [], block.blockNumber, ledgerAbi(block.release)); same(authority, account, "Administrative authority");
+      const changes = events(input.receipt, ledger, "CreatorWalletChanged", ledgerAbi(block.release)).map(item => normalizedCreatorEvent(item, block.release)), previous = [...change.recipients], seen = new Set<number>();
       for (const item of changes) {
         same(item.poolId, launch.launchId, "Changed creator launch"); const index = Number(uint(item.index, "creator index"));
         need(Number.isSafeInteger(index) && index < previous.length && !seen.has(index), "Duplicate or invalid creator change event."); seen.add(index);
@@ -490,18 +643,23 @@ export function moduleEngineSettlementPaymentIntent(input: { quoteAsset: Address
 }
 export async function prepareModuleEngineClaim(input: { client: ModuleEngineClient; release: ModuleEngineRelease; token: Address; account: Address; recipient: Address }): Promise<PreparedModuleEngineClaim> {
   const release = freeze(bindActiveModuleEngineRelease(input.release)), block = await assertModuleEngineRelease({ client: input.client, release }), launch = await boundLaunch(input.client, block, input.token), account = moduleAddress(input.account, "account"), recipient = moduleAddress(input.recipient, "claim recipient"), ledger = release.contracts.ledger.address;
+  const quoteFees = isModuleEngineAnyQuoteRelease(release), abi = ledgerAbi(release), claimFunction = quoteFees ? "claimQuoteTo" : "claimTo", balanceFunction = quoteFees ? "claimableQuote" : "claimable";
+  const balanceArgs = quoteFees ? [launch.quoteAsset, account] : [account];
   need(recipient !== ledger, "Choose an external claim recipient.");
-  const [claimable, alreadyClaimed] = await Promise.all([read(input.client, ledger, "claimable", [account], block.blockNumber, moduleEngineLedgerAbi), read(input.client, ledger, "claimedBy", [account], block.blockNumber, moduleEngineLedgerAbi)]);
-  const minimumAmount = uint(claimable, "claimable ETH", true), claimedBefore = uint(alreadyClaimed, "claimed ETH"), expiresAt = deadline(block.timestamp);
-  const transaction = tx(account, ledger, encodeFunctionData({ abi: moduleEngineLedgerAbi, functionName: "claimTo", args: [recipient] }), 0n, "manage", "Claim your accrued engine fees in ETH");
-  const simulated = await simulate(input.client, block, transaction); need(decodeFunctionResult({ abi: moduleEngineLedgerAbi, functionName: "claimTo", data: simulated.data }) === minimumAmount, "Claim simulation differs from the ledger balance.");
-  const prepared: PreparedModuleEngineClaim = { sourceKind: "module-engine-v1", kind: "claim", account, releaseDigest: release.releaseDigest, blockNumber: block.blockNumber, expiresAt, gasEstimate: simulated.gasEstimate, transaction: { ...transaction, gas: toHex(simulated.gasEstimate * 12n / 10n) }, token: launch.token, launchId: launch.launchId, revisionId: launch.revisionId, planHash: launch.planHash, recipient, minimumAmount, claimedBefore };
-  return bind(prepared, { client: input.client, release, refresh: async () => { const current = await assertModuleEngineRelease({ client: input.client, release }); need(current.timestamp <= expiresAt, "Claim preview expired."); const live = await boundLaunch(input.client, current, launch.token); same(live.planHash, launch.planHash, "Claim launch plan"); const currentClaimable = uint(await read(input.client, ledger, "claimable", [account], current.blockNumber, moduleEngineLedgerAbi), "claimable ETH"); need(currentClaimable >= minimumAmount, "Fee balance changed. Review the claim again."); await simulate(input.client, current, transaction); }, receipt: receipt => verifyModuleEngineClaimReceipt({ client: input.client, release, launch, account, recipient, minimumAmount, claimedBefore, receipt }) });
+  const [claimable, alreadyClaimed, decimals] = await Promise.all([read(input.client, ledger, balanceFunction, balanceArgs, block.blockNumber, abi), read(input.client, ledger, "claimedBy", balanceArgs, block.blockNumber, abi), quoteFees ? read(input.client, launch.quoteAsset, "decimals", [], block.blockNumber) : 18]);
+  const minimumAmount = uint(claimable, "claimable fees", true), claimedBefore = uint(alreadyClaimed, "claimed fees"), expiresAt = deadline(block.timestamp);
+  const transaction = tx(account, ledger, encodeFunctionData({ abi, functionName: claimFunction, args: quoteFees ? [launch.quoteAsset, recipient] : [recipient] }), 0n, "manage", quoteFees ? "Claim your accrued fees in the pool quote asset" : "Claim your accrued engine fees in ETH");
+  const simulated = await simulate(input.client, block, transaction); need(decodeFunctionResult({ abi, functionName: claimFunction, data: simulated.data }) === minimumAmount, "Claim simulation differs from the ledger balance.");
+  const prepared: PreparedModuleEngineClaim = { sourceKind: "module-engine-v1", kind: "claim", account, releaseDigest: release.releaseDigest, blockNumber: block.blockNumber, expiresAt, gasEstimate: simulated.gasEstimate, transaction: { ...transaction, gas: toHex(simulated.gasEstimate * 12n / 10n) }, token: launch.token, launchId: launch.launchId, revisionId: launch.revisionId, planHash: launch.planHash, recipient, minimumAmount, claimedBefore, ...(quoteFees ? { feeAsset: launch.quoteAsset, feeDecimals: Number(decimals) } : {}) };
+  return bind(prepared, { client: input.client, release, refresh: async () => { const current = await assertModuleEngineRelease({ client: input.client, release }); need(current.timestamp <= expiresAt, "Claim preview expired."); const live = await boundLaunch(input.client, current, launch.token); same(live.planHash, launch.planHash, "Claim launch plan"); const currentClaimable = uint(await read(input.client, ledger, balanceFunction, balanceArgs, current.blockNumber, abi), "claimable fees"); need(currentClaimable >= minimumAmount, "Fee balance changed. Review the claim again."); await simulate(input.client, current, transaction); }, receipt: receipt => verifyModuleEngineClaimReceipt({ client: input.client, release, launch, account, recipient, minimumAmount, claimedBefore, receipt }) });
 }
 export async function verifyModuleEngineClaimReceipt(input: { client: ModuleEngineClient; release: ModuleEngineRelease; launch: ModuleEngineLaunchRecord; account: Address; recipient: Address; minimumAmount: bigint; claimedBefore: bigint; receipt: TransactionReceipt }): Promise<ModuleEngineReceiptResult> {
   const block = await receiptBlock(input.client, input.release, input.receipt), launch = await boundLaunch(input.client, block, input.launch.token); same(launch.planHash, input.launch.planHash, "Claim launch plan");
-  const args = event(input.receipt, block.release.contracts.ledger.address, "FeesClaimed", moduleEngineLedgerAbi); same(args.beneficiary, input.account, "Claim beneficiary"); same(args.caller, input.account, "Claim caller"); same(args.recipient, input.recipient, "Claim recipient"); const outputAmount = uint(args.amount, "claimed amount", true); need(outputAmount >= input.minimumAmount, "Claim is below the reviewed balance.");
-  const claimed = uint(await read(input.client, block.release.contracts.ledger.address, "claimedBy", [input.account], block.blockNumber, moduleEngineLedgerAbi), "claimed total"); need(claimed >= input.claimedBefore + outputAmount, "Claimed ledger total was not updated."); await canonical(input.client, block); return receiptResult(input.receipt, "claim", { token: launch.token, launch, outputAmount });
+  const quoteFees = isModuleEngineAnyQuoteRelease(block.release), abi = ledgerAbi(block.release);
+  const args = event(input.receipt, block.release.contracts.ledger.address, quoteFees ? "QuoteFeesClaimed" : "FeesClaimed", abi); same(args.beneficiary, input.account, "Claim beneficiary");
+  if (quoteFees) same(args.asset, launch.quoteAsset, "Claim quote asset"); else same(args.caller, input.account, "Claim caller");
+  same(args.recipient, input.recipient, "Claim recipient"); const outputAmount = uint(args.amount, "claimed amount", true); need(outputAmount >= input.minimumAmount, "Claim is below the reviewed balance.");
+  const claimed = uint(await read(input.client, block.release.contracts.ledger.address, "claimedBy", quoteFees ? [launch.quoteAsset, input.account] : [input.account], block.blockNumber, abi), "claimed total"); need(claimed >= input.claimedBefore + outputAmount, "Claimed ledger total was not updated."); await canonical(input.client, block); return receiptResult(input.receipt, "claim", { token: launch.token, launch, outputAmount });
 }
 
 /** Only actual converter/factory pools are offered. Multihop routes can also be supplied to the bounded trade API. */
