@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
-import { decodeAbiParameters, decodeFunctionData, encodeAbiParameters, encodeEventTopics, encodeFunctionResult, getAddress, getCreate2Address, keccak256, parseAbi, parseAbiParameters, type Hex, type TransactionReceipt } from "viem";
+import { decodeAbiParameters, decodeFunctionData, encodeAbiParameters, encodeEventTopics, encodeFunctionData, encodeFunctionResult, erc20Abi, getAddress, getCreate2Address, keccak256, parseAbi, parseAbiParameters, type Abi, type Address, type Hex, type TransactionReceipt } from "viem";
 import { fixture, ACCOUNT, CODE, CODE_HASH, QUOTE, TOKEN, addr, hash } from "./module-engine-fixture";
 import { moduleEngineReleaseIdentity, computeModuleEngineReleaseDigest, computeModuleEngineHostManifestHash, type ModuleEngineAnyQuoteReleaseIdentity } from "@/lib/module-engine/catalog";
 import { MODULE_ENGINE_ANY_QUOTE_SOURCE_VERSION, MODULE_ENGINE_ANY_QUOTE_SOURCE_ID, MODULE_ENGINE_ANY_QUOTE_PROFILE, MODULE_ENGINE_ANY_QUOTE_PROFILE_ID, MODULE_ENGINE_ANY_QUOTE_ECONOMICS_POLICY_ID } from "@/lib/module-engine/profile";
@@ -10,11 +10,15 @@ import { anyQuoteEvidenceHashV1, anyQuoteModulePoolKeyV1, anyQuotePoolIdV1, buil
 import { planAnyQuoteInitialPriceV1, encodeAnyQuoteConfigurationV1 } from "@/lib/module-engine/any-quote/price";
 import { anyQuoteLaunchIntent, anyQuoteMinimumOutput, anyQuotePoolFor, assertAnyQuoteConfiguration, assertAnyQuoteLaunchPreparation, predictAnyQuoteToken, type AnyQuoteLaunchPreparation, type AnyQuoteTradeQuote } from "@/lib/module-engine/any-quote/integration";
 import { compileModuleEngineLaunch, predictModuleEngineAddress } from "@/lib/module-engine/operation-plan";
-import { prepareModuleEngineAnyQuoteSwap, prepareModuleEngineClaim, readModuleEngineLaunch, readModuleEngineAdministration, readModuleEngineFeeControls, prepareModuleEngineFeeChange, revalidateModuleEngineTransaction, releaseModuleEnginePreparation, verifyModuleEngineLaunchReceipt } from "@/lib/module-engine/client";
-import { ENGINE_CONTEXT, moduleEngineAnyQuoteLedgerAbi, moduleEngineHostAbi, moduleEngineLaunchParameters, moduleEnginePlanParameters } from "@/lib/module-engine/abi";
+import { prepareModuleEngineAnyQuoteSwap, prepareModuleEngineClaim, readModuleEngineLaunch, readModuleEngineAdministration, readModuleEngineFeeControls, prepareModuleEngineFeeChange, revalidateModuleEngineTransaction, releaseModuleEnginePreparation, verifyModuleEngineLaunchReceipt, verifyModuleEngineClaimReceipt } from "@/lib/module-engine/client";
+import { ENGINE_CONTEXT, moduleEngineAnyQuoteHookAbi, moduleEngineAnyQuoteLedgerAbi, moduleEngineHostAbi, moduleEngineLaunchParameters, moduleEnginePlanParameters } from "@/lib/module-engine/abi";
 import { readAnyQuoteLaunchPreview, readAnyQuoteReadiness } from "@/lib/server/module-engine/any-quote";
+import { readAnyQuoteIdentityLaunchPreviewV1 } from "@/lib/server/module-engine/any-quote-preparation";
+import { assertAnyQuoteLifecycleIdentityV1, prepareAnyQuoteLifecycleApprovalV1, prepareAnyQuoteLifecycleClaimV1, prepareAnyQuoteLifecycleLaunchV1, prepareAnyQuoteLifecycleSwapV1,
+  revalidateAnyQuoteLifecyclePreparationV1, verifyAnyQuoteLifecycleReceiptV1, type AnyQuoteLifecyclePreparationV1 } from "@/lib/module-engine/any-quote/lifecycle";
 import { anyQuoteJsonRequest } from "@/lib/server/module-engine/any-quote-http";
 import { settlementRpcFixture } from "./any-quote-settlement-fixture";
+import type { TradeRpcV1 } from "@/lib/server/custom-launch/routed-trade-rpc-v1";
 
 vi.mock("server-only", () => ({}));
 
@@ -46,7 +50,8 @@ function sharedFixture() {
     topics: encodeEventTopics({ abi: registrationAbi, eventName: "QuoteLaunchRegistered", args: { launchId: f.launch.launchId, asset: QUOTE } }),
     data: encodeAbiParameters(parseAbiParameters("bytes32,address[],uint16[]"), [ledgerConfigurationHash, [ACCOUNT], [10_000]]) };
   f.client.getLogs = vi.fn(async input => {
-    expect(input).toMatchObject({ address: release.contracts.ledger.address, args: { launchId: f.launch.launchId, asset: QUOTE }, fromBlock: 1n, toBlock: 100n, strict: true });
+    expect(input).toMatchObject({ address: release.contracts.ledger.address, args: { launchId: f.launch.launchId, asset: QUOTE }, fromBlock: 1n, strict: true });
+    expect(input.toBlock).toBeGreaterThanOrEqual(100n);
     return [registration];
   }) as NonNullable<typeof f.client.getLogs>;
   const originalRead = vi.mocked(f.client.readContract).getMockImplementation()!;
@@ -67,6 +72,7 @@ function sharedFixture() {
     if (fn === "PROTOCOL_FEE_BPS" || fn === "AUTHOR_POOL_FEE_BPS" || fn === "feeTerms" || fn === "claimable") throw new Error("Native fee ABI used for quote asset");
     if (fn === "platformFeeBps") return 30;
     if (fn === "quoteAsset") return QUOTE;
+    if (fn === "decimals" && input.address?.toLowerCase() === QUOTE.toLowerCase()) return 36;
     if (fn === "configurationHash") return feeState.configurationHash;
     if (fn === "creatorRecipients") return [feeState.creatorWallets, [10_000], 0n];
     if (fn === "poolIdOf" || fn === "poolId") return hash(801);
@@ -122,6 +128,112 @@ function tradeFixture(buy: boolean) {
   vi.mocked(f.client.call).mockImplementation(async input => { expect(input.to?.toLowerCase()).toBe(f.identity.contracts.universalRouter.address); return { data: "0x" }; });
   return { ...f, quote, allowance };
 }
+
+function lifecycleHistory(f: ReturnType<typeof sharedFixture>) {
+  const originalTimestamp = f.state.timestamp, history = { latest: 100n };
+  vi.mocked(f.client.getBlock).mockImplementation(async input => {
+    const number = input?.blockNumber ?? history.latest;
+    return { number, hash: number === 100n ? f.blockHash : hash(Number(number)), timestamp: number === 100n ? originalTimestamp : f.state.timestamp } as never;
+  });
+  return history;
+}
+function lifecycleLog(address: Address, abi: Abi, eventName: string, args: Record<string, unknown>) {
+  const event = abi.find(item => item.type === "event" && item.name === eventName); if (event?.type !== "event") throw new Error("Missing event");
+  return { address, blockNumber: 101n, blockHash: hash(101), transactionHash: hash(202), transactionIndex: 0, logIndex: 0, removed: false,
+    topics: encodeEventTopics({ abi, eventName, args } as never), data: encodeAbiParameters(event.inputs.filter(item => !item.indexed), event.inputs.filter(item => !item.indexed).map(item => args[item.name!])) };
+}
+function lifecycleReceipt(f: ReturnType<typeof sharedFixture>, preparation: AnyQuoteLifecyclePreparationV1, logs: ReturnType<typeof lifecycleLog>[]) {
+  const transaction = preparation.prepared.transaction;
+  vi.mocked(f.client.getTransaction).mockResolvedValue({ hash: hash(202), from: transaction.from, to: transaction.to, input: transaction.data, value: BigInt(transaction.value), chainId: 4663, blockNumber: 101n, blockHash: hash(101) } as never);
+  return { status: "success", from: transaction.from, to: transaction.to, transactionHash: hash(202), blockNumber: 101n, blockHash: hash(101), logs } as unknown as TransactionReceipt;
+}
+
+describe("Any Quote source identity lifecycle preparation", () => {
+  it("uses genuine identity packets while public reads and preparation remain active-gated", async () => {
+    const f = tradeFixture(true), identity = f.identity;
+    expect(identity).not.toHaveProperty("status"); expect(identity).not.toHaveProperty("lifecycleEvidenceDigest");
+    await expect(assertAnyQuoteLifecycleIdentityV1({ ...f, identity })).resolves.toMatchObject({ release: identity });
+    await expect(readModuleEngineLaunch({ ...f, release: identity as typeof f.release, token: TOKEN })).rejects.toThrow();
+    await expect(prepareModuleEngineAnyQuoteSwap({ ...f, release: identity as typeof f.release, account: ACCOUNT })).rejects.toThrow();
+    const prepared = await prepareAnyQuoteLifecycleSwapV1({ ...f, identity, account: ACCOUNT });
+    if ("kind" in prepared) throw new Error("Unexpected approval");
+    await expect(revalidateModuleEngineTransaction(prepared.prepared as never, ACCOUNT)).rejects.toThrow("fresh, verified");
+    await expect(assertAnyQuoteLifecycleIdentityV1({ ...f, identity: f.release })).rejects.toThrow();
+  });
+  it.each([true, false])("roundtrips and revalidates identical unsigned route bytes without requoting (buy=%s)", async buy => {
+    const f = tradeFixture(buy); lifecycleHistory(f);
+    const preparation = await prepareAnyQuoteLifecycleSwapV1({ ...f, identity: f.identity, account: ACCOUNT });
+    if ("kind" in preparation) throw new Error("Unexpected approval");
+    const restored = JSON.parse(JSON.stringify(preparation)) as AnyQuoteLifecyclePreparationV1;
+    expect(restored.prepared.blockNumber).toBe("100");
+    await expect(revalidateAnyQuoteLifecyclePreparationV1({ ...f, identity: f.identity, preparation: restored })).resolves.toEqual(preparation.prepared.transaction);
+    const changed = {
+      ...structuredClone(restored),
+      prepared: { ...restored.prepared, transaction: { ...restored.prepared.transaction, value: "0xffff" as Hex } },
+    };
+    changed.evidenceHash = anyQuoteEvidenceHashV1({ ...changed, evidenceHash: undefined });
+    await expect(revalidateAnyQuoteLifecyclePreparationV1({ ...f, identity: f.identity, preparation: changed })).rejects.toThrow("original canonical preparation differs");
+  });
+  it("rejects expired materializations while retaining the original checkpoint", async () => {
+    const f = tradeFixture(true), history = lifecycleHistory(f), preparation = await prepareAnyQuoteLifecycleSwapV1({ ...f, identity: f.identity, account: ACCOUNT });
+    if ("kind" in preparation) throw new Error("Unexpected approval");
+    history.latest = 101n; f.state.timestamp = BigInt(preparation.prepared.expiresAt);
+    await expect(revalidateAnyQuoteLifecyclePreparationV1({ ...f, identity: f.identity, preparation })).rejects.toThrow("expired");
+  });
+  it("prepares only the finite required Permit2 predecessor of a bound sell", async () => {
+    const f = tradeFixture(false); lifecycleHistory(f); f.allowance.amount = 0n;
+    vi.mocked(f.client.call).mockResolvedValue({ data: "0x" });
+    const preparation = await prepareAnyQuoteLifecycleApprovalV1({ ...f, identity: f.identity, account: ACCOUNT });
+    if ("kind" in preparation) throw new Error("Unexpected missing approval");
+    expect(preparation).toMatchObject({ recipe: { kind: "approve" }, prepared: { kind: "approve", amount: "1000", allowanceKind: "permit2" }, funding: { funding: { permit2Nonce: 0, erc20Allowance: f.state.allowance.toString() } } });
+    await expect(revalidateAnyQuoteLifecyclePreparationV1({ ...f, identity: f.identity, preparation: JSON.parse(JSON.stringify(preparation)) })).resolves.toEqual(preparation.prepared.transaction);
+    const buy = tradeFixture(true);
+    await expect(prepareAnyQuoteLifecycleApprovalV1({ ...buy, identity: buy.identity, account: ACCOUNT })).rejects.toThrow("predecessor of a sell");
+  });
+  it("creates identity launch previews through the mandatory settlement gate and prepares the same zero-buy launch", async () => {
+    const f = sharedFixture(), settlement = settlementRpcFixture(f.preview.readiness.routes.buy, addr(99));
+    const preview = await readAnyQuoteIdentityLaunchPreviewV1({ ...f.intent, identity: f.identity, template: f.template, description: "Identity launch" }, { client: f.client, readiness: async () => f.preview.readiness, options: { rpcs: settlement.rpcs } });
+    const input = { ...f.launchInput, anyQuotePreparation: preview };
+    const compiled = await compileModuleEngineLaunch(input, f.identity, f.template.manifest, 36, BigInt(preview.validUntil));
+    const read = vi.mocked(f.client.readContract).getMockImplementation()!;
+    vi.mocked(f.client.readContract).mockImplementation(async value => value.functionName === "predictTokenAddress" ? [compiled.predictedToken, compiled.graffiti] : read(value));
+    const result = { ...f.launch, launchId: compiled.launchId, token: compiled.predictedToken, engine: compiled.engine, constructorHash: compiled.constructorHash, initCodeHash: compiled.initCodeHash, configurationHash: compiled.configurationHash, planHash: compiled.planHash, engineCodeHash: compiled.engineCodeHash };
+    vi.mocked(f.client.call).mockResolvedValue({ data: encodeFunctionResult({ abi: moduleEngineHostAbi, functionName: "launch", result }) });
+    const preparation = await prepareAnyQuoteLifecycleLaunchV1({ ...f, identity: f.identity, input });
+    if ("kind" in preparation) throw new Error("Unexpected funding");
+    expect(preparation.prepared.transaction.value).toBe("0x0");
+    await expect(revalidateAnyQuoteLifecyclePreparationV1({ ...f, identity: f.identity, preparation: JSON.parse(JSON.stringify(preparation)) })).resolves.toEqual(preparation.prepared.transaction);
+    settlement.state.recipientAdjustment = -1n;
+    await expect(readAnyQuoteIdentityLaunchPreviewV1({ ...f.intent, identity: f.identity, template: f.template, description: "Identity launch" }, { client: f.client, readiness: async () => f.preview.readiness, options: { rpcs: settlement.rpcs } })).rejects.toMatchObject({ status: "incompatible" });
+  });
+  it("binds a canonical swap receipt to the signed router bytes and final token transfer", async () => {
+    const f = tradeFixture(true); lifecycleHistory(f);
+    const preparation = await prepareAnyQuoteLifecycleSwapV1({ ...f, identity: f.identity, account: ACCOUNT });
+    if ("kind" in preparation) throw new Error("Unexpected approval");
+    const logs = [lifecycleLog(f.identity.contracts.sharedHook.address, moduleEngineAnyQuoteHookAbi, "QuotePoolSwap", { poolId: f.quote.pool.poolId, launchId: f.launch.launchId, swapSender: f.identity.contracts.universalRouter.address, buy: true, exactInput: true, grossQuote: 1000n, platformQuote: 3n, creatorQuote: 0n, coreAmount0: 1000n, coreAmount1: -2000n }),
+      lifecycleLog(TOKEN, erc20Abi, "Transfer", { from: f.identity.contracts.poolManager.address, to: ACCOUNT, value: 2000n })];
+    const receipt = lifecycleReceipt(f, preparation, logs);
+    await expect(verifyAnyQuoteLifecycleReceiptV1({ ...f, identity: f.identity, preparation, receipt })).resolves.toMatchObject({ kind: "swap", outputAmount: "2000", finalized: false });
+    await expect(verifyAnyQuoteLifecycleReceiptV1({ ...f, identity: f.identity, preparation, receipt: { ...receipt, logs: receipt.logs.slice(0, 1) } })).rejects.toThrow("below the signed minimum");
+  });
+  it.each(["valid", "missing-transfer", "duplicate-transfer", "wrong-source", "wrong-amount", "unchanged-total"])("binds claim receipts to actual PoolManager transfer and ledger total: %s", async mutation => {
+    const f = sharedFixture(); lifecycleHistory(f);
+    const preparation = await prepareAnyQuoteLifecycleClaimV1({ ...f, identity: f.identity, account: ACCOUNT, token: TOKEN, recipient: ACCOUNT });
+    if ("kind" in preparation) throw new Error("Unexpected funding");
+    const read = vi.mocked(f.client.readContract).getMockImplementation()!;
+    vi.mocked(f.client.readContract).mockImplementation(async value => value.functionName === "claimedBy" && value.blockNumber === 101n ? mutation === "unchanged-total" ? 4n : 13n : read(value));
+    const transfer = lifecycleLog(QUOTE, erc20Abi, "Transfer", { from: mutation === "wrong-source" ? f.identity.contracts.ledger.address : f.identity.contracts.poolManager.address, to: ACCOUNT, value: mutation === "wrong-amount" ? 8n : 9n });
+    const logs = [lifecycleLog(f.identity.contracts.ledger.address, moduleEngineAnyQuoteLedgerAbi, "QuoteFeesClaimed", { asset: QUOTE, beneficiary: ACCOUNT, recipient: ACCOUNT, amount: 9n }), ...(mutation === "missing-transfer" ? [] : [transfer]), ...(mutation === "duplicate-transfer" ? [transfer] : [])];
+    const receipt = lifecycleReceipt(f, preparation, logs), result = verifyAnyQuoteLifecycleReceiptV1({ ...f, identity: f.identity, preparation: JSON.parse(JSON.stringify(preparation)), receipt });
+    if (mutation === "valid") {
+      await expect(result).resolves.toMatchObject({ kind: "claim", outputAmount: "9", blockNumber: "101" });
+      await expect(verifyModuleEngineClaimReceipt({ ...f, launch: f.launch, account: ACCOUNT, recipient: ACCOUNT, minimumAmount: 9n, claimedBefore: 4n, receipt })).resolves.toMatchObject({ outputAmount: 9n });
+      const clock = vi.spyOn(Date, "now").mockReturnValue(Number(BigInt(preparation.prepared.expiresAt) + 3_600n) * 1000);
+      try { await expect(verifyAnyQuoteLifecycleReceiptV1({ ...f, identity: f.identity, preparation, receipt })).resolves.toMatchObject({ outputAmount: "9" }); }
+      finally { clock.mockRestore(); }
+    } else await expect(result).rejects.toThrow();
+  });
+});
 
 describe("Any Quote financial integration", () => {
   it("binds the real ledger commitment separately from Host config and retains claims after creator rotation", async () => {
@@ -225,6 +337,27 @@ describe("Any Quote financial integration", () => {
     expect(assertAnyQuoteLaunchPreparation(preview, f.intent, f.release, f.state.timestamp)).toBe(preview);
     expect(f.client.call).not.toHaveBeenCalled();
     expect(settlement.calls.some(call => call.method === "debug_traceCall")).toBe(true);
+  });
+  it.each([true, false])("pins initial-buy traces to the canonical hash and closes unsupported providers (supported=%s)", async supported => {
+    const f = sharedFixture(), settlement = settlementRpcFixture(f.preview.readiness.routes.buy, addr(99));
+    const initialTraces: unknown[][] = [];
+    const rpcs = settlement.rpcs.map(provider => (async (method, params) => {
+      const tx = params[0] as { from?: Address; to?: Address; data?: Hex; value?: Hex };
+      if (method !== "debug_traceCall" || tx.to?.toLowerCase() !== f.host.toLowerCase()) return provider(method, params);
+      initialTraces.push([...params]);
+      expect(params[1]).toEqual({ blockHash: f.preview.readiness.checkpoint.hash, requireCanonical: true });
+      if (!supported) throw new Error("Hash reference unsupported");
+      return { type: "CALL", ...tx, input: tx.data, output: "0x", gasUsed: "0x100", calls: [
+        { type: "CALL", from: f.identity.contracts.poolManager.address, to: f.preview.predictedToken, value: "0x0", gasUsed: "0x10",
+          input: encodeFunctionData({ abi: erc20Abi, functionName: "transfer", args: [ACCOUNT, 2000n] }), output: encodeFunctionResult({ abi: erc20Abi, functionName: "transfer", result: true }) },
+      ] };
+    }) satisfies TradeRpcV1) as unknown as readonly [TradeRpcV1, TradeRpcV1];
+    const result = readAnyQuoteIdentityLaunchPreviewV1({ ...f.intent, identity: f.identity, template: f.template, initialBuyWei: "1000", description: "Canonical initial buy" }, {
+      client: f.client, readiness: async () => f.preview.readiness, options: { rpcs },
+    });
+    if (supported) await expect(result).resolves.toMatchObject({ initialBuy: { output: "2000", minimumOutput: "1980" } });
+    else await expect(result).rejects.toMatchObject({ code: "TRADE_ANALYSIS_PENDING", status: 503 });
+    expect(initialTraces).toHaveLength(2);
   });
   it.each(["taxed", "restricted", "unfunded"])("closes zero-buy launch preview when quote settlement is %s", async kind => {
     const f = sharedFixture(), settlement = settlementRpcFixture(f.preview.readiness.routes.buy, addr(99));
