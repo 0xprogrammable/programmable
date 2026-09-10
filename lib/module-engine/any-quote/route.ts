@@ -1,5 +1,6 @@
 import { CommandType, RoutePlanner, UniversalRouterVersion } from "@uniswap/universal-router-sdk";
-import { Actions, URVersion, V4Planner } from "@uniswap/v4-sdk";
+import { Actions, Pool, URVersion, V4Planner } from "@uniswap/v4-sdk";
+import { Ether, Token } from "@uniswap/sdk-core";
 import { encodeAbiParameters, encodeFunctionData, keccak256, parseAbi, parseAbiParameters, stringToHex, type Address, type Hex } from "viem";
 import {
   ANY_QUOTE_CHAIN_ID, ANY_QUOTE_INFRASTRUCTURE, ANY_QUOTE_NATIVE, ANY_QUOTE_WETH,
@@ -8,12 +9,9 @@ import {
   type AnyQuoteModulePoolV1, type AnyQuotePoolKeyV1,
 } from "./types";
 
-const CONTRACT_BALANCE = (1n << 255n).toString();
 const UINT128_MAX = (1n << 128n) - 1n;
 const INT128_MAX = (1n << 127n) - 1n;
-const ROUTER = "0x0000000000000000000000000000000000000002";
 const executeAbi = parseAbi(["function execute(bytes commands,bytes[] inputs,uint256 deadline) payable"]);
-const keyParameters = parseAbiParameters("address currency0,address currency1,uint24 fee,int24 tickSpacing,address hooks");
 const canonicalAsset = (value: Address) => anyQuoteSameAddressV1(value, ANY_QUOTE_NATIVE) ? ANY_QUOTE_WETH : value;
 const equivalentAsset = (a: Address, b: Address) => anyQuoteSameAddressV1(canonicalAsset(a), canonicalAsset(b));
 const object = (v: unknown): Record<string, unknown> => {
@@ -33,7 +31,27 @@ export function anyQuoteEvidenceHashV1(value: unknown): Hex {
 }
 export function anyQuotePoolIdV1(key: AnyQuotePoolKeyV1): Hex {
   const normalized = validateKey(key);
-  return keccak256(encodeAbiParameters(keyParameters, [normalized.currency0, normalized.currency1, normalized.fee, normalized.tickSpacing, normalized.hooks]));
+  // Currency metadata is irrelevant to the PoolId. Native ETH remains the native SDK currency.
+  const currency = (address: Address) => anyQuoteSameAddressV1(address, ANY_QUOTE_NATIVE)
+    ? Ether.onChain(ANY_QUOTE_CHAIN_ID) : new Token(ANY_QUOTE_CHAIN_ID, address, 18);
+  return Pool.getPoolId(currency(normalized.currency0), currency(normalized.currency1), normalized.fee, normalized.tickSpacing, normalized.hooks) as Hex;
+}
+
+/** Only a single V4 unlock can currently prove transaction-local intermediate amounts.
+ * Native/WETH equivalence is useful for discovery, but it must not hide a wrap/unwrap during
+ * execution: Universal Router's balance-based unwrap and mixed-protocol commands are not isolated.
+ * This is a route-compiler coverage limit, not evidence that the ERC20 is incompatible. */
+export function requireAnyQuoteNativeUnlockRouteV1(route: AnyQuoteExternalRouteV1, side: "buy" | "sell") {
+  validateAnyQuoteExternalRouteV1(route);
+  const hops = route.hops;
+  if (hops.length === 0 || !hops.every((hop): hop is Extract<AnyQuoteAmmHopV1, { protocol: "V4" }> => hop.protocol === "V4")
+    || !anyQuoteSameAddressV1(side === "buy" ? hops[0].tokenIn : hops[hops.length - 1].tokenOut, ANY_QUOTE_NATIVE)) {
+    throw new AnyQuoteErrorV1("ROUTE_ISOLATION_UNAVAILABLE");
+  }
+  for (let i = 1; i < hops.length; i++) {
+    if (!anyQuoteSameAddressV1(hops[i - 1].tokenOut, hops[i].tokenIn)) throw new AnyQuoteErrorV1("ROUTE_ISOLATION_UNAVAILABLE");
+  }
+  return hops;
 }
 function validateKey(key: AnyQuotePoolKeyV1): AnyQuotePoolKeyV1 {
   const currency0 = anyQuoteAddressV1(key.currency0, true), currency1 = anyQuoteAddressV1(key.currency1, true);
@@ -147,51 +165,21 @@ export function buildAnyQuoteSwapV1(input: {
     if (anyQuoteSameAddressV1(hop.tokenIn, token) || anyQuoteSameAddressV1(hop.tokenOut, token)
       || (hop.protocol === "V4" && hop.poolId.toLowerCase() === input.pool.poolId.toLowerCase())) throw new AnyQuoteErrorV1("EXTERNAL_ROUTE_REUSES_MODULE_POOL");
   }
+  const hops = requireAnyQuoteNativeUnlockRouteV1(route, input.side);
+  const path = hops.map(hop => [hop.tokenOut, hop.key.fee, hop.key.tickSpacing, hop.key.hooks, hop.hookData]);
+  const moduleHop = [buy ? token : quote, key.fee, key.tickSpacing, key.hooks, "0x" as Hex];
+  if (buy) path.push(moduleHop); else path.unshift(moduleHop);
+  const currencyIn = buy ? ANY_QUOTE_NATIVE : token, currencyOut = buy ? token : ANY_QUOTE_NATIVE;
+  const v4 = new V4Planner();
+  // Every intermediate output becomes the next hop's exact input inside the same PoolManager
+  // unlock. No intermediate ERC20 reaches the router. Explicit settlement also makes an external
+  // partial fill revert with a remaining delta instead of spending less than the signed input.
+  v4.addAction(Actions.SWAP_EXACT_IN, [[currencyIn, path, [], input.amountIn.toString(), input.minimumAmountOut.toString()]], URVersion.V2_1_1);
+  v4.addAction(Actions.SETTLE, [currencyIn, input.amountIn.toString(), !buy], URVersion.V2_1_1);
+  v4.addAction(Actions.TAKE, [currencyOut, recipient, "0"], URVersion.V2_1_1);
   const planner = new RoutePlanner();
-  const add = (command: CommandType, args: unknown[]) => planner.addCommand(command, args, false, UniversalRouterVersion.V2_1_1);
-  const v4Hop = (poolKey: AnyQuotePoolKeyV1, currencyIn: Address, currencyOut: Address, hookData: Hex, min: bigint, userAmount?: bigint, final = false) => {
-    const v4 = new V4Planner();
-    const action = (id: Actions, args: unknown[]) => v4.addAction(id, args, URVersion.V2_1_1);
-    if (userAmount === undefined) action(Actions.SETTLE, [currencyIn, CONTRACT_BALANCE, false]);
-    action(Actions.SWAP_EXACT_IN_SINGLE, [[[poolKey.currency0, poolKey.currency1, poolKey.fee, poolKey.tickSpacing, poolKey.hooks],
-      anyQuoteSameAddressV1(currencyIn, poolKey.currency0), (userAmount ?? 0n).toString(), min.toString(), "0", hookData]]);
-    if (userAmount !== undefined) action(Actions.SETTLE_ALL, [currencyIn, userAmount.toString()]);
-    action(Actions.TAKE, [currencyOut, final ? recipient : ROUTER, "0"]);
-    if (userAmount === undefined) action(Actions.TAKE, [currencyIn, ROUTER, "0"]);
-    add(CommandType.V4_SWAP, [v4.finalize()]);
-  };
-  const transition = (from: Address, to: Address) => {
-    if (anyQuoteSameAddressV1(from, to)) return;
-    if (!equivalentAsset(from, to)) throw new AnyQuoteErrorV1("DISCONNECTED_ROUTE");
-    if (anyQuoteSameAddressV1(from, ANY_QUOTE_NATIVE)) add(CommandType.WRAP_ETH, [ROUTER, CONTRACT_BALANCE]);
-    else add(CommandType.UNWRAP_WETH, [ROUTER, "0"]);
-  };
-  const external = () => {
-    let current = route.tokenIn;
-    for (const hop of route.hops) {
-      transition(current, hop.tokenIn);
-      if (hop.protocol === "V4") v4Hop(hop.key, hop.tokenIn, hop.tokenOut, hop.hookData, 0n);
-      else if (hop.protocol === "V3") {
-        const path = `${hop.tokenIn}${hop.fee.toString(16).padStart(6, "0")}${hop.tokenOut.slice(2)}`;
-        add(CommandType.V3_SWAP_EXACT_IN, [ROUTER, CONTRACT_BALANCE, "0", path, false, []]);
-      } else add(CommandType.V2_SWAP_EXACT_IN, [ROUTER, CONTRACT_BALANCE, "0", [hop.tokenIn, hop.tokenOut], false, []]);
-      current = hop.tokenOut;
-    }
-    transition(current, route.tokenOut);
-  };
-  if (buy) {
-    add(CommandType.WRAP_ETH, [ROUTER, input.amountIn.toString()]);
-    external();
-    v4Hop(key, quote, token, "0x", input.minimumAmountOut, undefined, true);
-  } else {
-    v4Hop(key, token, quote, "0x", 0n, input.amountIn);
-    external();
-    add(CommandType.UNWRAP_WETH, [recipient, input.minimumAmountOut.toString()]);
-  }
-  const dustAssets = [...new Set([quote, ANY_QUOTE_WETH, ...route.hops.flatMap(h => [h.tokenIn, h.tokenOut])].map(a => a.toLowerCase()))]
-    .filter(a => !anyQuoteSameAddressV1(a, ANY_QUOTE_NATIVE));
-  for (const asset of dustAssets) add(CommandType.SWEEP, [asset, recipient, "0"]);
-  add(CommandType.SWEEP, [ANY_QUOTE_NATIVE, recipient, "0"]);
+  planner.addCommand(CommandType.V4_SWAP, [v4.finalize()], false, UniversalRouterVersion.V2_1_1);
+  const assets = [...new Set([token, ANY_QUOTE_NATIVE, ...hops.flatMap(h => [h.tokenIn, h.tokenOut])].map(a => a.toLowerCase()))] as Address[];
   const commands = planner.commands as Hex, inputs = planner.inputs as Hex[];
   return {
     chainId: ANY_QUOTE_CHAIN_ID, routerVersion: "2.1.1" as const, commands, inputs,
@@ -200,9 +188,7 @@ export function buildAnyQuoteSwapV1(input: {
       data: encodeFunctionData({ abi: executeAbi, functionName: "execute", args: [commands, inputs, input.deadline] }),
       value: buy ? input.amountIn.toString() : "0" },
     recipient, finalMinimum: input.minimumAmountOut.toString(), deadline: input.deadline.toString(),
-    /** Record starting balances and verify funding/output deltas. Existing donations must never
-     * count toward the user's funded input or minimum-output proof, and must not block execution. */
-    balanceAccounting: { mode: "input-output-deltas" as const, assets: [...dustAssets, token, ANY_QUOTE_NATIVE] as Address[],
+    balanceAccounting: { mode: "unlock-deltas" as const, assets,
       existingDonationsCountAsUserFunding: false as const, minimumMustHoldWithoutDonations: true as const },
     requiresExactTransactionSimulation: true as const,
     approval: buy ? null : { token, spender: ANY_QUOTE_INFRASTRUCTURE.permit2,

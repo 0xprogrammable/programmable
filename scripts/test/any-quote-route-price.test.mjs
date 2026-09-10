@@ -53,41 +53,51 @@ test("configuration is exactly 256 bytes and rejects endpoint ticks", () => {
   assert.equal(words[5], -10000);
   for (const tick of [-887200, 887200, 1]) assert.throws(() => a.encodeAnyQuoteConfigurationV1({ sharedHook: HOOK, quoteAsset: QUOTE, initialTick: tick, validUntil: 140n, priceEvidenceHash: HASH }));
 });
-test("mixed V3/V4 native buy uses actual intermediate balances and final minimum", () => {
+test("native V4 buy retains intermediate credits inside one unlock and binds final minimum", () => {
   const MID = "0x4000000000000000000000000000000000000000";
-  const built = trade(route([v3(a.ANY_QUOTE_WETH, MID), v4(MID, QUOTE)]));
+  const built = trade(route([v4(a.ANY_QUOTE_NATIVE, MID), v4(MID, QUOTE)]));
   assert.equal(built.transaction.to.toLowerCase(), "0x06afba43fd06227fa663b0daecf536f6eaa6bf99");
-  assert.ok([...Buffer.from(built.commands.slice(2), "hex")].every(c => (c & 0x80) === 0));
+  assert.equal(built.commands, "0x10");
   const decoded = decodeFunctionData({ abi: parseAbi(["function execute(bytes,bytes[],uint256) payable"]), data: built.transaction.data });
   assert.equal(decoded.args[2], 140n);
-  const [recipient, amount] = decodeAbiParameters(parseAbiParameters("address,uint256,uint256,bytes,bool,uint256[]"), built.inputs[1]);
-  assert.equal(recipient, "0x0000000000000000000000000000000000000002");
-  assert.equal(amount, 1n << 255n);
-  const commandBytes = [...Buffer.from(built.commands.slice(2), "hex")];
-  const finalV4 = commandBytes.lastIndexOf(16);
-  const [actions, params] = decodeAbiParameters(parseAbiParameters("bytes,bytes[]"), built.inputs[finalV4]);
-  assert.equal(actions, "0x0b060e0e");
-  const [swap] = decodeAbiParameters(parseAbiParameters("((address,address,uint24,int24,address),bool,uint128,uint128,uint256,bytes)"), params[1]);
-  assert.equal(swap[2], 0n); assert.equal(swap[3], 50n); assert.equal(swap[4], 0n);
+  const [actions, params] = decodeAbiParameters(parseAbiParameters("bytes,bytes[]"), built.inputs[0]);
+  assert.equal(actions, "0x070b0e");
+  const [swap] = decodeAbiParameters(parseAbiParameters("(address,(address,uint256,int24,address,bytes)[],uint256[],uint128,uint128)"), params[0]);
+  assert.equal(swap[0], a.ANY_QUOTE_NATIVE);
+  assert.deepEqual(swap[1].map(h => h[0].toLowerCase()), [MID, QUOTE, TOKEN0].map(x => x.toLowerCase()));
+  assert.equal(swap[3], 100n); assert.equal(swap[4], 50n);
+  assert.deepEqual(decodeAbiParameters(parseAbiParameters("address,uint256,bool"), params[1]), [a.ANY_QUOTE_NATIVE, 100n, false]);
   const take = decodeAbiParameters(parseAbiParameters("address,address,uint256"), params[2]);
-  assert.equal(take[1].toLowerCase(), OWNER.toLowerCase());
+  assert.deepEqual(take.map(x => typeof x === "string" ? x.toLowerCase() : x), [TOKEN0.toLowerCase(), OWNER.toLowerCase(), 0n]);
+  assert.equal(built.balanceAccounting.mode, "unlock-deltas");
   assert.equal(built.balanceAccounting.existingDonationsCountAsUserFunding, false);
   assert.equal(built.requireZeroRouterBalances, undefined);
 });
-test("external native V4 and V2 transitions compile; WETH identity needs no external pool", () => {
+test("V2, V3, mixed and WETH unwrap coverage gaps remain closed and inconclusive", () => {
   const native = trade(route([v4(a.ANY_QUOTE_NATIVE, QUOTE)]));
-  assert.ok(native.commands.startsWith("0x0b0c10"));
+  assert.equal(native.commands, "0x10");
   const v2 = { protocol: "V2", tokenIn: a.ANY_QUOTE_WETH, tokenOut: QUOTE, pool: "0x6000000000000000000000000000000000000000" };
-  assert.ok(trade(route([v2])).commands.startsWith("0x0b08"));
-  const identity = a.buildAnyQuoteSwapV1({ pool: pool(TOKEN0, a.ANY_QUOTE_WETH), owner: OWNER, recipient: OWNER, side: "buy", amountIn: 100n, minimumAmountOut: 1n, deadline: 140n, now: 100n, externalRoute: route([], a.ANY_QUOTE_WETH, a.ANY_QUOTE_WETH) });
-  assert.ok(identity.commands.startsWith("0x0b10"));
+  for (const hops of [[v2], [v3(a.ANY_QUOTE_WETH, QUOTE)], [v4(a.ANY_QUOTE_WETH, QUOTE)]]) {
+    assert.throws(() => trade(route(hops)), error => error.code === "ROUTE_ISOLATION_UNAVAILABLE" && error.status === "inconclusive");
+  }
+  const MID = "0x4000000000000000000000000000000000000000";
+  assert.throws(() => trade(route([v3(a.ANY_QUOTE_WETH, MID), v4(MID, QUOTE)])), /ROUTE_ISOLATION_UNAVAILABLE/);
+  assert.throws(() => a.buildAnyQuoteSwapV1({ pool: pool(TOKEN0, a.ANY_QUOTE_WETH), owner: OWNER, recipient: OWNER, side: "buy", amountIn: 100n, minimumAmountOut: 1n, deadline: 140n, now: 100n, externalRoute: route([], a.ANY_QUOTE_WETH, a.ANY_QUOTE_WETH) }), /ROUTE_ISOLATION_UNAVAILABLE/);
 });
 test("sell binds Permit2 ingress and ETH output minimum", () => {
   const built = a.buildAnyQuoteSwapV1({ pool: pool(), owner: OWNER, recipient: OWNER, side: "sell", amountIn: 100n, minimumAmountOut: 50n, deadline: 140n, now: 100n, externalRoute: route([v4(QUOTE, a.ANY_QUOTE_NATIVE)], QUOTE, a.ANY_QUOTE_WETH) });
   assert.equal(built.transaction.value, "0"); assert.equal(built.approval.amount, "100");
-  assert.ok(built.commands.startsWith("0x10100b0c"));
-  const [to, minimum] = decodeAbiParameters(parseAbiParameters("address,uint256"), built.inputs[3]);
-  assert.equal(to.toLowerCase(), OWNER.toLowerCase()); assert.equal(minimum, 50n);
+  assert.equal(built.commands, "0x10");
+  const [actions, params] = decodeAbiParameters(parseAbiParameters("bytes,bytes[]"), built.inputs[0]);
+  assert.equal(actions, "0x070b0e");
+  const [swap] = decodeAbiParameters(parseAbiParameters("(address,(address,uint256,int24,address,bytes)[],uint256[],uint128,uint128)"), params[0]);
+  assert.equal(swap[0].toLowerCase(), TOKEN0.toLowerCase());
+  assert.deepEqual(swap[1].map(h => h[0].toLowerCase()), [QUOTE, a.ANY_QUOTE_NATIVE].map(x => x.toLowerCase()));
+  assert.equal(swap[4], 50n);
+  const settle = decodeAbiParameters(parseAbiParameters("address,uint256,bool"), params[1]);
+  assert.equal(settle[0].toLowerCase(), TOKEN0.toLowerCase()); assert.equal(settle[1], 100n); assert.equal(settle[2], true);
+  const [currency, to, amount] = decodeAbiParameters(parseAbiParameters("address,address,uint256"), params[2]);
+  assert.equal(currency, a.ANY_QUOTE_NATIVE); assert.equal(to.toLowerCase(), OWNER.toLowerCase()); assert.equal(amount, 0n);
 });
 test("route parser binds chain, amount, pool id and rejects splits/orders/cycles", () => {
   const p = v4(a.ANY_QUOTE_NATIVE, QUOTE);

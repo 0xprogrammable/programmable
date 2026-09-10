@@ -7,7 +7,7 @@ import {
   type AnyQuoteAmmHopV1, type AnyQuoteExternalRouteV1,
   type AnyQuotePriceEvidenceV1, type AnyQuoteRationalV1, type AnyQuoteReadinessV1,
 } from "./types";
-import { anyQuoteEvidenceHashV1, parseAnyQuoteExternalRouteV1, validateAnyQuoteExternalRouteV1 } from "./route";
+import { anyQuoteEvidenceHashV1, parseAnyQuoteExternalRouteV1, requireAnyQuoteNativeUnlockRouteV1, validateAnyQuoteExternalRouteV1 } from "./route";
 import { anyQuoteRationalV1, multiplyAnyQuoteRationalsV1, parseAnyQuoteDecimalV1 } from "./price";
 
 const QUOTE_URL = "https://trade-api.gateway.uniswap.org/v1/quote";
@@ -285,6 +285,8 @@ export async function assessAnyQuoteAssetV1(input: { quoteAsset: string; probeEt
     if (probe <= 0n || probe > 10n ** 19n) throw new AnyQuoteErrorV1("INVALID_PROBE_AMOUNT");
     const { route: buy, spot } = await discover({ tokenIn: ANY_QUOTE_WETH, tokenOut: quoteAsset, amountIn: probe }, ctx, options);
     const { route: sell } = await discover({ tokenIn: quoteAsset, tokenOut: ANY_QUOTE_WETH, amountIn: BigInt(buy.amountOut) }, ctx, options);
+    requireAnyQuoteNativeUnlockRouteV1(buy, "buy");
+    requireAnyQuoteNativeUnlockRouteV1(sell, "sell");
     const marketUsd = multiplyAnyQuoteRationalsV1(ethPrice.usd, anyQuoteRationalV1(BigInt(spot.denominator) * 10n ** BigInt(decimals), BigInt(spot.numerator) * 10n ** 18n));
     if (authoritative) {
       // Compare fee-free pool spot against the reference. Swap/hook fees are already in the quotes.
