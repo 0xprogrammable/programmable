@@ -14,12 +14,15 @@ import { hashProjectMetadata, validateProjectMetadata } from "@/packages/launch/
 const FINALIZED_FEED = "https://api.programmable.market/v4/chains/4663/finalized-custom-launches";
 const DEX_PAIRS = "https://api.dexscreener.com/latest/dex/pairs/robinhood/";
 const MAIN_TOKEN = "0xc60ba256b44334a0cd2c7242e98b88f031abb006";
-// Platform-provided display links supplement the immutable launch metadata.
-const SUPPLEMENTAL_TOKEN_LINKS: Readonly<Record<string, RobinhoodCoinPresentation["links"]>> = {
-  "0x34cd7dd63c550a78a3228c199474189b88565ac9": [
-    { label: "Website", url: "https://www.arbithook.app/" },
-    { label: "X", url: "https://x.com/arbit_hook" },
-  ],
+// Platform-provided display assets supplement the immutable launch metadata.
+const SUPPLEMENTAL_TOKEN_PRESENTATIONS: Readonly<Record<string, Pick<RobinhoodCoinPresentation, "imageUrl" | "links">>> = {
+  "0x34cd7dd63c550a78a3228c199474189b88565ac9": {
+    imageUrl: "/brand/projects/arbit-token-v1.png",
+    links: [
+      { label: "Website", url: "https://www.arbithook.app/" },
+      { label: "X", url: "https://x.com/arbit_hook" },
+    ],
+  },
 };
 const MAX_RESPONSE_BYTES = 2_000_000;
 const MAX_METADATA_PAGES = 8;
@@ -307,12 +310,13 @@ export async function readRobinhoodPresentations(tokens: readonly RobinhoodLaunc
         if (!links.some(existing => existing.label === labels[link.kind])) links.push({ label: labels[link.kind], url: link.url });
       }
     }
-    for (const link of SUPPLEMENTAL_TOKEN_LINKS[key] ?? []) {
+    const supplemental = SUPPLEMENTAL_TOKEN_PRESENTATIONS[key];
+    for (const link of supplemental?.links ?? []) {
       if (!links.some(existing => existing.label === link.label || existing.url === link.url)) links.push(link);
     }
     return {
       tokenAddress: token.tokenAddress,
-      imageUrl: presentation?.imageUrl ?? (main ? PROGRAMMABLE_MAIN_TOKEN_PRESENTATION.imageUrl : isRobinhoodModuleSourceKind(token.sourceKind) ? MODULE_DEFAULT_TOKEN_IMAGE : null),
+      imageUrl: supplemental?.imageUrl ?? presentation?.imageUrl ?? (main ? PROGRAMMABLE_MAIN_TOKEN_PRESENTATION.imageUrl : isRobinhoodModuleSourceKind(token.sourceKind) ? MODULE_DEFAULT_TOKEN_IMAGE : null),
       description: presentation?.description ?? (main ? PROGRAMMABLE_MAIN_TOKEN_PRESENTATION.description : null),
       links,
       market: markets.status === "fulfilled" ? markets.value.get(key) ?? null : null,
