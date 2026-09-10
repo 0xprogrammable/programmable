@@ -44,7 +44,7 @@ export const MODULE_ENGINE_SHARED_QUOTE_CHECKS_V1 = Object.freeze([
 // Fixed owned-source identity. Runtime compilation also requires the archived final core handoff.
 export const MODULE_ENGINE_SHARED_QUOTE_ENVIRONMENT_V1 = Object.freeze({
   profile: "robinhood-any-quote.shared-hook.v1",
-  sourceDigest: "0x445a9b5494c7b354cdceaf4b00d0b159929935188fcc5dee213cb458ef0e632b",
+  sourceDigest: "0x6218bdd5e42b66e769cf6b1efb0a974e4b4465589924707cc17294a1f2731542",
 } as const);
 export const MODULE_ENGINE_SHARED_QUOTE_REVIEW_LEDGER_V1 = "0xc73eddb25c1f02e4798500d43ca2131083d6a27f" as const;
 // Only these three fields may be rebound after validation against the submitted source schema.
