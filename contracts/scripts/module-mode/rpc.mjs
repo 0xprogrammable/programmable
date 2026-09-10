@@ -122,7 +122,11 @@ export function walletRequest(plan, observation, ceilings) {
     gas: hexQuantity(observation.gasLimit), maxFeePerGas: hexQuantity(maxFee), maxPriorityFeePerGas: hexQuantity(priority), accessList: [], type: '0x2' };
 }
 export async function prepareWalletRequest(plan, stepIndex, providers, ceilings, stageObserver = observeStage) {
-  const observation = await stageObserver(plan, stepIndex, providers); const request = walletRequest(plan, observation, ceilings);
+  const observation = await stageObserver(plan, stepIndex, providers);
+  // New requests reserve the reviewed gas ceiling; historical requests retain their exact gas.
+  const request = { ...walletRequest(plan, observation, ceilings), gas: hexQuantity(ceilings.maxGas) };
+  need(BigInt(observation.minimumBalance) >= BigInt(request.gas) * BigInt(request.maxFeePerGas),
+    'Deployer has insufficient native ETH for reserved maximum gas cost');
   const issued = Date.now(); const prepared = { planDigest: plan.planDigest, stepIndex, request, observation, issuedAt: issued, expiresAt: issued + 300000 };
   return { ...prepared, requestDigest: digest('programmable.module-mode-owner-request.v1', prepared) };
 }
