@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { decodeAbiParameters, decodeFunctionData, encodeAbiParameters, encodeEventTopics, encodeFunctionData, encodeFunctionResult, erc20Abi, getAddress, getCreate2Address, keccak256, parseAbi, parseAbiParameters, type Abi, type Address, type Hex, type TransactionReceipt } from "viem";
 import { fixture, ACCOUNT, CODE, CODE_HASH, QUOTE, TOKEN, addr, hash } from "./module-engine-fixture";
 import { moduleEngineReleaseIdentity, computeModuleEngineReleaseDigest, computeModuleEngineHostManifestHash, type ModuleEngineAnyQuoteReleaseIdentity } from "@/lib/module-engine/catalog";
@@ -19,6 +20,10 @@ import { assertAnyQuoteLifecycleIdentityV1, prepareAnyQuoteLifecycleApprovalV1, 
 import { anyQuoteJsonRequest } from "@/lib/server/module-engine/any-quote-http";
 import { settlementRpcFixture } from "./any-quote-settlement-fixture";
 import type { TradeRpcV1 } from "@/lib/server/custom-launch/routed-trade-rpc-v1";
+// Load the actual native Node operator adapter at the same runtime boundary as its CLI.
+const { anyQuoteWalletStep } = createRequire(import.meta.url)("../contracts/scripts/module-engine/operation-rpc.mjs") as {
+  anyQuoteWalletStep(plan: unknown, stepIndex: number, preparation: unknown): { to: Address; data: Hex; value: string };
+};
 
 vi.mock("server-only", () => ({}));
 
@@ -193,7 +198,7 @@ describe("Any Quote source identity lifecycle preparation", () => {
   it("creates identity launch previews through the mandatory settlement gate and prepares the same zero-buy launch", async () => {
     const f = sharedFixture(), settlement = settlementRpcFixture(f.preview.readiness.routes.buy, addr(99));
     const preview = await readAnyQuoteIdentityLaunchPreviewV1({ ...f.intent, identity: f.identity, template: f.template, description: "Identity launch" }, { client: f.client, readiness: async () => f.preview.readiness, options: { rpcs: settlement.rpcs } });
-    const input = { ...f.launchInput, anyQuotePreparation: preview };
+    const input = { ...f.launchInput, ...f.intent, imageUri: "", socialLinks: {}, anyQuotePreparation: preview };
     const compiled = await compileModuleEngineLaunch(input, f.identity, f.template.manifest, 36, BigInt(preview.validUntil));
     const read = vi.mocked(f.client.readContract).getMockImplementation()!;
     vi.mocked(f.client.readContract).mockImplementation(async value => value.functionName === "predictTokenAddress" ? [compiled.predictedToken, compiled.graffiti] : read(value));
@@ -202,6 +207,26 @@ describe("Any Quote source identity lifecycle preparation", () => {
     const preparation = await prepareAnyQuoteLifecycleLaunchV1({ ...f, identity: f.identity, input });
     if ("kind" in preparation) throw new Error("Unexpected funding");
     expect(preparation.prepared.transaction.value).toBe("0x0");
+    // Exercise the actual canonical helper envelope across the existing operator boundary.
+    // Compiler input deliberately omits these financial fields; the preview intent retains them.
+    expect(preparation.recipe.kind).toBe("launch");
+    if (preparation.recipe.kind !== "launch") throw new Error("Expected launch recipe");
+    expect(preparation.recipe.input).not.toHaveProperty("initialBuyWei");
+    const stableIntent = { ...f.intent, description: input.description, imageUri: input.imageUri, socialLinks: input.socialLinks };
+    const operatorPlan = { schemaVersion: "programmable.module-engine-lifecycle-owner-plan.v1", identity: f.identity, owner: ACCOUNT,
+      bundle: { manifest: f.template.manifest, review: { command: { hostManifestHash: f.template.manifestHash }, decisionDigest: f.template.reviewDigest } },
+      steps: [{ kind: "any-quote-launch", intent: stableIntent, target: preview.predictedToken, to: f.identity.contracts.host.address, value: "0", data: null }] };
+    expect(anyQuoteWalletStep(operatorPlan, 0, JSON.parse(JSON.stringify(preparation)))).toMatchObject({ to: f.identity.contracts.host.address, data: preparation.prepared.transaction.data, value: "0" });
+    for (const field of ["initialBuyWei", "slippageBps", "buyCreatorFeeBps"] as const) {
+      const changed = structuredClone(preparation);
+      if (changed.recipe.kind !== "launch") throw new Error("Expected launch recipe");
+      Object.assign(changed.recipe.input.anyQuotePreparation.intent, { [field]: field === "initialBuyWei" ? "1" : 200 });
+      expect(() => anyQuoteWalletStep(operatorPlan, 0, changed)).toThrow("price intent");
+    }
+    const metadata = structuredClone(preparation);
+    if (metadata.recipe.kind !== "launch") throw new Error("Expected launch recipe");
+    metadata.recipe.input.description = "Different metadata";
+    expect(() => anyQuoteWalletStep(operatorPlan, 0, metadata)).toThrow("compiler inputs");
     await expect(revalidateAnyQuoteLifecyclePreparationV1({ ...f, identity: f.identity, preparation: JSON.parse(JSON.stringify(preparation)) })).resolves.toEqual(preparation.prepared.transaction);
     settlement.state.recipientAdjustment = -1n;
     await expect(readAnyQuoteIdentityLaunchPreviewV1({ ...f.intent, identity: f.identity, template: f.template, description: "Identity launch" }, { client: f.client, readiness: async () => f.preview.readiness, options: { rpcs: settlement.rpcs } })).rejects.toMatchObject({ status: "incompatible" });

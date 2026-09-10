@@ -4,7 +4,7 @@ import { resolveReviewedRobinhoodProviderCommitments } from '../robinhood-custom
 import { OFFICIAL, address, bytes, canonicalJson, digest, exactKeys, hash, hexQuantity, need, uint } from './core.mjs';
 import { REPOSITORY_ROOT } from './build.mjs';
 
-const METHODS = new Set(['eth_chainId', 'eth_getBlockByNumber', 'eth_getTransactionCount', 'eth_getBalance', 'eth_getCode', 'eth_getStorageAt', 'eth_call', 'eth_estimateGas', 'eth_getTransactionByHash', 'eth_getTransactionReceipt']);
+const METHODS = new Set(['eth_chainId', 'eth_getBlockByNumber', 'eth_getTransactionCount', 'eth_getBalance', 'eth_getCode', 'eth_getStorageAt', 'eth_call', 'eth_estimateGas', 'eth_getTransactionByHash', 'eth_getTransactionReceipt', 'eth_getLogs', 'debug_traceCall']);
 const MAX_BYTES = 4 * 1024 * 1024;
 export async function reviewedProviders(environment = process.env) {
   const urls = [environment.ROBINHOOD_MAINNET_RPC_URL_PRIMARY, environment.ROBINHOOD_MAINNET_RPC_URL_SECONDARY];
@@ -12,11 +12,21 @@ export async function reviewedProviders(environment = process.env) {
   const bindings = assertRobinhoodFoundationRpcProviders({ rpcUrls: urls, endpointCommitments: commitments });
   return bindings.map((binding, index) => ({ ...binding, rpc: rpcClient(urls[index], binding.providerId) }));
 }
-/** This client cannot send a transaction, sign, impersonate, modify state or use debug RPC. */
+/** Read-only transport. The sole debug method is an exact callTracer simulation without overrides. */
 export function rpcClient(url, label, fetchImpl = fetch) {
   let nextId = 0; let tail = Promise.resolve();
   return async function rpc(method, params = []) {
     need(METHODS.has(method), 'RPC method is outside the read-only inventory');
+    if (method === 'debug_traceCall') {
+      need(Array.isArray(params) && params.length === 3 && params[1] && typeof params[1] === 'object' && !Array.isArray(params[1]), 'Trace requires a canonical block hash and no overrides');
+      exactKeys(params[1], ['blockHash', 'requireCanonical'], 'Canonical trace checkpoint');
+      hash(params[1].blockHash); need(params[1].requireCanonical === true, 'Canonical trace checkpoint required');
+      exactKeys(params[0], ['from', 'to', 'data', 'value'], 'Read-only trace transaction');
+      address(params[0].from); address(params[0].to); bytes(params[0].data);
+      need(/^0x(?:0|[1-9a-f][0-9a-f]*)$/.test(params[0].value), 'Canonical trace value required');
+      exactKeys(params[2], ['tracer', 'timeout'], 'Read-only trace options');
+      need(params[2].tracer === 'callTracer' && params[2].timeout === '10s', 'Only bounded native callTracer simulation is allowed');
+    }
     const start = tail; let release; tail = new Promise(resolve => { release = resolve; }); await start;
     try {
       const response = await fetchImpl(url, { method: 'POST', headers: { 'content-type': 'application/json' }, redirect: 'error',

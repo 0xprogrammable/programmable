@@ -14,6 +14,26 @@ import { evidenceBytes, evidenceDigest, writeEvidence, sourceVerificationRequest
 
 import { addr, params, build, plan } from './test-fixtures.mjs';
 
+test('read-only canonical log and settlement trace transport rejects signing and every override surface', async () => {
+  const requests = [], rpc = rpcClient('https://synthetic.invalid', 'synthetic', async (_url, init) => {
+    const body = JSON.parse(init.body); requests.push(body);
+    return Response.json({ jsonrpc: '2.0', id: body.id, result: body.method === 'eth_getLogs' ? [] : { type: 'CALL' } });
+  });
+  const transaction = { from: addr(1), to: addr(2), data: '0x1234', value: '0x0' }, options = { tracer: 'callTracer', timeout: '10s' }, ref = { blockHash: `0x${'11'.repeat(32)}`, requireCanonical: true };
+  await rpc('eth_getLogs', [{ address: addr(2), fromBlock: '0x1', toBlock: '0x10', topics: [] }]);
+  await rpc('debug_traceCall', [transaction, ref, options]);
+  for (const args of [
+    [transaction, 'latest', options], [transaction, '0x100', options], [transaction, ref, options, {}],
+    [transaction, { ...ref, requireCanonical: false }, options], [transaction, { ...ref, blockNumber: '0x100' }, options],
+    [transaction, ref, { ...options, stateOverrides: {} }], [transaction, ref, { ...options, blockOverrides: {} }],
+    [transaction, ref, { ...options, tracerConfig: {} }], [transaction, ref, { ...options, tracer: '{result(){return 1}}' }],
+    [{ ...transaction, stateOverrides: {} }, ref, options], [transaction, ref, { ...options, timeout: '60s' }],
+  ]) await assert.rejects(rpc('debug_traceCall', args));
+  for (const method of ['eth_sendTransaction', 'eth_sendRawTransaction', 'eth_sign', 'personal_sign', 'anvil_setCode', 'debug_traceTransaction'])
+    await assert.rejects(rpc(method, []), /read-only inventory/);
+  assert.equal(requests.length, 2, 'Rejected methods and overrides never reach a provider');
+});
+
 test('all deployment payloads bind deterministic targets, zero ETH, owner, roles and hook bits', () => {
   assert.equal(plan.steps.length, 9); assert.equal(new Set(Object.values(plan.contracts).map(pin => pin.address)).size, 13);
   assert.equal(Object.hasOwn(plan.contracts, 'rewardFactory'), false); assert.equal(Object.hasOwn(plan.contracts, 'capFactory'), false);

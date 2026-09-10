@@ -1,18 +1,109 @@
 import test from 'node:test';
 import { mkdtemp, chmod, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
+import { runInNewContext } from 'node:vm';
 import { REPOSITORY_ROOT } from '../module-mode/build.mjs';
-import { canonicalJson, sha256 } from '../module-mode/core.mjs';
+import { canonicalJson, digest, sha256 } from '../module-mode/core.mjs';
 import { armJournal, armRetryJournal, journalEntry, recordTransaction, recordReceipt } from '../module-mode/journal.mjs';
 import assert from 'node:assert/strict';
 import { decodeFunctionData, decodeFunctionResult, encodeFunctionData, encodeFunctionResult, erc20Abi } from 'viem';
 import { engineWalletFixture, engineWorld, a, h } from './wallet-test-fixtures.mjs';
-import { createEnginePublicationOperatorPlan, assertEnginePublicationOperatorPlan, assertCurrentEngineReview } from './publication-plan.mjs';
-import { createEngineLifecycleOperatorPlan, assertEngineLifecycleOperatorPlan } from './lifecycle-operator-plan.mjs';
+import { createEnginePublicationOperatorPlan, assertEnginePublicationOperatorPlan, assertCurrentEngineReview, ENGINE_LIFECYCLE_OPERATOR_SCHEMA } from './publication-plan.mjs';
+import { createEngineLifecycleOperatorPlan, assertEngineLifecycleOperatorPlan, bindAnyQuotePreactivationPacket } from './lifecycle-operator-plan.mjs';
 import { assertAuthenticatedOperationPlan } from '../module-mode/publication-plan.mjs';
 import { assertOperationPlan, startPublicationOperator } from '../module-mode/publication-operator.mjs';
-import { preparePublicationRequest, revalidatePublicationRequest, preparePublicationRetry, observePublicationReceipt, observePublicationOperation } from '../module-mode/publication-rpc.mjs';
+import { preparePublicationRequest, revalidatePublicationRequest, preparePublicationRetry, observePublicationReceipt, observePublicationOperation,
+  assertPublicationRequest, publicationWalletRequest } from '../module-mode/publication-rpc.mjs';
+import { anyQuoteWalletStep, anyQuoteRequestExpiry } from './operation-rpc.mjs';
 const ceilings = { maxGas: '2000000', maxFeePerGas: '1000', maxPriorityFeePerGas: '10', maxValue: '10000' };
+
+// Wire-only synthetic cases. They cannot pass the real source/deployment/admission initialization.
+function anyQuoteWire(kind = 'buy') {
+  const owner = a(1), token = a(2), recipient = a(3), router = a(4), ledger = a(5), host = a(6), permit2 = a(7), timestamp = Math.floor(Date.now() / 1000);
+  const identity = { sourceVersion: 'module-engine-any-quote-v1', releaseDigest: h(1), contracts: { host: { address: host }, universalRouter: { address: router }, ledger: { address: ledger } } };
+  const bundle = { manifest: { manifest: { catalogDefinition: { id: 'wire-only' } } }, review: { command: { hostManifestHash: h(2) }, decisionDigest: h(3) } };
+  const template = { status: 'available', manifest: bundle.manifest, manifestHash: h(2), reviewDigest: h(3) };
+  const intent = kind === 'claim' ? { token, recipient } : { token, recipient, inputAmount: '10', slippageBps: 100,
+    ...(kind === 'approve' ? { amount: '10', allowanceKind: 'permit2', spender: router, maximumApprovalLifetimeSeconds: 300 } : {}) };
+  const to = kind === 'claim' ? ledger : kind === 'approve' ? permit2 : router, value = kind === 'buy' ? '10' : '0';
+  const step = { kind: `any-quote-${kind}`, intent, to, value, data: null, target: token, newCode: [], preReads: [], postReads: [] };
+  const plan = { schemaVersion: ENGINE_LIFECYCLE_OPERATOR_SCHEMA, identity, owner, bundle, steps: [step], planDigest: h(4) };
+  const quote = { releaseDigest: identity.releaseDigest, templateId: 'wire-only', account: owner, token, recipient, buy: kind === 'buy', inputAmount: '10', slippageBps: 100,
+    validUntil: String(timestamp + 40), checkpoint: { number: '100', timestamp: String(timestamp), hash: h(5) }, minimumOutput: '9', externalRoute: { evidenceHash: h(6) } };
+  const recipe = kind === 'claim' ? { kind, template, account: owner, token, recipient } : { kind: kind === 'approve' ? 'approve' : 'swap', template, account: owner, quote };
+  const prepared = { kind: kind === 'buy' ? 'swap' : kind, account: owner, releaseDigest: identity.releaseDigest, blockNumber: '100', expiresAt: String(timestamp + 300),
+    transaction: { from: owner, to, value: `0x${BigInt(value).toString(16)}`, data: '0x1234', gas: '0x10000' },
+    ...(kind === 'claim' ? { token, recipient, minimumAmount: '2' } : kind === 'approve' ? { token, amount: '10', allowanceKind: 'permit2', spender: permit2, permit2Spender: router, expiration: String(timestamp + 300) } : {}) };
+  const envelope = { schemaVersion: 'programmable.any-quote.lifecycle-preparation.v1', identity, recipe, prepared,
+    ...(kind === 'approve' ? { funding: { kind: 'approval-required', amount: '10' } } : {}), evidenceHash: h(7) };
+  const observation = { state: 'operation-simulated', stepIndex: 0, anyQuote: envelope, simulatedResult: prepared,
+    nonce: '1', gasLimit: '100000', baseFeePerGas: '1', minimumBalance: '10000000000' };
+  const issuedAt = Date.now(), body = { planDigest: plan.planDigest, stepIndex: 0, observation, request: publicationWalletRequest(plan, observation, ceilings),
+    issuedAt, expiresAt: Math.min(issuedAt + 45000, anyQuoteRequestExpiry(envelope)) };
+  return { plan, envelope, body, entry: { ...body, requestDigest: digest('programmable.module-mode-publication-owner-request.v1', body) } };
+}
+test('Any Quote cannot use an identity-only or missing-admission packet', async () => {
+  const f = anyQuoteWire();
+  await assert.rejects(bindAnyQuotePreactivationPacket({ identity: f.plan.identity }, f.plan.identity, f.plan.bundle));
+  await assert.rejects(bindAnyQuotePreactivationPacket({ schemaVersion: 'programmable.module-engine-any-quote-preactivation-packet.v1',
+    deploymentPlan: {}, build: {}, deploymentEntries: [], deploymentEvidenceRaw: '{}', sourceVerificationEvidenceRaw: '{}', previousSourceVerificationEvidenceRaw: '{}' }, f.plan.identity, f.plan.bundle));
+});
+test('Any Quote exact route payload, pins, actor and recipient are bound by the stored request', async () => {
+  const f = anyQuoteWire(); assertPublicationRequest(f.plan, f.entry); assert.equal(f.entry.request.value, '0xa');
+  assert.equal(f.body.expiresAt, Number(f.envelope.recipe.quote.validUntil) * 1000);
+  for (const mutate of [e => { e.observation.anyQuote.identity.contracts.host.address = a(99); }, e => { e.request.data = '0x1235'; },
+    e => { e.observation.anyQuote.recipe.quote.recipient = a(99); }, e => { e.observation.anyQuote.recipe.quote.externalRoute.evidenceHash = h(99); },
+    e => { e.expiresAt += 60000; }]) {
+    const entry = structuredClone(f.entry); mutate(entry); assert.throws(() => assertPublicationRequest(f.plan, entry));
+  }
+  const mutated = structuredClone(f.envelope); mutated.recipe.quote.inputAmount = '11'; assert.throws(() => anyQuoteWalletStep(f.plan, 0, mutated), /inputAmount/);
+});
+test('Any Quote expired arm and unknown-outcome retry fail before reads and cannot extend a route', async () => {
+  const f = anyQuoteWire(), expiresAt = Date.now() - 1;
+  f.body.issuedAt = expiresAt - 40000; f.body.expiresAt = expiresAt;
+  const entry = { ...f.body, requestDigest: digest('programmable.module-mode-publication-owner-request.v1', f.body) };
+  assertPublicationRequest(f.plan, entry);
+  await assert.rejects(revalidatePublicationRequest(f.plan, entry, [], ceilings), /expired/);
+  await assert.rejects(preparePublicationRetry(f.plan, { ...entry, transactionHash: null }, [], ceilings, entry.requestDigest, 1), /cannot extend/);
+});
+test('Any Quote permits only the required exact finite sell allowance and a positive beneficiary claim', () => {
+  const f = anyQuoteWire('approve'); anyQuoteWalletStep(f.plan, 0, f.envelope);
+  for (const mutate of [e => { e.prepared.amount = (2n ** 160n - 1n).toString(); }, e => { e.prepared.permit2Spender = a(99); },
+    e => { delete e.funding; }, e => { e.prepared.expiration = String(BigInt(e.prepared.expiration) + 1n); }, e => { e.recipe.quote.buy = true; }]) {
+    const envelope = structuredClone(f.envelope); mutate(envelope); assert.throws(() => anyQuoteWalletStep(f.plan, 0, envelope));
+  }
+  const claim = anyQuoteWire('claim'); anyQuoteWalletStep(claim.plan, 0, claim.envelope);
+  claim.envelope.prepared.minimumAmount = '0'; assert.throws(() => anyQuoteWalletStep(claim.plan, 0, claim.envelope), /Positive actual beneficiary/);
+});
+test('existing publication UI expires an unarmed Any Quote review while retaining unknown-outcome recovery', async () => {
+  const f = anyQuoteWire(), nodes = new Map(), timers = new Map(); let now = Date.now(), id = 0, handedOff = false;
+  const node = key => { if (!nodes.has(key)) nodes.set(key, { hidden: false, disabled: false, checked: false, textContent: '', value: '', append() {}, focus() {}, querySelector: () => ({ focus() {} }) }); return nodes.get(key); };
+  const state = { uiCheck: false, owner: f.plan.owner, chainId: 4663, sourceCommit: 'fixture', contractSourceCommit: 'fixture', releaseDigest: h(1), planDigest: h(4),
+    stepIndex: 0, totalSteps: 1, step: { ...f.plan.steps[0], label: 'Synthetic UI test', functionName: 'buy', arguments: f.plan.steps[0].intent, preparation: 'fresh-canonical-any-quote' },
+    authority: { runId: 'fixture' }, journalState: 'not-requested', actionInProgress: false, canRetry: false };
+  const provider = { isMetaMask: true, on() {}, async request({ method }) {
+    if (method === 'eth_accounts' || method === 'eth_requestAccounts') return [f.plan.owner];
+    if (method === 'eth_chainId') return '0x1237';
+    if (method === 'eth_sendTransaction') throw new Error('Synthetic ambiguous wallet rejection');
+    throw new Error('Unexpected fixture wallet call');
+  } };
+  const source = await readFile(path.join(REPOSITORY_ROOT, 'contracts/scripts/module-mode/publication-operator.js'), 'utf8');
+  runInNewContext(source, { document: { getElementById: node, querySelector: () => ({ content: 'fixture' }), createElement: () => ({ append() {} }) }, window: { ethereum: provider },
+    Date: class extends Date { static now() { return now; } }, setTimeout(fn) { timers.set(++id, fn); return id; }, clearTimeout(key) { timers.delete(key); },
+    fetch: async route => ({ ok: true, async json() {
+      if (route === '/state') return { ...state, journalState: handedOff ? 'outcome-unknown' : 'not-requested' };
+      if (route === '/prepare') return { ...f.entry, expiresAt: now + 40000 };
+      if (route === '/arm') { handedOff = true; return { request: f.entry.request, requestDigest: f.entry.requestDigest }; }
+      throw new Error('Unexpected fixture operator call');
+    } }), console });
+  await new Promise(resolve => setImmediate(resolve)); await node('connect').onclick(); await node('prepare').onclick();
+  node('reviewed').checked = true; node('reviewed').onchange(); assert.equal(node('send').disabled, false);
+  now += 40000; for (const timer of [...timers.values()]) timer();
+  assert.equal(node('confirmation').hidden, true); assert.equal(node('send').disabled, true); assert.match(node('status').textContent, /expired/);
+  await node('prepare').onclick(); node('reviewed').checked = true; node('reviewed').onchange(); await node('send').onclick();
+  assert.equal(handedOff, true); assert.equal(node('recovery').hidden, false); assert.equal(node('prepare').hidden, true);
+  assert.equal(node('send').disabled, true); assert.match(node('error').textContent, /not sent again automatically/);
+});
 async function launched(initial = false) {
   const f = await engineWalletFixture({ initial }), plan = await createEngineLifecycleOperatorPlan(f), world = engineWorld(f, plan); let entry, evidence;
   for (let i = 0; i < plan.steps.length; i++) {
@@ -201,7 +292,8 @@ test('Engine handoff uses the original durable unknown-outcome journal and same-
     assert.equal(JSON.parse(await readFile(path.join(directory, `${plan.planDigest}-0.receipt.json`))).sourceKind, 'module-engine-v1');
     await assert.rejects(recordTransaction(directory, plan.planDigest, 0, h(999999)), /different transaction/);
     const count = world.methods.length;
-    for (const method of ['eth_sendTransaction', 'eth_sendRawTransaction', 'eth_sign', 'personal_sign', 'debug_traceCall', 'anvil_impersonateAccount']) await assert.rejects(world.providers[0].rpc(method, []), /read-only inventory/);
+    for (const method of ['eth_sendTransaction', 'eth_sendRawTransaction', 'eth_sign', 'personal_sign', 'anvil_impersonateAccount']) await assert.rejects(world.providers[0].rpc(method, []), /read-only inventory/);
+    await assert.rejects(world.providers[0].rpc('debug_traceCall', []), /Trace requires/);
     assert.equal(world.methods.length, count);
   } finally { await rm(directory, { recursive: true, force: true }); }
 });

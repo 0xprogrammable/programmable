@@ -3,7 +3,9 @@ import { OFFICIAL, address, bytes, canonicalJson, digest, exactKeys, hash, hexQu
 import { registryAbi, ZERO_ADDRESS } from './publication-plan.mjs';
 import { publicationValidators } from './publication-shared.mjs';
 import { isEngineOperationPlan } from '../module-engine/publication-plan.mjs';
-import { assertEngineOperationPreflight, bindEngineSimulation, equalEngineSimulation, finishEngineReceipt } from '../module-engine/operation-rpc.mjs';
+import { assertEngineOperationPreflight, bindEngineSimulation, equalEngineSimulation, finishEngineReceipt, initializeAnyQuoteLifecycle,
+  materializeAnyQuoteOperation, anyQuoteWalletStep, anyQuoteRequestExpiry } from '../module-engine/operation-rpc.mjs';
+import { isAnyQuoteLifecyclePlan } from '../module-engine/lifecycle-operator-plan.mjs';
 const canaryStateAbi = parseAbi([
   'function creatorRecipients(bytes32 poolId) view returns (address[] wallets,uint16[] sharesBps,uint256 adminRevision)',
   'function instances(bytes32 launchKey) view returns ((bytes32 instanceId,bytes32 packageId,bytes32 configHash,address factory,bytes32 factoryCodeHash,address module,bytes32 moduleCodeHash,uint32 callbackGas)[])',
@@ -128,8 +130,10 @@ async function assertCanaryToken(plan, step, providers, block) {
     && canonicalJson(creators[1].map(Number)) === canonicalJson(expected.creatorSharesBps) && creators[2] === 0n, 'Canary creator recipients changed before lifecycle proof');
   return result;
 }
-export async function observePublicationOperation(plan, stepIndex, providers) {
-  const step = plan.steps[stepIndex]; need(step, 'Unknown operation step'); const block = await blockSnapshot(providers);
+export async function initializePublicationOperation(plan, providers) { requirePair(providers); await initializeAnyQuoteLifecycle(plan, providers, engineRpcContext()); }
+export async function observePublicationOperation(plan, stepIndex, providers, originalAnyQuote) {
+  await initializePublicationOperation(plan, providers);
+  let step = plan.steps[stepIndex]; need(step, 'Unknown operation step'); const block = await blockSnapshot(providers);
   await Promise.all(Object.values(plan.identity.contracts).map(pin => code(providers, pin, block.number)));
   if (isEngineOperationPlan(plan)) await assertEngineOperationPreflight(plan, stepIndex, providers, block, engineRpcContext());
   else {
@@ -148,7 +152,12 @@ export async function observePublicationOperation(plan, stepIndex, providers) {
       need(operationQuantity(same(await pair(providers, 'eth_getTransactionCount', [step.target, block.number]), 'target nonce')) === 0n, 'CREATE2 target has a nonzero nonce');
     } else if (TRADES.includes(step.kind) || step.kind === 'approve') await assertCanaryToken(plan, step, providers, block.number);
   }
-  if (step.deadline) {
+  let anyQuote;
+  if (isAnyQuoteLifecyclePlan(plan)) {
+    anyQuote = await materializeAnyQuoteOperation(plan, stepIndex, providers, block, engineRpcContext(), originalAnyQuote);
+    step = anyQuoteWalletStep(plan, stepIndex, anyQuote);
+  }
+  if (step.deadline && !anyQuote) {
     const remaining = BigInt(step.deadline) - operationQuantity(block.timestamp); need(remaining >= 120n && remaining <= 3600n, 'Canary deadline must be between two minutes and one hour from the observed block');
   }
   need(same(await pair(providers, 'eth_getCode', [plan.owner, block.number]), 'owner code') === '0x', 'This wallet route requires the reviewed EOA');
@@ -158,7 +167,8 @@ export async function observePublicationOperation(plan, stepIndex, providers) {
   const call = { from: plan.owner, to: step.to, value: hexQuantity(step.value), data: step.data };
   const simulation = bytes(same(await pair(providers, 'eth_call', [call, block.number]), 'operation simulation'));
   const api = await publicationValidators(); let decoded = null;
-  if (isEngineOperationPlan(plan)) decoded = await bindEngineSimulation(plan, step, simulation);
+  if (anyQuote) decoded = anyQuote.prepared;
+  else if (isEngineOperationPlan(plan)) decoded = await bindEngineSimulation(plan, step, simulation);
   else if (step.result !== null) need(simulation === step.result, 'Operation simulation returned an unexpected result');
   else if (step.kind === 'launch') decoded = jsonSafe(bindLaunchRecord(plan, step, decodeFunctionResult({ abi: api.moduleNativeLaunchAbiFor(plan.identity), functionName: 'launch', data: simulation }), true));
   else {
@@ -171,13 +181,13 @@ export async function observePublicationOperation(plan, stepIndex, providers) {
   return { state: 'operation-simulated', stepIndex, blockNumber: operationQuantity(block.number).toString(), blockHash: block.hash,
     nonce: operationQuantity(pending).toString(), minimumBalance: minimumBalance.toString(), baseFeePerGas: operationQuantity(block.baseFeePerGas).toString(),
     gasLimit: ((high * 10500n + 9999n) / 10000n + 25000n).toString(), estimates: estimates.map(String), simulatedResult: decoded,
-    observedAt: new Date().toISOString(), providers: publicBindings(providers) };
+    observedAt: new Date().toISOString(), providers: publicBindings(providers), ...(anyQuote ? { anyQuote } : {}) };
 }
 export function publicationWalletRequest(plan, observation, ceilings) {
   exactKeys(ceilings, ['maxGas', 'maxFeePerGas', 'maxPriorityFeePerGas', 'maxValue'], 'Owner reviewed ceilings');
   for (const key of Object.keys(ceilings)) uint(ceilings[key], key, ['maxGas', 'maxFeePerGas'].includes(key));
   need(observation.state === 'operation-simulated', 'A successful fresh operation simulation is required');
-  const step = plan.steps[observation.stepIndex], maxFee = BigInt(ceilings.maxFeePerGas), priority = BigInt(ceilings.maxPriorityFeePerGas);
+  const step = isAnyQuoteLifecyclePlan(plan) ? anyQuoteWalletStep(plan, observation.stepIndex, observation.anyQuote) : plan.steps[observation.stepIndex], maxFee = BigInt(ceilings.maxFeePerGas), priority = BigInt(ceilings.maxPriorityFeePerGas);
   need(step && BigInt(step.value) <= BigInt(ceilings.maxValue), 'ETH value exceeds the owner reviewed ceiling');
   need(BigInt(observation.gasLimit) <= BigInt(ceilings.maxGas), 'Gas estimate exceeds the owner reviewed ceiling');
   need(priority <= maxFee && 2n * BigInt(observation.baseFeePerGas) + priority <= maxFee, 'Fee ceiling cannot cover the current base fee');
@@ -188,21 +198,27 @@ export function publicationWalletRequest(plan, observation, ceilings) {
 }
 export async function preparePublicationRequest(plan, stepIndex, providers, ceilings) {
   const observation = await observePublicationOperation(plan, stepIndex, providers), request = publicationWalletRequest(plan, observation, ceilings), issuedAt = Date.now();
-  const body = { planDigest: plan.planDigest, stepIndex, request, observation, issuedAt, expiresAt: issuedAt + 300000 };
+  const expiresAt = isAnyQuoteLifecyclePlan(plan) ? Math.min(issuedAt + 45000, anyQuoteRequestExpiry(observation.anyQuote)) : issuedAt + 300000;
+  need(expiresAt > issuedAt, 'Canonical request expired during preparation');
+  const body = { planDigest: plan.planDigest, stepIndex, request, observation, issuedAt, expiresAt };
   return { ...body, requestDigest: digest(REQUEST_DOMAIN, body) };
 }
 export function assertPublicationRequest(plan, entry) {
   const requestDigest = entry.requestDigest, body = Object.fromEntries(Object.entries(entry).filter(([key]) => !['requestDigest', 'authority', 'state', 'transactionHash'].includes(key)));
   need(digest(body.retryAttempt ? 'programmable.module-mode-owner-retry.v1' : REQUEST_DOMAIN, body) === requestDigest && body.planDigest === plan.planDigest, 'Stored owner request digest differs');
-  const step = plan.steps[body.stepIndex], request = body.request;
+  const step = isAnyQuoteLifecyclePlan(plan) ? anyQuoteWalletStep(plan, body.stepIndex, body.observation?.anyQuote) : plan.steps[body.stepIndex], request = body.request;
+  if (isAnyQuoteLifecyclePlan(plan)) need(Number.isSafeInteger(body.issuedAt) && Number.isSafeInteger(body.expiresAt) && body.expiresAt > body.issuedAt
+    && body.expiresAt <= body.issuedAt + 45000 && body.expiresAt <= anyQuoteRequestExpiry(body.observation.anyQuote), 'Stored Any Quote expiry exceeds canonical evidence');
   need(step && request.from === plan.owner && request.to === step.to && request.data === step.data && request.value === hexQuantity(step.value)
     && request.chainId === '0x1237' && request.type === '0x2' && canonicalJson(request.accessList) === '[]', 'Stored wallet payload differs from typed operation'); return body;
 }
 export async function revalidatePublicationRequest(plan, prepared, providers, ceilings) {
   assertPublicationRequest(plan, prepared);
-  need(Date.now() >= prepared.issuedAt && prepared.expiresAt - Date.now() >= 60000, 'Owner request has expired');
-  const fresh = await observePublicationOperation(plan, prepared.stepIndex, providers), next = publicationWalletRequest(plan, fresh, ceilings);
-  if (isEngineOperationPlan(plan)) equalEngineSimulation(plan, prepared.stepIndex, fresh.simulatedResult, prepared.observation.simulatedResult);
+  const anyQuote = isAnyQuoteLifecyclePlan(plan);
+  need(Date.now() >= prepared.issuedAt && (anyQuote ? prepared.expiresAt > Date.now() : prepared.expiresAt - Date.now() >= 60000), 'Owner request has expired');
+  const fresh = await observePublicationOperation(plan, prepared.stepIndex, providers, anyQuote ? prepared.observation.anyQuote : undefined), next = publicationWalletRequest(plan, fresh, ceilings);
+  if (anyQuote) need(canonicalJson(fresh.anyQuote) === canonicalJson(prepared.observation.anyQuote) && Date.now() < prepared.expiresAt, 'Any Quote route changed or expired before handoff');
+  else if (isEngineOperationPlan(plan)) equalEngineSimulation(plan, prepared.stepIndex, fresh.simulatedResult, prepared.observation.simulatedResult);
   for (const key of Object.keys(next)) need(canonicalJson(next[key]) === canonicalJson(prepared.request[key]), `Owner request changed: ${key}`);
   need(BigInt(fresh.minimumBalance) >= BigInt(prepared.request.value) + BigInt(prepared.request.gas) * BigInt(prepared.request.maxFeePerGas), 'Owner balance fell below value and maximum gas cost'); return fresh;
 }
@@ -276,12 +292,16 @@ export async function preparePublicationRetry(plan, entry, providers, ceilings, 
   need(entry && !entry.transactionHash && entry.requestDigest === hash(reviewedRequestDigest)
     && Number.isSafeInteger(retryAttempt) && retryAttempt > 0, 'An explicit unresolved same-request retry is required');
   assertPublicationRequest(plan, entry);
-  const observation = await observePublicationOperation(plan, entry.stepIndex, providers), next = publicationWalletRequest(plan, observation, ceilings);
-  if (isEngineOperationPlan(plan)) equalEngineSimulation(plan, entry.stepIndex, observation.simulatedResult, entry.observation.simulatedResult);
+  const anyQuote = isAnyQuoteLifecyclePlan(plan);
+  if (anyQuote) need(Date.now() < entry.expiresAt, 'Expired unknown-outcome Any Quote request requires reconciliation; a retry cannot extend its route');
+  const observation = await observePublicationOperation(plan, entry.stepIndex, providers, anyQuote ? entry.observation.anyQuote : undefined), next = publicationWalletRequest(plan, observation, ceilings);
+  if (anyQuote) need(canonicalJson(observation.anyQuote) === canonicalJson(entry.observation.anyQuote), 'Retry Any Quote route changed');
+  else if (isEngineOperationPlan(plan)) equalEngineSimulation(plan, entry.stepIndex, observation.simulatedResult, entry.observation.simulatedResult);
   for (const key of Object.keys(next)) need(canonicalJson(next[key]) === canonicalJson(entry.request[key]), `Retry wallet field changed: ${key}`);
   need(BigInt(observation.minimumBalance) >= BigInt(entry.request.value) + BigInt(entry.request.gas) * BigInt(entry.request.maxFeePerGas), 'Retry is not funded for original gas plus value');
   const issuedAt = Date.now(), body = { planDigest: plan.planDigest, stepIndex: entry.stepIndex, request: entry.request, observation,
-    issuedAt, expiresAt: issuedAt + 300000, retryAttempt, originalRequestDigest: entry.requestDigest };
+    issuedAt, expiresAt: anyQuote ? entry.expiresAt : issuedAt + 300000, retryAttempt, originalRequestDigest: entry.requestDigest };
+  need(body.expiresAt > issuedAt, 'Request expired during retry preparation');
   return { ...body, requestDigest: digest('programmable.module-mode-owner-retry.v1', body) };
 }
 

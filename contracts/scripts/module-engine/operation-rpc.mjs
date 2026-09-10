@@ -1,9 +1,17 @@
-import { decodeEventLog, decodeFunctionResult, encodeAbiParameters, encodeEventTopics, erc20Abi, keccak256, parseAbiParameters } from 'viem';
-import { address, bytes, hash, jsonSafe, need } from '../module-mode/core.mjs';
+import { createPublicClient, custom, decodeEventLog, decodeFunctionResult, encodeAbiParameters, encodeEventTopics, erc20Abi, keccak256, parseAbiParameters, toHex } from 'viem';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import path from 'node:path';
+import { realpath } from 'node:fs/promises';
+import { address, bytes, digest, exactKeys, hash, jsonSafe, need, sha256, uint } from '../module-mode/core.mjs';
+import { REPOSITORY_ROOT } from '../module-mode/build.mjs';
+import { exactJson } from '../module-mode/source-readback.mjs';
 import { publicationValidators } from '../module-mode/publication-shared.mjs';
 import { ZERO_ADDRESS, registryAbi } from '../module-mode/publication-plan.mjs';
 import { ENGINE_PUBLICATION_OPERATOR_SCHEMA, equal, equalEngineLaunchPlan } from './publication-plan.mjs';
-import { assertEnginePermission } from './lifecycle-operator-plan.mjs';
+import { assertEnginePermission, bindAnyQuotePreactivationPacket, isAnyQuoteLifecyclePlan } from './lifecycle-operator-plan.mjs';
+import { observeAnyQuoteReceipt } from './any-quote-rpc.mjs';
+import { collectAnyQuoteSource } from './any-quote-evidence.mjs';
 const ZERO_HASH = `0x${'0'.repeat(64)}`;
 const optionalAddress = v => v.toLowerCase() === ZERO_ADDRESS ? ZERO_ADDRESS : address(v);
 const qty = v => BigInt(v);
@@ -21,7 +29,7 @@ async function releaseBindings(plan, providers, block, c, api) {
   equal(await read(host, 'SOURCE_VERSION', [], api.moduleEngineHostAbi), api.moduleEngineSourceId(plan.identity), 'Engine source version');
   for (const name of ['registry', 'ledger', 'tokenFactory', 'launchPolicy']) equal(address(await read(host, name, [], api.moduleEngineHostAbi)), pins[name].address, `Engine ${name}`);
   if (api.isModuleEngineAnyQuoteRelease(plan.identity)) {
-    need(plan.schemaVersion === ENGINE_PUBLICATION_OPERATOR_SCHEMA, 'Any Quote launches and trades use the existing public website/API preparation');
+    need(plan.schemaVersion === ENGINE_PUBLICATION_OPERATOR_SCHEMA || isAnyQuoteLifecyclePlan(plan), 'Closed Any Quote operator profile required');
     for (const [name, expected] of [['sharedHook', pins.sharedHook.address], ['nativeRouteGuard', pins.nativeRouteGuard.address],
       ['NATIVE_ROUTE_GUARD_CODE_HASH', pins.nativeRouteGuard.runtimeCodeHash], ['quotePoolManager', pins.poolManager.address],
       ['quotePoolManagerCodeHash', pins.poolManager.runtimeCodeHash], ['UNIVERSAL_ROUTER', pins.universalRouter.address],
@@ -117,6 +125,12 @@ export async function assertEngineOperationPreflight(plan, stepIndex, providers,
     if (step.kind === 'engine-revision') await familyBindings(plan, providers, block.number, c, api);
     return;
   }
+  if (isAnyQuoteLifecyclePlan(plan)) {
+    await assertAnyQuotePacketAnchors(plan, providers, c);
+    await revisionBindings(plan, providers, block.number, c, api, false, plan.action.kind !== 'launch');
+    await familyBindings(plan, providers, block.number, c, api);
+    return;
+  }
   const launching = plan.action.kind === 'launch', quote = launching ? plan.action.quote : plan.action.launch.plan.action.quote;
   await c.code(providers, quote, block.number);
   equal(await c.read(providers, quote.address, erc20Abi, 'decimals', [], block.number), quote.decimals, 'Actual quote asset decimals');
@@ -182,6 +196,18 @@ async function operationReceipt(plan, step, receipt, providers, c, api) {
 export async function finishEngineReceipt(plan, entry, providers, receipt, transaction, pins, c) {
   const api = await publicationValidators(), step = plan.steps[entry.stepIndex], host = plan.identity.contracts.host.address;
   await releaseBindings(plan, providers, receipt.blockNumber, c, api); let canary = null, operation = null, tokenRuntimeCodeHash = null;
+  if (isAnyQuoteLifecyclePlan(plan)) {
+    await revisionBindings(plan, providers, receipt.blockNumber, c, api, false, true);
+    const preparation = entry.observation.anyQuote; anyQuoteWalletStep(plan, entry.stepIndex, preparation);
+    const client = anyQuoteClient(providers, c, { number: receipt.blockNumber });
+    const actualReceipt = await client.getTransactionReceipt({ hash: receipt.transactionHash });
+    equal(actualReceipt.blockHash, receipt.blockHash, 'Any Quote receipt anchor');
+    const result = await api.verifyAnyQuoteLifecycleReceiptV1({ client, identity: plan.identity, preparation, receipt: actualReceipt });
+    need((await c.pair(providers, 'eth_getBlockByNumber', [receipt.blockNumber, false])).every(b => b?.hash === receipt.blockHash), 'Any Quote receipt anchor changed');
+    return { status: 'included-code-verified-unfinalized', sourceKind: 'module-engine-v1', chainId: 4663, planDigest: plan.planDigest,
+      releaseDigest: plan.identity.releaseDigest, stepIndex: entry.stepIndex, kind: step.kind, transaction, receipt, contracts: pins,
+      anyQuote: result, providers: c.publicBindings(providers) };
+  }
   if (plan.schemaVersion === ENGINE_PUBLICATION_OPERATOR_SCHEMA) {
     await familyBindings(plan, providers, receipt.blockNumber, c, api);
     if (step.kind === 'engine-revision') {
@@ -218,4 +244,164 @@ export function equalEngineSimulation(plan, stepIndex, actual, expected) {
   else if (plan.steps[stepIndex].kind !== 'engine-execute') equal(actual, expected, 'Engine revalidation result');
   // execute was freshly simulated by the pinned Host with the unchanged signed
   // input/recipient/minimumOutput/deadline. Its returned bytes are not a limit.
+}
+
+const checkedPackets = new Map();
+const exec = promisify(execFile);
+/** Rebind the original seal to Git objects without recompiling or trusting sourceClean alone. */
+async function sourceObjects(build) {
+  const c = build.commitments;
+  need(c?.sourceCommit === build.sourceCommit && c.sourceTree === build.sourceTree
+    && c.compiler === '0.8.26+commit.8a97fa7a' && c.forge === '1.7.1+4072e48705af9d93e3c0f6e29e93b5e9a40caed8'
+    && digest('programmable.module-mode-build.v1', c) === build.buildDigest, 'Exact deployment compiler/source seal differs');
+  const gitObject = async (root, revision, file) => (await exec('git', ['show', `${revision}:${file}`], { cwd: root, maxBuffer: 8 * 1024 * 1024 })).stdout;
+  const tree = (await exec('git', ['rev-parse', `${build.sourceCommit}^{tree}`], { cwd: REPOSITORY_ROOT })).stdout.trim();
+  need(tree === build.sourceTree, 'Deployment source tree differs');
+  const pinBytes = await gitObject(REPOSITORY_ROOT, build.sourceCommit, 'contracts/dependencies/source-pins.json');
+  need(sha256(pinBytes) === c.sourcePinsDigest, 'Deployment dependency pins differ');
+  const sourcePins = JSON.parse(pinBytes), seen = new Set();
+  for (const [role, input] of Object.entries(build.standardInputs)) {
+    need(digest('programmable.module-mode-build-artifact.v1', build.artifacts[role]) === c.artifacts[role], 'Deployment artifact seal differs');
+    need(input.settings?.optimizer?.enabled === true && input.settings.optimizer.runs === 1000 && !input.settings.viaIR
+      && input.settings.evmVersion === 'cancun' && input.settings.metadata?.appendCBOR === false && input.settings.metadata.bytecodeHash === 'none'
+      && Object.keys(input.settings.libraries ?? {}).length === 0, 'Protected foundation compiler settings differ');
+    exactKeys(input.settings.optimizer, ['enabled', 'runs'], 'Protected foundation optimizer');
+    for (const [file, source] of Object.entries(input.sources)) {
+      need(/^(?:src|lib\/[a-z0-9-]+)\/[A-Za-z0-9_./-]+\.sol$/.test(file) && !file.split('/').includes('..'), 'Invalid source seal path');
+      need(keccak256(toHex(source.content)) === c.sources[file], 'Compiled source seal differs');
+      if (seen.has(file)) continue; seen.add(file);
+      let root = REPOSITORY_ROOT, commit = build.sourceCommit, relative = `contracts/${file}`;
+      if (file.startsWith('lib/')) {
+        const [, dependency, ...tail] = file.split('/'), pin = c.dependencies[dependency];
+        need(pin && sourcePins.dependencies.some(item => item.commit === pin.commit && item.repository === pin.repository), 'Unpinned source dependency');
+        root = await realpath(path.join(REPOSITORY_ROOT, 'contracts/lib', dependency)); commit = pin.commit; relative = tail.join('/');
+      }
+      need(keccak256(toHex(await gitObject(root, commit, relative))) === c.sources[file], 'Compiled source does not match its Git object');
+    }
+  }
+  equal([...seen].sort(), Object.keys(c.sources).sort(), 'Complete compiled source closure');
+}
+/** Session initialization is expensive and precedes route readiness. The cache is process-local, never packet authority. */
+export async function initializeAnyQuoteLifecycle(plan, providers, c) {
+  if (!isAnyQuoteLifecyclePlan(plan)) return;
+  const bindings = await bindAnyQuotePreactivationPacket(plan.preactivation, plan.identity, plan.bundle);
+  equal(bindings, plan.proofBindings, 'Any Quote proof packet commitments');
+  const key = digest('programmable.any-quote.operator-session.v1', { sourceCommit: plan.sourceCommit, planDigest: plan.planDigest, identity: plan.identity, bindings, providers: c.publicBindings(providers) });
+  if (checkedPackets.has(key)) { await checkedPackets.get(key); return; }
+  const validation = (async () => {
+    const packet = plan.preactivation, deployment = exactJson(Buffer.from(packet.deploymentEvidenceRaw), 'Actual deployment evidence');
+    await sourceObjects(packet.build);
+    for (let i = 0; i < 2; i++) {
+      const { engineBindings, ...observed } = await observeAnyQuoteReceipt(packet.deploymentPlan, packet.deploymentEntries[i], providers);
+      equal(observed, deployment.records[i], 'Actual Any Quote deployment receipt');
+      if (i === 1) equal(engineBindings, deployment.engineBindings, 'Actual Any Quote deployment relationships');
+    }
+    const live = await collectAnyQuoteSource(packet.deploymentPlan, packet.build, deployment, Buffer.from(packet.previousSourceVerificationEvidenceRaw));
+    const stored = exactJson(Buffer.from(packet.sourceVerificationEvidenceRaw), 'Actual source evidence');
+    // A public source server can change response serialization; exact compiler, source, creation and runtime records cannot change.
+    const stable = value => ({ ...value, providerPreflight: undefined, records: value.records.map(({ responseBytesDigest, ...record }) => record) });
+    equal(stable(live), stable(stored), 'Independent exact source readback');
+    const admission = await c.observeReceipt(packet.admission.plan, packet.admission.entry, providers);
+    equal(admission, packet.admission.evidence, 'Actual canonical revision admission');
+  })();
+  checkedPackets.set(key, validation);
+  try { await validation; } catch (error) { checkedPackets.delete(key); throw error; }
+}
+async function assertAnyQuotePacketAnchors(plan, providers, c) {
+  const packet = plan.preactivation;
+  equal(await bindAnyQuotePreactivationPacket(packet, plan.identity, plan.bundle), plan.proofBindings, 'Any Quote packet binding');
+  const deployment = exactJson(Buffer.from(packet.deploymentEvidenceRaw), 'Actual deployment evidence');
+  for (const record of [...deployment.records, packet.admission.evidence])
+    need((await c.pair(providers, 'eth_getBlockByNumber', [record.receipt.blockNumber, false])).every(block => block?.hash === record.receipt.blockHash
+      && block.transactions.includes(record.transaction.hash)), 'Pre-activation deployment/admission anchor changed');
+}
+function anyQuoteClient(providers, c, block) {
+  return createPublicClient({ cacheTime: 0, batch: { multicall: false }, transport: custom({ request: async ({ method, params = [] }) => {
+    const anchored = method === 'eth_getBlockByNumber' && params[0] === 'latest' ? [block.number, ...params.slice(1)] : params;
+    return c.same(await c.pair(providers, method, anchored), `Any Quote ${method}`);
+  } }) });
+}
+export function anyQuoteWalletStep(plan, stepIndex, envelope) {
+  const step = plan.steps[stepIndex]; need(isAnyQuoteLifecyclePlan(plan) && step?.kind.startsWith('any-quote-'), 'Closed Any Quote wallet step required');
+  need(envelope?.schemaVersion === 'programmable.any-quote.lifecycle-preparation.v1', 'Canonical Any Quote preparation required');
+  equal(envelope.identity, plan.identity, 'Prepared Any Quote identity');
+  const { recipe, prepared } = envelope, intent = step.intent;
+  equal(recipe.template, { status: 'available', manifest: plan.bundle.manifest, manifestHash: plan.bundle.review.command.hostManifestHash, reviewDigest: plan.bundle.review.decisionDigest }, 'Prepared accepted template');
+  need(prepared.account === plan.owner && prepared.releaseDigest === plan.identity.releaseDigest, 'Prepared actor or release differs');
+  const action = step.kind.slice('any-quote-'.length);
+  if (action === 'launch') {
+    need(recipe.kind === 'launch' && prepared.kind === 'launch', 'Prepared launch differs');
+    const { anyQuotePreparation, ...input } = recipe.input;
+    const { releaseDigest, initialBuyWei, slippageBps, ...compilerInput } = intent;
+    equal(input, compilerInput, 'Prepared launch compiler inputs');
+    const { description, imageUri, socialLinks, ...priceIntent } = intent;
+    equal(anyQuotePreparation?.intent, priceIntent, 'Prepared launch price intent');
+    // Metadata belongs to the exact compiler input, while these three values are
+    // canonically retained only in the separately bound price/readiness intent.
+    need(releaseDigest === plan.identity.releaseDigest && initialBuyWei === '0' && Number.isInteger(slippageBps)
+      && typeof description === 'string' && typeof imageUri === 'string' && socialLinks, 'Complete reviewed bootstrap intent required');
+    need(anyQuotePreparation?.intent?.initialBuyWei === '0' && anyQuotePreparation.predictedToken === step.target, 'Prepared bootstrap launch differs');
+  } else if (action === 'claim') {
+    equal(recipe, { kind: 'claim', template: recipe.template, account: plan.owner, token: intent.token, recipient: intent.recipient }, 'Prepared quote beneficiary claim');
+    need(prepared.kind === 'claim' && prepared.token === intent.token && prepared.recipient === intent.recipient && BigInt(prepared.minimumAmount) > 0n, 'Positive actual beneficiary fees required');
+  } else {
+    need(recipe.kind === (action === 'approve' ? 'approve' : 'swap') && recipe.account === plan.owner, 'Prepared trade kind differs');
+    const quote = recipe.quote;
+    for (const [key, value] of Object.entries({ releaseDigest: plan.identity.releaseDigest, templateId: plan.bundle.manifest.manifest.catalogDefinition.id,
+      account: plan.owner, token: intent.token, recipient: intent.recipient, buy: action === 'buy', inputAmount: intent.inputAmount, slippageBps: intent.slippageBps })) equal(quote[key], value, `Prepared trade ${key}`);
+    if (action === 'approve') {
+      need(prepared.kind === 'approve' && prepared.allowanceKind === intent.allowanceKind && prepared.token === intent.token && prepared.amount === intent.amount
+        && (intent.allowanceKind === 'erc20' ? address(prepared.spender) === intent.spender : address(prepared.permit2Spender) === intent.spender), 'Exact sell predecessor allowance differs');
+      need(envelope.funding?.kind === 'approval-required' && envelope.funding.amount === intent.amount, 'Actual deficient allowance required');
+      if (intent.allowanceKind === 'permit2') need(BigInt(prepared.expiration) > BigInt(quote.checkpoint.timestamp)
+        && BigInt(prepared.expiration) <= BigInt(quote.checkpoint.timestamp) + 300n, 'Permit2 approval expiry exceeds the reviewed bound');
+    } else need(prepared.kind === 'swap', 'Prepared swap differs');
+  }
+  const transaction = prepared.transaction;
+  need(transaction?.from === plan.owner && address(transaction.to) === step.to && BigInt(transaction.value) === BigInt(step.value), 'Prepared transaction target/value differs');
+  bytes(transaction.data); uint(prepared.expiresAt, 'Canonical preparation expiry', true);
+  return { ...step, to: address(transaction.to), data: transaction.data, value: BigInt(transaction.value).toString() };
+}
+export function anyQuoteRequestExpiry(envelope) {
+  let expiry = BigInt(envelope.prepared.expiresAt);
+  if (envelope.recipe.quote) expiry = expiry < BigInt(envelope.recipe.quote.validUntil) ? expiry : BigInt(envelope.recipe.quote.validUntil);
+  if (envelope.recipe.input?.anyQuotePreparation) expiry = expiry < BigInt(envelope.recipe.input.anyQuotePreparation.validUntil) ? expiry : BigInt(envelope.recipe.input.anyQuotePreparation.validUntil);
+  need(expiry > 0n && expiry <= 9007199254740n, 'Preparation expiry exceeds safe timestamp');
+  return Number(expiry) * 1000;
+}
+async function anyQuoteFunding(plan, stepIndex, providers, block, c, api) {
+  if (plan.action.kind !== 'sell') return;
+  const step = plan.steps[stepIndex], funding = plan.action.funding, amount = BigInt(plan.action.inputAmount), token = plan.action.token, permit2 = api.ANY_QUOTE_INFRASTRUCTURE.permit2;
+  const erc20 = await c.read(providers, token, erc20Abi, 'allowance', [plan.owner, permit2], block.number);
+  const permit = await c.read(providers, permit2, api.moduleEnginePermit2Abi, 'allowance', [plan.owner, token, plan.identity.contracts.universalRouter.address], block.number);
+  const erc20Approved = plan.steps.slice(0, stepIndex).some(s => s.intent?.allowanceKind === 'erc20');
+  equal(erc20, erc20Approved ? amount : BigInt(funding.erc20Allowance), 'Reviewed token to Permit2 allowance');
+  const permitApproved = plan.steps.slice(0, stepIndex).some(s => s.intent?.allowanceKind === 'permit2');
+  if (!permitApproved) equal(permit.map(String), [funding.permit2Amount, funding.permit2Expiration, funding.permit2Nonce], 'Reviewed Permit2 allowance snapshot');
+  else need(permit[0] === amount && BigInt(permit[2]) === BigInt(funding.permit2Nonce), 'Exact Permit2 predecessor amount/nonce differs');
+  if (step.kind === 'any-quote-sell') need(erc20 >= amount && permit[0] >= amount && BigInt(permit[1]) > c.quantity(block.timestamp), 'Sell funding predecessors are not complete');
+}
+export async function materializeAnyQuoteOperation(plan, stepIndex, providers, block, c, original) {
+  const api = await publicationValidators(), client = anyQuoteClient(providers, c, block), step = plan.steps[stepIndex];
+  await anyQuoteFunding(plan, stepIndex, providers, block, c, api);
+  if (original) {
+    anyQuoteWalletStep(plan, stepIndex, original);
+    await api.revalidateAnyQuoteLifecyclePreparationV1({ client, identity: plan.identity, preparation: original }); return original;
+  }
+  const template = { status: 'available', manifest: plan.bundle.manifest, manifestHash: plan.bundle.review.command.hostManifestHash, reviewDigest: plan.bundle.review.decisionDigest };
+  const common = { client, identity: plan.identity, template, account: plan.owner }, rpcs = providers.map(provider => (method, params = []) => provider.rpc(method,
+    method === 'eth_getBlockByNumber' && params[0] === 'latest' ? [block.number, ...params.slice(1)] : params));
+  const dependencies = { client, options: { rpcs } }; let envelope;
+  if (step.kind === 'any-quote-launch') {
+    const preview = await api.readAnyQuoteIdentityLaunchPreviewV1({ ...step.intent, identity: plan.identity, template }, dependencies);
+    envelope = await api.prepareAnyQuoteLifecycleLaunchV1({ ...common, input: { ...step.intent, anyQuotePreparation: preview } });
+  } else if (step.kind === 'any-quote-claim') envelope = await api.prepareAnyQuoteLifecycleClaimV1({ ...common, ...step.intent });
+  else {
+    const quote = await api.readAnyQuoteIdentityTradeQuoteV1({ ...common, ...step.intent, releaseDigest: plan.identity.releaseDigest,
+      templateId: plan.bundle.manifest.manifest.catalogDefinition.id, buy: step.kind === 'any-quote-buy' }, dependencies);
+    envelope = await (step.kind === 'any-quote-approve' ? api.prepareAnyQuoteLifecycleApprovalV1 : api.prepareAnyQuoteLifecycleSwapV1)({ ...common, quote });
+  }
+  anyQuoteWalletStep(plan, stepIndex, envelope);
+  need(api.anyQuoteEvidenceHashV1({ ...envelope, evidenceHash: undefined }) === envelope.evidenceHash, 'Canonical preparation evidence hash differs');
+  need(anyQuoteRequestExpiry(envelope) > Date.now(), 'Canonical Any Quote preparation expired'); return envelope;
 }

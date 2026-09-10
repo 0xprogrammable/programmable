@@ -13,7 +13,7 @@ import { armJournal, armRetryJournal, journalDirectory, journalEntry, recordTran
 import { reviewedProviders } from './rpc.mjs';
 import { PUBLICATION_PLAN_SCHEMA, assertPublicationPlan, assertAuthenticatedOperationPlan, readOperatorJson } from './publication-plan.mjs';
 import { LIFECYCLE_OPERATOR_SCHEMA, assertLifecyclePlan } from './lifecycle-plan.mjs';
-import { preparePublicationRequest, preparePublicationRetry, revalidatePublicationRequest, observePublicationReceipt, observePublicationOperation } from './publication-rpc.mjs';
+import { preparePublicationRequest, preparePublicationRetry, revalidatePublicationRequest, observePublicationReceipt, observePublicationOperation, initializePublicationOperation } from './publication-rpc.mjs';
 import { ENGINE_PUBLICATION_OPERATOR_SCHEMA, ENGINE_LIFECYCLE_OPERATOR_SCHEMA, assertEnginePublicationOperatorPlan } from '../module-engine/publication-plan.mjs';
 import { assertEngineLifecycleOperatorPlan } from '../module-engine/lifecycle-operator-plan.mjs';
 const directory = path.dirname(fileURLToPath(import.meta.url));
@@ -35,7 +35,7 @@ export async function startPublicationOperator(options) {
   if (options.retryAttempt) need(Number.isSafeInteger(options.retryAttempt) && options.retryAttempt > 0, 'Positive retry attempt required');
   let providers, authority;
   const refreshAuthority = async () => { await assertOperationPlan(plan); const proof = await assertSourceAuthority(plan, options.reviewedPlanDigest, options.runId, options.runAttempt); await assertAuthenticatedOperationPlan(plan, options.sessionFile); return proof; };
-  if (!uiCheck) { need(plan.sourceClean === true && plan.planDigest === options.reviewedPlanDigest, 'Exact reviewed clean-source operation plan required'); await journalDirectory(options.journal); providers = await reviewedProviders(); authority = await refreshAuthority(); }
+  if (!uiCheck) { need(plan.sourceClean === true && plan.planDigest === options.reviewedPlanDigest, 'Exact reviewed clean-source operation plan required'); await journalDirectory(options.journal); providers = await reviewedProviders(); authority = await refreshAuthority(); await initializePublicationOperation(plan, providers); }
   const token = randomBytes(24).toString('hex'), nonce = randomBytes(18).toString('base64'), origin = `http://127.0.0.1:${options.port}`;
   let prepared = null, busy = false;
   async function predecessors() {

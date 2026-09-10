@@ -12,6 +12,8 @@ import { assertAnyQuotePlan, assertAnyQuoteProfile, buildAnyQuotePlan, ANY_QUOTE
 import { observeAnyQuoteReceipt, observeAnyQuoteStage } from './any-quote-rpc.mjs';
 import { engineResourceCommitment, sourceProfile } from '../module-mode/launch-source-profiles.mjs';
 import { selectAnyQuoteNativeBasis } from './any-quote-basis.mjs';
+import { createEngineLifecyclePlan } from './lifecycle-plan.mjs';
+import { engineWire } from './shared.mjs';
 const h = s => keccak256(toHex(s));
 function artifact(role, names = [], inputs = '') {
   return { abi: inputs ? [{ type: 'constructor', stateMutability: 'nonpayable', inputs: parseAbiParameters(inputs) }] : [],
@@ -48,6 +50,21 @@ async function fixture() {
   })();
   return structuredClone(await fixturePromise);
 }
+test('Any Quote lifecycle references use actual shared-pool swap and quote-claim log identities', async () => {
+  const f = await fixture(), candidate = { ...f.plan.identityCandidate, startBlock: '123' };
+  const release = { ...candidate, releaseDigest: (await engineWire()).computeModuleEngineReleaseDigest(candidate) };
+  const canary = { launchId: h('launch'), launchTransactionHash: h('launch-transaction'), manifestHash: h('manifest'), operations: [
+    { kind: 'quote-pool-swap', transactionHash: h('buy'), logIndex: 4, poolId: h('pool'), buy: true },
+    { kind: 'quote-pool-swap', transactionHash: h('sell'), logIndex: 7, poolId: h('pool'), buy: false },
+    { kind: 'quote-claim', transactionHash: h('claim'), logIndex: 2, asset: addr(98), beneficiary: addr(90), recipient: addr(91) },
+  ] };
+  const plan = await createEngineLifecyclePlan(release, [canary]); assert.deepEqual(plan.canaries[0], canary);
+  for (const mutate of [v => { v.operations[0].logIndex = -1; }, v => { delete v.operations[1].poolId; },
+    v => { v.operations[2].actor = addr(90); }, v => { v.operations[2].transactionHash = v.operations[1].transactionHash; },
+    v => { v.operations[0].kind = 'execute'; }]) {
+    const changed = structuredClone(canary); mutate(changed); await assert.rejects(createEngineLifecyclePlan(release, [changed]));
+  }
+});
 test('shared hook is mined once for nonce-bound CREATE Host; guard, Hook child ledger and nine pins are exact', async () => {
   const { plan, build } = await fixture(); await assertAnyQuotePlan(plan, build); assertAnyQuoteProfile(plan);
   assert.equal(plan.steps[1].to, null); assert.equal(plan.steps[1].nonce, '43');

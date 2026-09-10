@@ -19,3 +19,11 @@ export { computeModuleEngineReleaseDigest } from '../../../lib/module-engine/cat
 export { materializeModuleEngineRuntime } from '../../../lib/module-engine/operation-plan';
 export { isModuleEngineAnyQuoteRelease, moduleEngineSourceId, MODULE_ENGINE_ANY_QUOTE_PROFILE_ID } from '../../../lib/module-engine/profile';
 export { moduleEngineAnyQuoteHostAbi, moduleEngineAnyQuoteHookAbi, moduleEngineAnyQuoteLedgerAbi } from '../../../lib/module-engine/abi';
+export { moduleEnginePermit2Abi } from '../../../lib/module-engine/abi';
+export { ANY_QUOTE_INFRASTRUCTURE } from '../../../lib/module-engine/any-quote/types';
+export { anyQuoteLaunchIntent, anyQuoteSlippageBps, predictAnyQuoteToken } from '../../../lib/module-engine/any-quote/integration';
+export { anyQuoteEvidenceHashV1 } from '../../../lib/module-engine/any-quote/route';
+export { assertAnyQuoteLifecycleIdentityV1, prepareAnyQuoteLifecycleLaunchV1, prepareAnyQuoteLifecycleSwapV1,
+  prepareAnyQuoteLifecycleApprovalV1, prepareAnyQuoteLifecycleClaimV1, revalidateAnyQuoteLifecyclePreparationV1,
+  verifyAnyQuoteLifecycleReceiptV1 } from '../../../lib/module-engine/any-quote/lifecycle';
+export { readAnyQuoteIdentityTradeQuoteV1, readAnyQuoteIdentityLaunchPreviewV1 } from '../../../lib/server/module-engine/any-quote-preparation';

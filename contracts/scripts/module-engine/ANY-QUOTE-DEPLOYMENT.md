@@ -8,7 +8,7 @@ Use the reviewed, clean `production` source for real wallet handoffs. The existi
 
 The source profile is `module-engine-any-quote-v1`, engine profile `robinhood-any-quote.shared-hook.v1`, and Host source ID `keccak256("programmable.module-engine.any-quote.v1")`. The configuration schema is `programmable.any-quote.configuration.v1`; economics is `programmable.any-quote.base-30.creator-0-1000.v1`.
 
-`any-quote-build.mjs` uses the existing source/dependency sealer: Solc 0.8.26, optimizer 1,000, Cancun, `viaIR=false`, no CBOR metadata. Do not alter these settings or increase EVM size limits. The final core Host creation code is 48,913 bytes and its seven static constructor arguments add 224 bytes: 49,137 total, only 15 bytes below EIP-3860. Any source change requires a fresh size and runtime binding.
+`any-quote-build.mjs` uses the existing source/dependency sealer: Solc 0.8.26, optimizer 1,000, Cancun, `viaIR=false`, no CBOR metadata. Do not alter these settings or increase EVM size limits. The seven static Host constructor arguments add 224 bytes to the exact creation artifact. Read the complete initcode size from the sealed final plan; this source has very little EIP-3860 margin. Any source change requires a fresh size and runtime binding.
 
 | Step | Transaction | Bound result |
 | --- | --- | --- |
@@ -67,6 +67,50 @@ The corrected submission revision must preserve author `0x2bb333d48dfaf1596d9036
 
 Use existing `publication-plan.mjs bundle` with `--identity`, `--definition`, `--submission`, `--session-file`, and `--output` to read the genuine current independent acceptance. Then use `prepare` with `--identity`, `--bundle`, `--owner`, `--family-state absent|existing`, and `--output`. The existing `publication-operator.mjs` rechecks authenticated review and onchain state before each user signature. Family registration, when required, precedes Host `approveRevision`. No Registry ownership transfer or delegation is involved.
 
-The integration owner installs the verified source identity, accepted revision, deployment/source/lifecycle evidence and finality through the existing release/catalog/indexer controls. The public website is released only from the exact reviewed `production` source. Launch, ETH buy, ETH sell and quote reward claims use the ordinary website/API wallet path, rather than adding a second Any Quote lifecycle operator.
+The integration owner installs the verified source identity, accepted revision, deployment/source/lifecycle evidence and finality through the existing release/catalog/indexer controls. The public website is released only from the exact reviewed `production` source. Public website/API wrappers retain their active-release requirement. Before activation, the existing publication operator supports the bounded canary sequence below using the same canonical source-level preparation and receipt helpers.
+
+## Pre-activation canary in the existing operator
+
+Use `contracts/scripts/module-engine/lifecycle-operator-plan.mjs` with the actual identity, authenticated accepted bundle, actor, action, and `--preactivation FILE`. The packet has schema `programmable.module-engine-any-quote-preactivation-packet.v1` and exactly these fields:
+
+- `deploymentPlan` and `build`: the original clean-source deployment plan and sealed build, including complete standard inputs.
+- `deploymentEntries`: the two original armed journal entries, each with its actual transaction hash.
+- `deploymentEvidenceRaw`, `sourceVerificationEvidenceRaw`, `previousSourceVerificationEvidenceRaw`: the exact UTF-8 contents of the corresponding evidence files, retaining original whitespace and final newlines.
+- `admission`: `{plan, entry, evidence}` from the existing publication operator's actual `engine-revision` receipt.
+
+The packet is immutable input, not an activation record. An identity alone, candidate build, absent admission or a persisted “verified” flag cannot authorize preparation. On startup, the server rechecks compiled source bytes against their Git objects and pinned compiler settings, both deployment receipts, complete source readback, and actual admission. Only that process keeps an in-memory cache. Restarting or changing the packet repeats the validation. Every prepare and arm also rechecks authenticated current acceptance, the exact production source and hosted Verify run, all nine runtime/source pins, revision/family state, canonical deployment/admission anchors, owner nonce agreement and simulation.
+
+The existing authorized operator runtime must provide its two reviewed production RPC URL aliases and reviewed endpoint commitments through its established private environment. The scripts neither retrieve nor export secret values. A CI preparation artifact does not replace those per-request reads. Use the existing private reviewer session file; the independently accepted reviewer and transaction actor remain separate identities.
+
+```sh
+node contracts/scripts/module-engine/lifecycle-operator-plan.mjs \
+  --identity /absolute/private/identity.json --bundle /absolute/private/accepted-bundle.json \
+  --owner ACTUAL_ACTOR --action /absolute/private/action.json \
+  --preactivation /absolute/private/preactivation.json --output /absolute/private/lifecycle-plan.json
+
+node contracts/scripts/module-mode/publication-operator.mjs \
+  --plan /absolute/private/lifecycle-plan.json --step 0 \
+  --journal /absolute/private/lifecycle-journal --session-file /absolute/private/reviewer-session.json \
+  --reviewed-plan-digest REVIEWED_PLAN_DIGEST --verify-run-id VERIFY_RUN_ID --verify-run-attempt VERIFY_RUN_ATTEMPT \
+  --max-gas REVIEWED_GAS --max-fee-per-gas-wei REVIEWED_MAX_FEE \
+  --priority-fee-per-gas-wei REVIEWED_PRIORITY_FEE --max-value-wei REVIEWED_ETH_CEILING
+```
+
+Actions are closed and bind exact input amounts rather than unlimited approvals:
+
+| Action | Required action fields | Wallet result |
+| --- | --- | --- |
+| Bootstrap launch | `{kind:"launch",input}`; input is the full canonical launch intent plus description, imageUri and socialLinks, with `initialBuyWei:"0"` | Host launch using fresh price/readiness and mandatory actual-settlement simulation |
+| ETH buy | `{kind:"buy",token,recipient,inputAmount,slippageBps}` | Exact ETH input through the pinned Universal Router |
+| ETH sell | Buy fields with `kind:"sell"`, plus `funding` | Required finite approvals first, then a separately prepared fresh ETH sell |
+| Quote claim | `{kind:"claim",token,recipient}` | The signing beneficiary claims its positive accrued quote-asset balance |
+
+Sell `funding` contains decimal strings `erc20Allowance`, `permit2Amount`, `permit2Expiration`, `permit2Nonce`, and `permit2Mode:"existing"|"approve"`. These are observed allowances for actor→Permit2 and Permit2→Universal Router. Insufficient ERC20 allowance adds one exact finite token approval. Explicit Permit2 approval adds only the exact sell amount, with a canonical expiry no more than 300 seconds from its checkpoint. Existing allowances must actually cover the next route. Each predecessor needs its canonical receipt in the same journal before the next step. Approvals do not carry an executable sell forward: the sell receives a fresh quote after the actual approvals.
+
+The reviewed plan binds source/review/proofs, actor, recipient, launch metadata and creator configuration, exact action/input, and slippage. Prepare materializes a fresh canonical route/checkpoint/transaction. Its entire serialized envelope is covered by the request digest and durable journal. Any Quote requests expire no later than the canonical quote/preview deadline and 45 seconds after preparation. Arm reconstructs the original block's preparation and resimulates those same bytes; it never obtains another quote or extends the expiry. An expired unarmed request requires new preparation and owner review. An armed request keeps the existing unknown-outcome reconciliation rules, including after expiry; it cannot be silently replaced or resent. Legacy request/deadline windows are unchanged.
+
+Settlement probes use the existing read-only `debug_traceCall` transport with a canonical block-hash reference, `callTracer`, a ten-second timeout and no state/block overrides or custom tracer code. Unsupported providers fail closed. Signing remains exclusively in the user's wallet.
+
+After actual inclusion, source-level receipt helpers verify launch accounting, `QuotePoolSwap`, exact allowance changes, or `QuoteFeesClaimed` and quote settlement as applicable. The existing lifecycle-reference writer accepts `quote-pool-swap` references with `transactionHash`, `logIndex`, `poolId`, `buy`; and `quote-claim` references with `transactionHash`, `logIndex`, `asset`, `beneficiary`, `recipient`. The log index identifies the real shared-hook or Ledger event. The backend separately fetches and verifies those records and finality.
 
 Run the existing `module-mode/verify-launch-source.mjs` for source readback of actual indexed launches. Its Any Quote branch verifies the immutable LP engine and shared-hook pool resource commitment directly; no NFT forwarder or per-engine hook is assumed. Complete the public canary with the Robinhood Programmable quote asset `0xC60bA256B44334A0Cd2C7242E98B88f031abB006`, a second representative creator/quote pair, public indexing/rewards and independent external-service evidence. A deployment package, simulation, approved revision or catalog entry alone is not that result.
