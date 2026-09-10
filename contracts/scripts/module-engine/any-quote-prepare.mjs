@@ -24,7 +24,7 @@ export async function prepareAnyQuote({ root = REPOSITORY_ROOT, parametersFile, 
       engine: { repositorySourcePath: 'contracts/src/module-engine/any-quote/AnyQuoteLPModuleV1.sol',
         profile: 'programmable.module-engine-solidity@1', deployment: 'per-launch-from-the-current-protected-reviewed-artifact',
         artifact: 'required-from-existing-independent-review-not-the-foundation-compiler' },
-      publication: 'Existing authenticated accepted bundle, original author/family, and Registry owner approval required; no global LP engine is deployed' } };
+      publication: 'Authenticated accepted bundle for platform author/reward wallet 0xd88539d3c4c460136a733a3fd60cf6bf269079da in new family 0x91ec5e77c54fc78d8cd1240c9caf3252a8ee656b9ad9e6b3f454399985d0760b and separate Registry owner approval required; no global LP engine is deployed' } };
   for (const [name, value] of Object.entries(files)) await writeFile(path.join(outputDirectory, name), `${canonicalJson(value)}\n`, { flag: 'wx', mode: 0o600 });
   const directory = path.join(outputDirectory, 'source-verification'); await mkdir(directory);
   for (const [role, input] of Object.entries(build.standardInputs)) await writeFile(path.join(directory, `${role}.standard-input.json`), canonicalJson(input), { flag: 'wx', mode: 0o600 });
