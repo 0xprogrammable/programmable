@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import classicV3Release from
   "../contracts/deployments/mainnet-classic-v3.json";
+import classicV4Release from
+  "../contracts/deployments/mainnet-classic-v4.json";
 import deepV1Release from
   "../contracts/deployments/mainnet-deep-full-range-v1.json";
 import stockPairedV1Release from
@@ -25,6 +27,7 @@ describe("public Explore visibility", () => {
   it("binds every excluded token to canonical repository canary evidence", () => {
     const evidencedCanaryTokens = [
       classicV3Release.lifecycleEvidence.canaryToken,
+      classicV4Release.lifecycleEvidence.canaryToken,
       deepV1Release.lifecycleEvidence.canaryToken,
       stockPairedV1Release.lifecycleEvidence.canaryToken,
       stockPairedV2Release.lifecycleEvidence.canaryToken,
