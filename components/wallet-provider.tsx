@@ -2075,6 +2075,7 @@ function PrivyWalletBridge({
           if (!isCurrentSession()) throw new Error("The wallet session changed. Reconnect and try again.");
         },
       });
+      if (!isCurrentSession()) return false;
       const walletAtVerification = walletRequestSessionRef.current.walletCapability;
       if (connectedWallet.walletClientType !== "privy" && connectedWallet.walletClientType !== "privy-v2") {
         const accounts = await provider.request({ method: "eth_accounts" });
