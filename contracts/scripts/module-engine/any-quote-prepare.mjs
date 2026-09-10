@@ -21,9 +21,9 @@ export async function prepareAnyQuote({ root = REPOSITORY_ROOT, parametersFile, 
     'review-bindings.json': { status: 'unapproved-unpublished', sourceVersion: plan.identityCandidate.sourceVersion,
       engineProfile: plan.identityCandidate.engineProfile, sourceId: plan.sourceId, economics: plan.economics,
       configurationSchemaId: plan.configurationSchemaId, contracts: plan.identityCandidate.contracts,
-      engine: { compilationTarget: build.artifacts.engine.compilationTarget, creationBytecode: build.artifacts.engine.bytecode.object,
-        runtimeTemplate: build.artifacts.engine.deployedBytecode.object, immutableNames: build.artifacts.engine.immutableNames,
-        immutableReferences: build.artifacts.engine.deployedBytecode.immutableReferences },
+      engine: { repositorySourcePath: 'contracts/src/module-engine/any-quote/AnyQuoteLPModuleV1.sol',
+        profile: 'programmable.module-engine-solidity@1', deployment: 'per-launch-from-the-current-protected-reviewed-artifact',
+        artifact: 'required-from-existing-independent-review-not-the-foundation-compiler' },
       publication: 'Existing authenticated accepted bundle, original author/family, and Registry owner approval required; no global LP engine is deployed' } };
   for (const [name, value] of Object.entries(files)) await writeFile(path.join(outputDirectory, name), `${canonicalJson(value)}\n`, { flag: 'wx', mode: 0o600 });
   const directory = path.join(outputDirectory, 'source-verification'); await mkdir(directory);

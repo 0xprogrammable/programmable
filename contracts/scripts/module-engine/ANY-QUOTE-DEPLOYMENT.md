@@ -31,7 +31,7 @@ node contracts/scripts/module-engine/any-quote-prepare.mjs \
   --output /absolute/private/any-quote-deployment
 ```
 
-`--candidate` is available for local inspection and explicitly removes wallet authority. Files are written once with owner-only permissions. The package contains exact constructor arguments, mined salt, predicted addresses, materialized runtimes, the nine-pin identity candidate, source verification requests, and LP engine review bindings. It contains no final deployment block, release digest, accepted review, or invented receipt.
+`--candidate` is available for local inspection and explicitly removes wallet authority. Files are written once with owner-only permissions. The package contains exact constructor arguments, mined salt, predicted addresses, materialized runtimes, the nine-pin identity candidate, source verification requests, and infrastructure review bindings. The LP engine must use the actual independently reviewed artifact from the existing engine compiler profile (which remains separate from the foundation compiler); do not substitute the foundation's `viaIR=false` bytecode for that reviewed artifact. The package contains no final deployment block, release digest, accepted review, or invented receipt.
 
 Use the existing operator for each step, starting with `--step 0`, then `--step 1` after the first receipt is verified:
 

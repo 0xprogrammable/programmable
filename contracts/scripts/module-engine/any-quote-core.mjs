@@ -1,8 +1,8 @@
 import { encodeAbiParameters, encodeDeployData, getCreate2Address, getContractAddress, keccak256, parseAbiParameters, toHex } from 'viem';
 import { OFFICIAL, OFFICIAL_SOURCE, HOOK_MASK, HOOK_FLAGS, REWARD_ADMIN, address, canonicalJson, digest, exactKeys,
   hash, jsonSafe, materializeRuntime, need, uint } from '../module-mode/core.mjs';
-import { nativeV2Basis, assertNativeV2Basis } from '../module-native-v2/basis.mjs';
 import { engineWire } from './shared.mjs';
+export { anyQuoteBasis, assertAnyQuoteBasis } from './any-quote-basis.mjs';
 
 export const ANY_QUOTE_PLAN_SCHEMA = 'programmable.module-engine-any-quote-deployment-plan.v1';
 export const ANY_QUOTE_DEPLOYMENT_SCHEMA = 'programmable.module-engine-any-quote-deployment-evidence.v1';
@@ -11,8 +11,6 @@ export const ANY_QUOTE_REUSED_ROLES = Object.freeze(['tokenFactory', 'launchPoli
 export const ANY_QUOTE_REUSE_DOMAIN = 'programmable.module-engine-any-quote.reused-source.v1';
 export const ANY_QUOTE_ROUTER = Object.freeze({ address: '0x06afba43fd06227fa663b0daecf536f6eaa6bf99',
   runtimeCodeHash: '0xbe8e8191bb42d843c2e948a5a55772eaab864ce01e54dcd47c9d089170b302d5' });
-export const anyQuoteBasis = nativeV2Basis;
-export const assertAnyQuoteBasis = assertNativeV2Basis;
 function pin(artifact, target, immutableValues = {}) {
   const runtime = materializeRuntime(artifact, immutableValues), runtimeBytes = (runtime.length - 2) / 2;
   need(runtimeBytes > 0 && runtimeBytes <= 24576, 'Any Quote runtime violates EIP-170');

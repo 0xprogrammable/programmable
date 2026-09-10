@@ -11,6 +11,7 @@ import { assertAnyQuotePlan, assertAnyQuoteProfile, buildAnyQuotePlan, ANY_QUOTE
   ANY_QUOTE_REUSE_DOMAIN, ANY_QUOTE_ROUTER } from './any-quote-core.mjs';
 import { observeAnyQuoteReceipt, observeAnyQuoteStage } from './any-quote-rpc.mjs';
 import { engineResourceCommitment, sourceProfile } from '../module-mode/launch-source-profiles.mjs';
+import { selectAnyQuoteNativeBasis } from './any-quote-basis.mjs';
 const h = s => keccak256(toHex(s));
 function artifact(role, names = [], inputs = '') {
   return { abi: inputs ? [{ type: 'constructor', stateMutability: 'nonpayable', inputs: parseAbiParameters(inputs) }] : [],
@@ -62,6 +63,16 @@ test('shared hook is mined once for nonce-bound CREATE Host; guard, Hook child l
   assert.equal(anyQuoteConstructorArguments(plan, 'nativeRouteGuard'), '0x');
   assert.equal(plan.economics.platformFeeBps, 30); assert.equal(plan.economics.feeAsset, 'per-launch-quote-asset');
   assert.deepEqual(Object.keys(anyQuoteSourceRequests(plan, build)), ['nativeRouteGuard', 'host', 'sharedHook', 'ledger']);
+});
+test('retained V1 basis survives current V2 activation and refuses different or ambiguous retained pins', async () => {
+  const { basis } = await fixture(), v1 = basis.previousRelease, engine = { contracts: v1.contracts };
+  const empty = { schemaVersion: 'programmable.module-mode-historical-releases.v1', releases: [] };
+  assert.deepEqual(selectAnyQuoteNativeBasis(v1, empty, engine), v1);
+  const history = { ...empty, releases: [{ release: v1 }] }, current = { ...v1, sourceVersion: 'module-native-v2' };
+  assert.deepEqual(selectAnyQuoteNativeBasis(current, history, engine), v1);
+  assert.deepEqual(selectAnyQuoteNativeBasis(v1, history, engine), v1, 'Same current/history identity is deduplicated');
+  assert.throws(() => selectAnyQuoteNativeBasis(current, history, { contracts: { ...engine.contracts, registry: { ...engine.contracts.registry, address: addr(88) } } }), /Exactly one/);
+  assert.throws(() => selectAnyQuoteNativeBasis(current, { ...empty, releases: [{ release: v1 }, { release: { ...v1, releaseDigest: h('different') } }] }, engine), /Exactly one/);
 });
 test('source identity, guard runtime pin, economics and economic-size limits fail closed', async () => {
   const { plan, build, parameters, basis } = await fixture();

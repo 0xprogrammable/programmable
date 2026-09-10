@@ -27,11 +27,13 @@ export async function sealNativeV2Build(options = {}) {
 }
 
 /** Same deployed runtime is necessary but insufficient: retain the actual published V1 source bytes as well. */
-export async function bindReusedSourceClosure(build, root = REPOSITORY_ROOT, { roles: selectedRoles = REUSED_ROLES, domain = 'programmable.module-mode-native-v2-reused-source.v1' } = {}) {
+export async function bindReusedSourceClosure(build, root = REPOSITORY_ROOT, { roles: selectedRoles = REUSED_ROLES, domain = 'programmable.module-mode-native-v2-reused-source.v1', previousRelease } = {}) {
   need(Array.isArray(selectedRoles) && selectedRoles.length > 0 && selectedRoles.length <= 32 && new Set(selectedRoles).size === selectedRoles.length
     && selectedRoles.every(role => Object.hasOwn(build.artifacts, role) && Object.hasOwn(build.standardInputs, role)), 'Explicit known reused artifact roles required');
   need(typeof domain === 'string' && /^programmable\.[a-z0-9.-]{1,120}$/.test(domain), 'Explicit reuse commitment domain required');
-  const previous = JSON.parse(await readFile(path.join(root, 'config/module-mode/robinhood.preview.json'), 'utf8'));
+  // The caller may select an authenticated historical V1 after current activation advances to V2.
+  // Omitting this argument preserves the original current-V1 behavior exactly.
+  const previous = previousRelease ?? JSON.parse(await readFile(path.join(root, 'config/module-mode/robinhood.preview.json'), 'utf8'));
   need(previous.sourceVersion === 'module-native-v1' && /^[a-f0-9]{40}$/.test(previous.sourceCommit), 'Historical V1 source commit required');
   const oldFile = async file => (await exec('git', ['show', `${previous.sourceCommit}:${file}`], { cwd: root, maxBuffer: 8 * 1024 * 1024 })).stdout;
   const oldPins = await oldFile('contracts/dependencies/source-pins.json');
