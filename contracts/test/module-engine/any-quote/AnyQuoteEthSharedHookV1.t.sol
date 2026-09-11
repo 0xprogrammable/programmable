@@ -252,6 +252,22 @@ contract AnyQuoteEthSharedHookV1Test is Test {
         hook.registerPool(f.registration, wallets, shares);
     }
 
+    function test_rawRouteRequiresCanonicalBoundedEncoding() public {
+        Fixture memory f = _fixture(true, 100, 300, 1, 3000, IHooks(address(0)));
+        f.registration.launchId = keccak256("raw-route-launch");
+        f.registration.token = address(new AnyQuoteHookTestToken("RAW", 18));
+        (address[] memory wallets, uint16[] memory shares) = _recipients();
+        bytes memory encoded = abi.encode(f.route);
+        vm.expectRevert(AnyQuoteEthSharedHookV1.InvalidNativeFeeRouteData.selector);
+        hook.registerPoolWithNativeFeeRouteData(f.registration, wallets, shares, bytes.concat(encoded, hex"00"));
+        vm.expectRevert(AnyQuoteEthSharedHookV1.InvalidNativeFeeRouteData.selector);
+        hook.registerPoolWithNativeFeeRouteData(f.registration, wallets, shares, "");
+        vm.expectRevert(AnyQuoteEthSharedHookV1.InvalidNativeFeeRouteData.selector);
+        hook.registerPoolWithNativeFeeRouteData(f.registration, wallets, shares, new bytes(16_385));
+        bytes32 poolId = hook.registerPoolWithNativeFeeRouteData(f.registration, wallets, shares, encoded);
+        assertEq(hook.nativeFeeRouteHash(poolId), keccak256(encoded));
+    }
+
     function test_selfRouteAndCyclicRouteRejected() public {
         Fixture memory f = _fixture(true, 100, 300, 1, 3000, IHooks(address(0)));
         (address[] memory wallets, uint16[] memory shares) = _recipients();
@@ -386,7 +402,7 @@ contract AnyQuoteEthSharedHookV1Test is Test {
             sellCreatorFeeBps: sellBps
         });
         (address[] memory wallets, uint16[] memory shares) = _recipients();
-        f.poolId = hook.registerPoolWithNativeFeeRoute(f.registration, wallets, shares, f.route);
+        f.poolId = hook.registerPoolWithNativeFeeRouteData(f.registration, wallets, shares, abi.encode(f.route));
         f.key = hook.poolKey(f.poolId);
         uint256 quoteBefore = f.quote.balanceOf(address(manager));
         f.token.mint(address(f.position), A.TOKEN_SUPPLY);

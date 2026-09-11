@@ -63,6 +63,7 @@ contract AnyQuoteEthSharedHookV1 is BaseHook, IAnyQuoteEthSharedHookV1, Reentran
     error InvalidSettlement();
     error PartialFillUnsupported();
     error NativeFeeRouteRequired();
+    error InvalidNativeFeeRouteData();
     error ReentrantSwap();
 
     event SharedQuotePoolBound(
@@ -135,6 +136,29 @@ contract AnyQuoteEthSharedHookV1 is BaseHook, IAnyQuoteEthSharedHookV1, Reentran
         uint16[] calldata creatorSharesBps,
         R.FeeHop[] calldata hops
     ) external override nonReentrant returns (bytes32 poolId) {
+        return _registerPool(registration, creatorWallets, creatorSharesBps, hops);
+    }
+
+    function registerPoolWithNativeFeeRouteData(
+        A.PoolRegistration calldata registration,
+        address[] calldata creatorWallets,
+        uint16[] calldata creatorSharesBps,
+        bytes calldata routeData
+    ) external override nonReentrant returns (bytes32 poolId) {
+        if (routeData.length == 0 || routeData.length > 16_384) {
+            revert InvalidNativeFeeRouteData();
+        }
+        R.FeeHop[] memory hops = abi.decode(routeData, (R.FeeHop[]));
+        if (keccak256(abi.encode(hops)) != keccak256(routeData)) revert InvalidNativeFeeRouteData();
+        return _registerPool(registration, creatorWallets, creatorSharesBps, hops);
+    }
+
+    function _registerPool(
+        A.PoolRegistration calldata registration,
+        address[] calldata creatorWallets,
+        uint16[] calldata creatorSharesBps,
+        R.FeeHop[] memory hops
+    ) private returns (bytes32 poolId) {
         if (msg.sender != host) revert UnauthorizedHost();
         _validateRegistration(registration);
         poolId = PoolId.unwrap(_key(registration).toId());

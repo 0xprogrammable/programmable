@@ -12,6 +12,12 @@ interface IAnyQuoteEthSharedHookV1 is IAnyQuoteSharedHookV1 {
         uint16[] calldata creatorSharesBps,
         R.FeeHop[] calldata hops
     ) external returns (bytes32 poolId);
+    function registerPoolWithNativeFeeRouteData(
+        A.PoolRegistration calldata registration,
+        address[] calldata creatorWallets,
+        uint16[] calldata creatorSharesBps,
+        bytes calldata routeData
+    ) external returns (bytes32 poolId);
     function nativeFeeRouteHash(bytes32 poolId) external view returns (bytes32);
     function nativeFeeRoute(bytes32 poolId) external view returns (R.FeeHop[] memory);
 }

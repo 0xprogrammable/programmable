@@ -57,7 +57,7 @@ library AnyQuoteNativeFeeRouteV1 {
     error NativeFeeSlippage();
     error NativeFeeDeltaMismatch();
 
-    function bind(Route storage route, IPoolManager manager, address quote, address token, FeeHop[] calldata hops)
+    function bind(Route storage route, IPoolManager manager, address quote, address token, FeeHop[] memory hops)
         internal
         returns (bytes32 routeHash)
     {
@@ -66,7 +66,7 @@ library AnyQuoteNativeFeeRouteV1 {
         bytes32[] memory pools = new bytes32[](hops.length);
         currencies[0] = quote;
         for (uint256 i; i < hops.length; ++i) {
-            FeeHop calldata hop = hops[i];
+            FeeHop memory hop = hops[i];
             address input = Currency.unwrap(hop.zeroForOne ? hop.key.currency0 : hop.key.currency1);
             address output = Currency.unwrap(hop.zeroForOne ? hop.key.currency1 : hop.key.currency0);
             if (
