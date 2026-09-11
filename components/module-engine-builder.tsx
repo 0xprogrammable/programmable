@@ -62,7 +62,8 @@ export function ModuleEngineBuilder({ availability: raw, client: suppliedClient,
   const [quote, setQuote] = useState(""); const [quoteState, setQuoteState] = useState<(Awaited<ReturnType<typeof readModuleEngineQuoteAsset>> & { account: Address }) | null>(null);
   const [customInitialForm, setCustomInitialForm] = useState(emptyModuleEngineCustomOperation);
   const [creatorSaltInput, setCreatorSaltInput] = useState(""); const [engineSaltInput, setEngineSaltInput] = useState(""); const [launchData, setLaunchData] = useState("0x");
-  const [amount, setAmount] = useState(""); const [minimumTokens, setMinimumTokens] = useState(""); const [minimumEth, setMinimumEth] = useState(""); const [route, setRoute] = useState("");
+  const [amount, setAmount] = useState(""); const [amountError, setAmountError] = useState<string | null>(null); const amountFocus = useRef<HTMLInputElement>(null);
+  const [minimumTokens, setMinimumTokens] = useState(""); const [minimumEth, setMinimumEth] = useState(""); const [route, setRoute] = useState("");
   const [buyFee, setBuyFee] = useState("0"); const [sellFee, setSellFee] = useState("0"); const [beneficiary, setBeneficiary] = useState(""); const [refundTime, setRefundTime] = useState(""); const [obligation, setObligation] = useState("");
   const [prepared, setPrepared] = useState<PreparedModuleEngineTransaction | null>(null); const [approval, setApproval] = useState<ModuleEngineApprovalRequired | null>(null);
   const [error, setError] = useState<string | null>(null); const [notice, setNotice] = useState<string | null>(null); const [busy, setBusy] = useState(false);
@@ -93,7 +94,13 @@ export function ModuleEngineBuilder({ availability: raw, client: suppliedClient,
   }
   async function prepare() {
     if (!availability?.release || !template || !definition || !revision || !wallet.account) return;
-    if (imageBusy) return; setBusy(true); setError(null); setNotice(null);
+    if (imageBusy) return;
+    let initialBuyWei = 0n;
+    if (anyQuote) {
+      try { initialBuyWei = BigInt(parseExactUnits(amount, 18)); if (initialBuyWei <= 0n) throw new Error(); }
+      catch { setError(null); setAmountError("Enter an ETH amount greater than 0. Use up to 18 decimal places."); amountFocus.current?.focus(); return; }
+    }
+    setAmountError(null); setBusy(true); setError(null); setNotice(null);
     try {
       const account = moduleAddress(wallet.account, "account"); assertModuleModeWalletUnchanged(wallet, account);
       if (!quoteVerified || (anyQuote ? !readyQuote : !quoteState)) throw new Error(anyQuote ? "Wait for current token availability before reviewing the launch." : "Check the quote asset before reviewing the launch.");
@@ -122,7 +129,7 @@ export function ModuleEngineBuilder({ availability: raw, client: suppliedClient,
       } : undefined;
       const coin = { client, availability, templateId: definition.id, account, name, symbol, description, imageUri: resolvedImage, socialLinks: social.links, creatorSalt: customLaunch && creatorSaltInput.trim() ? moduleEngineOptionalHash(creatorSaltInput.trim(), "creator salt") : salts.current.creator, engineSalt: customLaunch && engineSaltInput.trim() ? moduleEngineOptionalHash(engineSaltInput.trim(), "engine salt") : salts.current.engine, creatorWallets: [account], creatorSharesBps: [10_000], buyCreatorFeeBps: Number(buyFee) * 100, sellCreatorFeeBps: Number(sellFee) * 100 };
       const result = anyQuote && readyQuote
-        ? await prepareModuleEngineAnyQuoteLaunch({ ...coin, quoteAsset: readyQuote.quoteAsset, readiness: readyQuote, initialBuyWei: amount.trim() ? BigInt(parseExactUnits(amount.trim(), 18)) : 0n, slippageBps: 100 })
+        ? await prepareModuleEngineAnyQuoteLaunch({ ...coin, quoteAsset: readyQuote.quoteAsset, readiness: readyQuote, initialBuyWei, slippageBps: 100 })
         : await prepareModuleEngineLaunch({ ...coin, quoteAsset: quoteState!.address, configuration: configurationFromForm(definition.schema, form, definition.fields), ...(customLaunch ? { launchData: moduleBytes(launchData.trim(), "initialization data", 16_384) } : {}), initialOperation });
       if (result.kind === "approval-required") setApproval(result); else setPrepared(result);
     } catch (caught) { setError(message(caught)); } finally { setBusy(false); }
@@ -183,9 +190,10 @@ export function ModuleEngineBuilder({ availability: raw, client: suppliedClient,
               {anyQuote ? <>
                 <ModuleEngineAnyQuoteAsset value={quoteAsset} availability={anyQuoteAvailability} onChange={value => edit(() => setQuote(value))} />
                 <div className={`${styles.field} ${engineStyles.anyQuoteInitialBuy}`}>
-                  <label htmlFor="engine-amount">Initial buy <span>Optional</span></label>
-                  <div className={engineStyles.anyQuoteAmount}><input id="engine-amount" aria-label="Initial buy in ETH" inputMode="decimal" placeholder="0" autoComplete="off" value={amount} onChange={event => edit(() => setAmount(event.target.value))} aria-describedby="engine-amount-help" /><span aria-hidden="true">ETH</span></div>
-                  <p id="engine-amount-help" className={styles.help}>Buy your coin in the launch transaction. Leave blank to launch without a buy.</p>
+                  <label htmlFor="engine-amount">Initial buy</label>
+                  <div className={engineStyles.anyQuoteAmount}><input ref={amountFocus} id="engine-amount" aria-label="Initial buy in ETH" inputMode="decimal" placeholder="0" autoComplete="off" required value={amount} onChange={event => edit(() => { setAmount(event.target.value); setAmountError(null); })} onInvalid={event => { event.preventDefault(); setAmountError("Enter an ETH amount greater than 0."); amountFocus.current?.focus(); }} aria-invalid={Boolean(amountError) || undefined} aria-describedby={amountError ? "engine-amount-help engine-amount-error" : "engine-amount-help"} /><span aria-hidden="true">ETH</span></div>
+                  <p id="engine-amount-help" className={styles.help}>Buy your coin in the launch transaction.</p>
+                  {amountError ? <p id="engine-amount-error" className={styles.fieldError} role="alert">{amountError}</p> : null}
                 </div>
                 <p className={engineStyles.sectionNote}>1 billion coins · approximately $5,000 starting value · permanently locked liquidity.</p>
                 <Disclosure className={engineStyles.moduleAbout}>
@@ -287,14 +295,14 @@ export function ModuleEngineBuilder({ availability: raw, client: suppliedClient,
           <dl className={engineStyles.previewFacts}>
             <div><dt>{quoteLabel}</dt><dd title={quoteAsset || undefined}>{quoteShort}</dd></div>
             {spot || customLaunch ? <div><dt>{customLaunch ? "Fee settings" : "Creator fees"}</dt><dd>{buyFee}% buy · {sellFee}% sell</dd></div> : null}
-            {anyQuote ? <><div><dt>Buy and sell with</dt><dd>ETH</dd></div><div><dt>Module fee</dt><dd>0.3%</dd></div><div><dt>Initial buy</dt><dd>{amount.trim() ? `${amount} ETH` : "None"}</dd></div></> : null}
+            {anyQuote ? <><div><dt>Buy and sell with</dt><dd>ETH</dd></div><div><dt>Module fee</dt><dd>0.3%</dd></div><div><dt>Initial buy</dt><dd>{amount.trim() ? `${amount} ETH` : "Not set"}</dd></div></> : null}
             {needsInitial && !customInitial ? <div><dt>{spot ? "First buy" : "Starting funds"}</dt><dd>{amount.trim() ? `${amount} tokens` : "Not set"}</dd></div> : null}
           </dl>
           </div>
           <Link href="/developers/modules" className={engineStyles.buildLink}><Puzzle size={16} aria-hidden="true" />Build your own module<ArrowUpRight size={16} aria-hidden="true" /></Link>
         </aside>
       </div>
-      <ModuleEnginePicker open={pickerOpen} templates={availability.templates} selectedId={definition.id} disabled={!hydrated || busy || imageBusy || blocked} onClose={() => setPickerOpen(false)} onSelect={item => { edit(() => { setSelected(item.manifest.manifest.catalogDefinition.id); setQuoteState(null); setAmount(""); salts.current = null; setCustomInitialForm(emptyModuleEngineCustomOperation()); setCreatorSaltInput(""); setEngineSaltInput(""); setLaunchData("0x"); setBuyFee("0"); setSellFee("0"); }); setPickerOpen(false); }} />
+      <ModuleEnginePicker open={pickerOpen} templates={availability.templates} selectedId={definition.id} disabled={!hydrated || busy || imageBusy || blocked} onClose={() => setPickerOpen(false)} onSelect={item => { edit(() => { setSelected(item.manifest.manifest.catalogDefinition.id); setQuoteState(null); setAmount(""); setAmountError(null); salts.current = null; setCustomInitialForm(emptyModuleEngineCustomOperation()); setCreatorSaltInput(""); setEngineSaltInput(""); setLaunchData("0x"); setBuyFee("0"); setSellFee("0"); }); setPickerOpen(false); }} />
       {approval && !prepared ? <section className={engineStyles.notice} role="status"><p>Allow the launch contract to use exactly {quoteState ? formatUnits(approval.amount, quoteState.decimals) : approval.amount.toString()} quote tokens to fund this launch.</p><button id="engine-approval-review" className={styles.secondaryButton} type="button" disabled={busy || blocked} onClick={() => void prepareApproval()}>{approval.currentAllowance > 0n ? "Review allowance reset" : "Review exact approval"}</button></section> : null}
       {prepared ? <ModuleEngineTransactionReview prepared={prepared} busy={busy} disabled={blocked || step !== "prepare"} onEdit={backToEdit} onConfirm={() => void confirm()} quoteAsset={readyQuote?.quoteAsset ?? quoteState?.address} quoteDecimals={readyQuote?.token.decimals ?? quoteState?.decimals} quoteSymbol={readyQuote?.token.symbol} anyQuote={anyQuote} tradeFees={spot || customLaunch} genericAction={customInitial} showLaunchInputs={customLaunch}>{prepared.kind === "launch" ? <div className={engineStyles.launchSummary}><strong>{name} · {symbol}</strong><p>{description}</p><p className={styles.help}>Image: {imageUri || MODULE_DEFAULT_TOKEN_IMAGE}</p>{checkedSocial.ok ? <dl className={styles.reviewRows}>{socialFields.filter(({ key }) => checkedSocial.links[key]).map(({ key, label }) => <div key={key}><dt>{label}</dt><dd>{checkedSocial.links[key]}</dd></div>)}</dl> : null}</div> : null}</ModuleEngineTransactionReview> : null}
     </>}

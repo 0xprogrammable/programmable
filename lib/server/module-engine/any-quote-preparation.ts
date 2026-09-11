@@ -52,10 +52,12 @@ async function quoteModule(pool: AnyQuoteTradeQuote["pool"], buy: boolean, amoun
   const runtime = await rpc("eth_getCode", [ANY_QUOTE_INFRASTRUCTURE.v4Quoter, ref], value => String(value) as Hex);
   if (keccak256(runtime) !== ANY_QUOTE_INFRASTRUCTURE.v4QuoterCodeHash) throw new AnyQuoteErrorV1("QUOTER_RUNTIME_MISMATCH");
   const data = encodeFunctionData({ abi: quoterAbi, functionName: "quoteExactInputSingle", args: [{ poolKey: key, zeroForOne: anyQuoteSameAddressV1(buy ? pool.quoteAsset : pool.token, key.currency0), exactAmount: amountIn, hookData: "0x" }] });
-  return rpc("eth_call", [{ to: ANY_QUOTE_INFRASTRUCTURE.v4Quoter, data }, ref], value => {
+  const output = await rpc("eth_call", [{ to: ANY_QUOTE_INFRASTRUCTURE.v4Quoter, data }, ref], value => {
     const result = decodeFunctionResult({ abi: quoterAbi, functionName: "quoteExactInputSingle", data: String(value) as Hex });
-    return anyQuoteUintV1(result[0].toString(), (1n << 128n) - 1n);
+    // Provider agreement compares canonical JSON; retain exact raw units as a decimal string there.
+    return anyQuoteUintV1(result[0].toString(), (1n << 128n) - 1n).toString();
   });
+  return BigInt(output);
 }
 /** Complete trade quote uses current onchain module fees and external AMM execution, never an indicative USD price. */
 export type AnyQuoteTradeQuoteInputV1 = Selection & { account: Address; token: Address; recipient: Address; buy: boolean; inputAmount: string; slippageBps?: number };
