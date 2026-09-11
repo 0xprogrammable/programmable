@@ -76,7 +76,7 @@ test("source expectations reject unsupported authentication versions and wrong s
     await assert.rejects(readIndexedWebsiteSourceExpectations(sourceConfiguration(t, changed)), /Robinhood release identity is invalid/u);
   }
   for (const source of EXPECTATIONS.robinhood.modules) assert.equal(source.source,
-    source.sourceVersion === "module-engine-any-quote-v1" ? "module-engine-v1" : source.sourceVersion);
+    ["module-engine-any-quote-v1", "module-engine-any-quote-eth-v1"].includes(source.sourceVersion) ? "module-engine-v1" : source.sourceVersion);
 });
 
 function indexConfiguration(t, releases) {
@@ -422,9 +422,11 @@ test("current Ethereum sources, finalized module sources and stale observations 
       spec.body.status = "stale";
       spec.headers["x-programmable-indexing-status"] = "stale";
       for (const [index, expected] of EXPECTATIONS.robinhood.modules.entries()) {
-        const source = { ...robinhoodSource(), ...expected };
+        const blockNumber = (BigInt(expected.startBlock) + 1n).toString();
+        const source = { ...robinhoodSource(), ...expected,
+          cursor: { number: blockNumber, hash: HASH(2000) }, finalizedBlock: blockNumber };
         spec.body.sourceEvidence.modules.push(source);
-        spec.body.items.push({ ...robinhoodItem(), tokenAddress: ADDRESS(101 + index), launchId: HASH(101 + index),
+        spec.body.items.push({ ...robinhoodItem(), blockNumber, tokenAddress: ADDRESS(101 + index), launchId: HASH(101 + index),
           sourceKind: source.source, sourceAddress: source.sourceAddress, sourceReleaseDigest: source.releaseDigest,
           routerAddress: null, stampHash: null, verificationDigest: HASH(2222) });
       }
