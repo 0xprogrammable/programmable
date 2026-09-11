@@ -3,9 +3,13 @@ import { ModuleEngineHost } from "@/components/module-engine-host";
 import { ModuleModeLaunchHost } from "@/components/module-mode-launch-host";
 import { ModuleCoinConsole } from "@/components/module-coin-console";
 import { fixture, TOKEN, hash } from "./module-engine-fixture";
+import { anyQuoteUiFixture } from "./module-engine-any-quote-ui-fixture";
+import reviewedAnyQuoteRelease from "@/config/module-engine/review-release.json";
+import { createAnyQuoteConfigurationSchema } from "@/lib/module-engine/any-quote-configuration";
+import { isModuleEngineAnyQuoteRelease } from "@/lib/module-engine/profile";
 import engineEvidence from "./fixtures/module-engine-index.json";
 import { normalizeModuleEngineLaunchV1 } from "@/lib/module-engine/index/provenance-v1";
-import { bindActiveModuleEngineRelease } from "@/lib/module-engine/catalog";
+import { bindActiveModuleEngineRelease, computeModuleEngineHostManifestHash, moduleEngineReleaseIdentity } from "@/lib/module-engine/catalog";
 import { moduleEnginePublicLaunch } from "@/lib/server/robinhood-index/module-source";
 const mocks = vi.hoisted(() => ({ native: vi.fn(), engine: vi.fn(), nativeVersions: vi.fn(), engineVersions: vi.fn(), token: vi.fn() }));
 vi.mock("@/components/module-engine-host", () => ({ ModuleEngineHost: () => null }));
@@ -20,7 +24,18 @@ import { GET } from "@/app/api/module-mode/route";
 import Page from "@/app/launch/modules/page";
 import ManagePage from "@/app/launch/modules/manage/[address]/page";
 
-beforeEach(() => { vi.clearAllMocks(); mocks.nativeVersions.mockResolvedValue([]); mocks.engineVersions.mockResolvedValue([]); mocks.token.mockResolvedValue({ token: null }); });
+beforeEach(() => { vi.clearAllMocks(); mocks.nativeVersions.mockResolvedValue([]); mocks.engineVersions.mockResolvedValue([]); mocks.engine.mockResolvedValue({ ...fixture().availability, release: null, templates: [] }); mocks.token.mockResolvedValue({ token: null }); });
+
+/** A mocked availability sample for route gating only, not a publication or activation claim. */
+function reviewedAnyQuoteAvailability() {
+  const f = anyQuoteUiFixture(), release = bindActiveModuleEngineRelease({ ...f.release, ...reviewedAnyQuoteRelease });
+  if (!isModuleEngineAnyQuoteRelease(release)) throw new Error("Expected the reviewed Any Quote profile");
+  const template = structuredClone(f.template);
+  template.manifest.manifest.release = moduleEngineReleaseIdentity(release);
+  template.manifest.manifest.catalogDefinition.schema = createAnyQuoteConfigurationSchema(release);
+  template.manifestHash = computeModuleEngineHostManifestHash(template.manifest);
+  return { ...f.availability, release, templates: [template] };
+}
 describe("source-specific Module Mode product routes", () => {
   it("keeps the current native reader and dispatches only explicit Engine selectors", async () => {
     const f = fixture(); mocks.native.mockResolvedValue({ release: null, catalog: [], reason: "Native disabled" }); mocks.engine.mockResolvedValue(f.availability);
@@ -41,6 +56,35 @@ describe("source-specific Module Mode product routes", () => {
     const engine = await Page({ searchParams: Promise.resolve({ sourceKind: "module-engine-v1", releaseDigest: f.release.releaseDigest }) });
     expect(engine.type).toBe(ModuleEngineHost); expect(engine.props).toMatchObject({ releaseDigest: f.release.releaseDigest, versions: [version] });
     const native = await Page({ searchParams: Promise.resolve({}) }); expect(native.type).toBe(ModuleModeLaunchHost);
+  });
+  it("offers the reviewed Any Quote setup only from current active availability with a matching publication", async () => {
+    const availability = reviewedAnyQuoteAvailability(); mocks.engine.mockResolvedValue(availability);
+    const page = await Page({ searchParams: Promise.resolve({}) });
+    expect(page.type).toBe(ModuleModeLaunchHost);
+    expect(page.props.anyQuoteReleaseDigest).toBe(reviewedAnyQuoteRelease.releaseDigest);
+    expect(mocks.engine).toHaveBeenCalledWith();
+    const selected = await Page({ searchParams: Promise.resolve({ sourceKind: "module-engine-v1", releaseDigest: page.props.anyQuoteReleaseDigest }) });
+    expect(selected.type).toBe(ModuleEngineHost);
+    expect(selected.props.releaseDigest).toBe(reviewedAnyQuoteRelease.releaseDigest);
+  });
+  it("keeps Any Quote hidden during HOLD, provider failure, empty or unbound publication, and other source generations", async () => {
+    const current = reviewedAnyQuoteAvailability();
+    mocks.engineVersions.mockResolvedValue([{ releaseDigest: reviewedAnyQuoteRelease.releaseDigest, sourceKind: "module-engine-v1", label: "Any Quote LP" }]);
+    for (const unavailable of [
+      { ...current, release: null, templates: [] },
+      { ...current, templates: [] },
+      { ...current, release: { ...current.release, enabled: false } },
+      { ...current, templates: [fixture().template] },
+      fixture().availability,
+      anyQuoteUiFixture().availability,
+    ]) {
+      mocks.engine.mockResolvedValue(unavailable);
+      const page = await Page({ searchParams: Promise.resolve({}) });
+      expect(page.type).toBe(ModuleModeLaunchHost);
+      expect(page.props.anyQuoteReleaseDigest).toBeUndefined();
+    }
+    mocks.engine.mockRejectedValue(new Error("Current source unavailable"));
+    expect((await Page({ searchParams: Promise.resolve({}) })).props.anyQuoteReleaseDigest).toBeUndefined();
   });
   it("dispatches exact management hints and uses the indexed source for a plain coin URL", async () => {
     const hinted = await ManagePage({ params: Promise.resolve({ address: TOKEN }), searchParams: Promise.resolve({ sourceKind: "module-engine-v1", releaseDigest: fixture().release.releaseDigest }) });
