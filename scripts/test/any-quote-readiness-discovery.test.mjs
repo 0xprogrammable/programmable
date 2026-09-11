@@ -249,6 +249,23 @@ test("direct depth failures allow an independently qualified intermediate route"
   assert.deepEqual(result.routes.sell.hops.map(h => h.tokenOut.toLowerCase()), [MID, ZERO].map(x => x.toLowerCase()));
 });
 
+test("a reverted candidate quote stays non-executable without treating malformed successful data as a revert", async () => {
+  const reverting = pool(), deep = pool(ZERO, Q, { fee: 500 }), rejectedBy = new Set();
+  const f = fixture([reverting, deep], { override: info => {
+    if (info.method !== "eth_call") return;
+    const read = decodeFunctionData({ abi: readAbi, data: info.params[0].data });
+    if (read.functionName === "quoteExactInputSingle" && read.args[0].poolKey.fee === 0) {
+      rejectedBy.add(info.provider);
+      throw Object.assign(Error("execution reverted"), { code: 3, data: "0x" });
+    }
+    return quoteWithDepth([])(info);
+  } });
+  const result = await a.assessAnyQuoteAssetV1({ quoteAsset: Q }, f.options);
+  assert.equal(result.status, "compatible", JSON.stringify(result));
+  assert.deepEqual([...rejectedBy], [0, 1], "Both RPCs rejected the non-executable candidate call");
+  for (const side of ["buy", "sell"]) assert.equal(result.routes[side].hops[0].poolId, deep.poolId);
+});
+
 test("provider disagreement and malformed initial or depth quotes cannot fall back to a healthy pool", async () => {
   const thin = pool(), deep = pool(ZERO, Q, { fee: 500 });
   for (const stage of ["initial", "depth"]) for (const corruption of ["disagreement", "non-hex", "short-abi"]) {
