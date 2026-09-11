@@ -34,3 +34,25 @@ ranges contain at most 10,000 blocks. It runs every minute using the existing
 history is backfilled over bounded runs; the list reports `syncing` until caught up.
 Changing the canonical Router itself requires an explicit index migration;
 new tokens and custom hooks on that Router require no configuration.
+
+Engine sources can be indexed before their templates are published. The server
+discovers them through the authenticated backend source inventory and verifies
+their complete release, provenance and finality before updating the saved list.
+
+`config/module-engine/index-releases.json` binds additional Engine sources for
+the deployment read checks. Its `programmable.module-engine.index-releases.v1`
+schema contains only `schemaVersion` and `releases`. Each entry is a complete
+active Engine release, including the actual deployment, source-verification and
+lifecycle evidence digests. The canonical Engine binder verifies its identity;
+the backend remains responsible for validating the actual evidence bytes.
+The combined expected inventory is limited to 32 sources. Duplicate release
+digests or source addresses, including current and historical catalog sources,
+are rejected. Remove a technical entry when moving that same source into the
+public current or historical release configuration.
+
+The committed technical list starts empty. It is read only by deployment checks
+and grants no template availability, public launch version or backend source
+installation. Review identities are not imported into it. Before an additional
+backend source reaches the shared website index, its exact technical binding
+must be reviewed and included in the deployed website checkout. The unchanged
+runtime smoke still rejects any observed source outside those exact bindings.

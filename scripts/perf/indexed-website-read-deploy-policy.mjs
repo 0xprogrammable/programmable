@@ -3,6 +3,7 @@
 import { appendFileSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { engineWire } from "../../contracts/scripts/module-engine/shared.mjs";
 
 import {
   evaluateReadModelDeployPolicy,
@@ -10,6 +11,7 @@ import {
 } from "./read-model-deploy-policy.mjs";
 
 export const INDEXED_WEBSITE_READ_MODE = "indexed-website-read";
+export const MODULE_ENGINE_INDEX_RELEASES_SCHEMA = "programmable.module-engine.index-releases.v1";
 export const INDEXED_WEBSITE_ROUTES = Object.freeze([
   Object.freeze({ chainId: 1, slug: "ethereum", path: "/api/explore/ethereum" }),
   Object.freeze({ chainId: 4663, slug: "robinhood", path: "/api/explore/robinhood" }),
@@ -17,10 +19,26 @@ export const INDEXED_WEBSITE_ROUTES = Object.freeze([
 
 const HASH = /^0x(?!0{64}$)[0-9a-f]{64}$/iu;
 const ADDRESS = /^0x(?!0{40}$)[0-9a-f]{40}$/iu;
+const MAX_MODULE_SOURCES = 32;
+
+function moduleSourceExpectation(release) {
+  const engine = ["module-engine-v1", "module-engine-any-quote-v1"].includes(release.sourceVersion);
+  const sourceAddress = engine
+    ? release.contracts?.host?.address : release.contracts?.launcher?.address;
+  if (release.chainId !== 4663 ||
+    !["module-native-v1", "module-native-v2", "module-engine-v1", "module-engine-any-quote-v1"].includes(release.sourceVersion) ||
+    !ADDRESS.test(sourceAddress ?? "") || !HASH.test(release.releaseDigest ?? "") ||
+    !/^[1-9][0-9]{0,19}$/u.test(release.startBlock ?? "")) {
+    throw new Error("indexed website Robinhood release identity is invalid");
+  }
+  // Authentication versions share the existing Engine index transport.
+  return Object.freeze({ source: engine ? "module-engine-v1" : release.sourceVersion, sourceVersion: release.sourceVersion,
+    sourceAddress: sourceAddress.toLowerCase(), releaseDigest: release.releaseDigest.toLowerCase(), startBlock: release.startBlock });
+}
 
 // Reuse the source identities already reviewed with this checkout. This does
 // not replace the server readers' release, provenance or finality validation.
-export function readIndexedWebsiteSourceExpectations(root = process.cwd()) {
+export async function readIndexedWebsiteSourceExpectations(root = process.cwd()) {
   const json = (path) => JSON.parse(readFileSync(resolve(root, path), "utf8"));
   const catalog = json("config/envio-classic-v4-catalog-release.v1.json");
   const envio = catalog.releaseBinding?.envio;
@@ -35,21 +53,32 @@ export function readIndexedWebsiteSourceExpectations(root = process.cwd()) {
     json("config/module-engine/robinhood.json"),
     ...json("config/module-mode/historical-releases.json").releases.map(({ release }) => release),
     ...json("config/module-engine/historical-releases.json").releases.map(({ release }) => release),
-  ].map((release) => {
-    const engine = ["module-engine-v1", "module-engine-any-quote-v1"].includes(release.sourceVersion);
-    const sourceAddress = engine
-      ? release.contracts?.host?.address : release.contracts?.launcher?.address;
-    if (release.chainId !== 4663 ||
-      !["module-native-v1", "module-native-v2", "module-engine-v1", "module-engine-any-quote-v1"].includes(release.sourceVersion) ||
-      !ADDRESS.test(sourceAddress ?? "") || !HASH.test(release.releaseDigest ?? "") ||
-      !/^[1-9][0-9]{0,19}$/u.test(release.startBlock ?? "")) {
-      throw new Error("indexed website Robinhood release identity is invalid");
+  ].map(moduleSourceExpectation);
+  const indexReleases = json("config/module-engine/index-releases.json");
+  if (!indexReleases || typeof indexReleases !== "object" || Array.isArray(indexReleases) ||
+    Object.keys(indexReleases).sort().join(",") !== "releases,schemaVersion" ||
+    indexReleases.schemaVersion !== MODULE_ENGINE_INDEX_RELEASES_SCHEMA ||
+    !Array.isArray(indexReleases.releases) || indexReleases.releases.length > MAX_MODULE_SOURCES) {
+    throw new Error("indexed website Engine index release configuration is invalid");
+  }
+  if (indexReleases.releases.length) {
+    // Explicit index bindings require the same complete release and evidence fields
+    // as the service collector. They never grant template publication or availability.
+    const { bindActiveModuleEngineRelease } = await engineWire();
+    const digests = new Set(modules.map(source => source.releaseDigest));
+    const addresses = new Set(modules.map(source => source.sourceAddress));
+    for (const value of indexReleases.releases) {
+      const release = bindActiveModuleEngineRelease(value);
+      const source = moduleSourceExpectation(release);
+      if (digests.has(source.releaseDigest) || addresses.has(source.sourceAddress)) {
+        throw new Error("indexed website Engine index release duplicates a configured source");
+      }
+      digests.add(source.releaseDigest);
+      addresses.add(source.sourceAddress);
+      modules.push(source);
     }
-    // The saved index uses one Engine transport. Keep the configured authentication
-    // version distinct; the immutable release digest still binds that exact version.
-    return Object.freeze({ source: engine ? "module-engine-v1" : release.sourceVersion, sourceVersion: release.sourceVersion, sourceAddress: sourceAddress.toLowerCase(),
-      releaseDigest: release.releaseDigest.toLowerCase(), startBlock: release.startBlock });
-  });
+    if (modules.length > MAX_MODULE_SOURCES) throw new Error("indexed website module source inventory exceeds its budget");
+  }
   const robinhood = json("contracts/deployments/robinhood-custom-launch-v1.json");
   const routerAddress = robinhood.contracts?.programmableLaunchStampRouter?.address;
   const startBlock = robinhood.deploymentEvidence?.blockNumber;
@@ -81,7 +110,7 @@ export function evaluateIndexedWebsiteReadDeployPolicy(contents) {
   });
 }
 
-function main() {
+async function main() {
   const args = {};
   const argv = process.argv.slice(2);
   for (let index = 0; index < argv.length; index += 2) {
@@ -100,7 +129,7 @@ function main() {
   );
   const policy = evaluateIndexedWebsiteReadDeployPolicy(readFileSync(resolve(args["env-file"]), "utf8"));
   if (!policy.policyReady) throw new Error(`indexed website policy rejected legacy flags: ${policy.rejectedFlagNames.join(", ")}`);
-  const sourceExpectations = readIndexedWebsiteSourceExpectations();
+  const sourceExpectations = await readIndexedWebsiteSourceExpectations();
   if (args["github-output"]) appendFileSync(resolve(args["github-output"]),
     `mode=${policy.mode}\nruntime_evidence_required=true\npublic_read_authentication=none\n`,
     { encoding: "utf8", mode: 0o600 });
@@ -108,8 +137,8 @@ function main() {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  try { main(); } catch (error) {
+  main().catch(error => {
     process.stderr.write(`${error instanceof Error ? error.message : "indexed website policy failed"}\n`);
     process.exitCode = 1;
-  }
+  });
 }
