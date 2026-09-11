@@ -16,12 +16,14 @@ for (const [index, name] of ["universalRouter", "poolManager", "stateView", "v4Q
   fixtureCode.set(contract.address.toLowerCase(), code);
   contract.runtimeCodeHash = keccak256(code);
 }
-const bundled = await build({ absWorkingDir: root, stdin: { contents: ["types", "route", "discovery.server", "readiness.server"].map(name => `export * from './lib/module-engine/any-quote/${name}'`).join("\n") + "; export { agreedTradeRpcV1 } from './lib/server/custom-launch/routed-trade-rpc-v1'", resolveDir: root },
+const bundled = await build({ absWorkingDir: root, stdin: { contents: ["types", "route", "discovery.server", "readiness.server"].map(name => `export * from './lib/module-engine/any-quote/${name}'`).join("\n") + "; export { agreedTradeRpcV1 } from './lib/server/custom-launch/routed-trade-rpc-v1'; export { quoteModule } from './lib/server/module-engine/any-quote-preparation'", resolveDir: root },
   bundle: true, format: "cjs", platform: "node", packages: "external", write: false,
   plugins: [{ name: "fixture-environment", setup(b) {
     b.onResolve({ filter: /^server-only$/ }, () => ({ path: "empty", namespace: "empty" }));
     b.onLoad({ filter: /.*/, namespace: "empty" }, () => ({ contents: "" }));
     b.onLoad({ filter: /chain-4663\.v1\.json$/ }, () => ({ contents: JSON.stringify(profile), loader: "json" }));
+    // Expose the unchanged private reader only to this test bundle; production exports remain closed.
+    b.onLoad({ filter: /any-quote-preparation\.ts$/ }, async args => ({ contents: `${await readFile(args.path, "utf8")}\nexport { quoteModule };`, loader: "ts" }));
   } }],
 });
 const loaded = { exports: {} };
@@ -39,6 +41,34 @@ const readAbi = parseAbi([
   "function getSlot0(bytes32) view returns (uint160,int24,uint24,uint24)", "function getLiquidity(bytes32) view returns (uint128)",
   "function quoteExactInputSingle(((address currency0,address currency1,uint24 fee,int24 tickSpacing,address hooks) poolKey,bool zeroForOne,uint128 exactAmount,bytes hookData) params) returns (uint256 amountOut,uint256 gasEstimate)",
 ]);
+
+test("module quotes compare exact canonical amounts through both RPCs for buys and sells", async () => {
+  const modulePool = { token: OTHER, quoteAsset: Q, sharedHook: MID,
+    poolId: a.anyQuotePoolIdV1({ currency0: OTHER, currency1: Q, fee: 0, tickSpacing: 200, hooks: MID }) };
+  const expected = (1n << 100n) + 7n, calls = [];
+  const rpcs = [0, 1].map(provider => async (method, params) => {
+    calls.push({ provider, method, params });
+    assert.deepEqual(params[1], { blockHash: HASH, requireCanonical: true });
+    if (method === "eth_getCode") return fixtureCode.get(a.ANY_QUOTE_INFRASTRUCTURE.v4Quoter.toLowerCase());
+    assert.equal(method, "eth_call");
+    return encodeFunctionResult({ abi: readAbi, functionName: "quoteExactInputSingle", result: [expected, 100_000n] });
+  });
+  for (const buy of [true, false]) assert.equal(await a.quoteModule(modulePool, buy, 1n, checkpoint, { options: { rpcs } }), expected);
+  assert.equal(calls.length, 8);
+  assert.equal(calls.filter(call => call.method === "eth_call" && call.provider === 0).length, 2);
+  assert.equal(calls.filter(call => call.method === "eth_call" && call.provider === 1).length, 2);
+});
+
+test("module quotes retain provider disagreement, positive uint128 and runtime checks", async () => {
+  const modulePool = { token: OTHER, quoteAsset: Q, sharedHook: MID,
+    poolId: a.anyQuotePoolIdV1({ currency0: OTHER, currency1: Q, fee: 0, tickSpacing: 200, hooks: MID }) };
+  const rpcPair = (amounts, runtime) => [0, 1].map(provider => async method => method === "eth_getCode"
+    ? runtime ?? fixtureCode.get(a.ANY_QUOTE_INFRASTRUCTURE.v4Quoter.toLowerCase())
+    : encodeFunctionResult({ abi: readAbi, functionName: "quoteExactInputSingle", result: [amounts[provider], 100_000n] }));
+  await assert.rejects(a.quoteModule(modulePool, true, 1n, checkpoint, { options: { rpcs: rpcPair([2n ** 100n, 2n ** 100n + 1n]) } }), error => error.code === "TRADE_PROVIDER_DISAGREEMENT");
+  for (const amount of [0n, 1n << 128n]) await assert.rejects(a.quoteModule(modulePool, true, 1n, checkpoint, { options: { rpcs: rpcPair([amount, amount]) } }), error => error.code === "TRADE_ANALYSIS_PENDING");
+  await assert.rejects(a.quoteModule(modulePool, true, 1n, checkpoint, { options: { rpcs: rpcPair([1n, 1n], "0x00") } }), /QUOTER_RUNTIME_MISMATCH/);
+});
 function pool(x = ZERO, y = Q, { fee = 0, liquidity = 10n ** 24n, hook = ZERO, block = 10_000n } = {}) {
   const key = { currency0: BigInt(x) < BigInt(y) ? x : y, currency1: BigInt(x) < BigInt(y) ? y : x, fee, tickSpacing: 60, hooks: hook };
   return { key, poolId: a.anyQuotePoolIdV1(key), liquidity, block };
