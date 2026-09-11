@@ -106,7 +106,7 @@ describe("native ETH protected review cannot reuse quote-fee approval", () => {
   const cases = frozen.artifact.cases as unknown as readonly ModuleEngineCompiledCaseV1[];
   function resultsFixture(): ModuleEngineTestResultV1 {
     return { ...structuredClone(frozen.artifact.tests) as ModuleEngineTestResultV1,
-      sharedQuoteEthChecks: cases.map(c => ({ id: c.id, ...Object.fromEntries(MODULE_ENGINE_SHARED_QUOTE_ETH_CHECKS_V1.map(key => [key, c.expectedDeployment === "success" ? true : null])) })) as NonNullable<ModuleEngineTestResultV1["sharedQuoteEthChecks"]> };
+      sharedQuoteEthChecks: cases.map(c => ({ id: c.id, ...Object.fromEntries(MODULE_ENGINE_SHARED_QUOTE_ETH_CHECKS_V1.map(key => [key, c.expectedDeployment === "success" ? true : null])) as Record<typeof MODULE_ENGINE_SHARED_QUOTE_ETH_CHECKS_V1[number], boolean | null> })) };
   }
   const verify = (results: ModuleEngineTestResultV1, environment = MODULE_ENGINE_SHARED_QUOTE_ETH_ENVIRONMENT_V1) => validateModuleEngineTestResultsV1(results, subject.requestDigest, frozen.artifact.planDigest as `0x${string}`, cases, environment);
   it("requires the exact native environment and all native checks while preserving the eight-word configuration", () => {
