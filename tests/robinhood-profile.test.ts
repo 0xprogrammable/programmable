@@ -65,9 +65,9 @@ describe("Robinhood creator launch history", () => {
     expect(result.page.totalItems).toBe(1);
   });
 
-  it("preserves hidden creator history and does not pin the main token in a profile", () => {
+  it.each([CLEAN_ROOM, "0xb36271399c031ce270e0d1eed5f26dcd08367119"])("preserves the hidden %s creator history and does not pin the main token in a profile", (tokenAddress) => {
     const main = launch(1, { tokenAddress: MAIN_TOKEN });
-    const cleanRoom = launch(2, { tokenAddress: CLEAN_ROOM, name: null, symbol: null });
+    const cleanRoom = launch(2, { tokenAddress, name: null, symbol: null });
     const recent = launch(3);
     const saved = snapshot([main, cleanRoom, recent]);
     expect(profileLaunchList(saved, OWNER).items).toEqual([recent, cleanRoom, main]);

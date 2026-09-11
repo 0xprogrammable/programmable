@@ -658,9 +658,12 @@ describe("Robinhood website launch list", () => {
     expect(result.page.totalItems).toBe(21);
   });
 
-  it("hides only the exact Clean Room address without removing canonical records or inventing a pinned token", () => {
-    const hidden = launch(1, 100, { tokenAddress: "0x15fca474b23cafe775120b1fafbcff0e7a827af2" });
-    const other = launch(2, 101, { name: "Robinhood Clean Room", symbol: "RHCR" });
+  it.each([
+    { tokenAddress: "0x15fca474b23cafe775120b1fafbcff0e7a827af2", name: "Robinhood Clean Room", symbol: "RHCR" },
+    { tokenAddress: "0xb36271399c031ce270e0d1eed5f26dcd08367119", name: "Any Quote LP Internal Test", symbol: "AQLPTEST" },
+  ])("hides only the exact $symbol canary without removing canonical records or other matching metadata", ({ tokenAddress, name, symbol }) => {
+    const hidden = launch(1, 100, { tokenAddress, name, symbol });
+    const other = launch(2, 101, { name, symbol });
     const saved = snapshot([hidden, other]);
     expect(launchList(saved, 1, "", NOW).items).toEqual([other]);
     expect(saved.items).toHaveLength(2);
