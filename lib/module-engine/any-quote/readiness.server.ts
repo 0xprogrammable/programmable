@@ -104,7 +104,7 @@ async function context(options: AnyQuoteReadinessOptionsV1) {
   ]);
   let discovery: ReturnType<typeof createAnyQuoteV4InitializeDiscoveryV1> | undefined;
   return { now, checkpoint, block, code, call, pin,
-    discovery: () => discovery ??= createAnyQuoteV4InitializeDiscoveryV1({ checkpoint, agreed }) };
+    discovery: () => discovery ??= createAnyQuoteV4InitializeDiscoveryV1({ checkpoint, rpcs }) };
 }
 type Context = Awaited<ReturnType<typeof context>>;
 
@@ -228,7 +228,7 @@ async function discoverNativeV4(input: DiscoveryInput, ctx: Context) {
     ? [anyQuoteV4CandidateHopV1(first, ANY_QUOTE_NATIVE), anyQuoteV4CandidateHopV1(pool, intermediate)]
     : [anyQuoteV4CandidateHopV1(pool, quote), anyQuoteV4CandidateHopV1(first, intermediate)]));
   const routed = await chooseNativeCandidate(paths, input, ctx, "uniswap-v4-initialize");
-  if (!routed) throw new AnyQuoteErrorV1("NATIVE_V4_EXECUTABLE_ROUTE_UNAVAILABLE");
+  if (!routed) throw new AnyQuoteErrorV1(discovery.hasIncompleteCoverage() ? "V4_DISCOVERY_PROVIDER_UNAVAILABLE" : "NATIVE_V4_EXECUTABLE_ROUTE_UNAVAILABLE");
   return routed;
 }
 
