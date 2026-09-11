@@ -386,6 +386,14 @@ paths = [
 regexes = ['''(?i)^0x15fca474b23cafe775120b1fafbcff0e7a827af2$''']
 
 [[allowlists]]
+description = "Robinhood visibility test pins the public Any Quote release canary token address"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "match"
+paths = ['''^tests/robinhood-website-index\.test\.ts$''']
+regexes = ['''^tokenAddress:\s*"0xb36271399c031ce270e0d1eed5f26dcd08367119"$''']
+
+[[allowlists]]
 description = "Attested Robinhood 4.1 clean-room proof pins its public predicted token address"
 targetRules = ["generic-api-key"]
 condition = "AND"

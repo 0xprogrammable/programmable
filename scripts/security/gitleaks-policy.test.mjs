@@ -14,6 +14,8 @@ const reviewAsset = "0xe7f1725e7734ce288f8367e1bb143e90bb3f0512";
 const material = createHash("sha256").update("gitleaks negative control only").digest("hex");
 const catalog = "config/module-engine/catalog.json";
 const anyQuoteIndexFixture = "tests/fixtures/module-engine-any-quote-index.json";
+const visibilityTest = "tests/robinhood-website-index.test.ts";
+const anyQuoteCanary = "0xb36271399c031ce270e0d1eed5f26dcd08367119";
 // Public synthetic index evidence includes both sides of the final salt-domain correction.
 const anyQuoteAddresses = [
   "0xd803cd624d58e1f31d1043f630953e6dbdf6a128",
@@ -43,13 +45,14 @@ before(() => {
   assert.equal(version.stdout.trim(), "8.30.1");
 });
 
-function scan(t, files) {
+function scan(t, files, { raw = false } = {}) {
   const root = mkdtempSync(join(tmpdir(), "programmable-gitleaks-policy-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   for (const [path, value] of Object.entries(files)) {
     const target = join(root, path);
     mkdirSync(dirname(target), { recursive: true });
-    writeFileSync(target, `${JSON.stringify(value)}\n`, { mode: 0o600 });
+    if (raw) assert.equal(typeof value, "string");
+    writeFileSync(target, `${raw ? value : JSON.stringify(value)}\n`, { mode: 0o600 });
   }
   for (const args of [["init", "--quiet"], ["add", "--force", "--", ...Object.keys(files)]]) {
     const result = spawnSync("git", args, { cwd: root, encoding: "utf8" });
@@ -151,5 +154,37 @@ test("keeps every Any Quote public fixture field detectable in adjacent and unli
       "config/module-engine/any-quote-index.json": fields,
     };
     assertFiles(scan(t, files), Object.keys(files));
+  }
+});
+
+test("accepts the exact public Any Quote canary tokenAddress field in its visibility test", (t) => {
+  assert.deepEqual(scan(t, {
+    [visibilityTest]: `const launch = { tokenAddress: "${anyQuoteCanary}", name: "Any Quote LP Internal Test", symbol: "AQLPTEST" };`,
+  }, { raw: true }), []);
+});
+
+test("keeps the public Any Quote canary detectable under a neighbouring credential field", (t) => {
+  assertFiles(scan(t, {
+    [visibilityTest]: `const launch = { tokenAddress: "${anyQuoteCanary}", apiKey: "${anyQuoteCanary}" };`,
+  }, { raw: true }), [visibilityTest]);
+});
+
+test("detects a changed tokenAddress value in the canary visibility test", (t) => {
+  assertFiles(scan(t, {
+    [visibilityTest]: `const launch = { tokenAddress: "0x${material.slice(0, 40)}" };`,
+  }, { raw: true }), [visibilityTest]);
+});
+
+test("keeps the exact canary field detectable in neighbouring and prefixed test paths", (t) => {
+  const paths = ["tests/robinhood-website-index-next.test.ts", `${visibilityTest}.backup`, `fixtures/${visibilityTest}`];
+  assertFiles(scan(t, Object.fromEntries(paths.map(path => [path,
+    `const launch = { tokenAddress: "${anyQuoteCanary}" };`,
+  ])), { raw: true }), paths);
+});
+
+test("detects another credential before or after the allowed canary field on the same line", (t) => {
+  const publicField = `tokenAddress: "${anyQuoteCanary}"`, credential = `apiKey: "${material}"`;
+  for (const fields of [`${publicField}, ${credential}`, `${credential}, ${publicField}`]) {
+    assertFiles(scan(t, { [visibilityTest]: `const launch = { ${fields} };` }, { raw: true }), [visibilityTest]);
   }
 });
