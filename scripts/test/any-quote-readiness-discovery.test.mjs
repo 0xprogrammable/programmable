@@ -208,6 +208,87 @@ test("arbitrary quote readiness works without a Trading API key and independentl
   assert.ok(quotes.every(q => q.read.args[0].poolKey.fee === 0), "Empty pool is never quoted");
 });
 
+const ONE_DOLLAR_ETH = 10n ** 18n / 2500n;
+function quoteWithDepth(thinPools) {
+  return ({ method, params }) => {
+    if (method !== "eth_call") return;
+    const read = decodeFunctionData({ abi: readAbi, data: params[0].data });
+    if (read.functionName !== "quoteExactInputSingle") return;
+    const quote = read.args[0], thin = thinPools.some(p => p.poolId === a.anyQuotePoolIdV1(quote.poolKey));
+    const scale = thin ? (quote.exactAmount <= ONE_DOLLAR_ETH ? 100n : 90n) : 99n;
+    return encodeFunctionResult({ abi: readAbi, functionName: read.functionName, result: [quote.exactAmount * scale / 100n, 100_000n] });
+  };
+}
+
+test("a thin pool with the best small quote cannot displace a depth-qualified buy or sell route", async () => {
+  const thin = pool(), deep = pool(ZERO, Q, { fee: 500 });
+  const f = fixture([thin, deep], { override: quoteWithDepth([thin]) });
+  const result = await a.assessAnyQuoteAssetV1({ quoteAsset: Q }, f.options);
+  assert.equal(result.status, "compatible", JSON.stringify(result));
+  for (const side of ["buy", "sell"]) assert.equal(result.routes[side].hops[0].poolId, deep.poolId);
+  assert.equal(result.price.source, "qualified-amm");
+  const quotes = f.calls.filter(c => c.method === "eth_call")
+    .filter(c => decodeFunctionData({ abi: readAbi, data: c.params[0].data }).functionName === "quoteExactInputSingle");
+  const unique = new Set(quotes.map(c => `${c.provider}:${JSON.stringify(c.params)}`));
+  assert.equal(unique.size, quotes.length, "Final evidence reuses the same checkpoint-local depth quotes");
+});
+
+test("depth qualification retains the concrete policy failure when every candidate is too thin", async () => {
+  const pools = [pool(), pool(ZERO, Q, { fee: 500 })];
+  const f = fixture(pools, { override: quoteWithDepth(pools) });
+  const result = await a.assessAnyQuoteAssetV1({ quoteAsset: Q }, f.options);
+  assert.equal(result.status, "inconclusive"); assert.equal(result.retryable, true);
+  assert.equal(result.code, "MARKET_PRICE_IMPACT_TOO_HIGH");
+});
+
+test("direct depth failures allow an independently qualified intermediate route", async () => {
+  const thin = pool(), f = fixture([thin, pool(ZERO, MID), pool(MID, Q)], { override: quoteWithDepth([thin]) });
+  const result = await a.assessAnyQuoteAssetV1({ quoteAsset: Q }, f.options);
+  assert.equal(result.status, "compatible", JSON.stringify(result));
+  assert.deepEqual(result.routes.buy.hops.map(h => h.tokenOut.toLowerCase()), [MID, Q].map(x => x.toLowerCase()));
+  assert.deepEqual(result.routes.sell.hops.map(h => h.tokenOut.toLowerCase()), [MID, ZERO].map(x => x.toLowerCase()));
+});
+
+test("provider disagreement and malformed initial or depth quotes cannot fall back to a healthy pool", async () => {
+  const thin = pool(), deep = pool(ZERO, Q, { fee: 500 });
+  for (const stage of ["initial", "depth"]) for (const corruption of ["disagreement", "non-hex", "short-abi"]) {
+    const f = fixture([thin, deep], { override: info => {
+      if (info.method !== "eth_call") return;
+      const read = decodeFunctionData({ abi: readAbi, data: info.params[0].data });
+      if (read.functionName !== "quoteExactInputSingle") return;
+      const quote = read.args[0], targeted = quote.poolKey.fee === 0
+        && (stage === "initial" ? quote.exactAmount <= ONE_DOLLAR_ETH : quote.exactAmount > ONE_DOLLAR_ETH);
+      if (targeted && (info.provider === 1 || corruption === "short-abi")) {
+        if (corruption === "non-hex") return "malformed RPC bytes";
+        if (corruption === "short-abi") return "0x00";
+        return encodeFunctionResult({ abi: readAbi, functionName: read.functionName, result: [quote.exactAmount * 2n, 100_000n] });
+      }
+      return quoteWithDepth([thin])(info);
+    } });
+    const result = await a.assessAnyQuoteAssetV1({ quoteAsset: Q }, f.options);
+    assert.equal(result.status, "inconclusive", `${stage}/${corruption}: ${JSON.stringify(result)}`);
+    assert.equal(result.retryable, true);
+    assert.equal(result.code, corruption === "disagreement" ? "TRADE_PROVIDER_DISAGREEMENT" : "RPC_RESPONSE_INVALID");
+  }
+});
+
+test("authoritative reference-price checks qualify a candidate before its better small quote wins", async () => {
+  const asset = a.ANY_QUOTE_USDG, offReference = pool(ZERO, asset), matching = pool(ZERO, asset, { fee: 500 });
+  const f = fixture([offReference, matching], { override: info => {
+    if (info.method !== "eth_call") return;
+    const read = decodeFunctionData({ abi: readAbi, data: info.params[0].data });
+    if (read.functionName === "decimals" && info.params[0].to.toLowerCase() === "0x61b7e5650328764b076a108eff5fa7282a1b9ad2")
+      return encodeFunctionResult({ abi: readAbi, functionName: read.functionName, result: 8 });
+    if (read.functionName === "getSlot0" && read.args[0] === offReference.poolId)
+      return encodeFunctionResult({ abi: readAbi, functionName: read.functionName, result: [2n << 96n, 0, 0, 0] });
+    return quoteWithDepth([offReference])(info);
+  } });
+  const result = await a.assessAnyQuoteAssetV1({ quoteAsset: asset }, f.options);
+  assert.equal(result.status, "compatible", JSON.stringify(result));
+  assert.equal(result.routes.buy.hops[0].poolId, matching.poolId);
+  assert.equal(result.price.source, "chainlink");
+});
+
 test("discovery composes a native path through one independently verified intermediate", async () => {
   const f = fixture([pool(ZERO, MID), pool(MID, Q)]);
   const result = await a.assessAnyQuoteAssetV1({ quoteAsset: Q }, f.options);
