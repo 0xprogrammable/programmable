@@ -27,11 +27,15 @@ function recovery(transactionHash) {
 async function load() {
   state = await api('/state'); $('stage').textContent = `Deployment ${state.stepIndex + 1} of ${state.totalSteps}`; $('title').textContent = names[state.role] || state.role;
   for (const [id, value] of Object.entries({ target: state.target, recipient: state.transactionRecipient, commit: state.sourceCommit, digest: state.planDigest, 'operator-commit': state.uiCheck ? 'Local preview; source authority not asserted' : state.operatorSourceCommit, initcode: state.initcodeHash, runtime: state.runtime.runtimeCodeHash })) $(id).textContent = value;
-  if (state.sourceVersion === 'module-engine-any-quote-v1' && state.planSchema === 'programmable.module-engine-any-quote-deployment-plan.v1') {
-    $('title').textContent = state.role === 'nativeRouteGuard' ? 'Any Quote route guard' : 'Any Quote host and shared hook';
+  const nativeFees = state.sourceVersion === 'module-engine-any-quote-eth-v1' && state.planSchema === 'programmable.module-engine-any-quote-eth-deployment-plan.v1';
+  if (nativeFees || state.sourceVersion === 'module-engine-any-quote-v1' && state.planSchema === 'programmable.module-engine-any-quote-deployment-plan.v1') {
+    $('title').textContent = nativeFees ? state.role === 'sharedHook' ? 'Any Quote ETH fee hook and ledger' : 'Any Quote ETH fee host'
+      : state.role === 'nativeRouteGuard' ? 'Any Quote route guard' : 'Any Quote host and shared hook';
     $('recipient').textContent = state.transactionRecipient ?? `Contract creation at wallet nonce ${state.reservedNonce}`;
     $('minimum-row').hidden = true;
-    $('economics-summary').textContent = 'Every Any Quote pool credits the complete fixed 30 bps to the platform recipient in its quote asset. Separate creator fees are fixed at launch from 0 to 1,000 bps. The pool LP fee is zero. External conversion fees and gas are separate.';
+    $('economics-summary').textContent = nativeFees
+      ? 'Each trade collects the fixed 30 bps platform fee and any creator fee in the pool pair token, converts them immediately and credits the received ETH. Creator rates are fixed at launch from 0 to 1,000 bps. Pool LP fee is zero. External conversion costs and gas are separate.'
+      : 'Every Any Quote pool credits the complete fixed 30 bps to the platform recipient in its quote asset. Separate creator fees are fixed at launch from 0 to 1,000 bps. The pool LP fee is zero. External conversion fees and gas are separate.';
     for (const [label, wallet] of [['Deployer · pays gas', state.owner], ['Review authority', state.parameters.reviewAuthority], ['30 bps recipient', state.economics.platformRecipient], ['Future reward recipient admin', state.economics.rewardAdmin]]) row($('wallets'), label, wallet);
     $('quote-dependencies').hidden = false;
     for (const [role, pin] of Object.entries(state.anyQuoteInfrastructure)) {

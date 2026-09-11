@@ -12,7 +12,7 @@ export function assertContinuationPlan(original, current) {
   const comparable = plan => {
     const body = Object.fromEntries(Object.entries(plan).filter(([key]) => !['sourceCommit', 'sourceTree', 'buildDigest', 'planDigest'].includes(key)));
     const inheritedBasisRequired = ['programmable.module-mode-native-v2-deployment-plan.v1', 'programmable.module-engine-deployment-plan.v1',
-      'programmable.module-engine-any-quote-deployment-plan.v1'].includes(plan.schemaVersion);
+      'programmable.module-engine-any-quote-deployment-plan.v1', 'programmable.module-engine-any-quote-eth-deployment-plan.v1'].includes(plan.schemaVersion);
     need(!inheritedBasisRequired || plan.basis, 'Continuation requires the inherited source basis');
     if (plan.basis !== undefined) {
       const { basisDigest, ...basis } = plan.basis;

@@ -134,7 +134,7 @@ export function validatePublished(target, value, recompilation) {
     plan: { sourceCommit: target.sourceCommit, contracts: { [target.role]: { address: target.address, runtime: target.runtime, runtimeCodeHash: keccak256(target.runtime) } } },
     build: { artifacts: { [target.role]: artifact }, standardInputs: { [target.role]: input } },
     constructorArguments: target.constructorArguments, creation: target.creation, recompilation }, aligned.value);
-  return { ...result, ...(['module-engine-v1', 'module-engine-any-quote-v1'].includes(target.sourceProfile) ? { sourceCommit: undefined, releaseSourceCommit: target.sourceCommit,
+  return { ...result, ...(['module-engine-v1', 'module-engine-any-quote-v1', 'module-engine-any-quote-eth-v1'].includes(target.sourceProfile) ? { sourceCommit: undefined, releaseSourceCommit: target.sourceCommit,
     providerClassification: 'NO_METADATA_HASH_PROVIDER_MATCH' } : {}),
     sourceUrl: `${SOURCIFY_BASE}/v2/contract/4663/${target.address}`, comparison: result.independentByteComparison,
     ...(Object.keys(aligned.bindings).length ? { providerImmutableIdRelabelling: aligned.bindings } : {}),
@@ -461,13 +461,25 @@ async function bindEngineLaunch(entry, log, tokenBuild, context) {
     const fields = { poolId: 'bytes32', initialTick: 'int24', tickLower: 'int24', tickUpper: 'int24', lockedLiquidity: 'uint128', lockedTokenDust: 'uint256', quoteDecimals: 'uint8' };
     const values = await readCalls(Object.entries(fields).map(([name, type]) => call(a.engine, `function ${name}() view returns (${type})`)), request, context.stateBlock);
     const state = Object.fromEntries(Object.keys(fields).map((name, i) => [name, values[i]]));
+    if (identity.nativeFeeRoute) {
+      const routeAbi = wire.anyQuoteNativeFeeRouteAbi, sharedHook = release.contracts.sharedHook.address;
+      const getter = { abi: routeAbi, method: 'eth_call', params: [{ to: sharedHook,
+        data: encodeFunctionData({ abi: routeAbi, functionName: 'nativeFeeRouteHash', args: [state.poolId] }) }, context.stateBlock] };
+      [state.nativeFeeRouteHash] = await readCalls([getter], request);
+      const bound = receiptEvent(receipt, routeAbi, sharedHook, 'NativeFeeRouteBound', state.poolId);
+      const initialized = receiptEvent(receipt, parseAbi(['event Initialize(bytes32 indexed id,address indexed currency0,address indexed currency1,uint24 fee,int24 tickSpacing,address hooks,uint160 sqrtPriceX96,int24 tick)']),
+        release.contracts.poolManager.address, 'Initialize', state.poolId);
+      need(same(bound.args.launchId, a.launchId) && same(bound.args.routeHash, identity.nativeFeeRoute.routeHash)
+        && BigInt(bound.log.logIndex) < BigInt(initialized.log.logIndex) && BigInt(initialized.log.logIndex) < BigInt(log.logIndex),
+      'Native fee route must bind before pool initialization and launch');
+    }
     const resourcesHash = engineResourceCommitment(identity, state);
     const bindings = { sharedHook: release.contracts.sharedHook.address, poolManager: release.contracts.poolManager.address };
     const actual = await readCalls(Object.keys(bindings).map(name => call(a.engine, `function ${name}() view returns (address)`)), request, context.stateBlock);
     for (const [i, name] of Object.keys(bindings).entries()) need(same(actual[i], bindings[name]), `Any Quote engine ${name} differs`);
     engine.resources = { profile: 'quote-shared-v1', resourcesHash, poolId: state.poolId, sharedHook: bindings.sharedHook,
       tickLower: state.tickLower, tickUpper: state.tickUpper, lockedLiquidity: String(state.lockedLiquidity), lockedTokenDust: String(state.lockedTokenDust),
-      quoteDecimals: state.quoteDecimals, additionalSourceTargets: [] };
+      quoteDecimals: state.quoteDecimals, ...(identity.nativeFeeRoute ? { nativeFeeRouteHash: state.nativeFeeRouteHash } : {}), additionalSourceTargets: [] };
     return [token, engine];
   }
   if (identity.manifest.catalogDefinition.interface === 'quote-v1') return [token, engine, await quoteResources(identity, release, log, receipt, creation, context)];
@@ -529,7 +541,7 @@ export async function releaseCode(release, block, context) {
     need(values[i] !== '0x' && same(keccak256(values[i]), release.contracts[role].runtimeCodeHash), `Released ${role} code hash differs at scan block`);
     return [role, values[i]];
   }));
-  const engine = ['module-engine-v1', 'module-engine-any-quote-v1'].includes(release.sourceVersion);
+  const engine = ['module-engine-v1', 'module-engine-any-quote-v1', 'module-engine-any-quote-eth-v1'].includes(release.sourceVersion);
   const legacy = release.sourceVersion === 'module-native-v1';
   const [version] = await readCalls([call(release.contracts[engine ? 'host' : 'launcher'].address,
     engine ? 'function SOURCE_VERSION() view returns (bytes32)' : legacy ? 'function launchIdentityVersion() view returns (uint256)'
