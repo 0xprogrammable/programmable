@@ -340,11 +340,7 @@ contract ModuleEngineAnyQuoteEthHostV1 is ReentrancyGuardTransient, IModuleEngin
         if (IERC20(result.token).balanceOf(result.engine) != TOKEN_SUPPLY) revert InvalidToken();
         result.resourcesHash = abi.decode(
             ModuleEngineCallsV1.invoke(
-                result.engine,
-                0,
-                revision.executionGas,
-                abi.encodeCall(IModuleEngineV1.initialize, (bytes(""))),
-                32
+                result.engine, 0, revision.executionGas, abi.encodeCall(IModuleEngineV1.initialize, (bytes(""))), 32
             ),
             (bytes32)
         );
@@ -381,10 +377,7 @@ contract ModuleEngineAnyQuoteEthHostV1 is ReentrancyGuardTransient, IModuleEngin
 
     function _validateLaunch(LaunchParameters calldata p, T.Revision storage revision) private view {
         if (!revision.enabled) revert UnavailableRevision();
-        if (
-            p.configuration.length != 256 || p.launchData.length == 0
-                || p.launchData.length > MAX_CONFIGURATION_BYTES
-        ) revert InvalidQuoteInfrastructure();
+        if (p.configuration.length != 256 || p.launchData.length == 0 || p.launchData.length > MAX_CONFIGURATION_BYTES) revert InvalidQuoteInfrastructure();
         // The hook validates and binds the canonical route envelope. Its exact bytes remain
         // in planHash and EngineLaunchParametersBound; the existing LP receives no launch data.
         A.Configuration memory configuration = abi.decode(p.configuration, (A.Configuration));
@@ -393,9 +386,9 @@ contract ModuleEngineAnyQuoteEthHostV1 is ReentrancyGuardTransient, IModuleEngin
                 || configuration.poolManagerCodeHash != quotePoolManagerCodeHash
                 || address(quotePoolManager).codehash != quotePoolManagerCodeHash
                 || configuration.sharedHook != address(sharedHook) || configuration.quoteAsset != p.quoteAsset
-                || address(sharedHook).codehash != sharedHookCodeHash
-                || p.quoteAsset == address(quotePoolManager) || p.quoteAsset == address(this)
-                || p.quoteAsset == address(sharedHook) || p.quoteAsset == address(ledger)
+                || address(sharedHook).codehash != sharedHookCodeHash || p.quoteAsset == address(quotePoolManager)
+                || p.quoteAsset == address(this) || p.quoteAsset == address(sharedHook)
+                || p.quoteAsset == address(ledger)
                 || configuration.initialTick <= TickMath.minUsableTick(A.TICK_SPACING)
                 || configuration.initialTick >= TickMath.maxUsableTick(A.TICK_SPACING)
                 || configuration.initialTick % A.TICK_SPACING != 0 || configuration.validUntil <= block.timestamp
