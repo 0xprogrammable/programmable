@@ -412,6 +412,7 @@ condition = "AND"
 regexTarget = "match"
 paths = [
   '''^config/module-engine/robinhood\.json$''',
+  '''^config/module-engine/index-releases\.json$''',
   '''^config/module-engine/catalog\.json$''',
   '''^public/developers/modules/0x81185e910dec1032df4bd027f8139f524606f628c0a63dbae62c69bb86e470da/manifest\.json$''',
   '''^public/developers/modules/0x616f4584f5ec576a88bac5b6d5ee1ae841713f02129ab71a9b47e7e900312b2f/manifest\.json$''',
