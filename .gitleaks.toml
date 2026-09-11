@@ -11,6 +11,7 @@ paths = [
   '''^config/module-mode/historical-releases\.json$''',
   '''^config/module-mode/review-release\.json$''',
   '''^config/module-engine/review-release\.json$''',
+  '''^contracts/scripts/module-engine/any-quote-eth-basis\.mjs$''',
 ]
 regexes = ['''^\s*"tokenCreationCodeHash": "0x445809d9f7a34e959de4a96dec1e1beddfb265755bf28c57c42744adea1128ef",\s*$''']
 
@@ -431,7 +432,10 @@ description = "Synthetic Any Quote index evidence pins exact public CREATE2 toke
 targetRules = ["generic-api-key"]
 condition = "AND"
 regexTarget = "match"
-paths = ['''^tests/fixtures/module-engine-any-quote-index\.json$''']
+paths = [
+  '''^tests/fixtures/module-engine-any-quote-index\.json$''',
+  '''^tests/fixtures/module-engine-any-quote-eth-index\.json$''',
+]
 regexes = [
   '''^token":\s*"0xd803cd624d58e1f31d1043f630953e6dbdf6a128"$''',
   '''^primaryToken":\s*"0xd803cd624d58e1f31d1043f630953e6dbdf6a128"$''',

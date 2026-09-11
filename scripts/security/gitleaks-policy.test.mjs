@@ -13,7 +13,11 @@ const creationHash = "0x445809d9f7a34e959de4a96dec1e1beddfb265755bf28c57c42744ad
 const reviewAsset = "0xe7f1725e7734ce288f8367e1bb143e90bb3f0512";
 const material = createHash("sha256").update("gitleaks negative control only").digest("hex");
 const catalog = "config/module-engine/catalog.json";
-const anyQuoteIndexFixture = "tests/fixtures/module-engine-any-quote-index.json";
+const anyQuoteIndexFixtures = [
+  "tests/fixtures/module-engine-any-quote-index.json",
+  "tests/fixtures/module-engine-any-quote-eth-index.json",
+];
+const anyQuoteEthBasis = "contracts/scripts/module-engine/any-quote-eth-basis.mjs";
 const visibilityTest = "tests/robinhood-website-index.test.ts";
 const anyQuoteCanary = "0xb36271399c031ce270e0d1eed5f26dcd08367119";
 // Public synthetic index evidence includes both sides of the final salt-domain correction.
@@ -122,19 +126,21 @@ test("keeps public values detectable in adjacent or unlisted paths", (t) => {
 });
 
 test("accepts exact current and historical public Any Quote index fixture fields", (t) => {
-  assert.deepEqual(scan(t, { [anyQuoteIndexFixture]: anyQuotePublicFields }), []);
+  assert.deepEqual(scan(t, Object.fromEntries(anyQuoteIndexFixtures.map((path) => [path, anyQuotePublicFields]))), []);
 });
 
 test("detects a credential beside all allowed Any Quote fields on the same JSON line", (t) => {
-  assertFiles(scan(t, {
-    [anyQuoteIndexFixture]: { evidence: anyQuotePublicFields, apiKey: material },
-  }), [anyQuoteIndexFixture]);
+  assertFiles(scan(t, Object.fromEntries(anyQuoteIndexFixtures.map((path) => [path, {
+    evidence: anyQuotePublicFields, apiKey: material,
+  }]))), anyQuoteIndexFixtures);
 });
 
 test("keeps each exact Any Quote public value detectable under a credential field", (t) => {
   for (const fields of anyQuotePublicFields) {
     const value = Object.values(fields)[0];
-    assertFiles(scan(t, { [anyQuoteIndexFixture]: { ...fields, apiKey: value } }), [anyQuoteIndexFixture]);
+    assertFiles(scan(t, Object.fromEntries(anyQuoteIndexFixtures.map((path) => [path, {
+      ...fields, apiKey: value,
+    }]))), anyQuoteIndexFixtures);
   }
 });
 
@@ -142,19 +148,56 @@ test("detects replacement values under each allowed Any Quote field name", (t) =
   for (const fields of anyQuotePublicFields) {
     const [field, value] = Object.entries(fields)[0];
     const replacement = `0x${material.slice(0, value.length - 2)}`;
-    assertFiles(scan(t, { [anyQuoteIndexFixture]: { [field]: replacement } }), [anyQuoteIndexFixture]);
+    assertFiles(scan(t, Object.fromEntries(anyQuoteIndexFixtures.map((path) => [path, {
+      [field]: replacement,
+    }]))), anyQuoteIndexFixtures);
   }
 });
 
 test("keeps every Any Quote public fixture field detectable in adjacent and unlisted paths", (t) => {
   for (const fields of anyQuotePublicFields) {
     const files = {
-      "tests/fixtures/module-engine-any-quote-index-next.json": fields,
-      [`${anyQuoteIndexFixture}.backup`]: fields,
+      ...Object.fromEntries(anyQuoteIndexFixtures.flatMap((path) => [
+        [path.replace(".json", "-next.json"), fields],
+        [`${path}.backup`, fields],
+      ])),
       "config/module-engine/any-quote-index.json": fields,
     };
     assertFiles(scan(t, files), Object.keys(files));
   }
+});
+
+test("accepts only the exact public creation commitment line in the native deployment basis", (t) => {
+  assert.deepEqual(scan(t, {
+    [anyQuoteEthBasis]: `  "tokenCreationCodeHash": "${creationHash}",`,
+  }, { raw: true }), []);
+});
+
+test("detects a credential beside the native deployment basis commitment", (t) => {
+  assertFiles(scan(t, {
+    [anyQuoteEthBasis]: `  "tokenCreationCodeHash": "${creationHash}", "apiKey": "${material}"`,
+  }, { raw: true }), [anyQuoteEthBasis], 2);
+});
+
+test("keeps the exact basis commitment detectable under a credential field", (t) => {
+  assertFiles(scan(t, {
+    [anyQuoteEthBasis]: `  "apiKey": "${creationHash}",`,
+  }, { raw: true }), [anyQuoteEthBasis]);
+});
+
+test("detects a replacement creation commitment in the native deployment basis", (t) => {
+  assertFiles(scan(t, {
+    [anyQuoteEthBasis]: `  "tokenCreationCodeHash": "0x${material}",`,
+  }, { raw: true }), [anyQuoteEthBasis]);
+});
+
+test("keeps the basis commitment detectable in adjacent and unlisted paths", (t) => {
+  const files = Object.fromEntries([
+    anyQuoteEthBasis.replace(".mjs", "-next.mjs"),
+    `${anyQuoteEthBasis}.backup`,
+    "contracts/scripts/module-engine/unreviewed-basis.mjs",
+  ].map((path) => [path, `  "tokenCreationCodeHash": "${creationHash}",`]));
+  assertFiles(scan(t, files, { raw: true }), Object.keys(files));
 });
 
 test("accepts the exact public Any Quote canary tokenAddress field in its visibility test", (t) => {
