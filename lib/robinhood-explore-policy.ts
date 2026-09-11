@@ -16,6 +16,7 @@ const HIDDEN_ROBINHOOD_TOKENS = new Set([
   "0x08bdedb48ee01f29dd88e84e6d9296e84d736aa2", // M53FIX
   "0xdf23dac67139ebd3f66fcc4ea224c5c6ae850546", // M53SET
   "0xd9320af2762e711918358422594684756ad760cc", // PN20REF backfill canary
+  "0xb36271399c031ce270e0d1eed5f26dcd08367119", // AQLPTEST Any Quote LP release canary
 ]);
 
 export function isVisibleRobinhoodToken(address: string) {

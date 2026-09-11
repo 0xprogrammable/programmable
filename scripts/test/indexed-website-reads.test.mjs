@@ -6,37 +6,41 @@ import test from "node:test";
 import { encodeAbiParameters, keccak256 } from "viem";
 
 import { RELEASE_GATED_FLAG_NAMES, WORKER_ACTIVATION_FLAG_NAMES } from "../perf/read-model-deploy-policy.mjs";
-import { evaluateIndexedWebsiteReadDeployPolicy, readIndexedWebsiteSourceExpectations } from "../perf/indexed-website-read-deploy-policy.mjs";
+import { evaluateIndexedWebsiteReadDeployPolicy, readIndexedWebsiteSourceExpectations, MODULE_ENGINE_INDEX_RELEASES_SCHEMA } from "../perf/indexed-website-read-deploy-policy.mjs";
 import { runIndexedWebsiteReadSmoke } from "../smoke-indexed-website-reads.mjs";
+import { engineWire } from "../../contracts/scripts/module-engine/shared.mjs";
 
 const NOW = Date.parse("2026-09-09T03:00:00.000Z");
 const UPDATED = new Date(NOW - 60_000).toISOString();
 const ADDRESS = (n) => `0x${n.toString(16).padStart(40, "0")}`;
 const HASH = (n) => `0x${n.toString(16).padStart(64, "0")}`;
 const DIGEST = `sha256:${"a".repeat(64)}`;
-const EXPECTATIONS = readIndexedWebsiteSourceExpectations();
+const EXPECTATIONS = await readIndexedWebsiteSourceExpectations();
 const DEPLOYMENT_ID = `dpl_${"a".repeat(24)}`;
 const SHA = "b".repeat(40);
 const BYPASS = "fixture-protection-bypass-0123456789";
 const PROJECT = "prj_programmablefixture";
 const PROJECTION_SOURCE = "https://api.programmable.market/v4/chains/4663/finalized-launch-projections";
 
-function sourceConfiguration(t, engineRelease) {
+function sourceConfiguration(t, engineRelease,
+  indexReleases = JSON.parse(readFileSync("config/module-engine/index-releases.json", "utf8"))) {
   const root = mkdtempSync(join(tmpdir(), "indexed-website-sources-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   for (const file of ["config/envio-classic-v4-catalog-release.v1.json", "config/module-mode/robinhood.preview.json",
     "config/module-engine/robinhood.json", "config/module-mode/historical-releases.json",
-    "config/module-engine/historical-releases.json", "contracts/deployments/robinhood-custom-launch-v1.json"]) {
+    "config/module-engine/historical-releases.json", "config/module-engine/index-releases.json",
+    "config/module-engine/catalog.json", "config/module-engine/review-release.json", "contracts/deployments/robinhood-custom-launch-v1.json"]) {
     const target = join(root, file);
     mkdirSync(dirname(target), { recursive: true });
-    writeFileSync(target, file === "config/module-engine/robinhood.json" ? JSON.stringify(engineRelease) : readFileSync(file));
+    writeFileSync(target, file === "config/module-engine/robinhood.json" && engineRelease !== undefined ? JSON.stringify(engineRelease)
+      : file === "config/module-engine/index-releases.json" ? JSON.stringify(indexReleases) : readFileSync(file));
   }
   return root;
 }
 
 test("Any Quote retains its authentication version and uses the existing Engine index transport", async t => {
   const release = JSON.parse(readFileSync("tests/fixtures/module-engine-any-quote-index.json", "utf8")).cases[0].release;
-  const root = sourceConfiguration(t, release), expectations = readIndexedWebsiteSourceExpectations(root);
+  const root = sourceConfiguration(t, release), expectations = await readIndexedWebsiteSourceExpectations(root);
   assert.deepEqual(expectations.robinhood.modules[1], { source: "module-engine-v1", sourceVersion: release.sourceVersion,
     sourceAddress: release.contracts.host.address, releaseDigest: release.releaseDigest, startBlock: release.startBlock });
   assert.equal(JSON.parse(readFileSync(join(root, "config/module-engine/robinhood.json"), "utf8")).sourceVersion, "module-engine-any-quote-v1");
@@ -55,7 +59,7 @@ test("Any Quote retains its authentication version and uses the existing Engine 
   await assert.rejects(runIndexedWebsiteReadSmoke(input({ fetchImpl: observations(release.sourceVersion).fetchImpl, sourceExpectations: expectations })), /module release binding/u);
 });
 
-test("source expectations reject unsupported authentication versions and wrong source-role dispatch", t => {
+test("source expectations reject unsupported authentication versions and wrong source-role dispatch", async t => {
   const release = JSON.parse(readFileSync("tests/fixtures/module-engine-any-quote-index.json", "utf8")).cases[0].release;
   for (const mutate of [
     value => { value.sourceVersion = "module-engine-any-quote-v2"; },
@@ -66,10 +70,99 @@ test("source expectations reject unsupported authentication versions and wrong s
     value => { value.startBlock = "0"; },
   ]) {
     const changed = structuredClone(release); mutate(changed);
-    assert.throws(() => readIndexedWebsiteSourceExpectations(sourceConfiguration(t, changed)), /Robinhood release identity is invalid/u);
+    await assert.rejects(readIndexedWebsiteSourceExpectations(sourceConfiguration(t, changed)), /Robinhood release identity is invalid/u);
   }
   for (const source of EXPECTATIONS.robinhood.modules) assert.equal(source.source,
     source.sourceVersion === "module-engine-any-quote-v1" ? "module-engine-v1" : source.sourceVersion);
+});
+
+function indexConfiguration(t, releases) {
+  return sourceConfiguration(t, undefined, { schemaVersion: MODULE_ENGINE_INDEX_RELEASES_SCHEMA, releases });
+}
+
+function engineSourceObservation(release) {
+  return fixture(({ url, spec }) => {
+    if (url.pathname !== "/api/explore/robinhood") return;
+    // The source still appears when its canary token is excluded from Explore items.
+    spec.body.sourceEvidence.modules = [{ ...robinhoodSource(), source: "module-engine-v1",
+      sourceAddress: release.contracts.host.address, releaseDigest: release.releaseDigest, startBlock: release.startBlock }];
+  });
+}
+
+test("an empty technical index list retains public source expectations and ignores review-only identity", async t => {
+  const root = indexConfiguration(t, []);
+  const before = await readIndexedWebsiteSourceExpectations(root);
+  const release = JSON.parse(readFileSync("tests/fixtures/module-engine-any-quote-index.json", "utf8")).cases[0].release;
+  writeFileSync(join(root, "config/module-engine/review-release.json"), JSON.stringify(release));
+  const expectations = await readIndexedWebsiteSourceExpectations(root);
+  assert.deepEqual(expectations, before);
+  const currentAndHistorical = [JSON.parse(readFileSync("config/module-mode/robinhood.preview.json", "utf8")),
+    JSON.parse(readFileSync("config/module-engine/robinhood.json", "utf8")),
+    ...JSON.parse(readFileSync("config/module-mode/historical-releases.json", "utf8")).releases.map(entry => entry.release),
+    ...JSON.parse(readFileSync("config/module-engine/historical-releases.json", "utf8")).releases.map(entry => entry.release)];
+  assert.deepEqual(expectations.robinhood.modules.map(source => source.releaseDigest), currentAndHistorical.map(source => source.releaseDigest));
+  await assert.rejects(runIndexedWebsiteReadSmoke(input({ sourceExpectations: expectations,
+    fetchImpl: engineSourceObservation(release).fetchImpl })), /Robinhood module release binding/u);
+});
+
+test("a complete technical Any Quote release binds index reads without changing the public catalogs", async t => {
+  const release = JSON.parse(readFileSync("tests/fixtures/module-engine-any-quote-index.json", "utf8")).cases[0].release;
+  const publicExpectations = await readIndexedWebsiteSourceExpectations(indexConfiguration(t, []));
+  const root = indexConfiguration(t, [release]), expectations = await readIndexedWebsiteSourceExpectations(root);
+  assert.deepEqual(expectations.robinhood.modules.slice(0, -1), publicExpectations.robinhood.modules);
+  assert.deepEqual(expectations.robinhood.modules.at(-1), { source: "module-engine-v1", sourceVersion: release.sourceVersion,
+    sourceAddress: release.contracts.host.address, releaseDigest: release.releaseDigest, startBlock: release.startBlock });
+  for (const path of ["config/module-engine/robinhood.json", "config/module-engine/catalog.json", "config/module-engine/historical-releases.json"]) {
+    assert.deepEqual(readFileSync(join(root, path)), readFileSync(path));
+  }
+  const result = await runIndexedWebsiteReadSmoke(input({ sourceExpectations: expectations,
+    fetchImpl: engineSourceObservation(release).fetchImpl }));
+  assert.equal(result.chains[1].pages[0].sourceEvidence.modules[0].releaseDigest, release.releaseDigest);
+  assert.equal(result.chains[1].totalItems, 1);
+});
+
+test("technical index sources require complete canonical identity and nonzero evidence commitments", async t => {
+  const release = JSON.parse(readFileSync("tests/fixtures/module-engine-any-quote-index.json", "utf8")).cases[0].release;
+  const mutations = [
+    value => { value.enabled = false; },
+    value => { value.status = "preview"; },
+    value => { value.sourceVersion = "module-engine-any-quote-v2"; },
+    value => { value.engineProfile = "programmable.module-engine-solidity@1"; },
+    value => { value.chainId = 1; },
+    value => { value.releaseDigest = HASH(99); },
+    value => { value.startBlock = String(BigInt(value.startBlock) + 1n); },
+    value => { value.contracts.host.address = ADDRESS(999); },
+    value => { value.contracts.host.runtimeCodeHash = HASH(999); },
+    value => { delete value.contracts.nativeRouteGuard; },
+    value => { value.contracts.unexpected = value.contracts.host; },
+    value => { value.unreviewed = true; },
+  ];
+  for (const field of ["deploymentEvidenceDigest", "sourceVerificationDigest", "lifecycleEvidenceDigest"]) {
+    mutations.push(value => { delete value[field]; }, value => { value[field] = HASH(0); }, value => { value[field] = "not-evidence"; });
+  }
+  for (const mutate of mutations) {
+    const changed = structuredClone(release); mutate(changed);
+    await assert.rejects(readIndexedWebsiteSourceExpectations(indexConfiguration(t, [changed])));
+  }
+  await assert.rejects(readIndexedWebsiteSourceExpectations(indexConfiguration(t, [{ sourceVersion: release.sourceVersion,
+    chainId: 4663, sourceAddress: release.contracts.host.address, releaseDigest: release.releaseDigest, startBlock: release.startBlock }])));
+});
+
+test("technical index configuration is closed, bounded and rejects duplicate or conflicting sources", async t => {
+  const release = JSON.parse(readFileSync("tests/fixtures/module-engine-any-quote-index.json", "utf8")).cases[0].release;
+  for (const value of [null, [], { releases: [] }, { schemaVersion: MODULE_ENGINE_INDEX_RELEASES_SCHEMA, releases: [], review: true },
+    { schemaVersion: "programmable.module-engine.index-releases.v2", releases: [] },
+    { schemaVersion: MODULE_ENGINE_INDEX_RELEASES_SCHEMA, releases: {} },
+    { schemaVersion: MODULE_ENGINE_INDEX_RELEASES_SCHEMA, releases: Array(33).fill(release) }]) {
+    await assert.rejects(readIndexedWebsiteSourceExpectations(sourceConfiguration(t, undefined, value)), /index release configuration/u);
+  }
+  await assert.rejects(readIndexedWebsiteSourceExpectations(indexConfiguration(t, [release, release])), /duplicates/u);
+  const current = JSON.parse(readFileSync("config/module-engine/robinhood.json", "utf8"));
+  await assert.rejects(readIndexedWebsiteSourceExpectations(indexConfiguration(t, [current])), /duplicates/u);
+  const { computeModuleEngineReleaseDigest } = await engineWire();
+  const changed = { ...release, startBlock: String(BigInt(release.startBlock) + 1n) };
+  changed.releaseDigest = computeModuleEngineReleaseDigest(changed);
+  await assert.rejects(readIndexedWebsiteSourceExpectations(indexConfiguration(t, [release, changed])), /duplicates/u);
 });
 
 function ethereumItem(n) {

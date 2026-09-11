@@ -59,7 +59,7 @@ function fixture(pools, options = {}) {
       if (result !== undefined) return result;
     }
     if (method === "eth_chainId") return "0x1237";
-    if (method === "eth_getBlockByNumber") return { number: toHex(HEIGHT), hash: HASH, timestamp: toHex(NOW) };
+    if (method === "eth_getBlockByNumber") return { number: toHex(options.height ?? HEIGHT), hash: HASH, timestamp: toHex(NOW) };
     if (method === "eth_getCode") return fixtureCode.get(params[0].toLowerCase()) ?? "0x600055";
     if (method === "eth_getLogs") return filterLogs(records, params[0]);
     if (method !== "eth_call") throw Error("Unexpected fixture RPC method");
@@ -98,7 +98,7 @@ test("Initialize records bind the real key, indexed asset, manager and canonical
 });
 
 test("request-local discovery uses both providers and caches direct-pair logs for reverse routes", async () => {
-  const f = fixture([pool()]), discovery = a.createAnyQuoteV4InitializeDiscoveryV1({ checkpoint, agreed: a.agreedTradeRpcV1(f.rpcs) });
+  const f = fixture([pool()]), discovery = a.createAnyQuoteV4InitializeDiscoveryV1({ checkpoint, rpcs: f.rpcs });
   const [first, second] = await Promise.all([discovery.nativePools(Q), discovery.nativePools(Q)]);
   assert.deepEqual(first, second); assert.equal(first.length, 1);
   assert.equal(f.calls.length, 2); assert.deepEqual(f.calls.map(c => c.provider), [0, 1]);
@@ -108,16 +108,89 @@ test("request-local discovery uses both providers and caches direct-pair logs fo
 
 test("provider range limits split complete bounded ranges; failures and disagreement remain inconclusive", async () => {
   const f = fixture([pool()], { override: ({ method, params }) => { if (method === "eth_getLogs" && BigInt(params[0].toBlock) - BigInt(params[0].fromBlock) > 6000n) throw Error("range limit"); } });
-  const discovery = a.createAnyQuoteV4InitializeDiscoveryV1({ checkpoint, agreed: a.agreedTradeRpcV1(f.rpcs) });
+  const discovery = a.createAnyQuoteV4InitializeDiscoveryV1({ checkpoint, rpcs: f.rpcs });
   assert.equal((await discovery.nativePools(Q)).length, 1);
   assert.equal(f.calls.length, 6);
   const failed = fixture([], { override: () => { throw Error("Private provider details must not leak"); } });
-  await assert.rejects(() => a.createAnyQuoteV4InitializeDiscoveryV1({ checkpoint, agreed: a.agreedTradeRpcV1(failed.rpcs) }).nativePools(Q),
+  await assert.rejects(() => a.createAnyQuoteV4InitializeDiscoveryV1({ checkpoint, rpcs: failed.rpcs }).nativePools(Q),
     error => error.code === "V4_DISCOVERY_PROVIDER_UNAVAILABLE" && error.status === "inconclusive");
   assert.ok(failed.calls.length <= 14);
   const disagree = fixture([pool()], { override: ({ provider }) => provider === 1 ? [] : undefined });
-  await assert.rejects(() => a.createAnyQuoteV4InitializeDiscoveryV1({ checkpoint, agreed: a.agreedTradeRpcV1(disagree.rpcs) }).nativePools(Q), /V4_DISCOVERY_PROVIDER_DISAGREEMENT/);
+  await assert.rejects(() => a.createAnyQuoteV4InitializeDiscoveryV1({ checkpoint, rpcs: disagree.rpcs }).nativePools(Q), /V4_DISCOVERY_PROVIDER_DISAGREEMENT/);
   assert.equal(disagree.calls.length, 2);
+});
+
+const LONG_HEIGHT = 60_000_000n;
+const longCheckpoint = { ...checkpoint, number: String(LONG_HEIGHT) };
+const wideRange = params => BigInt(params[0].toBlock) - BigInt(params[0].fromBlock) >= 10_000n;
+function quickNodeRangeLimit({ provider, method, params }) {
+  if (provider === 0 && method === "eth_getLogs" && wideRange(params)) {
+    throw Object.assign(Error("eth_getLogs is limited to a 10,000 range"), { status: 413, code: -32614 });
+  }
+}
+
+test("60-million-block discovery verifies single-provider hints through both original RPCs in 10,000-block windows", async () => {
+  const f = fixture([pool(), pool(ZERO, Q, { fee: 500, block: 19_999n }), pool(ZERO, Q, { fee: 3000, block: 50_000_000n })], { override: quickNodeRangeLimit });
+  const discovery = a.createAnyQuoteV4InitializeDiscoveryV1({ checkpoint: longCheckpoint, rpcs: f.rpcs });
+  const result = await discovery.nativePools(Q);
+  assert.equal(result.length, 3);
+  assert.equal(discovery.hasIncompleteCoverage(), true, "Verified candidates do not certify single-source index completeness");
+  assert.equal(f.calls.length, 6, "One full-range attempt and two shared verification windows, each on both providers");
+  const verifications = f.calls.slice(2);
+  assert.ok(verifications.every(c => !wideRange(c.params)));
+  assert.deepEqual(verifications.map(c => c.provider), [0, 1, 0, 1]);
+  assert.deepEqual(await discovery.nativePools(Q), result);
+  assert.equal(f.calls.length, 6, "Reverse discovery reuses verified records");
+});
+
+test("invented hints and narrow-range provider disagreement fail closed without another fallback", async () => {
+  const p = pool(), real = log(p);
+  for (const override of [
+    info => { quickNodeRangeLimit(info); if (info.provider === 1 && wideRange(info.params)) return [{ ...real, blockHash: `0x${"bb".repeat(32)}` }]; },
+    info => { quickNodeRangeLimit(info); if (info.provider === 0) return []; },
+  ]) {
+    const f = fixture([p], { override });
+    await assert.rejects(() => a.createAnyQuoteV4InitializeDiscoveryV1({ checkpoint: longCheckpoint, rpcs: f.rpcs }).nativePools(Q),
+      error => error.code === "V4_DISCOVERY_PROVIDER_DISAGREEMENT" && error.status === "inconclusive");
+    assert.equal(f.calls.length, 4, "A rejected hint or disagreement cannot fall back to a preferred provider");
+  }
+  const disagree = fixture([p], { override: ({ provider }) => provider === 0 ? [] : undefined });
+  await assert.rejects(() => a.createAnyQuoteV4InitializeDiscoveryV1({ checkpoint: longCheckpoint, rpcs: disagree.rpcs }).nativePools(Q), /V4_DISCOVERY_PROVIDER_DISAGREEMENT/);
+  assert.equal(disagree.calls.length, 2, "Full-range disagreement is also terminal");
+});
+
+test("malformed successful responses are never treated as unavailable providers or accepted hints", async () => {
+  for (const provider of [0, 1]) {
+    const f = fixture([pool()], { override: info => {
+      if (info.provider === provider) return [{ ...log(pool()), data: "0x00" }];
+      quickNodeRangeLimit(info);
+    } });
+    await assert.rejects(() => a.createAnyQuoteV4InitializeDiscoveryV1({ checkpoint: longCheckpoint, rpcs: f.rpcs }).nativePools(Q),
+      error => error.code === "V4_DISCOVERY_RESPONSE_INVALID" && error.status === "inconclusive");
+    assert.equal(f.calls.length, 2);
+  }
+});
+
+test("hint verification retains the fixed request budget and never accepts an unverified pool", async () => {
+  const f = fixture(Array.from({ length: 24 }, (_, i) => pool(ZERO, Q, { fee: i * 500, block: 10_000n + BigInt(i) * 10_000n })), { override: quickNodeRangeLimit });
+  await assert.rejects(() => a.createAnyQuoteV4InitializeDiscoveryV1({ checkpoint: longCheckpoint, rpcs: f.rpcs }).nativePools(Q),
+    error => error.code === "V4_DISCOVERY_REQUEST_LIMIT" && error.status === "inconclusive");
+  assert.equal(f.calls.length, 2, "An over-budget hint set stops before requesting verification windows");
+});
+
+test("empty direct hints still allow an independently verified indirect route; empty coverage stays inconclusive", async () => {
+  const options = { height: LONG_HEIGHT, override: quickNodeRangeLimit };
+  const f = fixture([pool(ZERO, MID), pool(MID, Q)], options);
+  const result = await a.assessAnyQuoteAssetV1({ quoteAsset: Q }, f.options);
+  assert.equal(result.status, "compatible", JSON.stringify(result));
+  assert.deepEqual(result.routes.buy.hops.map(h => h.tokenOut.toLowerCase()), [MID, Q].map(x => x.toLowerCase()));
+  assert.deepEqual(result.routes.sell.hops.map(h => h.tokenOut.toLowerCase()), [MID, ZERO].map(x => x.toLowerCase()));
+  const reads = f.calls.filter(c => c.method === "eth_getLogs");
+  assert.equal(reads.length, 12, "Four discovery attempts and two verification windows on each original provider");
+  const absent = await a.assessAnyQuoteAssetV1({ quoteAsset: Q }, fixture([], options).options);
+  assert.equal(absent.status, "inconclusive");
+  assert.equal(absent.code, "V4_DISCOVERY_PROVIDER_UNAVAILABLE");
+  assert.equal(absent.retryable, true);
 });
 
 test("arbitrary quote readiness works without a Trading API key and independently requotes both directions", async () => {
@@ -133,6 +206,104 @@ test("arbitrary quote readiness works without a Trading API key and independentl
   const quotes = f.calls.filter(c => c.method === "eth_call").map(c => ({ provider: c.provider, read: decodeFunctionData({ abi: readAbi, data: c.params[0].data }) })).filter(c => c.read.functionName === "quoteExactInputSingle");
   for (const provider of [0, 1]) for (const direction of [true, false]) assert.ok(quotes.some(q => q.provider === provider && q.read.args[0].zeroForOne === direction));
   assert.ok(quotes.every(q => q.read.args[0].poolKey.fee === 0), "Empty pool is never quoted");
+});
+
+const ONE_DOLLAR_ETH = 10n ** 18n / 2500n;
+function quoteWithDepth(thinPools) {
+  return ({ method, params }) => {
+    if (method !== "eth_call") return;
+    const read = decodeFunctionData({ abi: readAbi, data: params[0].data });
+    if (read.functionName !== "quoteExactInputSingle") return;
+    const quote = read.args[0], thin = thinPools.some(p => p.poolId === a.anyQuotePoolIdV1(quote.poolKey));
+    const scale = thin ? (quote.exactAmount <= ONE_DOLLAR_ETH ? 100n : 90n) : 99n;
+    return encodeFunctionResult({ abi: readAbi, functionName: read.functionName, result: [quote.exactAmount * scale / 100n, 100_000n] });
+  };
+}
+
+test("a thin pool with the best small quote cannot displace a depth-qualified buy or sell route", async () => {
+  const thin = pool(), deep = pool(ZERO, Q, { fee: 500 });
+  const f = fixture([thin, deep], { override: quoteWithDepth([thin]) });
+  const result = await a.assessAnyQuoteAssetV1({ quoteAsset: Q }, f.options);
+  assert.equal(result.status, "compatible", JSON.stringify(result));
+  for (const side of ["buy", "sell"]) assert.equal(result.routes[side].hops[0].poolId, deep.poolId);
+  assert.equal(result.price.source, "qualified-amm");
+  const quotes = f.calls.filter(c => c.method === "eth_call")
+    .filter(c => decodeFunctionData({ abi: readAbi, data: c.params[0].data }).functionName === "quoteExactInputSingle");
+  const unique = new Set(quotes.map(c => `${c.provider}:${JSON.stringify(c.params)}`));
+  assert.equal(unique.size, quotes.length, "Final evidence reuses the same checkpoint-local depth quotes");
+});
+
+test("depth qualification retains the concrete policy failure when every candidate is too thin", async () => {
+  const pools = [pool(), pool(ZERO, Q, { fee: 500 })];
+  const f = fixture(pools, { override: quoteWithDepth(pools) });
+  const result = await a.assessAnyQuoteAssetV1({ quoteAsset: Q }, f.options);
+  assert.equal(result.status, "inconclusive"); assert.equal(result.retryable, true);
+  assert.equal(result.code, "MARKET_PRICE_IMPACT_TOO_HIGH");
+});
+
+test("direct depth failures allow an independently qualified intermediate route", async () => {
+  const thin = pool(), f = fixture([thin, pool(ZERO, MID), pool(MID, Q)], { override: quoteWithDepth([thin]) });
+  const result = await a.assessAnyQuoteAssetV1({ quoteAsset: Q }, f.options);
+  assert.equal(result.status, "compatible", JSON.stringify(result));
+  assert.deepEqual(result.routes.buy.hops.map(h => h.tokenOut.toLowerCase()), [MID, Q].map(x => x.toLowerCase()));
+  assert.deepEqual(result.routes.sell.hops.map(h => h.tokenOut.toLowerCase()), [MID, ZERO].map(x => x.toLowerCase()));
+});
+
+test("a reverted candidate quote stays non-executable without treating malformed successful data as a revert", async () => {
+  const reverting = pool(), deep = pool(ZERO, Q, { fee: 500 }), rejectedBy = new Set();
+  const f = fixture([reverting, deep], { override: info => {
+    if (info.method !== "eth_call") return;
+    const read = decodeFunctionData({ abi: readAbi, data: info.params[0].data });
+    if (read.functionName === "quoteExactInputSingle" && read.args[0].poolKey.fee === 0) {
+      rejectedBy.add(info.provider);
+      throw Object.assign(Error("execution reverted"), { code: 3, data: "0x" });
+    }
+    return quoteWithDepth([])(info);
+  } });
+  const result = await a.assessAnyQuoteAssetV1({ quoteAsset: Q }, f.options);
+  assert.equal(result.status, "compatible", JSON.stringify(result));
+  assert.deepEqual([...rejectedBy], [0, 1], "Both RPCs rejected the non-executable candidate call");
+  for (const side of ["buy", "sell"]) assert.equal(result.routes[side].hops[0].poolId, deep.poolId);
+});
+
+test("provider disagreement and malformed initial or depth quotes cannot fall back to a healthy pool", async () => {
+  const thin = pool(), deep = pool(ZERO, Q, { fee: 500 });
+  for (const stage of ["initial", "depth"]) for (const corruption of ["disagreement", "non-hex", "short-abi"]) {
+    const f = fixture([thin, deep], { override: info => {
+      if (info.method !== "eth_call") return;
+      const read = decodeFunctionData({ abi: readAbi, data: info.params[0].data });
+      if (read.functionName !== "quoteExactInputSingle") return;
+      const quote = read.args[0], targeted = quote.poolKey.fee === 0
+        && (stage === "initial" ? quote.exactAmount <= ONE_DOLLAR_ETH : quote.exactAmount > ONE_DOLLAR_ETH);
+      if (targeted && (info.provider === 1 || corruption === "short-abi")) {
+        if (corruption === "non-hex") return "malformed RPC bytes";
+        if (corruption === "short-abi") return "0x00";
+        return encodeFunctionResult({ abi: readAbi, functionName: read.functionName, result: [quote.exactAmount * 2n, 100_000n] });
+      }
+      return quoteWithDepth([thin])(info);
+    } });
+    const result = await a.assessAnyQuoteAssetV1({ quoteAsset: Q }, f.options);
+    assert.equal(result.status, "inconclusive", `${stage}/${corruption}: ${JSON.stringify(result)}`);
+    assert.equal(result.retryable, true);
+    assert.equal(result.code, corruption === "disagreement" ? "TRADE_PROVIDER_DISAGREEMENT" : "RPC_RESPONSE_INVALID");
+  }
+});
+
+test("authoritative reference-price checks qualify a candidate before its better small quote wins", async () => {
+  const asset = a.ANY_QUOTE_USDG, offReference = pool(ZERO, asset), matching = pool(ZERO, asset, { fee: 500 });
+  const f = fixture([offReference, matching], { override: info => {
+    if (info.method !== "eth_call") return;
+    const read = decodeFunctionData({ abi: readAbi, data: info.params[0].data });
+    if (read.functionName === "decimals" && info.params[0].to.toLowerCase() === "0x61b7e5650328764b076a108eff5fa7282a1b9ad2")
+      return encodeFunctionResult({ abi: readAbi, functionName: read.functionName, result: 8 });
+    if (read.functionName === "getSlot0" && read.args[0] === offReference.poolId)
+      return encodeFunctionResult({ abi: readAbi, functionName: read.functionName, result: [2n << 96n, 0, 0, 0] });
+    return quoteWithDepth([offReference])(info);
+  } });
+  const result = await a.assessAnyQuoteAssetV1({ quoteAsset: asset }, f.options);
+  assert.equal(result.status, "compatible", JSON.stringify(result));
+  assert.equal(result.routes.buy.hops[0].poolId, matching.poolId);
+  assert.equal(result.price.source, "chainlink");
 });
 
 test("discovery composes a native path through one independently verified intermediate", async () => {

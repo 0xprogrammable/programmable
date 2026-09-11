@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { keccak256, type Address, type Hex } from "viem";
 import frozen from "./fixtures/module-engine-review-build.json";
+import anyQuoteIndex from "./fixtures/module-engine-any-quote-index.json";
+import configuredRelease from "../config/module-engine/robinhood.json";
 import { bindActiveModuleEngineRelease, computeModuleEngineHostManifestHash, computeModuleEngineReleaseDigest, MODULE_ENGINE_AVAILABILITY_SCHEMA, MODULE_ENGINE_CONTRACTS, type ModuleEngineAvailability, type ModuleEngineCatalogDefinition, type ModuleEngineRelease, type ModuleEngineRevisionDefinition } from "../lib/module-engine/catalog";
 import { MODULE_MODE_ECONOMICS_POLICY_V2, MODULE_MODE_FINALITY_POLICY } from "../lib/module-mode/release";
 import { reviewDigest, type ReviewSubject } from "../lib/module-mode/review-contract";
@@ -209,6 +211,29 @@ describe("bounded Engine availability using the existing source authority", () =
 });
 
 describe("exact historical Engine generations", () => {
+  it("keeps technical index releases out of public availability and launch versions", async () => {
+    const before = await import("../lib/server/module-engine/catalog");
+    const digests = before.configuredModuleEngineReleaseDigests();
+    const release = bindActiveModuleEngineRelease(configuredRelease);
+    const read = vi.fn(async (): Promise<ModuleEngineAvailability> => ({ schemaVersion: MODULE_ENGINE_AVAILABILITY_SCHEMA,
+      release, templates: [], reason: null }));
+    const versions = await before.readModuleEngineLaunchVersions({ digests, read });
+    const technical = anyQuoteIndex.cases[0].release;
+    vi.doMock("../config/module-engine/index-releases.json", () => ({ default: {
+      schemaVersion: "programmable.module-engine.index-releases.v1", releases: [technical],
+    } }));
+    vi.resetModules();
+    try {
+      const after = await import("../lib/server/module-engine/catalog");
+      expect(after.configuredModuleEngineReleaseDigests()).toEqual(digests);
+      expect(after.configuredModuleEngineReleaseDigests()).not.toContain(technical.releaseDigest);
+      expect(await after.readModuleEngineLaunchVersions({ digests: after.configuredModuleEngineReleaseDigests(), read })).toEqual(versions);
+      expect((await after.readModuleEngineAvailability(technical.releaseDigest)).release).toBeNull();
+    } finally {
+      vi.doUnmock("../config/module-engine/index-releases.json");
+      vi.resetModules();
+    }
+  });
   it("retains an authenticated historical template without sampling mutable revision enablement", async () => {
     const f = fixture();
     const read = createModuleEngineHistoricalAvailabilityReader({ historical: { schemaVersion: MODULE_ENGINE_HISTORICAL_RELEASES_SCHEMA,

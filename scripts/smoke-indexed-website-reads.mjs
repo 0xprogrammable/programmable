@@ -234,7 +234,7 @@ function htmlText(value) {
 
 async function observeReads(input, target, headers, observedAt) {
   const fetchImpl = input.fetchImpl ?? fetch;
-  const expectations = input.sourceExpectations ?? readIndexedWebsiteSourceExpectations();
+  const expectations = input.sourceExpectations ?? await readIndexedWebsiteSourceExpectations();
   async function request(path, contentType) {
     const url = new URL(path, target);
     check(url.origin === target.origin, "request origin");

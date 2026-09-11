@@ -76,12 +76,13 @@ export interface ModuleModeBuilderProps {
   previewDescription?: string;
   statusContent?: ReactNode;
   versionContent?: ReactNode;
+  moduleLaunchContent?: ReactNode;
   reviewContent?: ReactNode;
   resultContent?: ReactNode;
   onEdit?: () => void;
 }
 
-export function ModuleModeBuilder({ catalog = PREVIEW_MODULE_CATALOG, engine = NATIVE_ENGINE_PROFILE, configurationContext = {}, launchAction, minimumInitialBuyWei, release, previewDescription, statusContent, reviewContent, resultContent, onEdit }: Readonly<ModuleModeBuilderProps>) {
+export function ModuleModeBuilder({ catalog = PREVIEW_MODULE_CATALOG, engine = NATIVE_ENGINE_PROFILE, configurationContext = {}, launchAction, minimumInitialBuyWei, release, previewDescription, statusContent, moduleLaunchContent, reviewContent, resultContent, onEdit }: Readonly<ModuleModeBuilderProps>) {
   const { hydrated } = useRouteViewChain(4663);
   const [state, setState] = useState(createModuleModeState);
   const { expanded: detailsOpen, setExpanded: setDetailsOpen, toggle: toggleDetails, panelProps: detailsPanel } = useDisclosureState();
@@ -292,6 +293,7 @@ export function ModuleModeBuilder({ catalog = PREVIEW_MODULE_CATALOG, engine = N
         </aside> : null}
       </div>
       {pickerOpen ? <ModulePickerDialog animateOpen={pickerPointer} title="Add modules" description="Modules are upgrades for your coin. Pick the features you want." onClose={() => setPickerOpen(false)}>
+        {moduleLaunchContent}
         <ModuleLibrary catalog={catalog} selectedIds={state.selectedModules} onAdd={add} onRemove={remove}
           feePolicyFor={release ? entry => moduleModeFeePolicy(release, state.selectedModules.includes(entry.id) ? selected : [...selected, entry]) : undefined} />
       </ModulePickerDialog> : null}

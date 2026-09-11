@@ -1,6 +1,7 @@
 import "server-only";
 import { decodeEventLog, keccak256, pad, parseAbi, stringToHex, toHex, type Address, type Hex } from "viem";
-import { agreedTradeRpcV1 } from "@/lib/server/custom-launch/routed-trade-rpc-v1";
+import { canonicalBrowserJsonV2 } from "@/lib/custom-launch/browser-authority-v2";
+import { agreedTradeRpcV1, type TradeRpcV1 } from "@/lib/server/custom-launch/routed-trade-rpc-v1";
 import { anyQuotePoolIdV1 } from "./route";
 import {
   ANY_QUOTE_INFRASTRUCTURE, ANY_QUOTE_NATIVE, AnyQuoteErrorV1, anyQuoteAddressV1, anyQuoteSameAddressV1,
@@ -14,9 +15,9 @@ export const ANY_QUOTE_V4_START_BLOCK = 9070n;
 export const ANY_QUOTE_V4_MAX_POOL_CANDIDATES = 64;
 const MAX_LOG_REQUESTS = 24;
 const MAX_RANGE_SPLITS = 2;
+const MAX_VERIFICATION_BLOCKS = 10_000n;
 const initializeAbi = parseAbi(["event Initialize(bytes32 indexed id,address indexed currency0,address indexed currency1,uint24 fee,int24 tickSpacing,address hooks,uint160 sqrtPriceX96,int24 tick)"]);
 const initializeTopic = keccak256(stringToHex("Initialize(bytes32,address,address,uint24,int24,address,uint160,int24)"));
-type AgreedRpc = ReturnType<typeof agreedTradeRpcV1>;
 type PoolRecord = AnyQuoteV4PoolCandidateV1 & { blockNumber: string; blockHash: Hex; logIndex: string; sqrtPriceX96: string; tick: number };
 const invalid = (): never => { throw new AnyQuoteErrorV1("V4_DISCOVERY_RESPONSE_INVALID"); };
 const quantity = (value: unknown) => typeof value === "string" && /^0x[0-9a-f]{1,64}$/i.test(value) ? BigInt(value) : invalid();
@@ -82,32 +83,69 @@ export function parseAnyQuoteV4DiscoveryV1(value: unknown): AnyQuoteV4DiscoveryV
   } catch { return invalid(); }
 }
 
-/** Bounded, request-local index reader. Direct native pools cost one indexed query in the
- * normal case. Range-limited providers get at most two bisections; failures never mean no market.
- * Buy/sell and intermediate searches reuse results at this exact canonical checkpoint. */
-export function createAnyQuoteV4InitializeDiscoveryV1(input: { checkpoint: AnyQuoteCheckpointV1; agreed: AgreedRpc }) {
+/** A full-range response from one provider supplies discovery hints only. Both original
+ * providers must independently agree on every hinted log in bounded canonical block ranges.
+ * This verifies candidates, not index completeness; absent hints never prove no market.
+ * Buy/sell and intermediate searches share one checkpoint, cache and request budget. */
+export function createAnyQuoteV4InitializeDiscoveryV1(input: { checkpoint: AnyQuoteCheckpointV1; rpcs: readonly [TradeRpcV1, TradeRpcV1] }) {
   const toBlock = BigInt(input.checkpoint.number);
   if (toBlock < ANY_QUOTE_V4_START_BLOCK) throw new AnyQuoteErrorV1("V4_DISCOVERY_CHECKPOINT_UNAVAILABLE");
   let requests = 0;
+  let incompleteCoverage = false;
+  const agreed = agreedTradeRpcV1(input.rpcs);
   const cache = new Map<string, Promise<PoolRecord[]>>();
-  const readRange = async (currency: Address, otherCurrency: Address | undefined, topics: readonly (Hex | null)[], fromBlock: bigint, end: bigint, depth = 0): Promise<PoolRecord[]> => {
+  const reserveRequest = () => {
     if (++requests > MAX_LOG_REQUESTS) throw new AnyQuoteErrorV1("V4_DISCOVERY_REQUEST_LIMIT");
-    try {
-      return await input.agreed("eth_getLogs", [{ address: ANY_QUOTE_INFRASTRUCTURE.poolManager, fromBlock: toHex(fromBlock), toBlock: toHex(end), topics }],
-        value => parseAnyQuoteV4InitializeV1(value, { currency, otherCurrency, fromBlock, toBlock: end }));
-    } catch (error) {
-      const code = error && typeof error === "object" && "code" in error ? String(error.code) : "";
-      if (code === "TRADE_PROVIDER_DISAGREEMENT") throw new AnyQuoteErrorV1("V4_DISCOVERY_PROVIDER_DISAGREEMENT");
-      if (depth >= MAX_RANGE_SPLITS || fromBlock === end) throw new AnyQuoteErrorV1("V4_DISCOVERY_PROVIDER_UNAVAILABLE");
-      const middle = (fromBlock + end) / 2n;
-      const parts = await Promise.all([
-        readRange(currency, otherCurrency, topics, fromBlock, middle, depth + 1),
-        readRange(currency, otherCurrency, topics, middle + 1n, end, depth + 1),
-      ]);
-      const result = parts.flat();
-      if (result.length > ANY_QUOTE_V4_MAX_POOL_CANDIDATES) throw new AnyQuoteErrorV1("V4_DISCOVERY_CANDIDATE_LIMIT");
-      return result;
+  };
+  const requireSame = (a: PoolRecord[], b: PoolRecord[]) => {
+    if (canonicalBrowserJsonV2(a) !== canonicalBrowserJsonV2(b)) throw new AnyQuoteErrorV1("V4_DISCOVERY_PROVIDER_DISAGREEMENT");
+  };
+  const filter = (topics: readonly (Hex | null)[], fromBlock: bigint, end: bigint) =>
+    [{ address: ANY_QUOTE_INFRASTRUCTURE.poolManager, fromBlock: toHex(fromBlock), toBlock: toHex(end), topics }];
+  const verifyHints = async (hints: PoolRecord[], currency: Address, otherCurrency: Address | undefined, topics: readonly (Hex | null)[]) => {
+    incompleteCoverage = true;
+    // A single-provider empty result may prompt an intermediate search, never an incompatibility verdict.
+    const windows: PoolRecord[][] = [];
+    for (const hint of [...hints].sort((a, b) => Number(BigInt(a.blockNumber) - BigInt(b.blockNumber)))) {
+      const last = windows.at(-1);
+      if (last && BigInt(hint.blockNumber) - BigInt(last[0].blockNumber) < MAX_VERIFICATION_BLOCKS) last.push(hint);
+      else windows.push([hint]);
     }
+    if (requests + windows.length > MAX_LOG_REQUESTS) throw new AnyQuoteErrorV1("V4_DISCOVERY_REQUEST_LIMIT");
+    const result: PoolRecord[] = [];
+    for (let start = 0; start < windows.length; start += 4) result.push(...(await Promise.all(windows.slice(start, start + 4).map(async window => {
+      reserveRequest();
+      const fromBlock = BigInt(window[0].blockNumber), end = BigInt(window[window.length - 1].blockNumber);
+      let verified: PoolRecord[];
+      try {
+        verified = await agreed("eth_getLogs", filter(topics, fromBlock, end),
+          value => parseAnyQuoteV4InitializeV1(value, { currency, otherCurrency, fromBlock, toBlock: end }));
+      } catch (error) {
+        const code = error && typeof error === "object" && "code" in error ? String(error.code) : "";
+        throw new AnyQuoteErrorV1(code === "TRADE_PROVIDER_DISAGREEMENT" ? "V4_DISCOVERY_PROVIDER_DISAGREEMENT" : "V4_DISCOVERY_PROVIDER_UNAVAILABLE");
+      }
+      requireSame(verified, window.sort((a, b) => a.poolId.localeCompare(b.poolId)));
+      return verified;
+    }))).flat());
+    return result.sort((a, b) => a.poolId.localeCompare(b.poolId));
+  };
+  const readRange = async (currency: Address, otherCurrency: Address | undefined, topics: readonly (Hex | null)[], fromBlock: bigint, end: bigint, depth = 0): Promise<PoolRecord[]> => {
+    reserveRequest();
+    const responses = await Promise.allSettled(input.rpcs.map(rpc => rpc("eth_getLogs", filter(topics, fromBlock, end))));
+    // Invalid successful responses are terminal, not provider outages eligible for fallback.
+    const records = responses.map(response => response.status === "fulfilled"
+      ? parseAnyQuoteV4InitializeV1(response.value, { currency, otherCurrency, fromBlock, toBlock: end }) : null);
+    if (records[0] !== null && records[1] !== null) { requireSame(records[0], records[1]); return records[0]; }
+    const hints = records[0] ?? records[1];
+    if (hints !== null) return verifyHints(hints, currency, otherCurrency, topics);
+    if (depth >= MAX_RANGE_SPLITS || fromBlock === end) throw new AnyQuoteErrorV1("V4_DISCOVERY_PROVIDER_UNAVAILABLE");
+    const middle = (fromBlock + end) / 2n;
+    const result = (await Promise.all([
+      readRange(currency, otherCurrency, topics, fromBlock, middle, depth + 1),
+      readRange(currency, otherCurrency, topics, middle + 1n, end, depth + 1),
+    ])).flat();
+    if (result.length > ANY_QUOTE_V4_MAX_POOL_CANDIDATES) throw new AnyQuoteErrorV1("V4_DISCOVERY_CANDIDATE_LIMIT");
+    return result;
   };
   const pools = (currency: Address, otherCurrency?: Address): Promise<PoolRecord[]> => {
     const key = `${currency.toLowerCase()}:${otherCurrency?.toLowerCase() ?? "*"}`;
@@ -127,5 +165,6 @@ export function createAnyQuoteV4InitializeDiscoveryV1(input: { checkpoint: AnyQu
     }
     return pending;
   };
-  return { nativePools: (currency: Address) => pools(currency, ANY_QUOTE_NATIVE), adjacentPools: (currency: Address) => pools(currency) };
+  return { nativePools: (currency: Address) => pools(currency, ANY_QUOTE_NATIVE), adjacentPools: (currency: Address) => pools(currency),
+    hasIncompleteCoverage: () => incompleteCoverage };
 }
