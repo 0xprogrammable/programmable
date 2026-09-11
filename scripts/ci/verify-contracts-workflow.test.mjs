@@ -57,6 +57,10 @@ test("contract test partitions and integrations consume only the complete build 
     assert.equal(job.name, `Contracts tests (${shard}/2)`);
     assert.equal(step(job, "Verify the complete deterministic test partition").run,
       `node scripts/ci/contracts-ci.mjs test ${shard}`);
+    assert.deepEqual(step(job, "Verify the complete deterministic test partition").env, {
+      ETHEREUM_RPC_URL: "https://ethereum-rpc.publicnode.com",
+      ETHEREUM_ARCHIVE_RPC_URL: "https://eth.drpc.org",
+    });
   }
   const upload = step(jobs["contracts-build"], "Preserve this run's complete compiler outputs");
   assert.equal(upload.with.name, "contracts-build-${{ github.run_id }}-${{ github.run_attempt }}");
