@@ -11,7 +11,8 @@ import { anyQuoteEvidenceHashV1, anyQuoteModulePoolKeyV1, anyQuotePoolIdV1, buil
 import { planAnyQuoteInitialPriceV1, encodeAnyQuoteConfigurationV1 } from "@/lib/module-engine/any-quote/price";
 import { anyQuoteLaunchIntent, anyQuoteMinimumOutput, anyQuotePoolFor, assertAnyQuoteConfiguration, assertAnyQuoteLaunchPreparation, predictAnyQuoteToken, type AnyQuoteLaunchPreparation, type AnyQuoteTradeQuote } from "@/lib/module-engine/any-quote/integration";
 import { compileModuleEngineLaunch, predictModuleEngineAddress } from "@/lib/module-engine/operation-plan";
-import { prepareModuleEngineAnyQuoteSwap, prepareModuleEngineClaim, readModuleEngineLaunch, readModuleEngineAdministration, readModuleEngineFeeControls, prepareModuleEngineFeeChange, revalidateModuleEngineTransaction, releaseModuleEnginePreparation, verifyModuleEngineLaunchReceipt, verifyModuleEngineClaimReceipt } from "@/lib/module-engine/client";
+import { prepareModuleEngineAnyQuoteSwap, prepareModuleEngineApproval, prepareModuleEngineClaim, readModuleEngineLaunch, readModuleEngineAdministration, readModuleEngineFeeControls, prepareModuleEngineFeeChange, revalidateModuleEngineTransaction, releaseModuleEnginePreparation, verifyModuleEngineLaunchReceipt, verifyModuleEngineClaimReceipt } from "@/lib/module-engine/client";
+import { assertModuleEngineOperationAvailability, fetchModuleEngineAvailability } from "@/lib/module-engine/availability-client";
 import { ENGINE_CONTEXT, moduleEngineAnyQuoteHookAbi, moduleEngineAnyQuoteLedgerAbi, moduleEngineHostAbi, moduleEngineLaunchParameters, moduleEnginePlanParameters } from "@/lib/module-engine/abi";
 import { readAnyQuoteLaunchPreview, readAnyQuoteReadiness } from "@/lib/server/module-engine/any-quote";
 import { readAnyQuoteIdentityLaunchPreviewV1 } from "@/lib/server/module-engine/any-quote-preparation";
@@ -264,6 +265,52 @@ describe("Any Quote source identity lifecycle preparation", () => {
 });
 
 describe("Any Quote financial integration", () => {
+  it("preserves public availability for genuine sell approvals and rejects other funding authorities", async () => {
+    const fetcher = vi.spyOn(globalThis, "fetch");
+    try {
+      for (const allowanceKind of ["erc20", "permit2"] as const) {
+        const f = tradeFixture(false); f.state.allowance = allowanceKind === "erc20" ? 0n : 1000n; f.allowance.amount = 0n;
+        vi.mocked(f.client.call).mockResolvedValue({ data: "0x" });
+        const required = await prepareModuleEngineAnyQuoteSwap({ ...f, account: ACCOUNT });
+        expect(required).toMatchObject({ kind: "approval-required", allowanceKind, spender: ANY_QUOTE_INFRASTRUCTURE.permit2 });
+        if (required.kind !== "approval-required") throw new Error("Expected the sell's funding approval");
+        const prepared = await prepareModuleEngineApproval({ ...required, client: f.client, release: f.release, account: ACCOUNT });
+        expect(prepared).toMatchObject({ kind: "approve", allowanceKind, amount: 1000n, spender: ANY_QUOTE_INFRASTRUCTURE.permit2 });
+        if (allowanceKind === "erc20") expect(prepared).not.toHaveProperty("permit2Spender");
+        else expect(prepared.permit2Spender).toBe(f.identity.contracts.universalRouter.address);
+
+        fetcher.mockImplementation(async () => Response.json(f.availability));
+        const current = await fetchModuleEngineAvailability(prepared.releaseDigest);
+        expect(() => assertModuleEngineOperationAvailability(prepared, f.availability, current)).not.toThrow();
+        await expect(revalidateModuleEngineTransaction(prepared, ACCOUNT)).resolves.toBe(prepared.transaction);
+        for (const spender of [f.release.contracts.host.address, addr(999)]) {
+          expect(() => assertModuleEngineOperationAvailability({ ...prepared, spender }, f.availability, current)).toThrow("funding contract");
+        }
+        expect(() => assertModuleEngineOperationAvailability({ ...prepared, permit2Spender: addr(999) }, f.availability, current)).toThrow("funding contract");
+        if (allowanceKind === "permit2") {
+          expect(() => assertModuleEngineOperationAvailability({ ...prepared, permit2Spender: undefined }, f.availability, current)).toThrow("funding contract");
+        }
+        expect(() => assertModuleEngineOperationAvailability(prepared, f.availability, { ...current, templates: [] })).toThrow("funding contract");
+        const replacement = structuredClone(current);
+        if (!replacement.release || !("universalRouter" in replacement.release.contracts)) throw new Error("Expected the shared release");
+        replacement.release.contracts.universalRouter = { ...replacement.release.contracts.universalRouter, address: addr(999) };
+        replacement.release.releaseDigest = computeModuleEngineReleaseDigest(replacement.release);
+        replacement.templates = [];
+        expect(() => assertModuleEngineOperationAvailability(prepared, f.availability, replacement)).toThrow("template version changed");
+      }
+
+      const legacy = fixture(); vi.mocked(legacy.client.call).mockResolvedValue({ data: "0x" });
+      const prepared = await prepareModuleEngineApproval({ client: legacy.client, release: legacy.release, account: ACCOUNT, token: QUOTE, amount: 1000n });
+      expect(prepared.spender).toBe(legacy.release.contracts.host.address);
+      expect(prepared).not.toHaveProperty("allowanceKind");
+      fetcher.mockImplementation(async () => Response.json(legacy.availability));
+      const current = await fetchModuleEngineAvailability(prepared.releaseDigest);
+      expect(() => assertModuleEngineOperationAvailability(prepared, legacy.availability, current)).not.toThrow();
+      await expect(revalidateModuleEngineTransaction(prepared, ACCOUNT)).resolves.toBe(prepared.transaction);
+      expect(() => assertModuleEngineOperationAvailability({ ...prepared, spender: ANY_QUOTE_INFRASTRUCTURE.permit2 }, legacy.availability, current)).toThrow("funding contract");
+      expect(() => assertModuleEngineOperationAvailability({ ...prepared, allowanceKind: "permit2", permit2Spender: ANY_QUOTE_INFRASTRUCTURE.universalRouter }, legacy.availability, current)).toThrow("funding contract");
+    } finally { fetcher.mockRestore(); }
+  });
   it("binds the real ledger commitment separately from Host config and retains claims after creator rotation", async () => {
     const f = sharedFixture();
     expect(f.feeState.configurationHash).not.toBe(f.launch.configurationHash);
