@@ -38,12 +38,15 @@ function sourceConfiguration(t, engineRelease,
   return root;
 }
 
-test("Any Quote retains its authentication version and uses the existing Engine index transport", async t => {
-  const release = JSON.parse(readFileSync("tests/fixtures/module-engine-any-quote-index.json", "utf8")).cases[0].release;
+for (const [label, fixturePath] of [
+  ["Any Quote", "tests/fixtures/module-engine-any-quote-index.json"],
+  ["Native ETH Any Quote", "tests/fixtures/module-engine-any-quote-eth-index.json"],
+]) test(`${label} retains its authentication version and uses the existing Engine index transport`, async t => {
+  const release = JSON.parse(readFileSync(fixturePath, "utf8")).cases[0].release;
   const root = sourceConfiguration(t, release), expectations = await readIndexedWebsiteSourceExpectations(root);
   assert.deepEqual(expectations.robinhood.modules[1], { source: "module-engine-v1", sourceVersion: release.sourceVersion,
     sourceAddress: release.contracts.host.address, releaseDigest: release.releaseDigest, startBlock: release.startBlock });
-  assert.equal(JSON.parse(readFileSync(join(root, "config/module-engine/robinhood.json"), "utf8")).sourceVersion, "module-engine-any-quote-v1");
+  assert.equal(JSON.parse(readFileSync(join(root, "config/module-engine/robinhood.json"), "utf8")).sourceVersion, release.sourceVersion);
   assert.deepEqual(expectations.robinhood.modules.filter((_value, index) => index !== 1), EXPECTATIONS.robinhood.modules.filter((_value, index) => index !== 1));
   const observations = transport => fixture(({ url, spec }) => {
     if (url.pathname !== "/api/explore/robinhood") return;
@@ -105,8 +108,11 @@ test("an empty technical index list retains public source expectations and ignor
     fetchImpl: engineSourceObservation(release).fetchImpl })), /Robinhood module release binding/u);
 });
 
-test("a complete technical Any Quote release binds index reads without changing the public catalogs", async t => {
-  const release = JSON.parse(readFileSync("tests/fixtures/module-engine-any-quote-index.json", "utf8")).cases[0].release;
+for (const [label, fixturePath] of [
+  ["Any Quote", "tests/fixtures/module-engine-any-quote-index.json"],
+  ["native ETH Any Quote", "tests/fixtures/module-engine-any-quote-eth-index.json"],
+]) test(`a complete technical ${label} release binds index reads without changing the public catalogs`, async t => {
+  const release = JSON.parse(readFileSync(fixturePath, "utf8")).cases[0].release;
   const publicExpectations = await readIndexedWebsiteSourceExpectations(indexConfiguration(t, []));
   const root = indexConfiguration(t, [release]), expectations = await readIndexedWebsiteSourceExpectations(root);
   assert.deepEqual(expectations.robinhood.modules.slice(0, -1), publicExpectations.robinhood.modules);
@@ -121,8 +127,11 @@ test("a complete technical Any Quote release binds index reads without changing 
   assert.equal(result.chains[1].totalItems, 1);
 });
 
-test("technical index sources require complete canonical identity and nonzero evidence commitments", async t => {
-  const release = JSON.parse(readFileSync("tests/fixtures/module-engine-any-quote-index.json", "utf8")).cases[0].release;
+for (const [label, fixturePath] of [
+  ["Any Quote", "tests/fixtures/module-engine-any-quote-index.json"],
+  ["native ETH Any Quote", "tests/fixtures/module-engine-any-quote-eth-index.json"],
+]) test(`${label} technical index sources require complete canonical identity and nonzero evidence commitments`, async t => {
+  const release = JSON.parse(readFileSync(fixturePath, "utf8")).cases[0].release;
   const mutations = [
     value => { value.enabled = false; },
     value => { value.status = "preview"; },
