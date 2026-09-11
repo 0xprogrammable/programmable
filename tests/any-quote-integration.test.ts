@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { decodeAbiParameters, decodeFunctionData, encodeAbiParameters, encodeEventTopics, encodeFunctionData, encodeFunctionResult, erc20Abi, getAddress, getCreate2Address, keccak256, parseAbi, parseAbiParameters, type Abi, type Address, type Hex, type TransactionReceipt } from "viem";
 import { fixture, ACCOUNT, CODE, CODE_HASH, QUOTE, TOKEN, addr, hash } from "./module-engine-fixture";
-import { moduleEngineReleaseIdentity, computeModuleEngineReleaseDigest, computeModuleEngineHostManifestHash, type ModuleEngineAnyQuoteReleaseIdentity } from "@/lib/module-engine/catalog";
+import { moduleEngineReleaseIdentity, computeModuleEngineReleaseDigest, computeModuleEngineHostManifestHash, ENGINE_ZERO_ADDRESS as ZERO, type ModuleEngineAnyQuoteReleaseIdentity } from "@/lib/module-engine/catalog";
 import { MODULE_ENGINE_ANY_QUOTE_SOURCE_VERSION, MODULE_ENGINE_ANY_QUOTE_SOURCE_ID, MODULE_ENGINE_ANY_QUOTE_PROFILE, MODULE_ENGINE_ANY_QUOTE_PROFILE_ID, MODULE_ENGINE_ANY_QUOTE_ECONOMICS_POLICY_ID } from "@/lib/module-engine/profile";
 import { ANY_QUOTE_CONFIGURATION_ABI, createAnyQuoteConfigurationSchema } from "@/lib/module-engine/any-quote-configuration";
 import { ANY_QUOTE_INFRASTRUCTURE, ANY_QUOTE_NATIVE, ANY_QUOTE_NATIVE_BUY_OPERATION_ID, ANY_QUOTE_WETH } from "@/lib/module-engine/any-quote/types";
@@ -319,6 +319,35 @@ describe("Any Quote financial integration", () => {
     const admin = await readModuleEngineAdministration({ ...f, account: ACCOUNT, token: TOKEN });
     expect(admin.fees.creatorWallets).toEqual([addr(111)]);
     await expect(prepareModuleEngineClaim({ ...f, account: ACCOUNT, token: TOKEN, recipient: ACCOUNT })).resolves.toMatchObject({ kind: "claim", minimumAmount: 9n });
+  });
+  it("finds the immutable quote registration within the provider log range after a long release history", async () => {
+    const f = sharedFixture(), checkpoint = 1_000_100n, registeredAt = 985_000n;
+    f.registration.blockNumber = registeredAt;
+    f.feeState.creatorWallets = [addr(111)];
+    vi.mocked(f.client.getBlock).mockImplementation(async input => ({ number: input?.blockNumber ?? checkpoint, hash: f.blockHash, timestamp: f.state.timestamp }) as never);
+    const originalRead = vi.mocked(f.client.readContract).getMockImplementation()!;
+    const registrationReads: bigint[] = [];
+    vi.mocked(f.client.readContract).mockImplementation(async input => {
+      if (input.functionName === "quoteAsset" && input.address === f.release.contracts.ledger.address) {
+        const at = input.blockNumber!; registrationReads.push(at);
+        return at < registeredAt ? ZERO : QUOTE;
+      }
+      return originalRead(input);
+    });
+    f.client.getLogs = vi.fn(async input => {
+      const from = input.fromBlock as bigint, to = input.toBlock as bigint;
+      if (to - from + 1n > 10_000n) throw new Error("eth_getLogs is limited to a 10,000 range");
+      expect(input).toMatchObject({ address: f.release.contracts.ledger.address, args: { launchId: f.launch.launchId, asset: QUOTE }, strict: true });
+      expect(from).toBeLessThanOrEqual(registeredAt); expect(to).toBeGreaterThanOrEqual(registeredAt);
+      return [f.registration];
+    }) as NonNullable<typeof f.client.getLogs>;
+    await expect(readModuleEngineLaunch({ ...f, token: TOKEN })).resolves.toEqual(f.launch);
+    expect(f.client.getLogs).toHaveBeenCalledTimes(1);
+    expect(registrationReads.some(at => at < registeredAt)).toBe(true);
+    expect(registrationReads.some(at => at >= registeredAt && at < checkpoint)).toBe(true);
+    expect(registrationReads.length).toBeLessThanOrEqual(8);
+    f.registration.data = encodeAbiParameters(parseAbiParameters("bytes32,address[],uint16[]"), [f.feeState.configurationHash, [addr(111)], [10_000]]);
+    await expect(readModuleEngineLaunch({ ...f, token: TOKEN })).rejects.toThrow("Quote launch registration configuration");
   });
   it("rejects the Host hash in ledger storage and rejects changed original recipients", async () => {
     const f = sharedFixture(), original = f.feeState.configurationHash;

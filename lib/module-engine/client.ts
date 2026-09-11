@@ -137,12 +137,22 @@ const quoteLedgerRegistrationAbi = parseAbi(["event QuoteLaunchRegistered(bytes3
 async function anyQuoteLedgerConfiguration(client: ModuleEngineClient, block: BoundBlock, launch: ModuleEngineLaunchRecord): Promise<Hex> {
   need(isModuleEngineAnyQuoteRelease(block.release), "Quote ledger source is unavailable.");
   need(typeof client.getLogs === "function", "Quote launch registration logs are unavailable on this client.");
-  const pins = block.release.contracts, fromBlock = BigInt(block.release.startBlock);
+  const pins = block.release.contracts;
+  let fromBlock = BigInt(block.release.startBlock), toBlock = block.blockNumber;
+  // The pinned Ledger registers each launch once: quoteAsset changes from zero to
+  // its permanent asset in that transaction. Narrow that transition before asking
+  // for logs, so a long-lived release never requires a full-history log scan.
+  while (toBlock - fromBlock >= 10_000n) {
+    const middle = (fromBlock + toBlock) / 2n;
+    const asset = await read(client, pins.ledger.address, "quoteAsset", [launch.launchId], middle, moduleEngineAnyQuoteLedgerAbi);
+    if (typeof asset === "string" && asset.toLowerCase() === ZERO) fromBlock = middle + 1n;
+    else { same(asset, launch.quoteAsset, "Quote launch registration historical asset"); toBlock = middle; }
+  }
   const logs = await client.getLogs({ address: pins.ledger.address, event: quoteLedgerRegistrationAbi[0],
-    args: { launchId: launch.launchId, asset: launch.quoteAsset }, fromBlock, toBlock: block.blockNumber, strict: true });
+    args: { launchId: launch.launchId, asset: launch.quoteAsset }, fromBlock, toBlock, strict: true });
   need(logs.length === 1, "Expected exactly one quote launch registration from the released ledger.");
   const log = logs[0];
-  need(!log.removed && log.blockNumber !== null && log.blockHash !== null && log.transactionHash !== null && log.blockNumber >= fromBlock && log.blockNumber <= block.blockNumber, "Quote launch registration is outside the canonical checkpoint.");
+  need(!log.removed && log.blockNumber !== null && log.blockHash !== null && log.transactionHash !== null && log.blockNumber >= fromBlock && log.blockNumber <= toBlock, "Quote launch registration is outside the canonical checkpoint.");
   same(log.address, pins.ledger.address, "Quote launch registration ledger");
   same((await client.getBlock({ blockNumber: log.blockNumber })).hash, log.blockHash, "Quote launch registration block");
   const { args } = decodeEventLog({ abi: quoteLedgerRegistrationAbi, eventName: "QuoteLaunchRegistered", data: log.data, topics: log.topics, strict: true });
