@@ -22,11 +22,11 @@ const ADDRESS = /^0x(?!0{40}$)[0-9a-f]{40}$/iu;
 const MAX_MODULE_SOURCES = 32;
 
 function moduleSourceExpectation(release) {
-  const engine = ["module-engine-v1", "module-engine-any-quote-v1"].includes(release.sourceVersion);
+  const engine = ["module-engine-v1", "module-engine-any-quote-v1", "module-engine-any-quote-eth-v1"].includes(release.sourceVersion);
   const sourceAddress = engine
     ? release.contracts?.host?.address : release.contracts?.launcher?.address;
   if (release.chainId !== 4663 ||
-    !["module-native-v1", "module-native-v2", "module-engine-v1", "module-engine-any-quote-v1"].includes(release.sourceVersion) ||
+    !["module-native-v1", "module-native-v2", "module-engine-v1", "module-engine-any-quote-v1", "module-engine-any-quote-eth-v1"].includes(release.sourceVersion) ||
     !ADDRESS.test(sourceAddress ?? "") || !HASH.test(release.releaseDigest ?? "") ||
     !/^[1-9][0-9]{0,19}$/u.test(release.startBlock ?? "")) {
     throw new Error("indexed website Robinhood release identity is invalid");

@@ -6,12 +6,13 @@ import { fixture, TOKEN, hash } from "./module-engine-fixture";
 import { anyQuoteUiFixture } from "./module-engine-any-quote-ui-fixture";
 import reviewedAnyQuoteRelease from "@/config/module-engine/review-release.json";
 import { createAnyQuoteConfigurationSchema } from "@/lib/module-engine/any-quote-configuration";
-import { isModuleEngineAnyQuoteRelease } from "@/lib/module-engine/profile";
+import { isModuleEngineAnyQuoteRelease, isModuleEngineAnyQuoteEthRelease } from "@/lib/module-engine/profile";
 import engineEvidence from "./fixtures/module-engine-index.json";
 import { normalizeModuleEngineLaunchV1 } from "@/lib/module-engine/index/provenance-v1";
-import { bindActiveModuleEngineRelease, computeModuleEngineHostManifestHash, moduleEngineReleaseIdentity } from "@/lib/module-engine/catalog";
+import { bindActiveModuleEngineRelease, bindModuleEngineReleaseIdentity, computeModuleEngineHostManifestHash, moduleEngineReleaseIdentity } from "@/lib/module-engine/catalog";
 import { moduleEnginePublicLaunch } from "@/lib/server/robinhood-index/module-source";
-const mocks = vi.hoisted(() => ({ native: vi.fn(), engine: vi.fn(), nativeVersions: vi.fn(), engineVersions: vi.fn(), token: vi.fn() }));
+const mocks = vi.hoisted(() => ({ native: vi.fn(), engine: vi.fn(), nativeVersions: vi.fn(), engineVersions: vi.fn(), token: vi.fn(), reviewIdentity: null as unknown }));
+vi.mock("@/config/module-engine/review-release.json", () => ({ get default() { return mocks.reviewIdentity; } }));
 vi.mock("@/components/module-engine-host", () => ({ ModuleEngineHost: () => null }));
 vi.mock("@/components/module-mode-launch-host", () => ({ ModuleModeLaunchHost: () => null }));
 vi.mock("@/components/module-coin-console", () => ({ ModuleCoinConsole: () => null }));
@@ -24,7 +25,9 @@ import { GET } from "@/app/api/module-mode/route";
 import Page from "@/app/launch/modules/page";
 import ManagePage from "@/app/launch/modules/manage/[address]/page";
 
-beforeEach(() => { vi.clearAllMocks(); mocks.nativeVersions.mockResolvedValue([]); mocks.engineVersions.mockResolvedValue([]); mocks.engine.mockResolvedValue({ ...fixture().availability, release: null, templates: [] }); mocks.token.mockResolvedValue({ token: null }); });
+const { ANY_QUOTE_ETH_GUARD_RELEASE } = await import(new URL("../contracts/scripts/module-engine/any-quote-eth-basis.mjs", import.meta.url).href);
+
+beforeEach(() => { vi.clearAllMocks(); mocks.reviewIdentity = moduleEngineReleaseIdentity(ANY_QUOTE_ETH_GUARD_RELEASE); mocks.nativeVersions.mockResolvedValue([]); mocks.engineVersions.mockResolvedValue([]); mocks.engine.mockResolvedValue({ ...fixture().availability, release: null, templates: [] }); mocks.token.mockResolvedValue({ token: null }); });
 
 /** A mocked availability sample for route gating only, not a publication or activation claim. */
 function reviewedAnyQuoteAvailability() {
@@ -37,6 +40,19 @@ function reviewedAnyQuoteAvailability() {
   return { ...f.availability, release, templates: [template] };
 }
 describe("source-specific Module Mode product routes", () => {
+  it("keeps the installed native ETH review identity separate from public activation", async () => {
+    const { default: installed } = await vi.importActual<{ default: unknown }>("@/config/module-engine/review-release.json");
+    const identity = bindModuleEngineReleaseIdentity(installed);
+    expect(isModuleEngineAnyQuoteEthRelease(identity)).toBe(true);
+    expect(() => bindActiveModuleEngineRelease(identity)).toThrow();
+    mocks.reviewIdentity = identity;
+    // Review identity alone has no public activation or lifecycle evidence.
+    mocks.engine.mockResolvedValue({ ...fixture().availability, release: identity, templates: [] });
+    const page = await Page({ searchParams: Promise.resolve({}) });
+    expect(page.type).toBe(ModuleModeLaunchHost);
+    expect(page.props.anyQuoteReleaseDigest).toBeUndefined();
+    expect(page.props.versions).toEqual([]);
+  });
   it("keeps the current native reader and dispatches only explicit Engine selectors", async () => {
     const f = fixture(); mocks.native.mockResolvedValue({ release: null, catalog: [], reason: "Native disabled" }); mocks.engine.mockResolvedValue(f.availability);
     expect((await GET(new Request("http://localhost/api/module-mode"))).status).toBe(503); expect(mocks.native).toHaveBeenCalledOnce(); expect(mocks.engine).not.toHaveBeenCalled();
