@@ -15,7 +15,6 @@ import { TickMath } from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import { AnyQuoteTypesV1 as A } from "./AnyQuoteTypesV1.sol";
 import { AnyQuoteNativeRouteGuardV1 } from "./AnyQuoteNativeRouteGuardV1.sol";
 import { IAnyQuoteEthSharedHookV1 } from "./IAnyQuoteEthSharedHookV1.sol";
-import { AnyQuoteNativeFeeRouteV1 as R } from "./AnyQuoteNativeFeeRouteV1.sol";
 import { AnyQuoteEthLedgerV1 } from "./AnyQuoteEthLedgerV1.sol";
 import { ClassicModuleCalls } from "../../classic-modules/ClassicModuleCalls.sol";
 import { IModuleEngineV1, IModuleEngineAdmissionV1 } from "../IModuleEngineV1.sol";
@@ -320,7 +319,7 @@ contract ModuleEngineAnyQuoteEthHostV1 is ReentrancyGuardTransient, IModuleEngin
         launchIdOf[result.token] = result.launchId;
         engineLaunchId[result.engine] = result.launchId;
         A.Configuration memory config = abi.decode(parameters.configuration, (A.Configuration));
-        poolIdOf[result.launchId] = sharedHook.registerPoolWithNativeFeeRoute(
+        poolIdOf[result.launchId] = sharedHook.registerPoolWithNativeFeeRouteData(
             A.PoolRegistration({
                 launchId: result.launchId,
                 revisionId: result.revisionId,
@@ -335,7 +334,7 @@ contract ModuleEngineAnyQuoteEthHostV1 is ReentrancyGuardTransient, IModuleEngin
             }),
             parameters.creatorWallets,
             parameters.creatorSharesBps,
-            abi.decode(parameters.launchData, (R.FeeHop[]))
+            parameters.launchData
         );
         IERC20(result.token).safeTransfer(result.engine, TOKEN_SUPPLY);
         if (IERC20(result.token).balanceOf(result.engine) != TOKEN_SUPPLY) revert InvalidToken();
@@ -386,10 +385,8 @@ contract ModuleEngineAnyQuoteEthHostV1 is ReentrancyGuardTransient, IModuleEngin
             p.configuration.length != 256 || p.launchData.length == 0
                 || p.launchData.length > MAX_CONFIGURATION_BYTES
         ) revert InvalidQuoteInfrastructure();
-        // Keep the LP engine/configuration unchanged. Only this host consumes the route envelope;
-        // its exact bytes remain in planHash and EngineLaunchParametersBound.
-        R.FeeHop[] memory route = abi.decode(p.launchData, (R.FeeHop[]));
-        if (keccak256(abi.encode(route)) != keccak256(p.launchData)) revert InvalidQuoteInfrastructure();
+        // The hook validates and binds the canonical route envelope. Its exact bytes remain
+        // in planHash and EngineLaunchParametersBound; the existing LP receives no launch data.
         A.Configuration memory configuration = abi.decode(p.configuration, (A.Configuration));
         if (
             configuration.schemaId != A.SCHEMA_ID || configuration.poolManager != address(quotePoolManager)
