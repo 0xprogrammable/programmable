@@ -1,5 +1,5 @@
 import { assertAnyQuoteNativeBacking, assertAnyQuoteNativeFeeSettlement } from "./any-quote/native-fee-evidence";
-import { concatHex, decodeAbiParameters, decodeEventLog, decodeFunctionResult, encodeAbiParameters, encodeEventTopics, encodeFunctionData, erc20Abi, getCreate2Address, keccak256, parseAbi, parseAbiParameters, toHex, type Abi, type Address, type Hex, type PublicClient, type TransactionReceipt } from "viem";
+import { concatHex, decodeAbiParameters, decodeEventLog, decodeFunctionResult, encodeAbiParameters, encodeEventTopics, encodeFunctionData, erc20Abi, fallback, getCreate2Address, http, keccak256, parseAbi, parseAbiParameters, toHex, type Abi, type Address, type Hex, type PublicClient, type TransactionReceipt } from "viem";
 import { compileOpenConfig, type OpenConfigValue } from "@/packages/classic-modules/src/open-config.mjs";
 import { createModuleNativeClient, type ModuleNativeClient, type ModuleNativeWalletTransaction } from "@/lib/module-mode/native-client";
 import { nativeCanonicalJson } from "@/lib/module-mode/native-catalog";
@@ -19,7 +19,12 @@ import { compileModuleEngineLaunch, moduleEngineOperation as operationFor } from
 export { materializeModuleEngineRuntime, predictModuleEngineAddress } from "./operation-plan";
 
 export type ModuleEngineClient = ModuleNativeClient & Partial<Pick<PublicClient, "getLogs">>;
-export const createModuleEngineClient = createModuleNativeClient;
+export function createModuleEngineClient(): ModuleEngineClient {
+  return createModuleNativeClient(fallback([
+    http(undefined, { timeout: 15_000, retryCount: 0 }),
+    http("https://rpc-robinhood.blockmachine.io", { timeout: 15_000, retryCount: 0 }),
+  ], { rank: false, retryCount: 0 }));
+}
 export interface ModuleEngineOperation { operationId: Hex; actor: Address; recipient: Address; inputAsset: Address; inputAmount: bigint; outputAsset: Address; minimumOutput: bigint; deadline: bigint; nonce: bigint; data: Hex }
 export type ModuleEngineOperationIntent = Omit<ModuleEngineOperation, "actor" | "nonce" | "deadline">;
 export interface ModuleEngineLaunchRecord { launchId: Hex; revisionId: Hex; creator: Address; token: Address; quoteAsset: Address; engine: Address; engineCodeHash: Hex; constructorHash: Hex; initCodeHash: Hex; configurationHash: Hex; planHash: Hex; resourcesHash: Hex; buyCreatorFeeBps: number; sellCreatorFeeBps: number }

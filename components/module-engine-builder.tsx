@@ -15,7 +15,7 @@ import { configurationFromForm, configurationToForm, defaultSchemaValue, parseEx
 import { moduleAddress, moduleBytes } from "@/lib/module-mode/release";
 import { ENGINE_ZERO_ADDRESS, ENGINE_ZERO_HASH, moduleEngineOptionalHash, parseModuleEngineAvailability, type ModuleEngineAvailability, type ModuleEngineCatalogDefinition } from "@/lib/module-engine/catalog";
 import { createModuleEngineClient, ENGINE_OPERATIONS, moduleEngineDepositIntent, moduleEngineSettlementRequestIntent, moduleEngineTradeIntent, prepareModuleEngineApproval, prepareModuleEngineLaunch, readModuleEngineQuoteAsset, type ModuleEngineApprovalRequired, type ModuleEngineClient, type ModuleEngineOperationIntent, type PreparedModuleEngineTransaction } from "@/lib/module-engine/client";
-import { isModuleEngineSharedQuoteRelease } from "@/lib/module-engine/profile";
+import { isModuleEngineAnyQuoteEthRelease, isModuleEngineSharedQuoteRelease } from "@/lib/module-engine/profile";
 import { prepareModuleEngineAnyQuoteLaunch } from "@/lib/module-engine/any-quote/integration-client";
 import { anyQuoteUserMessage, ModuleEngineAnyQuoteAsset, useAnyQuoteAssetAvailability } from "./module-engine-any-quote-asset";
 import { ModuleEnginePicker } from "./module-engine-library";
@@ -228,7 +228,7 @@ export function ModuleEngineBuilder({ availability: raw, client: suppliedClient,
               <summary><span>Creator fees</span><span className={engineStyles.optionalLabel}>{buyFee}% buy · {sellFee}% sell</span><ChevronDown size={16} aria-hidden="true" /></summary>
               <div className={engineStyles.detailsBody}>
                 <div className={styles.twoFields}>{[["buy", buyFee, setBuyFee], ["sell", sellFee, setSellFee]].map(([side, value, setValue]) => <div className={styles.field} key={side as string}><label htmlFor={`engine-${side}-fee`}>{side === "buy" ? "Buy" : "Sell"} fee</label><select id={`engine-${side}-fee`} value={value as string} onChange={event => edit(() => (setValue as (value: string) => void)(event.target.value))}>{Array.from({ length: 11 }, (_, i) => <option key={i} value={String(i)}>{i}%</option>)}</select></div>)}</div>
-                <p className={styles.help}>Your creator fees are separate from the fixed 0.3% module fee on every buy and sell. All fees accrue in the pool pair token. Creator rates stay fixed after launch.</p>
+                <p className={styles.help}>Your creator fees are separate from the fixed 0.3% module fee on every buy and sell. All fees accrue in {isModuleEngineAnyQuoteEthRelease(availability.release) ? "ETH" : "the pool pair token"}. Creator rates stay fixed after launch.</p>
               </div>
             </Disclosure> : <Disclosure className={`${engineStyles.launchSettings} ${engineStyles.optionalDetails}`}>
               <summary><span>Launch settings</span><ChevronDown size={16} aria-hidden="true" /></summary>

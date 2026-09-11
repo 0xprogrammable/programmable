@@ -1,9 +1,42 @@
-import { describe, expect, it, vi } from "vitest";
-import { decodeFunctionData, encodeAbiParameters, encodeEventTopics, keccak256, type Hex, type TransactionReceipt } from "viem";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { decodeFunctionData, encodeAbiParameters, encodeEventTopics, encodeFunctionData, keccak256, type Hex, type TransactionReceipt } from "viem";
+import { ROBINHOOD_MAINNET_RPC_URL } from "@/lib/chains";
 import { moduleEngineHostAbi, moduleEnginePlanParameters } from "@/lib/module-engine/abi";
+import { MODULE_ENGINE_ANY_QUOTE_ETH_SOURCE_ID } from "@/lib/module-engine/profile";
 import { bindActiveModuleEngineRelease, bindModuleEngineTemplate, computeModuleEngineHostManifestHash, ENGINE_ZERO_ADDRESS as ZERO } from "@/lib/module-engine/catalog";
-import { assertModuleEngineRelease, materializeModuleEngineRuntime, moduleEngineTradeIntent, prepareModuleEngineLaunch, prepareModuleEngineOperation, readModuleEngineLaunch, revalidateModuleEngineTransaction, verifyModuleEngineOperationReceipt } from "@/lib/module-engine/client";
+import { assertModuleEngineRelease, createModuleEngineClient, materializeModuleEngineRuntime, moduleEngineTradeIntent, prepareModuleEngineLaunch, prepareModuleEngineOperation, readModuleEngineLaunch, revalidateModuleEngineTransaction, verifyModuleEngineOperationReceipt } from "@/lib/module-engine/client";
 import { fixture, ACCOUNT, QUOTE, TOKEN, CODE, CODE_HASH, addr, hash } from "./module-engine-fixture";
+
+describe("Module Engine public RPC failover", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const secondaryUrl = "https://rpc-robinhood.blockmachine.io";
+  const sourceRead = { address: addr(1), abi: moduleEngineHostAbi, functionName: "SOURCE_VERSION", blockNumber: 100n } as const;
+  function responses(secondaryAvailable: boolean) {
+    const attempts: { url: string; body: { id: number; method: string; params: unknown[] } }[] = [];
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>(async (input, init) => {
+      const request = new Request(input, init), body = await request.json();
+      const url = new URL(request.url).origin;
+      attempts.push({ url, body });
+      if (url === ROBINHOOD_MAINNET_RPC_URL || !secondaryAvailable) return new Response("Forbidden", { status: 403 });
+      expect(url).toBe(secondaryUrl);
+      return Response.json({ jsonrpc: "2.0", id: body.id, result: MODULE_ENGINE_ANY_QUOTE_ETH_SOURCE_ID });
+    }));
+    return attempts;
+  }
+  it("tries the secondary immediately after primary 403 and preserves the direct call and block", async () => {
+    const attempts = responses(true);
+    await expect(createModuleEngineClient().readContract(sourceRead)).resolves.toBe(MODULE_ENGINE_ANY_QUOTE_ETH_SOURCE_ID);
+    expect(attempts.map(attempt => attempt.url)).toEqual([ROBINHOOD_MAINNET_RPC_URL, secondaryUrl]);
+    const call = { method: "eth_call", params: [{ to: sourceRead.address, data: encodeFunctionData(sourceRead) }, "0x64"] };
+    expect(attempts.map(({ body: { method, params } }) => ({ method, params }))).toEqual([call, call]);
+  });
+  it("rejects when both public providers fail without retrying either provider", async () => {
+    const attempts = responses(false);
+    await expect(createModuleEngineClient().readContract(sourceRead)).rejects.toThrow("HTTP request failed");
+    expect(attempts.map(attempt => attempt.url)).toEqual([ROBINHOOD_MAINNET_RPC_URL, secondaryUrl]);
+  });
+});
+
 describe("isolated engine source and transaction bindings", () => {
   it("uses the actual Host ABI without native launch selectors", () => { expect(moduleEngineHostAbi.some(item => item.type === "event" && item.name === "EngineLaunchBound")).toBe(true); expect(moduleEngineHostAbi.some(item => item.type === "event" && item.name.includes("Native"))).toBe(false); });
   it("rejects another host source even with the same reviewed pins", async () => { const f = fixture(); f.state.wrongSource = true; await expect(assertModuleEngineRelease(f)).rejects.toThrow("source version"); });

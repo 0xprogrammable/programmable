@@ -1,7 +1,7 @@
 import {
   createPublicClient, decodeEventLog, decodeFunctionResult, encodeAbiParameters, encodeEventTopics, encodeFunctionData,
   erc20Abi, getCreate2Address, http, keccak256, parseAbiParameters, sha256, toHex,
-  type Abi, type Address, type Hex, type PublicClient, type TransactionReceipt,
+  type Abi, type Address, type Hex, type PublicClient, type TransactionReceipt, type Transport,
 } from "viem";
 import { robinhoodChain } from "@/lib/chains";
 import { MAX_TOKEN_DESCRIPTION_BYTES, MAX_TOKEN_NAME_BYTES } from "@/lib/metadata-policy";
@@ -15,8 +15,8 @@ import type { ModuleManagementBuildInput } from "./management";
 import { moduleTokenMetadata, normalizeModuleSocialLinks } from "./token-metadata";
 
 export type ModuleNativeClient = Pick<PublicClient, "getChainId" | "getBlock" | "getCode" | "readContract" | "call" | "estimateGas" | "getTransaction" | "waitForTransactionReceipt">;
-export function createModuleNativeClient(): ModuleNativeClient {
-  return createPublicClient({ chain: robinhoodChain, transport: http(undefined, { timeout: 15_000, retryCount: 1 }), batch: { multicall: false } });
+export function createModuleNativeClient(transport: Transport = http(undefined, { timeout: 15_000, retryCount: 1 })): ModuleNativeClient {
+  return createPublicClient({ chain: robinhoodChain, transport, batch: { multicall: false } });
 }
 const ZERO = "0x0000000000000000000000000000000000000000" as Address;
 const SUPPLY = 1_000_000_000n * 10n ** 18n;

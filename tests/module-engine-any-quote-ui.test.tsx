@@ -23,6 +23,7 @@ describe("Any Quote LP visible economic and availability boundaries", () => {
     expect(html).not.toContain("Leave blank to launch without a buy");
     expect(html).toContain("Connect wallet");
     expect(html).toContain("0.3% module fee per buy and sell");
+    expect(html).toContain("All fees accrue in the pool pair token."); expect(html).not.toContain("All fees accrue in ETH.");
     expect(html).not.toContain("Check token");
     for (const technical of ["Minimum fees in ETH", "Conversion route", "Fixed module settings", "initialTick", "priceEvidenceHash", "Creator fees accrue in ETH"]) expect(html).not.toContain(technical);
   });
@@ -52,6 +53,7 @@ describe("Any Quote LP visible economic and availability boundaries", () => {
   });
   it("shows native fees in ETH without changing historical quote claims or adding launch controls", () => {
     const html = renderToStaticMarkup(<ModuleEngineBuilder {...actions} {...anyQuoteUiFixture(true)} />);
+    expect(html).toContain("All fees accrue in ETH."); expect(html).not.toContain("All fees accrue in the pool pair token.");
     expect(html.match(/id="engine-quote"/g)).toHaveLength(1); expect(html).toContain("Initial buy"); expect(html).not.toContain("Conversion route");
     const prepared: PreparedModuleEngineClaim = { ...base, kind: "claim", nativeEthFees: true, recipient: ACCOUNT, minimumAmount: 125n * 10n ** 16n, claimedBefore: 0n, feeAsset: addr(0), feeDecimals: 18 };
     const claim = renderToStaticMarkup(<ModuleEngineTransactionReview prepared={prepared} anyQuote quoteAsset={QUOTE} quoteDecimals={6} busy={false} onConfirm={vi.fn()} onEdit={vi.fn()} />);
