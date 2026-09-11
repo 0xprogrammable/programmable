@@ -1,5 +1,5 @@
 import { MODULE_MODE_ECONOMICS_POLICY_V2 } from "./module-mode/release";
-import { MODULE_ENGINE_ANY_QUOTE_ECONOMICS_POLICY_ID } from "./module-engine/profile";
+import { MODULE_ENGINE_ANY_QUOTE_ECONOMICS_POLICY_ID, MODULE_ENGINE_ANY_QUOTE_ETH_ECONOMICS_POLICY_ID } from "./module-engine/profile";
 import type { LaunchProjectionV1 } from "./custom-launch/launch-plan-v1";
 
 export type RobinhoodLaunch = Readonly<{
@@ -26,6 +26,8 @@ export type RobinhoodLaunch = Readonly<{
   economicsPolicyId?: string;
   protocolFeeBps?: 10 | 30;
   feeAsset?: string;
+  feeDecimals?: number;
+  nativeFeeRouteHash?: string;
   feeLedgerAddress?: string;
   authorPoolFeeBps?: 0 | 20;
   platformFeeBps?: 10 | 30;
@@ -131,7 +133,7 @@ export function isRobinhoodNativeModuleLaunch(value: unknown): value is Robinhoo
 }
 
 export type RobinhoodEnginePrimaryMarket = Readonly<{ kind: "uniswap-v4"; chainId: 4663; launchId: string; poolManager: string;
-  poolId: string; quoteAsset: string; primaryToken: string; hook: string; initialTick: number }>;
+  poolId: string; quoteAsset: string; primaryToken: string; hook: string; initialTick: number; nativeFeeRouteHash?: string }>;
 export type RobinhoodEngineLaunch = RobinhoodLaunch & Readonly<{
   sourceKind: "module-engine-v1"; routerAddress: null; stampHash: null; sourceAddress: string; sourceReleaseDigest: string;
   engineAddress: string; engineRevisionId: string; engineFamilyId: string; engineManifestHash: string; engineRuntimeCodeHash: string;
@@ -148,7 +150,8 @@ export function isRobinhoodEngineLaunch(value: unknown): value is RobinhoodEngin
   const row = value as Record<string, unknown>;
   const address = (item: unknown): item is string => typeof item === "string" && /^0x(?!0{40}$)[\da-f]{40}$/i.test(item);
   const hash = (item: unknown): item is string => typeof item === "string" && /^0x(?!0{64}$)[\da-f]{64}$/i.test(item);
-  const anyQuote = row.economicsPolicyId === MODULE_ENGINE_ANY_QUOTE_ECONOMICS_POLICY_ID;
+  const nativeFees = row.economicsPolicyId === MODULE_ENGINE_ANY_QUOTE_ETH_ECONOMICS_POLICY_ID;
+  const anyQuote = nativeFees || row.economicsPolicyId === MODULE_ENGINE_ANY_QUOTE_ECONOMICS_POLICY_ID;
   if (row.sourceKind !== "module-engine-v1" || row.routerAddress !== null || row.stampHash !== null
     || ["recipeHash", "runtime", "launchKey"].some(key => Object.hasOwn(row, key))
     || ![row.sourceAddress, row.tokenAddress, row.creator, row.engineAddress, row.quoteAsset].every(address)
@@ -164,7 +167,7 @@ export function isRobinhoodEngineLaunch(value: unknown): value is RobinhoodEngin
     || !Array.isArray(row.modulePackageIds) || row.modulePackageIds.length !== 1 || row.modulePackageIds[0] !== row.engineRevisionId
     || !Array.isArray(row.moduleFamilyIds) || row.moduleFamilyIds.length !== 1 || row.moduleFamilyIds[0] !== row.engineFamilyId
     || (anyQuote ? row.protocolFeeBps !== 30 || row.authorPoolFeeBps !== 0 || row.platformFeeBps !== 30
-      || row.feeAsset !== row.quoteAsset || !address(row.feeLedgerAddress) || row.primaryMarket === null
+      || row.feeAsset !== (nativeFees ? "0x0000000000000000000000000000000000000000" : row.quoteAsset) || !address(row.feeLedgerAddress) || row.primaryMarket === null
       || !Array.isArray(row.feeEligibleFamilyIds) || row.feeEligibleFamilyIds.length !== 0
       : row.economicsPolicyId !== MODULE_MODE_ECONOMICS_POLICY_V2 || row.protocolFeeBps !== 10
         || (row.authorPoolFeeBps !== 0 && row.authorPoolFeeBps !== 20) || row.platformFeeBps !== 10 + Number(row.authorPoolFeeBps)
@@ -177,6 +180,7 @@ export function isRobinhoodEngineLaunch(value: unknown): value is RobinhoodEngin
   return market.kind === "uniswap-v4" && market.chainId === 4663 && market.launchId === row.launchId
     && market.primaryToken === row.tokenAddress && market.quoteAsset === row.quoteAsset && (anyQuote ? address(market.hook) && market.hook !== row.engineAddress : market.hook === row.engineAddress)
     && address(market.poolManager) && hash(market.poolId) && row.poolManager === market.poolManager && row.poolId === market.poolId
+    && (nativeFees ? row.feeDecimals === 18 && hash(row.nativeFeeRouteHash) && market.nativeFeeRouteHash === row.nativeFeeRouteHash : row.nativeFeeRouteHash === undefined && market.nativeFeeRouteHash === undefined)
     && row.hookAddress === market.hook && Number.isInteger(market.initialTick) && Math.abs(Number(market.initialTick)) < 887272;
 }
 

@@ -13,3 +13,6 @@ export { createReviewedModuleEngineManifest } from '../../../lib/module-mode/rev
 export { computeModuleEngineHostManifestHash } from '../../../lib/module-engine/catalog';
 export { computeModuleReviewDecisionDigestV1 } from '../../../lib/server/module-mode/review-decision-wire-v1';
 export { isModuleEngineAnyQuoteRelease, moduleEngineSourceId, MODULE_ENGINE_ANY_QUOTE_CONFIGURATION_SCHEMA_ID } from '../../../lib/module-engine/profile';
+
+export { isModuleEngineSharedQuoteRelease, isModuleEngineAnyQuoteEthRelease } from '../../../lib/module-engine/profile';
+export { decodeAnyQuoteNativeFeeRoute, anyQuoteNativeFeeRouteAbi } from '../../../lib/module-engine/any-quote/native-fee-route';

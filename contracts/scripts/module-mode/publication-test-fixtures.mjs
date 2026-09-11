@@ -7,10 +7,11 @@ import { getCreate2Address, keccak256, toHex } from 'viem';
 import { REPOSITORY_ROOT } from './build.mjs';
 import { OFFICIAL, canonicalJson, sha256 } from './core.mjs';
 import { publicationValidators } from './publication-shared.mjs';
+import { moduleEngineSdkBundle } from '../module-engine/sdk-bundle.mjs';
 let fixtureModule;
 export async function publicationFixture(feeEligibility) {
   if (!fixtureModule) {
-    const result = await build({ absWorkingDir: REPOSITORY_ROOT, stdin: { contents: "export { moduleReviewAdminFixture } from './tests/fixtures/module-review-admin';", resolveDir: REPOSITORY_ROOT, loader: 'ts' },
+    const result = await build({ ...moduleEngineSdkBundle(), absWorkingDir: REPOSITORY_ROOT, stdin: { contents: "export { moduleReviewAdminFixture } from './tests/fixtures/module-review-admin';", resolveDir: REPOSITORY_ROOT, loader: 'ts' },
       write: false, bundle: true, platform: 'node', target: 'node24', format: 'esm', packages: 'external', treeShaking: true, tsconfig: path.join(REPOSITORY_ROOT, 'tsconfig.json'), logLevel: 'silent' });
     const directory = path.join(REPOSITORY_ROOT, 'contracts/out/module-mode-publication/test'); await mkdir(directory, { recursive: true });
     const output = result.outputFiles[0].contents, filename = path.join(directory, `${sha256(output)}-${process.pid}.mjs`); await writeFile(filename, output);

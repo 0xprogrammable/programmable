@@ -154,7 +154,7 @@ export function buildAnyQuoteSwapV1(input: {
   if (input.side !== "buy" && input.side !== "sell") throw new AnyQuoteErrorV1("INVALID_TRADE_SIDE");
   if (input.amountIn <= 0n || input.amountIn > INT128_MAX || input.minimumAmountOut <= 0n || input.minimumAmountOut > INT128_MAX
     || input.deadline <= now || input.deadline > now + 300n || input.deadline > BigInt(input.externalRoute.validUntil)) throw new AnyQuoteErrorV1("TRADE_BOUNDS_INVALID");
-  const key = anyQuoteModulePoolKeyV1(input.pool), route = input.externalRoute;
+  anyQuoteModulePoolKeyV1(input.pool); const route = input.externalRoute;
   validateAnyQuoteExternalRouteV1(route);
   if (BigInt(input.side === "buy" ? route.amountOut : route.amountIn) > INT128_MAX) throw new AnyQuoteErrorV1("MODULE_QUOTE_AMOUNT_OUTSIDE_RANGE");
   const buy = input.side === "buy", quote = anyQuoteAddressV1(input.pool.quoteAsset), token = anyQuoteAddressV1(input.pool.token);
@@ -166,9 +166,7 @@ export function buildAnyQuoteSwapV1(input: {
       || (hop.protocol === "V4" && hop.poolId.toLowerCase() === input.pool.poolId.toLowerCase())) throw new AnyQuoteErrorV1("EXTERNAL_ROUTE_REUSES_MODULE_POOL");
   }
   const hops = requireAnyQuoteNativeUnlockRouteV1(route, input.side);
-  const path = hops.map(hop => [hop.tokenOut, hop.key.fee, hop.key.tickSpacing, hop.key.hooks, hop.hookData]);
-  const moduleHop = [buy ? token : quote, key.fee, key.tickSpacing, key.hooks, "0x" as Hex];
-  if (buy) path.push(moduleHop); else path.unshift(moduleHop);
+  const path = anyQuoteSwapPathV1(input.pool, input.side, route).map(hop => [hop.intermediateCurrency, hop.fee, hop.tickSpacing, hop.hooks, hop.hookData]);
   const currencyIn = buy ? ANY_QUOTE_NATIVE : token, currencyOut = buy ? token : ANY_QUOTE_NATIVE;
   const v4 = new V4Planner();
   // Every intermediate output becomes the next hop's exact input inside the same PoolManager
@@ -194,6 +192,19 @@ export function buildAnyQuoteSwapV1(input: {
     approval: buy ? null : { token, spender: ANY_QUOTE_INFRASTRUCTURE.permit2,
       permit2Spender: ANY_QUOTE_INFRASTRUCTURE.universalRouter, amount: input.amountIn.toString() },
   };
+}
+
+/** The same complete path is executed by Universal Router and the official V4 Quoter. */
+export function anyQuoteSwapPathV1(pool: AnyQuoteModulePoolV1, side: "buy" | "sell", route: AnyQuoteExternalRouteV1) {
+  const key = anyQuoteModulePoolKeyV1(pool), buy = side === "buy";
+  const hops = requireAnyQuoteNativeUnlockRouteV1(route, side);
+  if (!anyQuoteSameAddressV1(buy ? hops[hops.length - 1].tokenOut : hops[0].tokenIn, pool.quoteAsset)) throw new AnyQuoteErrorV1("EXTERNAL_ROUTE_MISMATCH");
+  for (const hop of hops) if (anyQuoteSameAddressV1(hop.tokenIn, pool.token) || anyQuoteSameAddressV1(hop.tokenOut, pool.token)
+    || hop.poolId.toLowerCase() === pool.poolId.toLowerCase()) throw new AnyQuoteErrorV1("EXTERNAL_ROUTE_REUSES_MODULE_POOL");
+  const path = hops.map(hop => ({ intermediateCurrency: hop.tokenOut, fee: hop.key.fee, tickSpacing: hop.key.tickSpacing, hooks: hop.key.hooks, hookData: hop.hookData }));
+  const moduleHop = { intermediateCurrency: buy ? pool.token : pool.quoteAsset, fee: key.fee, tickSpacing: key.tickSpacing, hooks: key.hooks, hookData: "0x" as Hex };
+  if (buy) path.push(moduleHop); else path.unshift(moduleHop);
+  return path;
 }
 
 /** Read-only settlement probe. These bytes must never become a launch operation or wallet request.

@@ -15,8 +15,8 @@ const exact = (value, keys, label) => {
 /** Dispatch only by an authenticated release schema/version, never by token, symbol or contributor code. */
 export function sourceProfile(release, wire) {
   const native = ['module-native-v1', 'module-native-v2'].includes(release.sourceVersion);
-  const anyQuote = release.sourceVersion === 'module-engine-any-quote-v1';
-  need(native || release.sourceVersion === 'module-engine-v1' || anyQuote && wire.isModuleEngineAnyQuoteRelease(release), 'Unsupported launch source profile');
+  const anyQuote = ['module-engine-any-quote-v1', 'module-engine-any-quote-eth-v1'].includes(release.sourceVersion);
+  need(native || release.sourceVersion === 'module-engine-v1' || anyQuote && (release.sourceVersion === 'module-engine-any-quote-v1' ? wire.isModuleEngineAnyQuoteRelease(release) : wire.isModuleEngineAnyQuoteEthRelease(release)), 'Unsupported launch source profile');
   const abi = native ? wire.moduleNativeLaunchAbiFor(release) : wire.moduleEngineHostAbi;
   const eventName = native ? 'ModuleNativeLaunched' : 'EngineLaunchBound';
   const event = abi.find(item => item.type === 'event' && item.name === eventName);
@@ -67,7 +67,7 @@ export function releaseInventory(files, wire) {
 }
 export function checkpointEntry(release, nextBlock, blockHash, checkedAt) {
   return { schemaVersion: ENTRY_SCHEMA, chainId: 4663, releaseDigest: release.releaseDigest, sourceVersion: release.sourceVersion,
-    sourceAddress: release.contracts[['module-engine-v1', 'module-engine-any-quote-v1'].includes(release.sourceVersion) ? 'host' : 'launcher'].address,
+    sourceAddress: release.contracts[['module-engine-v1', 'module-engine-any-quote-v1', 'module-engine-any-quote-eth-v1'].includes(release.sourceVersion) ? 'host' : 'launcher'].address,
     nextBlock: String(nextBlock), blockHash, checkedAt };
 }
 export function bindCheckpointEntry(value, release) {
@@ -144,7 +144,9 @@ export function engineLaunchIdentity({ release, receipt, log, publication, revis
   const launchId = keccak256(encodeAbiParameters(parseAbiParameters('uint256,address,address,bytes32,bytes32'), [4663n, host, a.token, a.revisionId, configHash]));
   const planHash = keccak256(encodeAbiParameters(wire.moduleEnginePlanParameters, [4663n, host, a.creator, p]));
   need(same(launchId, a.launchId) && same(planHash, a.planHash), 'Engine launch/plan hash differs');
-  const anyQuote = wire.isModuleEngineAnyQuoteRelease?.(release) === true;
+  const anyQuote = wire.isModuleEngineAnyQuoteRelease?.(release) === true || wire.isModuleEngineAnyQuoteEthRelease?.(release) === true;
+  const nativeFeeRoute = wire.isModuleEngineAnyQuoteEthRelease?.(release) === true
+    ? wire.decodeAnyQuoteNativeFeeRoute(p.launchData, { quoteAsset: a.quoteAsset, token: a.token, sharedHook: release.contracts.sharedHook.address }) : undefined;
   const context = { host, launchId, token: a.token, creator: a.creator, quoteAsset: a.quoteAsset, feeCollector: anyQuote ? release.contracts.ledger.address : host };
   const constructorArguments = encodeAbiParameters(wire.moduleEngineConstructorParameters, [context, p.configuration]);
   const creationCode = `${p.creationCode}${constructorArguments.slice(2)}`;
@@ -154,17 +156,20 @@ export function engineLaunchIdentity({ release, receipt, log, publication, revis
   need(same(getCreate2Address({ from: host, salt, bytecodeHash: keccak256(creationCode) }), a.engine), 'Engine CREATE2 address differs');
   const runtime = wire.materializeModuleEngineRuntimeV1(reviewed, constructorArguments);
   need(same(keccak256(runtime), a.runtimeCodeHash), 'Engine immutable runtime differs');
-  const graffiti = keccak256(encodeAbiParameters(parseAbiParameters('string,address,bytes32'), ['programmable.module-engine.token.v1', a.creator, p.creatorSalt]));
+  const graffiti = keccak256(encodeAbiParameters(parseAbiParameters('string,address,bytes32'), [anyQuote ? 'programmable.module-engine.any-quote-token.v1' : 'programmable.module-engine.token.v1', a.creator, p.creatorSalt]));
   const tokenSalt = keccak256(encodeAbiParameters(parseAbiParameters('string,string,uint8,address,bytes32'), [p.name, p.symbol, 18, host, graffiti]));
   need(same(getCreate2Address({ from: release.contracts.tokenFactory.address, salt: tokenSalt, bytecodeHash: release.tokenCreationCodeHash }), a.token), 'Engine token CREATE2 differs');
   return { launch: a, parameters: p, context, graffiti, runtime, constructorArguments, creationCode, manifest,
-    ...(anyQuote ? { anyQuoteRelease: release } : {}) };
+    ...(anyQuote ? { anyQuoteRelease: release } : {}), ...(nativeFeeRoute ? { nativeFeeRoute } : {}) };
 }
 
 /** Existing reviewed resource interfaces only. Unknown/custom child-contract profiles remain closed. */
 export function engineResourceCommitment(identity, state) {
   const { launch: a, parameters: p, manifest } = identity;
-  need(p.launchData === '0x', 'Unsupported engine initialization resource data');
+  const nativeFees = identity.anyQuoteRelease?.sourceVersion === 'module-engine-any-quote-eth-v1';
+  if (nativeFees) need(identity.nativeFeeRoute?.launchData === p.launchData && same(identity.nativeFeeRoute.routeHash, keccak256(p.launchData))
+    && same(state.nativeFeeRouteHash, identity.nativeFeeRoute.routeHash), 'Native fee route resource binding differs');
+  else need(p.launchData === '0x', 'Unsupported engine initialization resource data');
   let hash;
   if (manifest.catalogDefinition.interface === 'settlement-v1') {
     const definition = manifest.catalogDefinition;
@@ -187,7 +192,7 @@ export function engineResourceCommitment(identity, state) {
     hash = keccak256(encodeAbiParameters(parseAbiParameters('address,uint256'), [a.quoteAsset, unlock]));
   } else if (manifest.catalogDefinition.interface === 'quote-shared-v1') {
     const release = identity.anyQuoteRelease;
-    need(release?.sourceVersion === 'module-engine-any-quote-v1' && p.configuration.length === 514, 'Authenticated Any Quote source and exact configuration required');
+    need(['module-engine-any-quote-v1', 'module-engine-any-quote-eth-v1'].includes(release?.sourceVersion) && p.configuration.length === 514, 'Authenticated Any Quote source and exact configuration required');
     const abi = parseAbiParameters('(bytes32 schemaId,address poolManager,bytes32 poolManagerCodeHash,address sharedHook,address quoteAsset,int24 initialTick,uint64 validUntil,bytes32 priceEvidenceHash)');
     const [config] = decodeAbiParameters(abi, p.configuration), pins = release.contracts;
     need(same(encodeAbiParameters(abi, [config]), p.configuration)

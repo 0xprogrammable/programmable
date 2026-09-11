@@ -1,5 +1,6 @@
+import { MODULE_ENGINE_SHARED_QUOTE_ETH_ENVIRONMENT_V1, MODULE_ENGINE_SHARED_QUOTE_ETH_POLICY_V1 } from "./review-engine-shared-quote-eth";
 import type { ModuleEngineCatalogDefinition, ModuleEngineReleaseIdentity, ModuleEngineRevisionDefinition } from "../module-engine/catalog";
-import { createModuleEngineHostManifest, isModuleEngineAnyQuoteRelease, ENGINE_ZERO_ADDRESS, ENGINE_ZERO_HASH } from "../module-engine/catalog";
+import { createModuleEngineHostManifest, isModuleEngineSharedQuoteRelease, isModuleEngineAnyQuoteEthRelease, ENGINE_ZERO_ADDRESS, ENGINE_ZERO_HASH } from "../module-engine/catalog";
 import { nativeCanonicalJson } from "./native-catalog";
 import type { ReviewJob } from "./review-contract";
 import type { OpenSourcePackage } from "../../packages/classic-modules/src/open-packages.mjs";
@@ -17,12 +18,14 @@ export function createReviewedModuleEngineManifest(input: { job: Pick<ReviewJob,
   same(revision.packageId, artifact.packageId, "package"); same(revision.familyId, artifact.familyId, "family");
   for (const key of ["executionGas", "moneyRights", "coinRights", "operationPermissions"] as const) same(revision[key], artifact[key], key);
   same(input.definition.configurationAbi, artifact.configurationAbi, "configuration mapping"); same(plan.configurationAbi, artifact.configurationAbi, "plan configuration mapping");
-  const sharedQuote = isModuleEngineAnyQuoteRelease(input.release);
-  if (sharedQuote !== (artifact.testEnvironment?.profile === MODULE_ENGINE_SHARED_QUOTE_ENVIRONMENT_V1.profile)) throw new Error("Engine shared-hook profile differs from the protected build.");
+  const sharedQuote = isModuleEngineSharedQuoteRelease(input.release), nativeEth = isModuleEngineAnyQuoteEthRelease(input.release);
+  const expectedEnvironment = nativeEth ? MODULE_ENGINE_SHARED_QUOTE_ETH_ENVIRONMENT_V1 : MODULE_ENGINE_SHARED_QUOTE_ENVIRONMENT_V1;
+  const sharedReview = artifact.testEnvironment?.profile === MODULE_ENGINE_SHARED_QUOTE_ENVIRONMENT_V1.profile || artifact.testEnvironment?.profile === MODULE_ENGINE_SHARED_QUOTE_ETH_ENVIRONMENT_V1.profile;
+  if (sharedQuote !== sharedReview) throw new Error("Engine shared-hook profile differs from the protected build.");
   if (sharedQuote) {
-    same(artifact.testEnvironment, MODULE_ENGINE_SHARED_QUOTE_ENVIRONMENT_V1, "shared-hook environment");
+    same(artifact.testEnvironment, expectedEnvironment, "shared-hook environment");
     same(plan.testEnvironment, artifact.testEnvironment, "plan shared-hook environment");
-    if (!input.descriptor.requiresHost.includes(MODULE_ENGINE_SHARED_QUOTE_POLICY_V1.hostRequirement)) throw new Error("Engine source does not require the shared-hook host.");
+    if (!input.descriptor.requiresHost.includes(nativeEth ? MODULE_ENGINE_SHARED_QUOTE_ETH_POLICY_V1.hostRequirement : MODULE_ENGINE_SHARED_QUOTE_POLICY_V1.hostRequirement)) throw new Error("Engine source does not require the shared-hook host.");
     if (input.definition.interface !== "quote-shared-v1" || revision.fixedQuoteAsset !== ENGINE_ZERO_ADDRESS || revision.fixedConfigurationHash !== ENGINE_ZERO_HASH) throw new Error("Shared quote engines require dynamic quote configuration.");
     validateModuleEngineBuildPlanV1(plan, artifact.subject);
     validateModuleEngineTestResultsV1(artifact.tests, artifact.subject.requestDigest, artifact.planDigest, artifact.cases, artifact.testEnvironment);

@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { encodeFunctionData, erc20Abi, toHex } from "viem";
-import { moduleEngineAnyQuoteLedgerAbi, moduleEnginePermit2Abi } from "@/lib/module-engine/abi";
+import { moduleEngineAnyQuoteEthLedgerAbi, moduleEngineAnyQuoteLedgerAbi, moduleEnginePermit2Abi } from "@/lib/module-engine/abi";
 import { bindActiveModuleEngineRelease, computeModuleEngineReleaseDigest, type ModuleEngineRelease } from "@/lib/module-engine/catalog";
-import { MODULE_ENGINE_ANY_QUOTE_SOURCE_VERSION, MODULE_ENGINE_ANY_QUOTE_PROFILE, MODULE_ENGINE_ANY_QUOTE_ECONOMICS_POLICY_ID } from "@/lib/module-engine/profile";
+import { MODULE_ENGINE_ANY_QUOTE_SOURCE_VERSION, MODULE_ENGINE_ANY_QUOTE_PROFILE, MODULE_ENGINE_ANY_QUOTE_ECONOMICS_POLICY_ID, MODULE_ENGINE_ANY_QUOTE_ETH_SOURCE_VERSION, MODULE_ENGINE_ANY_QUOTE_ETH_PROFILE, MODULE_ENGINE_ANY_QUOTE_ETH_ECONOMICS_POLICY_ID } from "@/lib/module-engine/profile";
 import { ModuleEngineTransactionRevertedError, readModuleEngineLaunch, revalidateModuleEngineTransaction, verifyModuleEngineApprovalReceipt, verifyModuleEngineClaimReceipt, verifyModuleEngineFeeChangeReceipt, verifyModuleEngineAnyQuoteSwapReceipt, type ModuleEngineClient, type ModuleEngineReceiptResult, type PreparedModuleEngineTransaction } from "@/lib/module-engine/client";
 import { ANY_QUOTE_INFRASTRUCTURE, ANY_QUOTE_NATIVE, ANY_QUOTE_WETH, type AnyQuoteExternalRouteV1 } from "@/lib/module-engine/any-quote/types";
 import { anyQuotePoolFor } from "@/lib/module-engine/any-quote/integration";
@@ -15,9 +15,9 @@ vi.mock("@/lib/module-engine/client", async original => ({ ...await original<typ
   readModuleEngineLaunch: vi.fn(), verifyModuleEngineApprovalReceipt: vi.fn(), verifyModuleEngineClaimReceipt: vi.fn(), verifyModuleEngineFeeChangeReceipt: vi.fn(), verifyModuleEngineAnyQuoteSwapReceipt: vi.fn() }));
 beforeEach(() => vi.clearAllMocks());
 
-function harness(kind: "erc20" | "permit2" | "claim" | "rotate-platform" | "swap" = "permit2") {
+function harness(kind: "erc20" | "permit2" | "claim" | "rotate-platform" | "swap" = "permit2", nativeEthFees = false) {
   const f = fixture();
-  const candidate: ModuleEngineRelease = { ...f.release, sourceVersion: MODULE_ENGINE_ANY_QUOTE_SOURCE_VERSION, engineProfile: MODULE_ENGINE_ANY_QUOTE_PROFILE, economicsPolicyId: MODULE_ENGINE_ANY_QUOTE_ECONOMICS_POLICY_ID,
+  const candidate: ModuleEngineRelease = { ...f.release, ...(nativeEthFees ? { sourceVersion: MODULE_ENGINE_ANY_QUOTE_ETH_SOURCE_VERSION, engineProfile: MODULE_ENGINE_ANY_QUOTE_ETH_PROFILE, economicsPolicyId: MODULE_ENGINE_ANY_QUOTE_ETH_ECONOMICS_POLICY_ID } : { sourceVersion: MODULE_ENGINE_ANY_QUOTE_SOURCE_VERSION, engineProfile: MODULE_ENGINE_ANY_QUOTE_PROFILE, economicsPolicyId: MODULE_ENGINE_ANY_QUOTE_ECONOMICS_POLICY_ID }),
     contracts: { ...f.release.contracts, poolManager: { address: ANY_QUOTE_INFRASTRUCTURE.poolManager, runtimeCodeHash: ANY_QUOTE_INFRASTRUCTURE.poolManagerCodeHash },
       sharedHook: { address: addr(901), runtimeCodeHash: CODE_HASH }, universalRouter: { address: ANY_QUOTE_INFRASTRUCTURE.universalRouter, runtimeCodeHash: ANY_QUOTE_INFRASTRUCTURE.universalRouterCodeHash }, nativeRouteGuard: { address: addr(903), runtimeCodeHash: CODE_HASH } } };
   candidate.releaseDigest = computeModuleEngineReleaseDigest(candidate);
@@ -28,12 +28,12 @@ function harness(kind: "erc20" | "permit2" | "claim" | "rotate-platform" | "swap
     hops: [{ protocol: "V4", tokenIn: ANY_QUOTE_NATIVE, tokenOut: QUOTE, poolId: anyQuotePoolIdV1(externalKey), key: externalKey, hookData: "0x" }] };
   const pool = anyQuotePoolFor(TOKEN, QUOTE, addr(901));
   const compiled = kind === "swap" ? buildAnyQuoteSwapV1({ pool, owner: ACCOUNT, recipient, side: "buy", amountIn: 1000n, minimumAmountOut: 900n, deadline, now: 1_000_000n, externalRoute }) : null;
-  const data = kind === "swap" ? compiled!.transaction.data : kind === "claim" ? encodeFunctionData({ abi: moduleEngineAnyQuoteLedgerAbi, functionName: "claimQuoteTo", args: [QUOTE, recipient] })
+  const data = kind === "swap" ? compiled!.transaction.data : kind === "claim" ? nativeEthFees ? encodeFunctionData({ abi: moduleEngineAnyQuoteEthLedgerAbi, functionName: "claimEthTo", args: [recipient] }) : encodeFunctionData({ abi: moduleEngineAnyQuoteLedgerAbi, functionName: "claimQuoteTo", args: [QUOTE, recipient] })
     : kind === "rotate-platform" ? encodeFunctionData({ abi: moduleEngineAnyQuoteLedgerAbi, functionName: "changePlatformWallet", args: [recipient] })
       : kind === "permit2" ? encodeFunctionData({ abi: moduleEnginePermit2Abi, functionName: "approve", args: [TOKEN, ANY_QUOTE_INFRASTRUCTURE.universalRouter, 1000n, Number(deadline)] })
         : encodeFunctionData({ abi: erc20Abi, functionName: "approve", args: [ANY_QUOTE_INFRASTRUCTURE.permit2, 1000n] });
   const target = kind === "swap" ? ANY_QUOTE_INFRASTRUCTURE.universalRouter : kind === "permit2" ? ANY_QUOTE_INFRASTRUCTURE.permit2 : kind === "erc20" ? TOKEN : release.contracts.ledger.address;
-  const prepared = { sourceKind: "module-engine-v1", kind: kind === "permit2" || kind === "erc20" ? "approve" : kind, account: ACCOUNT, releaseDigest: release.releaseDigest, blockNumber: 100n, expiresAt: deadline, gasEstimate: 100_000n,
+  const prepared = { nativeEthFees, sourceKind: "module-engine-v1", kind: kind === "permit2" || kind === "erc20" ? "approve" : kind, account: ACCOUNT, releaseDigest: release.releaseDigest, blockNumber: 100n, expiresAt: deadline, gasEstimate: 100_000n,
     transaction: { chainId: 4663, from: ACCOUNT, to: target, data, value: toHex(kind === "swap" ? 1000n : 0n), action: "manage", description: "Private review data" },
     token: TOKEN, launchId: f.launch.launchId, revisionId: f.launch.revisionId, planHash: f.launch.planHash,
     spender: ANY_QUOTE_INFRASTRUCTURE.permit2, amount: 1000n, allowanceKind: kind === "erc20" ? "erc20" : "permit2", ...(kind === "permit2" ? { permit2Spender: ANY_QUOTE_INFRASTRUCTURE.universalRouter, expiration: deadline } : {}),
@@ -82,6 +82,16 @@ describe("Any Quote exact transaction recovery", () => {
     const f = harness("claim"); await expect(f.recover()).resolves.toMatchObject({ kind: "claim" });
     expect(verifyModuleEngineClaimReceipt).toHaveBeenCalledWith(expect.objectContaining({ launch: f.launch, recipient: f.recipient, minimumAmount: 9n, claimedBefore: 4n }));
     const changed = harness("claim"); changed.launch.quoteAsset = addr(999); await expect(changed.recover()).rejects.toThrow("quote claim asset");
+  });
+  it.each(["claim", "swap", "erc20", "permit2"] as const)("recovers native-profile %s from its exact saved request without a new send", async kind => {
+    const f = harness(kind, true); await expect(f.recover()).resolves.toMatchObject({ kind: kind === "erc20" || kind === "permit2" ? "approve" : kind });
+    expect(f.storage.size).toBe(1); expect(f.client.getTransaction).toHaveBeenCalledTimes(1);
+  });
+  it("rejects a legacy quote claim relabeled with a native release even with a valid saved calldata hash", async () => {
+    const f = harness("claim", true);
+    const data = encodeFunctionData({ abi: moduleEngineAnyQuoteLedgerAbi, functionName: "claimQuoteTo", args: [QUOTE, f.recipient] });
+    Object.assign(f.prepared.transaction, { data }); f.tx.input = data;
+    await expect(f.recover()).rejects.toThrow(); expect(verifyModuleEngineClaimReceipt).not.toHaveBeenCalled();
   });
   it("retains platform rotation authority in recovery and does not reinterpret it as author fees", async () => {
     const f = harness("rotate-platform"); await expect(f.recover()).resolves.toMatchObject({ kind: "rotate-platform" });

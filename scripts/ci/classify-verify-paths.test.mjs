@@ -338,6 +338,7 @@ test("partitions every artifact-dependent suite without multi-filter side effect
       "contracts/scripts/module-engine/deployment.test.mjs",
       "contracts/scripts/module-engine/quote-deployment.test.mjs",
       "contracts/scripts/module-engine/any-quote-deployment.test.mjs",
+      "contracts/scripts/module-engine/any-quote-eth-deployment.test.mjs",
       "scripts/test/any-quote-readiness-discovery.test.mjs",
       "scripts/test/any-quote-route-price.test.mjs",
       "scripts/test/any-quote-route-runtime.test.mjs",

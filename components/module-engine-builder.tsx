@@ -15,7 +15,7 @@ import { configurationFromForm, configurationToForm, defaultSchemaValue, parseEx
 import { moduleAddress, moduleBytes } from "@/lib/module-mode/release";
 import { ENGINE_ZERO_ADDRESS, ENGINE_ZERO_HASH, moduleEngineOptionalHash, parseModuleEngineAvailability, type ModuleEngineAvailability, type ModuleEngineCatalogDefinition } from "@/lib/module-engine/catalog";
 import { createModuleEngineClient, ENGINE_OPERATIONS, moduleEngineDepositIntent, moduleEngineSettlementRequestIntent, moduleEngineTradeIntent, prepareModuleEngineApproval, prepareModuleEngineLaunch, readModuleEngineQuoteAsset, type ModuleEngineApprovalRequired, type ModuleEngineClient, type ModuleEngineOperationIntent, type PreparedModuleEngineTransaction } from "@/lib/module-engine/client";
-import { isModuleEngineAnyQuoteRelease } from "@/lib/module-engine/profile";
+import { isModuleEngineSharedQuoteRelease } from "@/lib/module-engine/profile";
 import { prepareModuleEngineAnyQuoteLaunch } from "@/lib/module-engine/any-quote/integration-client";
 import { anyQuoteUserMessage, ModuleEngineAnyQuoteAsset, useAnyQuoteAssetAvailability } from "./module-engine-any-quote-asset";
 import { ModuleEnginePicker } from "./module-engine-library";
@@ -74,7 +74,7 @@ export function ModuleEngineBuilder({ availability: raw, client: suppliedClient,
   const definition = template?.manifest.manifest.catalogDefinition, revision = template?.manifest.manifest.revision;
   const fixedQuote = revision && revision.fixedQuoteAsset !== ENGINE_ZERO_ADDRESS ? revision.fixedQuoteAsset : null;
   const quoteAsset = fixedQuote ?? quote; const form = definition ? forms[definition.id] ?? moduleEngineInitialForm(definition) : {};
-  const anyQuote = Boolean(availability?.release && isModuleEngineAnyQuoteRelease(availability.release) && definition?.interface === "quote-shared-v1");
+  const anyQuote = Boolean(availability?.release && isModuleEngineSharedQuoteRelease(availability.release) && definition?.interface === "quote-shared-v1");
   const anyQuoteAvailability = useAnyQuoteAssetAvailability({ enabled: anyQuote, releaseDigest: availability?.release?.releaseDigest, templateId: definition?.id, quoteAsset });
   const readyQuote = anyQuoteAvailability.status === "compatible" && anyQuoteAvailability.result?.status === "compatible" ? anyQuoteAvailability.result : null;
   const needsInitial = !anyQuote && revision && revision.initialOperationId !== ENGINE_ZERO_HASH, spot = definition?.interface === "quote-v1" || anyQuote;

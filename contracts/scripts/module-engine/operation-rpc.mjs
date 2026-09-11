@@ -1,4 +1,4 @@
-import { createPublicClient, custom, decodeEventLog, decodeFunctionResult, encodeAbiParameters, encodeEventTopics, erc20Abi, keccak256, parseAbiParameters, toHex } from 'viem';
+import { createPublicClient, custom, decodeEventLog, decodeFunctionResult, encodeAbiParameters, encodeEventTopics, encodeFunctionData, erc20Abi, keccak256, parseAbi, parseAbiParameters, toHex } from 'viem';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import path from 'node:path';
@@ -12,6 +12,11 @@ import { ENGINE_PUBLICATION_OPERATOR_SCHEMA, equal, equalEngineLaunchPlan } from
 import { assertEnginePermission, bindAnyQuotePreactivationPacket, isAnyQuoteLifecyclePlan } from './lifecycle-operator-plan.mjs';
 import { observeAnyQuoteReceipt } from './any-quote-rpc.mjs';
 import { collectAnyQuoteSource } from './any-quote-evidence.mjs';
+import { observeAnyQuoteEthReceipt } from './any-quote-eth-rpc.mjs';
+import { collectAnyQuoteEthSource } from './any-quote-eth-evidence.mjs';
+import { bindAnyQuoteEthGuardSourceClosure } from './any-quote-eth-build.mjs';
+import { ANY_QUOTE_ETH_REUSE_DOMAIN } from './any-quote-eth-core.mjs';
+import { bindReusedSourceClosure } from '../module-native-v2/build.mjs';
 const ZERO_HASH = `0x${'0'.repeat(64)}`;
 const optionalAddress = v => v.toLowerCase() === ZERO_ADDRESS ? ZERO_ADDRESS : address(v);
 const qty = v => BigInt(v);
@@ -28,18 +33,24 @@ async function releaseBindings(plan, providers, block, c, api) {
   const read = (to, name, args = [], abi = api.moduleEngineReadAbi) => c.read(providers, to, abi, name, args, block);
   equal(await read(host, 'SOURCE_VERSION', [], api.moduleEngineHostAbi), api.moduleEngineSourceId(plan.identity), 'Engine source version');
   for (const name of ['registry', 'ledger', 'tokenFactory', 'launchPolicy']) equal(address(await read(host, name, [], api.moduleEngineHostAbi)), pins[name].address, `Engine ${name}`);
-  if (api.isModuleEngineAnyQuoteRelease(plan.identity)) {
+  if (api.isModuleEngineSharedQuoteRelease(plan.identity)) {
     need(plan.schemaVersion === ENGINE_PUBLICATION_OPERATOR_SCHEMA || isAnyQuoteLifecyclePlan(plan), 'Closed Any Quote operator profile required');
+    const nativeFees = api.isModuleEngineAnyQuoteEthRelease(plan.identity);
+    const hostAbi = nativeFees ? api.moduleEngineAnyQuoteEthHostAbi : api.moduleEngineAnyQuoteHostAbi;
+    const hookAbi = nativeFees ? api.moduleEngineAnyQuoteEthHookAbi : api.moduleEngineAnyQuoteHookAbi;
+    const ledgerAbi = nativeFees ? api.moduleEngineAnyQuoteEthLedgerAbi : api.moduleEngineAnyQuoteLedgerAbi;
     for (const [name, expected] of [['sharedHook', pins.sharedHook.address], ['nativeRouteGuard', pins.nativeRouteGuard.address],
       ['NATIVE_ROUTE_GUARD_CODE_HASH', pins.nativeRouteGuard.runtimeCodeHash], ['quotePoolManager', pins.poolManager.address],
       ['quotePoolManagerCodeHash', pins.poolManager.runtimeCodeHash], ['UNIVERSAL_ROUTER', pins.universalRouter.address],
-      ['UNIVERSAL_ROUTER_CODE_HASH', pins.universalRouter.runtimeCodeHash], ['quoteFeeProfileId', api.MODULE_ENGINE_ANY_QUOTE_PROFILE_ID]])
-      equal((await read(host, name, [], api.moduleEngineAnyQuoteHostAbi)).toLowerCase(), expected, `Any Quote Host ${name}`);
+      ['UNIVERSAL_ROUTER_CODE_HASH', pins.universalRouter.runtimeCodeHash], ['quoteFeeProfileId', nativeFees ? api.MODULE_ENGINE_ANY_QUOTE_ETH_PROFILE_ID : api.MODULE_ENGINE_ANY_QUOTE_PROFILE_ID],
+      ...(nativeFees ? [['sharedHookCodeHash', pins.sharedHook.runtimeCodeHash]] : [])])
+      equal((await read(host, name, [], hostAbi)).toLowerCase(), expected, `Any Quote Host ${name}`);
     for (const [name, role] of [['host', 'host'], ['ledger', 'ledger'], ['poolManager', 'poolManager']])
-      equal(address(await read(pins.sharedHook.address, name, [], api.moduleEngineAnyQuoteHookAbi)), pins[role].address, `Any Quote hook ${name}`);
+      equal(address(await read(pins.sharedHook.address, name, [], hookAbi)), pins[role].address, `Any Quote hook ${name}`);
     for (const [name, role] of [['host', 'host'], ['hook', 'sharedHook'], ['poolManager', 'poolManager']])
-      equal(address(await read(ledger, name, [], api.moduleEngineAnyQuoteLedgerAbi)), pins[role].address, `Any Quote ledger ${name}`);
-    equal(await read(ledger, 'ECONOMICS_POLICY_ID', [], api.moduleEngineAnyQuoteLedgerAbi), plan.identity.economicsPolicyId, 'Any Quote economics policy');
+      equal(address(await read(ledger, name, [], ledgerAbi)), pins[role].address, `Any Quote ledger ${name}`);
+    equal(await read(ledger, 'ECONOMICS_POLICY_ID', [], ledgerAbi), plan.identity.economicsPolicyId, 'Any Quote economics policy');
+    if (nativeFees) equal(await read(pins.sharedHook.address, 'NATIVE_FEE_MAX_LOSS_BPS', [], hookAbi), 500n, 'Fixed native fee conversion bound');
   } else {
     for (const [name, role] of [['hook', 'host'], ['registry', 'registry'], ['poolManager', 'poolManager']]) equal(address(await read(ledger, name)), pins[role].address, `Engine ledger ${name}`);
     equal(await read(ledger, 'ECONOMICS_POLICY_ID'), plan.identity.economicsPolicyId, 'Engine economics policy');
@@ -75,7 +86,7 @@ async function familyBindings(plan, providers, block, c, api) {
 function launchStep(plan) { return plan.steps.find(s => s.kind === 'engine-launch'); }
 function launchContext(plan, expected) { return { host: plan.identity.contracts.host.address, launchId: expected.launchId, token: expected.token, creator: expected.creator, quoteAsset: expected.quoteAsset, feeCollector: plan.identity.contracts.host.address }; }
 function tokenGraffiti(plan, creator, creatorSalt, api) {
-  const domain = api.isModuleEngineAnyQuoteRelease(plan.identity) ? 'programmable.module-engine.any-quote-token.v1' : 'programmable.module-engine.token.v1';
+  const domain = api.isModuleEngineSharedQuoteRelease(plan.identity) ? 'programmable.module-engine.any-quote-token.v1' : 'programmable.module-engine.token.v1';
   return keccak256(encodeAbiParameters(parseAbiParameters('string,address,bytes32'), [domain, creator, creatorSalt]));
 }
 async function boundLaunch(plan, step, providers, block, c, api) {
@@ -291,12 +302,22 @@ export async function initializeAnyQuoteLifecycle(plan, providers, c) {
   const validation = (async () => {
     const packet = plan.preactivation, deployment = exactJson(Buffer.from(packet.deploymentEvidenceRaw), 'Actual deployment evidence');
     await sourceObjects(packet.build);
+    if (plan.identity.sourceVersion === 'module-engine-any-quote-eth-v1') {
+      const retained = await bindReusedSourceClosure(packet.build, REPOSITORY_ROOT, { roles: ['registry', 'tokenFactory', 'launchPolicy'],
+        domain: ANY_QUOTE_ETH_REUSE_DOMAIN, previousRelease: packet.deploymentPlan.basis.previousRelease });
+      const guard = await bindAnyQuoteEthGuardSourceClosure(retained, REPOSITORY_ROOT, packet.deploymentPlan.basis.guardRelease);
+      equal(guard.reuseSourceDigest, packet.build.reuseSourceDigest, 'Retained native V1 source closure');
+      equal(guard.guardSourceDigest, packet.build.guardSourceDigest, 'Retained Any Quote guard source closure');
+    }
     for (let i = 0; i < 2; i++) {
-      const { engineBindings, ...observed } = await observeAnyQuoteReceipt(packet.deploymentPlan, packet.deploymentEntries[i], providers);
+      const observe = plan.identity.sourceVersion === 'module-engine-any-quote-eth-v1' ? observeAnyQuoteEthReceipt : observeAnyQuoteReceipt;
+      const { engineBindings, ...observed } = await observe(packet.deploymentPlan, packet.deploymentEntries[i], providers);
       equal(observed, deployment.records[i], 'Actual Any Quote deployment receipt');
       if (i === 1) equal(engineBindings, deployment.engineBindings, 'Actual Any Quote deployment relationships');
     }
-    const live = await collectAnyQuoteSource(packet.deploymentPlan, packet.build, deployment, Buffer.from(packet.previousSourceVerificationEvidenceRaw));
+    const live = plan.identity.sourceVersion === 'module-engine-any-quote-eth-v1'
+      ? await collectAnyQuoteEthSource(packet.deploymentPlan, packet.build, deployment, Buffer.from(packet.previousSourceVerificationEvidenceRaw), Buffer.from(packet.previousGuardSourceVerificationEvidenceRaw))
+      : await collectAnyQuoteSource(packet.deploymentPlan, packet.build, deployment, Buffer.from(packet.previousSourceVerificationEvidenceRaw));
     const stored = exactJson(Buffer.from(packet.sourceVerificationEvidenceRaw), 'Actual source evidence');
     // A public source server can change response serialization; exact compiler, source, creation and runtime records cannot change.
     const stable = value => ({ ...value, providerPreflight: undefined, records: value.records.map(({ responseBytesDigest, ...record }) => record) });
@@ -338,12 +359,15 @@ export function anyQuoteWalletStep(plan, stepIndex, envelope) {
     equal(anyQuotePreparation?.intent, priceIntent, 'Prepared launch price intent');
     // Metadata belongs to the exact compiler input, while these three values are
     // canonically retained only in the separately bound price/readiness intent.
-    need(releaseDigest === plan.identity.releaseDigest && initialBuyWei === '0' && Number.isInteger(slippageBps)
+    need(releaseDigest === plan.identity.releaseDigest && (plan.identity.sourceVersion === 'module-engine-any-quote-eth-v1' ? BigInt(initialBuyWei) > 0n : initialBuyWei === '0') && Number.isInteger(slippageBps)
       && typeof description === 'string' && typeof imageUri === 'string' && socialLinks, 'Complete reviewed bootstrap intent required');
-    need(anyQuotePreparation?.intent?.initialBuyWei === '0' && anyQuotePreparation.predictedToken === step.target, 'Prepared bootstrap launch differs');
+    need(anyQuotePreparation?.intent?.initialBuyWei === initialBuyWei && anyQuotePreparation.predictedToken === step.target, 'Prepared bootstrap launch differs');
   } else if (action === 'claim') {
-    equal(recipe, { kind: 'claim', template: recipe.template, account: plan.owner, token: intent.token, recipient: intent.recipient }, 'Prepared quote beneficiary claim');
+    equal(recipe, { kind: 'claim', template: recipe.template, account: plan.owner, token: intent.token, recipient: intent.recipient }, 'Prepared beneficiary claim');
     need(prepared.kind === 'claim' && prepared.token === intent.token && prepared.recipient === intent.recipient && BigInt(prepared.minimumAmount) > 0n, 'Positive actual beneficiary fees required');
+    if (plan.identity.sourceVersion === 'module-engine-any-quote-eth-v1')
+      need(prepared.transaction?.data === encodeFunctionData({ abi: parseAbi(['function claimEthTo(address recipient) returns (uint256)']),
+        functionName: 'claimEthTo', args: [intent.recipient] }), 'Native-fee claim must call the exact ETH beneficiary payout');
   } else {
     need(recipe.kind === (action === 'approve' ? 'approve' : 'swap') && recipe.account === plan.owner, 'Prepared trade kind differs');
     const quote = recipe.quote;

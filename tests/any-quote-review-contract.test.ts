@@ -1,3 +1,4 @@
+import { MODULE_ENGINE_SHARED_QUOTE_ETH_ENVIRONMENT_V1, MODULE_ENGINE_SHARED_QUOTE_ETH_CHECKS_V1 } from "../lib/module-mode/review-engine-shared-quote-eth";
 import { describe, expect, it } from "vitest";
 import { keccak256, stringToHex } from "viem";
 import frozen from "./fixtures/module-engine-review-build.json";
@@ -12,11 +13,11 @@ const buy = keccak256(stringToHex("spot.buy.exact-input.v1"));
 const sell = keccak256(stringToHex("spot.sell.exact-input.v1"));
 
 /** Synthetic parser vectors only. They do not represent protected execution or approval. */
-function planFixture(): ModuleEngineBuildPlanV1 {
+function planFixture(nativeEth = false): ModuleEngineBuildPlanV1 {
   const plan = structuredClone(frozen.plan) as unknown as ModuleEngineBuildPlanV1;
   return {
     ...plan,
-    testEnvironment: MODULE_ENGINE_SHARED_QUOTE_ENVIRONMENT_V1,
+    testEnvironment: nativeEth ? MODULE_ENGINE_SHARED_QUOTE_ETH_ENVIRONMENT_V1 : MODULE_ENGINE_SHARED_QUOTE_ENVIRONMENT_V1,
     configurationAbi: MODULE_ENGINE_SHARED_QUOTE_CONFIGURATION_ABI_V1,
     moneyRights: 3,
     testEconomics: { platformBps: 30, buyCreatorBps: 300, sellCreatorBps: 1000 },
@@ -98,5 +99,27 @@ describe("shared quote evidence is mandatory only for its installed environment"
   it("does not add shared evidence to a legacy worker result", () => {
     expect(() => validateModuleEngineTestResultsV1(frozen.artifact.tests as ModuleEngineTestResultV1, subject.requestDigest, frozen.artifact.planDigest as `0x${string}`, cases)).not.toThrow();
     expect(() => validateModuleEngineTestResultsV1(resultsFixture(), subject.requestDigest, frozen.artifact.planDigest as `0x${string}`, cases)).toThrow("MODULE_ENGINE_SHAPE_INVALID");
+  });
+});
+
+describe("native ETH protected review cannot reuse quote-fee approval", () => {
+  const cases = frozen.artifact.cases as unknown as readonly ModuleEngineCompiledCaseV1[];
+  function resultsFixture(): ModuleEngineTestResultV1 {
+    return { ...structuredClone(frozen.artifact.tests) as ModuleEngineTestResultV1,
+      sharedQuoteEthChecks: cases.map(c => ({ id: c.id, ...Object.fromEntries(MODULE_ENGINE_SHARED_QUOTE_ETH_CHECKS_V1.map(key => [key, c.expectedDeployment === "success" ? true : null])) as Record<typeof MODULE_ENGINE_SHARED_QUOTE_ETH_CHECKS_V1[number], boolean | null> })) };
+  }
+  const verify = (results: ModuleEngineTestResultV1, environment = MODULE_ENGINE_SHARED_QUOTE_ETH_ENVIRONMENT_V1) => validateModuleEngineTestResultsV1(results, subject.requestDigest, frozen.artifact.planDigest as `0x${string}`, cases, environment);
+  it("requires the exact native environment and all native checks while preserving the eight-word configuration", () => {
+    expect(validateModuleEngineBuildPlanV1(planFixture(true), subject)).toEqual(planFixture(true));
+    expect(() => verify(resultsFixture())).not.toThrow();
+    expect(() => verify(frozen.artifact.tests as ModuleEngineTestResultV1)).toThrow();
+    expect(() => verify(resultsFixture(), { ...MODULE_ENGINE_SHARED_QUOTE_ETH_ENVIRONMENT_V1, sourceDigest: MODULE_ENGINE_SHARED_QUOTE_ENVIRONMENT_V1.sourceDigest } as never)).toThrow("MODULE_ENGINE_TEST_ENVIRONMENT_INVALID");
+    const old = { ...structuredClone(frozen.artifact.tests), sharedQuoteChecks: cases.map(c => ({ id: c.id, ...Object.fromEntries(MODULE_ENGINE_SHARED_QUOTE_CHECKS_V1.map(key => [key, true])) })) };
+    expect(() => verify(old as unknown as ModuleEngineTestResultV1)).toThrow();
+    expect(() => validateModuleEngineTestResultsV1(resultsFixture(), subject.requestDigest, frozen.artifact.planDigest as `0x${string}`, cases, MODULE_ENGINE_SHARED_QUOTE_ENVIRONMENT_V1)).toThrow();
+  });
+  it.each(MODULE_ENGINE_SHARED_QUOTE_ETH_CHECKS_V1)("rejects absent or failed native %s evidence", key => {
+    const r = resultsFixture();
+    expect(() => verify({ ...r, sharedQuoteEthChecks: r.sharedQuoteEthChecks!.map((c, i) => i === 0 ? { ...c, [key]: false } : c) })).toThrow("MODULE_ENGINE_SHARED_QUOTE_ETH_TESTS_FAILED");
   });
 });

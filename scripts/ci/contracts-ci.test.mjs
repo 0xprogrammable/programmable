@@ -31,6 +31,7 @@ test("build, release, and analysis retain all existing contract checks without a
     "contracts/scripts/module-engine/deployment.test.mjs",
     "contracts/scripts/module-engine/quote-deployment.test.mjs",
     "contracts/scripts/module-engine/any-quote-deployment.test.mjs",
+    "contracts/scripts/module-engine/any-quote-eth-deployment.test.mjs",
     "scripts/test/any-quote-readiness-discovery.test.mjs",
     "scripts/test/any-quote-route-price.test.mjs",
     "scripts/test/any-quote-route-runtime.test.mjs",

@@ -11,6 +11,8 @@ import { assertPublicationRequest } from '../module-mode/publication-rpc.mjs';
 import { bindEngineReview, enginePlanBody, equal, equalEngineLaunchPlan, assertEnginePublicationOperatorPlan, ENGINE_PUBLICATION_OPERATOR_SCHEMA, ENGINE_LIFECYCLE_OPERATOR_SCHEMA } from './publication-plan.mjs';
 import { assertAnyQuotePlan, ANY_QUOTE_DEPLOYMENT_SCHEMA } from './any-quote-core.mjs';
 import { ANY_QUOTE_SOURCE_SCHEMA } from './any-quote-evidence.mjs';
+import { assertAnyQuoteEthPlan, ANY_QUOTE_ETH_DEPLOYMENT_SCHEMA } from './any-quote-eth-core.mjs';
+import { ANY_QUOTE_ETH_SOURCE_SCHEMA } from './any-quote-eth-evidence.mjs';
 import { evidenceDigest } from '../module-mode/evidence.mjs';
 import { exactJson } from '../module-mode/source-readback.mjs';
 const ZERO_HASH = `0x${'0'.repeat(64)}`;
@@ -50,27 +52,32 @@ function quotePin(value) {
   need(Number.isInteger(value.decimals) && value.decimals >= 0 && value.decimals <= 18, 'Quote decimals are unsupported');
   return { address: address(value.address), runtimeCodeHash: hash(value.runtimeCodeHash), decimals: value.decimals };
 }
-export const isAnyQuoteLifecyclePlan = plan => plan?.schemaVersion === ENGINE_LIFECYCLE_OPERATOR_SCHEMA && plan.identity?.sourceVersion === 'module-engine-any-quote-v1';
+export const isAnyQuoteEthLifecyclePlan = plan => plan?.schemaVersion === ENGINE_LIFECYCLE_OPERATOR_SCHEMA && plan.identity?.sourceVersion === 'module-engine-any-quote-eth-v1';
+export const isAnyQuoteLifecyclePlan = plan => plan?.schemaVersion === ENGINE_LIFECYCLE_OPERATOR_SCHEMA
+  && ['module-engine-any-quote-v1', 'module-engine-any-quote-eth-v1'].includes(plan.identity?.sourceVersion);
 export const ANY_QUOTE_PACKET_SCHEMA = 'programmable.module-engine-any-quote-preactivation-packet.v1';
+export const ANY_QUOTE_ETH_PACKET_SCHEMA = 'programmable.module-engine-any-quote-eth-preactivation-packet.v1';
 const checkedDeploymentPlans = new Map();
 /** These are real earlier artifacts, not an active release or a claim of successful validation. */
 export async function bindAnyQuotePreactivationPacket(packet, identity, bundle) {
-  exactKeys(packet, ['schemaVersion', 'deploymentPlan', 'build', 'deploymentEntries', 'deploymentEvidenceRaw', 'sourceVerificationEvidenceRaw', 'previousSourceVerificationEvidenceRaw', 'admission'], 'Any Quote pre-activation packet');
-  for (const key of ['deploymentEvidenceRaw', 'sourceVerificationEvidenceRaw', 'previousSourceVerificationEvidenceRaw'])
+  const nativeFees = identity.sourceVersion === 'module-engine-any-quote-eth-v1', packetSchema = nativeFees ? ANY_QUOTE_ETH_PACKET_SCHEMA : ANY_QUOTE_PACKET_SCHEMA;
+  const rawKeys = ['deploymentEvidenceRaw', 'sourceVerificationEvidenceRaw', 'previousSourceVerificationEvidenceRaw', ...(nativeFees ? ['previousGuardSourceVerificationEvidenceRaw'] : [])];
+  exactKeys(packet, ['schemaVersion', 'deploymentPlan', 'build', 'deploymentEntries', ...rawKeys, 'admission'], 'Any Quote pre-activation packet');
+  for (const key of rawKeys)
     need(typeof packet[key] === 'string' && Buffer.byteLength(packet[key]) > 0 && Buffer.byteLength(packet[key]) <= 16 * 1024 * 1024, 'Bounded exact evidence file bytes required');
-  need(packet.schemaVersion === ANY_QUOTE_PACKET_SCHEMA && packet.build?.sourceClean === true && packet.deploymentPlan?.sourceClean === true, 'Actual clean-source Any Quote deployment packet required');
+  need(packet.schemaVersion === packetSchema && packet.build?.sourceClean === true && packet.deploymentPlan?.sourceClean === true, 'Actual clean-source Any Quote deployment packet required');
   // CREATE2 salt mining is deterministic but slow. Cache only a successful in-process
   // reconstruction under the complete plan/build bytes; any mutation gets a different key.
   const deploymentKey = digest('programmable.any-quote.operator-deployment-input.v1', { plan: packet.deploymentPlan, build: packet.build });
   if (!checkedDeploymentPlans.has(deploymentKey)) {
-    const check = assertAnyQuotePlan(packet.deploymentPlan, packet.build); checkedDeploymentPlans.set(deploymentKey, check);
+    const check = (nativeFees ? assertAnyQuoteEthPlan : assertAnyQuotePlan)(packet.deploymentPlan, packet.build); checkedDeploymentPlans.set(deploymentKey, check);
     try { await check; } catch (error) { checkedDeploymentPlans.delete(deploymentKey); throw error; }
     if (checkedDeploymentPlans.size > 8) checkedDeploymentPlans.delete(checkedDeploymentPlans.keys().next().value);
   } else await checkedDeploymentPlans.get(deploymentKey);
   const deployment = exactJson(Buffer.from(packet.deploymentEvidenceRaw), 'Actual Any Quote deployment evidence');
   const source = exactJson(Buffer.from(packet.sourceVerificationEvidenceRaw), 'Actual Any Quote source evidence');
-  need(deployment.schemaVersion === ANY_QUOTE_DEPLOYMENT_SCHEMA && deployment.status === 'included-code-verified'
-    && source.schemaVersion === ANY_QUOTE_SOURCE_SCHEMA && source.status === 'exact-source-and-runtime-verified', 'Completed deployment and exact source evidence required');
+  need(deployment.schemaVersion === (nativeFees ? ANY_QUOTE_ETH_DEPLOYMENT_SCHEMA : ANY_QUOTE_DEPLOYMENT_SCHEMA) && deployment.status === 'included-code-verified'
+    && source.schemaVersion === (nativeFees ? ANY_QUOTE_ETH_SOURCE_SCHEMA : ANY_QUOTE_SOURCE_SCHEMA) && source.status === 'exact-source-and-runtime-verified', 'Completed deployment and exact source evidence required');
   for (const evidence of [deployment, source]) need(evidence.chainId === 4663 && evidence.releaseDigest === identity.releaseDigest
     && evidence.sourceCommit === identity.sourceCommit && evidence.buildDigest === packet.build.buildDigest
     && evidence.sourceVersion === identity.sourceVersion && evidence.economicsPolicyId === identity.economicsPolicyId, 'Pre-activation evidence identity differs');
@@ -85,10 +92,11 @@ export async function bindAnyQuotePreactivationPacket(packet, identity, bundle) 
   need(admission.plan.steps[admission.entry.stepIndex]?.kind === 'engine-revision'
     && admission.evidence?.status === 'included-code-verified-unfinalized' && admission.evidence.planDigest === admission.plan.planDigest
     && admission.evidence.transaction?.hash === admission.entry.transactionHash, 'Actual observed revision admission required');
-  return { packetDigest: digest(ANY_QUOTE_PACKET_SCHEMA, packet), deploymentEvidenceDigest: evidenceDigest(Buffer.from(packet.deploymentEvidenceRaw)),
+  return { packetDigest: digest(packetSchema, packet), deploymentEvidenceDigest: evidenceDigest(Buffer.from(packet.deploymentEvidenceRaw)),
     sourceVerificationDigest: evidenceDigest(Buffer.from(packet.sourceVerificationEvidenceRaw)), admissionRequestDigest: hash(admission.entry.requestDigest) };
 }
 function anyQuoteSteps(action, identity, owner, api, checked) {
+  const nativeFees = api.isModuleEngineAnyQuoteEthRelease(identity);
   const infrastructure = api.ANY_QUOTE_INFRASTRUCTURE, templateId = checked.manifest.manifest.catalogDefinition.id;
   const base = (kind, target, value, intent, label) => ({ kind: `any-quote-${kind}`, label, sender: owner, target,
     to: kind === 'launch' ? identity.contracts.host.address : kind === 'claim' ? identity.contracts.ledger.address : identity.contracts.universalRouter.address,
@@ -99,16 +107,17 @@ function anyQuoteSteps(action, identity, owner, api, checked) {
     exactKeys(action.input, [...Object.keys(intent), 'description', 'imageUri', 'socialLinks'], 'Any Quote launch input');
     equal({ ...action.input, ...intent }, action.input, 'Canonical Any Quote launch intent');
     need(intent.releaseDigest === identity.releaseDigest && intent.templateId === templateId && intent.account === owner
-      && intent.initialBuyWei === '0', 'Reviewed zero-buy bootstrap launch required; ETH purchase is a separate step');
+      && (nativeFees ? BigInt(intent.initialBuyWei) > 0n : intent.initialBuyWei === '0'),
+    nativeFees ? 'Reviewed native-fee launch requires a positive initial ETH buy' : 'Reviewed zero-buy bootstrap launch required; ETH purchase is a separate step');
     need(typeof action.input.description === 'string' && typeof action.input.imageUri === 'string' && action.input.socialLinks && typeof action.input.socialLinks === 'object'
       && !Array.isArray(action.input.socialLinks), 'Complete launch metadata required');
-    return [base('launch', api.predictAnyQuoteToken(intent, identity), '0', action.input, `Launch ${intent.symbol} with Any Quote`)];
+    return [base('launch', api.predictAnyQuoteToken(intent, identity), intent.initialBuyWei, action.input, `Launch ${intent.symbol} with Any Quote`)];
   }
   if (action.kind === 'claim') {
     exactKeys(action, ['kind', 'token', 'recipient'], 'Any Quote beneficiary claim');
-    return [base('claim', address(action.token), '0', { token: address(action.token), recipient: address(action.recipient) }, 'Claim accrued quote fees')];
+    return [base('claim', address(action.token), '0', { token: address(action.token), recipient: address(action.recipient) }, nativeFees ? 'Claim accrued ETH fees' : 'Claim accrued quote fees')];
   }
-  need(['buy', 'sell'].includes(action.kind), 'Closed Any Quote launch, ETH buy, ETH sell or quote claim required');
+  need(['buy', 'sell'].includes(action.kind), 'Closed Any Quote launch, ETH buy, ETH sell or beneficiary claim required');
   exactKeys(action, ['kind', 'token', 'recipient', 'inputAmount', 'slippageBps', ...(action.kind === 'sell' ? ['funding'] : [])], 'Any Quote trade intent');
   const intent = { token: address(action.token), recipient: address(action.recipient), inputAmount: uint(action.inputAmount, 'Exact trade input', true), slippageBps: api.anyQuoteSlippageBps(action.slippageBps) };
   need(BigInt(intent.inputAmount) < 1n << 128n, 'Any Quote input exceeds the canonical amount bound');
@@ -135,7 +144,7 @@ function anyQuoteSteps(action, identity, owner, api, checked) {
 }
 export async function createEngineLifecycleOperatorPlan({ identity, owner, bundle, action, sourceState, preactivation }) {
   owner = address(owner); const checked = await bindEngineReview(bundle, identity), api = await publicationValidators(), m = checked.manifest.manifest, host = identity.contracts.host.address;
-  if (api.isModuleEngineAnyQuoteRelease(identity)) {
+  if (api.isModuleEngineSharedQuoteRelease(identity)) {
     const proofBindings = await bindAnyQuotePreactivationPacket(preactivation, identity, bundle), steps = anyQuoteSteps(action, identity, owner, api, checked);
     return enginePlanBody(ENGINE_LIFECYCLE_OPERATOR_SCHEMA, identity, owner, checked, bundle, sourceState, { action, preactivation, proofBindings, steps });
   }

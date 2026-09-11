@@ -1,11 +1,13 @@
 import { decodeAbiParameters, encodeAbiParameters, keccak256, parseAbiParameters, type Address, type Hex } from "viem";
 import { moduleEqual as equal, moduleHash as hash, moduleInteger as integer, moduleUint as uint, rejectModuleEvidence as fail } from "../../module-mode/release";
-import { anyQuoteConfigurationParameters, MODULE_ENGINE_ANY_QUOTE_INDEX_ABI_V1 as abi } from "./abi-v1";
+import { anyQuoteConfigurationParameters, MODULE_ENGINE_ANY_QUOTE_INDEX_ABI_V1, MODULE_ENGINE_ANY_QUOTE_ETH_INDEX_ABI_V1 } from "./abi-v1";
+import { decodeAnyQuoteNativeFeeRoute, ANY_QUOTE_NATIVE_FEE_ROUTE_PARAMETERS } from "../any-quote/native-fee-route";
+import { MODULE_ENGINE_ANY_QUOTE_ETH_PROFILE_ID } from "../profile";
 import { MODULE_ENGINE_ANY_QUOTE_CONFIGURATION_SCHEMA_ID, MODULE_ENGINE_ANY_QUOTE_PROFILE_ID, type ModuleEngineContractPin } from "./release-v1";
 import { engineEvent, engineReadSet, same, type EngineBlock, type EngineLog } from "./proof-v1";
 
 type Pins = Record<"host" | "ledger" | "poolManager" | "sharedHook" | "universalRouter" | "nativeRouteGuard", ModuleEngineContractPin>;
-export function anyQuoteSourceBindings(pins: Pins): readonly (readonly [Address, string, Address | Hex])[] {
+export function anyQuoteSourceBindings(pins: Pins, native = false): readonly (readonly [Address, string, Address | Hex])[] {
     return [
         [pins.host.address, "sharedHook", pins.sharedHook.address],
         [pins.host.address, "nativeRouteGuard", pins.nativeRouteGuard.address],
@@ -14,7 +16,8 @@ export function anyQuoteSourceBindings(pins: Pins): readonly (readonly [Address,
         [pins.host.address, "quotePoolManagerCodeHash", pins.poolManager.runtimeCodeHash],
         [pins.host.address, "UNIVERSAL_ROUTER", pins.universalRouter.address],
         [pins.host.address, "UNIVERSAL_ROUTER_CODE_HASH", pins.universalRouter.runtimeCodeHash],
-        [pins.host.address, "quoteFeeProfileId", MODULE_ENGINE_ANY_QUOTE_PROFILE_ID],
+        [pins.host.address, "quoteFeeProfileId", native ? MODULE_ENGINE_ANY_QUOTE_ETH_PROFILE_ID : MODULE_ENGINE_ANY_QUOTE_PROFILE_ID],
+        ...(native ? [[pins.host.address, "sharedHookCodeHash", pins.sharedHook.runtimeCodeHash] as const] : []),
         [pins.sharedHook.address, "host", pins.host.address],
         [pins.sharedHook.address, "ledger", pins.ledger.address],
         [pins.sharedHook.address, "poolManager", pins.poolManager.address],
@@ -26,9 +29,10 @@ export function anyQuoteSourceBindings(pins: Pins): readonly (readonly [Address,
 
 export function normalizeAnyQuoteMarket(value: unknown, block: EngineBlock, pins: Pins, launch: {
     launchId: Hex; token: Address; quoteAsset: Address; engine: Address; revisionId: Hex; familyId: Hex;
-    configuration: Hex; configurationHash: Hex; resourcesHash: Hex; quoteDecimals: number;
+    configuration: Hex; configurationHash: Hex; resourcesHash: Hex; quoteDecimals: number; launchData?: Hex;
     buyCreatorFeeBps: number; sellCreatorFeeBps: number; launchLogIndex: number;
-}, logs: EngineLog[]) {
+}, logs: EngineLog[], native = false) {
+    const abi = native ? MODULE_ENGINE_ANY_QUOTE_ETH_INDEX_ABI_V1 : MODULE_ENGINE_ANY_QUOTE_INDEX_ABI_V1;
     if (launch.configuration.length !== 514) fail("anyQuote.configuration.length");
     const configuration = decodeAbiParameters(anyQuoteConfigurationParameters, launch.configuration)[0];
     equal(encodeAbiParameters(anyQuoteConfigurationParameters, [configuration]), launch.configuration, "anyQuote.configuration.canonical");
@@ -62,6 +66,19 @@ export function normalizeAnyQuoteMarket(value: unknown, block: EngineBlock, pins
     equal(state.take(pins.host.address, "poolIdOf", [launch.launchId]), poolId, "anyQuote.host.poolId");
     equal(state.take(pins.sharedHook.address, "poolIdOfLaunch", [launch.launchId]), poolId, "anyQuote.hook.poolId");
     same(state.take(pins.sharedHook.address, "poolConfig", [poolId]), registration, "anyQuote.hook.registration");
+    let nativeFeeRouteHash: Hex | undefined;
+    if (native) {
+        if (!launch.launchData) fail("anyQuote.native-route.missing");
+        const route = decodeAnyQuoteNativeFeeRoute(launch.launchData, { token: launch.token, quoteAsset: launch.quoteAsset, sharedHook: pins.sharedHook.address });
+        const binding = engineEvent(logs, abi, pins.sharedHook.address, "NativeFeeRouteBound", poolId);
+        equal(binding.args.launchId, launch.launchId, "anyQuote.native-route.launch");
+        nativeFeeRouteHash = route.routeHash;
+        equal(binding.args.routeHash, route.routeHash, "anyQuote.native-route.event");
+        if (binding.logIndex <= bound.logIndex || binding.logIndex >= initialized.logIndex) fail("anyQuote.native-route.order");
+        equal(state.take(pins.sharedHook.address, "nativeFeeRouteHash", [poolId]), route.routeHash, "anyQuote.native-route.hash");
+        const hops = state.take(pins.sharedHook.address, "nativeFeeRoute", [poolId]) as typeof route.hops;
+        equal(encodeAbiParameters(ANY_QUOTE_NATIVE_FEE_ROUTE_PARAMETERS, [hops]), route.launchData, "anyQuote.native-route.bytes");
+    }
     const lower = launch.quoteAsset < launch.token ? -887200 : tick, upper = launch.quoteAsset < launch.token ? tick : 887200;
     equal(state.take(launch.engine, "tickLower"), lower, "anyQuote.lp.lower");
     equal(state.take(launch.engine, "tickUpper"), upper, "anyQuote.lp.upper");
@@ -74,5 +91,5 @@ export function normalizeAnyQuoteMarket(value: unknown, block: EngineBlock, pins
         [poolId, lower, upper, liquidity, dust, integer(launch.quoteDecimals, "anyQuote.decimals", 36)])), launch.resourcesHash, "anyQuote.resourcesHash");
     state.done();
     return Object.freeze({ kind: "uniswap-v4" as const, chainId: 4663 as const, launchId: launch.launchId, poolManager: pins.poolManager.address,
-        poolId, quoteAsset: launch.quoteAsset, primaryToken: launch.token, hook: pins.sharedHook.address, initialTick: tick });
+        poolId, quoteAsset: launch.quoteAsset, primaryToken: launch.token, hook: pins.sharedHook.address, initialTick: tick, ...(nativeFeeRouteHash ? { nativeFeeRouteHash } : {}) });
 }

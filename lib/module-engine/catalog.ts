@@ -8,7 +8,7 @@ import { MODULE_MODE_FINALITY_POLICY, moduleAddress, moduleBytes, moduleHash, mo
 import { validateModuleEngineConfigurationAbi } from "./configuration";
 import { MODULE_ENGINE_RELEASE_SCHEMA, MODULE_ENGINE_PROFILE, moduleEngineSourceId, moduleEngineContractRoles,
   type ModuleEngineReleaseProfile, type ModuleEngineNativeReleaseProfile,
-  type ModuleEngineAnyQuoteReleaseProfile } from "./profile";
+  type ModuleEngineSharedQuoteReleaseProfile } from "./profile";
 import { validateAnyQuoteManifestProfile } from "./any-quote-configuration";
 export * from "./profile";
 
@@ -22,7 +22,9 @@ interface ModuleEngineReleaseFields {
   finalityPolicy: typeof MODULE_MODE_FINALITY_POLICY; releaseDigest: Hex;
 }
 export type ModuleEngineNativeReleaseIdentity = ModuleEngineReleaseFields & ModuleEngineNativeReleaseProfile;
-export type ModuleEngineAnyQuoteReleaseIdentity = ModuleEngineReleaseFields & ModuleEngineAnyQuoteReleaseProfile;
+export type ModuleEngineSharedQuoteReleaseIdentity = ModuleEngineReleaseFields & ModuleEngineSharedQuoteReleaseProfile;
+export type ModuleEngineAnyQuoteReleaseIdentity = ModuleEngineReleaseFields & import("./profile").ModuleEngineAnyQuoteReleaseProfile;
+export type ModuleEngineAnyQuoteEthReleaseIdentity = ModuleEngineReleaseFields & import("./profile").ModuleEngineAnyQuoteEthReleaseProfile;
 export type ModuleEngineReleaseIdentity = ModuleEngineReleaseFields & ModuleEngineReleaseProfile;
 export type ModuleEngineRelease = ModuleEngineReleaseIdentity & {
   enabled: true; status: "active"; deploymentEvidenceDigest: Hex; sourceVerificationDigest: Hex; lifecycleEvidenceDigest: Hex;

@@ -519,6 +519,7 @@ jobs:
       - name: Verify the complete deterministic test partition
         env:
           ETHEREUM_RPC_URL: https://ethereum-rpc.publicnode.com
+          ETHEREUM_ARCHIVE_RPC_URL: https://eth.drpc.org
         run: node scripts/ci/contracts-ci.mjs test 2
 
   contracts-release:

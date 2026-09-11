@@ -1,6 +1,7 @@
 import { decodeAbiParameters, getCreate2Address, encodeAbiParameters, keccak256, parseAbiParameters, type Address, type Hex } from "viem";
 import type { ModuleEngineReleaseIdentity } from "../catalog";
-import { isModuleEngineAnyQuoteRelease } from "../profile";
+import { isModuleEngineSharedQuoteRelease, isModuleEngineAnyQuoteEthRelease } from "../profile";
+import { anyQuoteNativeFeeRouteFromExternal, decodeAnyQuoteNativeFeeRoute, type AnyQuoteNativeFeeRoute } from "./native-fee-route";
 import { anyQuoteEvidenceHashV1, anyQuotePoolIdV1 } from "./route";
 import { encodeAnyQuoteConfigurationV1, planAnyQuoteInitialPriceV1 } from "./price";
 import { ANY_QUOTE_INFRASTRUCTURE, ANY_QUOTE_SCHEMA_ID, AnyQuoteErrorV1, anyQuoteAddressV1, anyQuoteSameAddressV1,
@@ -18,12 +19,14 @@ export interface AnyQuoteLaunchPreparation {
   configuration: Hex; configurationHash: Hex; initialTick: number; validUntil: string;
   actualFdvUsd: { numerator: string; denominator: string }; evidenceHash: Hex;
   initialBuy: null | { output: string; minimumOutput: string; externalRoute: AnyQuoteExternalRouteV1 };
+  nativeFeeRoute?: AnyQuoteNativeFeeRoute;
 }
 export interface AnyQuoteTradeQuote {
   schemaVersion: "programmable.any-quote.trade-quote.v1"; releaseDigest: Hex; templateId: string;
   account: Address; token: Address; quoteAsset: Address; recipient: Address; buy: boolean; inputAmount: string;
   output: string; minimumOutput: string; slippageBps: number; validUntil: string; checkpoint: AnyQuoteCheckpointV1;
   pool: AnyQuoteModulePoolV1; externalRoute: AnyQuoteExternalRouteV1; evidenceHash: Hex;
+  nativeFeeRouteHash?: Hex;
 }
 export const ANY_QUOTE_CONFIGURATION_PARAMETERS = parseAbiParameters("bytes32,address,bytes32,address,address,int24,uint64,bytes32");
 export const ANY_QUOTE_TOKEN_GRAFFITI_DOMAIN = "programmable.module-engine.any-quote-token.v1";
@@ -61,7 +64,7 @@ export function anyQuotePoolFor(token: Address, quoteAsset: Address, sharedHook:
   return { token, quoteAsset, sharedHook, poolId: anyQuotePoolIdV1({ currency0, currency1, fee: 0, tickSpacing: 200, hooks: sharedHook }) };
 }
 export function assertAnyQuoteConfiguration(input: { configuration: Hex; release: ModuleEngineReleaseIdentity; quoteAsset: Address; now: bigint; validUntil: bigint }) {
-  if (!isModuleEngineAnyQuoteRelease(input.release) || !/^0x[0-9a-f]{512}$/i.test(input.configuration)) throw new AnyQuoteErrorV1("INVALID_CONFIGURATION");
+  if (!isModuleEngineSharedQuoteRelease(input.release) || !/^0x[0-9a-f]{512}$/i.test(input.configuration)) throw new AnyQuoteErrorV1("INVALID_CONFIGURATION");
   const [schema, manager, managerHash, hook, quote, tick, expiry, evidence] = decodeAbiParameters(ANY_QUOTE_CONFIGURATION_PARAMETERS, input.configuration);
   if (schema !== ANY_QUOTE_SCHEMA_ID || !anyQuoteSameAddressV1(manager, input.release.contracts.poolManager.address)
     || managerHash !== input.release.contracts.poolManager.runtimeCodeHash || !anyQuoteSameAddressV1(hook, input.release.contracts.sharedHook.address)
@@ -73,7 +76,7 @@ export function assertAnyQuoteConfiguration(input: { configuration: Hex; release
 /** A preview commits to the exact actor and economics; its hash is provenance, not a new signing authority. */
 export function assertAnyQuoteLaunchPreparation(preview: AnyQuoteLaunchPreparation, expected: AnyQuoteLaunchIntent, release: ModuleEngineReleaseIdentity, now: bigint) {
   const intent = anyQuoteLaunchIntent(expected);
-  if (!isModuleEngineAnyQuoteRelease(release) || preview.schemaVersion !== "programmable.any-quote.launch-preview.v1"
+  if (!isModuleEngineSharedQuoteRelease(release) || preview.schemaVersion !== "programmable.any-quote.launch-preview.v1"
     || anyQuoteEvidenceHashV1(preview.intent) !== anyQuoteEvidenceHashV1(intent) || preview.evidenceHash !== anyQuoteEvidenceHashV1({ ...preview, evidenceHash: undefined })
     || !anyQuoteSameAddressV1(preview.predictedToken, predictAnyQuoteToken(intent, release)) || preview.readiness.status !== "compatible"
     || !anyQuoteSameAddressV1(preview.readiness.quoteAsset, intent.quoteAsset) || BigInt(preview.validUntil) > BigInt(preview.readiness.validUntil)) throw new AnyQuoteErrorV1("LAUNCH_PREVIEW_MISMATCH");
@@ -85,5 +88,12 @@ export function assertAnyQuoteLaunchPreparation(preview: AnyQuoteLaunchPreparati
     || anyQuoteEvidenceHashV1(anyQuotePoolFor(preview.predictedToken, intent.quoteAsset, release.contracts.sharedHook.address)) !== anyQuoteEvidenceHashV1(preview.pool)
     || (BigInt(intent.initialBuyWei) === 0n) !== (preview.initialBuy === null)) throw new AnyQuoteErrorV1("LAUNCH_PREVIEW_MISMATCH");
   assertAnyQuoteConfiguration({ configuration: preview.configuration, release, quoteAsset: intent.quoteAsset, now, validUntil: BigInt(preview.validUntil) });
+  if (isModuleEngineAnyQuoteEthRelease(release)) {
+    if (!preview.nativeFeeRoute) throw new AnyQuoteErrorV1("NATIVE_FEE_ROUTE_MISSING");
+    const route = decodeAnyQuoteNativeFeeRoute(preview.nativeFeeRoute.launchData, preview.pool);
+    const expectedRoute = anyQuoteNativeFeeRouteFromExternal(preview.readiness.routes.sell, preview.pool);
+    if (anyQuoteEvidenceHashV1(route) !== anyQuoteEvidenceHashV1(preview.nativeFeeRoute) || route.launchData !== expectedRoute.launchData)
+      throw new AnyQuoteErrorV1("NATIVE_FEE_ROUTE_MISMATCH");
+  } else if (preview.nativeFeeRoute !== undefined) throw new AnyQuoteErrorV1("NATIVE_FEE_ROUTE_PROFILE_MISMATCH");
   return preview;
 }

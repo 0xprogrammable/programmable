@@ -1,3 +1,4 @@
+import { anyQuoteNativeFeeRouteAbi } from "./any-quote/native-fee-route";
 import { parseAbi, parseAbiParameters } from "viem";
 import { managementCoreAbi } from "@/lib/module-mode/management";
 
@@ -100,3 +101,21 @@ export const moduleEnginePermit2Abi = parseAbi([
   "function allowance(address owner,address token,address spender) view returns (uint160 amount,uint48 expiration,uint48 nonce)",
   "function approve(address token,address spender,uint160 amount,uint48 expiration)",
 ]);
+
+export const moduleEngineAnyQuoteEthHostAbi = [...moduleEngineAnyQuoteHostAbi, ...parseAbi(["function sharedHookCodeHash() view returns (bytes32)"])];
+export const moduleEngineAnyQuoteEthLedgerAbi = [
+  ...moduleEngineAnyQuoteLedgerAbi.filter(item => !["claimableQuote", "claimedBy", "claimQuoteTo", "claimQuoteFor", "QuoteFeesClaimed"].includes(item.name)),
+  ...parseAbi([
+    "function claimableEth(address beneficiary) view returns (uint256)", "function claimedBy(address beneficiary) view returns (uint256)",
+    "function claimEthTo(address recipient) returns (uint256)", "function claimEthFor(address beneficiary) returns (uint256)",
+    "function totalReceived() view returns (uint256)", "function totalCredited() view returns (uint256)", "function totalClaimed() view returns (uint256)",
+    "function accounting(bytes32 launchId) view returns (uint256 platformReceived,uint256 creatorReceived,uint256 credited)",
+    "function outstandingClaims() view returns (uint256)",
+    "event EthLaunchRegistered(bytes32 indexed launchId,address indexed quoteAsset,bytes32 configurationHash,address[] creatorWallets,uint16[] creatorSharesBps)",
+    "event EthFeesAccrued(bytes32 indexed launchId,address indexed quoteAsset,uint256 platformEth,uint256 creatorEth,uint256 creditedEth)",
+    "event EthRewardCredited(bytes32 indexed launchId,address indexed quoteAsset,address indexed beneficiary,uint256 amount)",
+    "event EthFeesClaimed(address indexed beneficiary,address indexed recipient,uint256 amount)",
+  ]),
+] as const;
+
+export const moduleEngineAnyQuoteEthHookAbi = [...moduleEngineAnyQuoteHookAbi, ...anyQuoteNativeFeeRouteAbi] as const;

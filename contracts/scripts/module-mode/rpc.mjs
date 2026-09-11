@@ -73,8 +73,10 @@ function requirePair(providers) { need(Array.isArray(providers) && providers.len
 export const deploymentRpc = Object.freeze({ quantity, pair, same, publicBindings, commonBlock, readCode, getter, requirePair });
 function directCreation(plan, step) {
   if (step.to !== null) return false;
-  need(plan.schemaVersion === 'programmable.module-engine-any-quote-deployment-plan.v1'
-    && plan.identityCandidate?.sourceVersion === 'module-engine-any-quote-v1' && step.index === 1 && step.role === 'host'
+  need((plan.schemaVersion === 'programmable.module-engine-any-quote-deployment-plan.v1'
+    && plan.identityCandidate?.sourceVersion === 'module-engine-any-quote-v1'
+    || plan.schemaVersion === 'programmable.module-engine-any-quote-eth-deployment-plan.v1'
+    && plan.identityCandidate?.sourceVersion === 'module-engine-any-quote-eth-v1') && step.index === 1 && step.role === 'host'
     && step.deploymentKind === 'create' && step.nonce === String(BigInt(plan.parameters.ownerNonce) + 1n)
     && address(getContractAddress({ from: step.sender, nonce: BigInt(step.nonce) })) === step.target,
   'Direct creation requires the exact Any Quote Host and reserved nonce');

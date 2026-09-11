@@ -1,16 +1,18 @@
+import { assertAnyQuoteNativeBacking, assertAnyQuoteNativeFeeSettlement } from "./any-quote/native-fee-evidence";
 import { concatHex, decodeAbiParameters, decodeEventLog, decodeFunctionResult, encodeAbiParameters, encodeEventTopics, encodeFunctionData, erc20Abi, getCreate2Address, keccak256, parseAbi, parseAbiParameters, toHex, type Abi, type Address, type Hex, type PublicClient, type TransactionReceipt } from "viem";
 import { compileOpenConfig, type OpenConfigValue } from "@/packages/classic-modules/src/open-config.mjs";
 import { createModuleNativeClient, type ModuleNativeClient, type ModuleNativeWalletTransaction } from "@/lib/module-mode/native-client";
 import { nativeCanonicalJson } from "@/lib/module-mode/native-catalog";
 import { moduleAddress, moduleBytes, moduleHash, moduleRecord, moduleUint } from "@/lib/module-mode/release";
 import type { ModuleSocialLinks } from "@/lib/module-mode/token-metadata";
-import { ENGINE_CONTEXT, moduleEngineAnyQuoteHostAbi, moduleEngineAnyQuoteHookAbi, moduleEngineAnyQuoteLedgerAbi, moduleEnginePermit2Abi, moduleEngineAuthorWalletAbi, moduleEngineHostAbi, moduleEngineLaunchParameters, moduleEngineLedgerAbi, moduleEnginePlanParameters, moduleEngineReadAbi, moduleEngineTradeLimitsParameters } from "./abi";
+import { ENGINE_CONTEXT, moduleEngineAnyQuoteEthHostAbi, moduleEngineAnyQuoteEthLedgerAbi, moduleEngineAnyQuoteHostAbi, moduleEngineAnyQuoteHookAbi, moduleEngineAnyQuoteLedgerAbi, moduleEnginePermit2Abi, moduleEngineAuthorWalletAbi, moduleEngineHostAbi, moduleEngineLaunchParameters, moduleEngineLedgerAbi, moduleEnginePlanParameters, moduleEngineReadAbi, moduleEngineTradeLimitsParameters } from "./abi";
 import { bindActiveModuleEngineRelease, bindModuleEngineReleaseIdentity, bindModuleEngineTemplate, ENGINE_ZERO_ADDRESS as ZERO, ENGINE_ZERO_HASH as ZERO_HASH, moduleEngineOptionalHash, parseModuleEngineAvailability, type ModuleEngineAvailability, type ModuleEnginePermission, type ModuleEngineRelease, type ModuleEngineReleaseIdentity, type ModuleEngineTemplate } from "./catalog";
 import { encodeModuleEngineConfiguration } from "./configuration";
-import { isModuleEngineAnyQuoteRelease, moduleEngineContractRoles, moduleEngineSourceId, MODULE_ENGINE_ANY_QUOTE_PROFILE_ID } from "./profile";
+import { isModuleEngineSharedQuoteRelease, isModuleEngineAnyQuoteRelease, isModuleEngineAnyQuoteEthRelease, moduleEngineSharedQuoteProfileId, moduleEngineContractRoles, moduleEngineSourceId } from "./profile";
 import { ANY_QUOTE_INFRASTRUCTURE, ANY_QUOTE_NATIVE_BUY_OPERATION_ID } from "./any-quote/types";
 import { assertAnyQuoteLaunchPreparation, anyQuoteMinimumOutput, type AnyQuoteTradeQuote, type AnyQuoteLaunchPreparation } from "./any-quote/integration";
 import { anyQuoteEvidenceHashV1, anyQuoteModulePoolKeyV1, buildAnyQuoteSwapV1 } from "./any-quote/route";
+import { anyQuoteNativeFeeRouteAbi, decodeAnyQuoteNativeFeeRoute, ANY_QUOTE_NATIVE_FEE_ROUTE_PARAMETERS } from "./any-quote/native-fee-route";
 import anyQuoteChainProfile from "@/contracts/spec/robinhood-custom-launch/chain-4663.v1.json";
 
 import { compileModuleEngineLaunch, moduleEngineOperation as operationFor } from "./operation-plan";
@@ -22,6 +24,7 @@ export interface ModuleEngineOperation { operationId: Hex; actor: Address; recip
 export type ModuleEngineOperationIntent = Omit<ModuleEngineOperation, "actor" | "nonce" | "deadline">;
 export interface ModuleEngineLaunchRecord { launchId: Hex; revisionId: Hex; creator: Address; token: Address; quoteAsset: Address; engine: Address; engineCodeHash: Hex; constructorHash: Hex; initCodeHash: Hex; configurationHash: Hex; planHash: Hex; resourcesHash: Hex; buyCreatorFeeBps: number; sellCreatorFeeBps: number }
 interface PreparedBase {
+  readonly nativeEthFees?: boolean;
   readonly sourceKind: "module-engine-v1"; readonly account: Address; readonly releaseDigest: Hex; readonly blockNumber: bigint;
   readonly transaction: Readonly<ModuleNativeWalletTransaction>; readonly expiresAt: bigint; readonly gasEstimate: bigint;
 }
@@ -107,11 +110,12 @@ async function assertModuleEngineSource<R extends ModuleEngineReleaseIdentity>(i
   const pins = release.contracts;
   await Promise.all(moduleEngineContractRoles(release).map(role => { const pin = (pins as Record<string, { address: Address; runtimeCodeHash: Hex }>)[role]; return code(client, pin.address, pin.runtimeCodeHash, block.number!); }));
   await Promise.all((["tokenFactory", "launchPolicy", "registry", "ledger"] as const).map(async role => same(await read(client, pins.host.address, role, [], block.number!, moduleEngineHostAbi), pins[role].address, `Host ${role}`)));
-  if (isModuleEngineAnyQuoteRelease(release)) {
+  if (isModuleEngineSharedQuoteRelease(release)) {
     const sharedHook = release.contracts.sharedHook;
     await Promise.all(([["hook", sharedHook.address], ["host", pins.host.address], ["poolManager", pins.poolManager.address]] as const).map(async ([getter, expected]) => same(await read(client, pins.ledger.address, getter, [], block.number!, moduleEngineAnyQuoteLedgerAbi), expected, `Quote ledger ${getter}`)));
     await Promise.all(([["host", pins.host.address], ["ledger", pins.ledger.address], ["poolManager", pins.poolManager.address]] as const).map(async ([getter, expected]) => same(await read(client, sharedHook.address, getter, [], block.number!, moduleEngineAnyQuoteHookAbi), expected, `Shared hook ${getter}`)));
-    await Promise.all(([["sharedHook", sharedHook.address], ["nativeRouteGuard", release.contracts.nativeRouteGuard.address], ["NATIVE_ROUTE_GUARD_CODE_HASH", release.contracts.nativeRouteGuard.runtimeCodeHash], ["quoteFeeProfileId", MODULE_ENGINE_ANY_QUOTE_PROFILE_ID], ["quotePoolManager", pins.poolManager.address], ["quotePoolManagerCodeHash", pins.poolManager.runtimeCodeHash], ["UNIVERSAL_ROUTER", release.contracts.universalRouter.address], ["UNIVERSAL_ROUTER_CODE_HASH", release.contracts.universalRouter.runtimeCodeHash]] as const).map(async ([getter, expected]) => same(await read(client, pins.host.address, getter, [], block.number!, moduleEngineAnyQuoteHostAbi), expected, `Quote host ${getter}`)));
+    await Promise.all(([["sharedHook", sharedHook.address], ["nativeRouteGuard", release.contracts.nativeRouteGuard.address], ["NATIVE_ROUTE_GUARD_CODE_HASH", release.contracts.nativeRouteGuard.runtimeCodeHash], ["quoteFeeProfileId", moduleEngineSharedQuoteProfileId(release)], ["quotePoolManager", pins.poolManager.address], ["quotePoolManagerCodeHash", pins.poolManager.runtimeCodeHash], ["UNIVERSAL_ROUTER", release.contracts.universalRouter.address], ["UNIVERSAL_ROUTER_CODE_HASH", release.contracts.universalRouter.runtimeCodeHash]] as const).map(async ([getter, expected]) => same(await read(client, pins.host.address, getter, [], block.number!, moduleEngineAnyQuoteHostAbi), expected, `Quote host ${getter}`)));
+    if (isModuleEngineAnyQuoteEthRelease(release)) same(await read(client, pins.host.address, "sharedHookCodeHash", [], block.number!, moduleEngineAnyQuoteEthHostAbi), sharedHook.runtimeCodeHash, "Native shared hook runtime");
     same(release.contracts.universalRouter.address, ANY_QUOTE_INFRASTRUCTURE.universalRouter, "Pinned Universal Router");
     same(release.contracts.universalRouter.runtimeCodeHash, ANY_QUOTE_INFRASTRUCTURE.universalRouterCodeHash, "Universal Router runtime");
   } else {
@@ -131,13 +135,16 @@ function launchRecord(value: unknown): ModuleEngineLaunchRecord {
   for (const key of ["creator", "token", "quoteAsset", "engine"]) result[key] = moduleAddress(r[key], key);
   result.buyCreatorFeeBps = fee(r.buyCreatorFeeBps); result.sellCreatorFeeBps = fee(r.sellCreatorFeeBps); return result as unknown as ModuleEngineLaunchRecord;
 }
-function ledgerAbi(release: ModuleEngineReleaseIdentity): Abi { return isModuleEngineAnyQuoteRelease(release) ? moduleEngineAnyQuoteLedgerAbi : moduleEngineLedgerAbi; }
-function contextFor(release: ModuleEngineReleaseIdentity, r: Pick<ModuleEngineLaunchRecord, "launchId" | "token" | "creator" | "quoteAsset">) { return { host: release.contracts.host.address, launchId: r.launchId, token: r.token, creator: r.creator, quoteAsset: r.quoteAsset, feeCollector: isModuleEngineAnyQuoteRelease(release) ? release.contracts.ledger.address : release.contracts.host.address }; }
+function ledgerAbi(release: ModuleEngineReleaseIdentity): Abi { return isModuleEngineAnyQuoteEthRelease(release) ? moduleEngineAnyQuoteEthLedgerAbi : isModuleEngineAnyQuoteRelease(release) ? moduleEngineAnyQuoteLedgerAbi : moduleEngineLedgerAbi; }
+function contextFor(release: ModuleEngineReleaseIdentity, r: Pick<ModuleEngineLaunchRecord, "launchId" | "token" | "creator" | "quoteAsset">) { return { host: release.contracts.host.address, launchId: r.launchId, token: r.token, creator: r.creator, quoteAsset: r.quoteAsset, feeCollector: isModuleEngineSharedQuoteRelease(release) ? release.contracts.ledger.address : release.contracts.host.address }; }
+const ethLedgerRegistrationAbi = parseAbi(["event EthLaunchRegistered(bytes32 indexed launchId,address indexed quoteAsset,bytes32 configurationHash,address[] creatorWallets,uint16[] creatorSharesBps)"]);
 const quoteLedgerRegistrationAbi = parseAbi(["event QuoteLaunchRegistered(bytes32 indexed launchId,address indexed asset,bytes32 configurationHash,address[] creatorWallets,uint16[] creatorSharesBps)"]);
 async function anyQuoteLedgerConfiguration(client: ModuleEngineClient, block: BoundBlock, launch: ModuleEngineLaunchRecord): Promise<Hex> {
-  need(isModuleEngineAnyQuoteRelease(block.release), "Quote ledger source is unavailable.");
+  need(isModuleEngineSharedQuoteRelease(block.release), "Quote ledger source is unavailable.");
   need(typeof client.getLogs === "function", "Quote launch registration logs are unavailable on this client.");
-  const pins = block.release.contracts;
+  const pins = block.release.contracts, native = isModuleEngineAnyQuoteEthRelease(block.release);
+  const registrationAbi = native ? ethLedgerRegistrationAbi : quoteLedgerRegistrationAbi;
+  const registrationEvent = native ? "EthLaunchRegistered" : "QuoteLaunchRegistered";
   let fromBlock = BigInt(block.release.startBlock), toBlock = block.blockNumber;
   // The pinned Ledger registers each launch once: quoteAsset changes from zero to
   // its permanent asset in that transaction. Narrow that transition before asking
@@ -148,16 +155,16 @@ async function anyQuoteLedgerConfiguration(client: ModuleEngineClient, block: Bo
     if (typeof asset === "string" && asset.toLowerCase() === ZERO) fromBlock = middle + 1n;
     else { same(asset, launch.quoteAsset, "Quote launch registration historical asset"); toBlock = middle; }
   }
-  const logs = await client.getLogs({ address: pins.ledger.address, event: quoteLedgerRegistrationAbi[0],
-    args: { launchId: launch.launchId, asset: launch.quoteAsset }, fromBlock, toBlock, strict: true });
+  const logs = await client.getLogs({ address: pins.ledger.address, event: registrationAbi[0],
+    args: { launchId: launch.launchId, ...(native ? { quoteAsset: launch.quoteAsset } : { asset: launch.quoteAsset }) }, fromBlock, toBlock, strict: true });
   need(logs.length === 1, "Expected exactly one quote launch registration from the released ledger.");
   const log = logs[0];
   need(!log.removed && log.blockNumber !== null && log.blockHash !== null && log.transactionHash !== null && log.blockNumber >= fromBlock && log.blockNumber <= toBlock, "Quote launch registration is outside the canonical checkpoint.");
   same(log.address, pins.ledger.address, "Quote launch registration ledger");
   same((await client.getBlock({ blockNumber: log.blockNumber })).hash, log.blockHash, "Quote launch registration block");
-  const { args } = decodeEventLog({ abi: quoteLedgerRegistrationAbi, eventName: "QuoteLaunchRegistered", data: log.data, topics: log.topics, strict: true });
-  same(args.launchId, launch.launchId, "Quote launch registration ID"); same(args.asset, launch.quoteAsset, "Quote launch registration asset");
-  equal(encodeEventTopics({ abi: quoteLedgerRegistrationAbi, eventName: "QuoteLaunchRegistered", args }), log.topics, "Quote launch registration topics");
+  const { args } = decodeEventLog({ abi: registrationAbi, eventName: registrationEvent, data: log.data, topics: log.topics, strict: true });
+  same(args.launchId, launch.launchId, "Quote launch registration ID"); same("asset" in args ? args.asset : args.quoteAsset, launch.quoteAsset, "Quote launch registration asset");
+  equal(encodeEventTopics({ abi: registrationAbi, eventName: registrationEvent, args }), log.topics, "Quote launch registration topics");
   same(encodeAbiParameters(parseAbiParameters("bytes32,address[],uint16[]"), [args.configurationHash, args.creatorWallets, args.creatorSharesBps]), log.data, "Quote launch registration payload");
   const wallets = args.creatorWallets.map(wallet => moduleAddress(wallet, "Original creator wallet")), shares = args.creatorSharesBps;
   need(wallets.length > 0 && wallets.length <= 10 && wallets.length === shares.length && shares.every(share => share > 0) && shares.reduce((sum, share) => sum + share, 0) === 10_000, "Original quote creator allocation differs.");
@@ -165,7 +172,65 @@ async function anyQuoteLedgerConfiguration(client: ModuleEngineClient, block: Bo
   const configuration = keccak256(encodeAbiParameters(parseAbiParameters("bytes32,uint256,address,address,address,address,bytes32,address,address[],uint16[]"),
     [block.release.economicsPolicyId, 4663n, pins.ledger.address, pins.poolManager.address, pins.sharedHook.address, pins.host.address, launch.launchId, launch.quoteAsset, wallets, shares]));
   same(args.configurationHash, configuration, "Quote launch registration configuration");
+  if (native) await assertNativeRouteLaunchBinding(client, block, launch, log.blockNumber, log.transactionHash);
   return configuration;
+}
+async function assertNativeRouteLaunchBinding(client: ModuleEngineClient, block: BoundBlock, launch: ModuleEngineLaunchRecord, registrationBlock: bigint, transactionHash: Hex) {
+  need(isModuleEngineAnyQuoteEthRelease(block.release) && client.getLogs, "Native fee source logs are unavailable.");
+  const pins = block.release.contracts;
+  const parameterEvent = parseAbi(["event EngineLaunchParametersBound(bytes32 indexed launchId,bytes encodedParameters)"])[0];
+  const logs = await client.getLogs({ address: pins.host.address, event: parameterEvent, args: { launchId: launch.launchId }, fromBlock: registrationBlock, toBlock: registrationBlock, strict: true });
+  need(logs.length === 1 && !logs[0].removed && logs[0].transactionHash === transactionHash, "Native fee route has no canonical launch parameters.");
+  const encoded = logs[0].args.encodedParameters;
+  need(encoded, "Native fee launch parameters are missing.");
+  const parameters = decodeAbiParameters(moduleEngineLaunchParameters, encoded)[0];
+  same(encodeAbiParameters(moduleEngineLaunchParameters, [parameters]), encoded, "Canonical native fee launch parameters");
+  same(keccak256(encodeAbiParameters(moduleEnginePlanParameters, [4663n, pins.host.address, launch.creator, parameters])), launch.planHash, "Native fee signed plan");
+  const route = decodeAnyQuoteNativeFeeRoute(parameters.launchData, { token: launch.token, quoteAsset: launch.quoteAsset, sharedHook: pins.sharedHook.address });
+  const poolId = moduleHash(await read(client, pins.host.address, "poolIdOf", [launch.launchId], block.blockNumber, moduleEngineAnyQuoteHostAbi), "native fee pool");
+  const bindingEvent = anyQuoteNativeFeeRouteAbi.find(item => item.type === "event" && item.name === "NativeFeeRouteBound")!;
+  const bindings = await client.getLogs({ address: pins.sharedHook.address, event: bindingEvent, args: { poolId, launchId: launch.launchId, routeHash: route.routeHash }, fromBlock: registrationBlock, toBlock: registrationBlock, strict: true });
+  need(bindings.length === 1 && !bindings[0].removed && bindings[0].transactionHash === transactionHash, "Native fee route registration differs.");
+  same(await read(client, pins.sharedHook.address, "nativeFeeRouteHash", [poolId], block.blockNumber, anyQuoteNativeFeeRouteAbi), route.routeHash, "Registered native fee route hash");
+  const hops = await read(client, pins.sharedHook.address, "nativeFeeRoute", [poolId], block.blockNumber, anyQuoteNativeFeeRouteAbi) as typeof route.hops;
+  same(encodeAbiParameters(ANY_QUOTE_NATIVE_FEE_ROUTE_PARAMETERS, [hops]), route.launchData, "Registered native fee route");
+}
+
+const nativeCoreClaimsAbi = parseAbi([
+  "event Transfer(address caller,address indexed from,address indexed to,uint256 indexed id,uint256 amount)",
+  "function balanceOf(address owner,uint256 id) view returns (uint256)",
+]);
+async function verifyNativeClaimBacking(client: ModuleEngineClient, block: BoundBlock, receipt: TransactionReceipt, amount: bigint) {
+  const pins = block.release.contracts, ledger = pins.ledger.address;
+  const burns = events(receipt, pins.poolManager.address, "Transfer", nativeCoreClaimsAbi)
+    .filter(item => String(item.from).toLowerCase() === ledger.toLowerCase() && String(item.to).toLowerCase() === ZERO && uint(item.id, "Core claim currency") === 0n);
+  need(burns.length === 1, "Expected one native Core claim burn.");
+  same(burns[0].caller, ledger, "Native claim burn caller");
+  need(uint(burns[0].amount, "Native claim burn", true) === amount, "Native claim burn amount differs.");
+  await verifyNativeLedgerBacking(client, block);
+  // The pinned ledger emits EthFeesClaimed only after Core.take(native, recipient, amount) succeeds.
+  // A recipient can forward ETH, so balance changes and ERC20 transfers are not payout evidence.
+}
+async function verifyNativeLedgerBacking(client: ModuleEngineClient, block: BoundBlock) {
+  const pins = block.release.contracts, ledger = pins.ledger.address;
+  const [received, credited, claimed, backing] = await Promise.all([
+    read(client, ledger, "totalReceived", [], block.blockNumber, moduleEngineAnyQuoteEthLedgerAbi),
+    read(client, ledger, "totalCredited", [], block.blockNumber, moduleEngineAnyQuoteEthLedgerAbi),
+    read(client, ledger, "totalClaimed", [], block.blockNumber, moduleEngineAnyQuoteEthLedgerAbi),
+    read(client, pins.poolManager.address, "balanceOf", [ledger, 0n], block.blockNumber, nativeCoreClaimsAbi),
+  ]);
+  assertAnyQuoteNativeBacking(received, credited, claimed, backing);
+}
+async function verifyNativeSwapFees(client: ModuleEngineClient, block: BoundBlock, receipt: TransactionReceipt, launch: ModuleEngineLaunchRecord, swap: Record<string, unknown>) {
+  if (!isModuleEngineAnyQuoteEthRelease(block.release)) return;
+  const pins = block.release.contracts, poolId = moduleHash(swap.poolId, "native swap pool");
+  const routeHash = moduleHash(await read(client, pins.sharedHook.address, "nativeFeeRouteHash", [poolId], block.blockNumber, anyQuoteNativeFeeRouteAbi), "native swap route");
+  assertAnyQuoteNativeFeeSettlement({ poolId, launchId: launch.launchId, quoteAsset: launch.quoteAsset, routeHash, ledger: pins.ledger.address, hook: pins.sharedHook.address, swap,
+    conversions: events(receipt, pins.sharedHook.address, "NativeFeesConverted", anyQuoteNativeFeeRouteAbi),
+    accruals: events(receipt, pins.ledger.address, "EthFeesAccrued", moduleEngineAnyQuoteEthLedgerAbi),
+    credits: events(receipt, pins.ledger.address, "EthRewardCredited", moduleEngineAnyQuoteEthLedgerAbi),
+    mints: events(receipt, pins.poolManager.address, "Transfer", nativeCoreClaimsAbi) });
+  await verifyNativeLedgerBacking(client, block);
 }
 async function boundLaunch(client: ModuleEngineClient, block: BoundBlock, tokenValue: Address): Promise<ModuleEngineLaunchRecord> {
   const token = moduleAddress(tokenValue, "engine.token"), host = block.release.contracts.host.address;
@@ -183,7 +248,7 @@ async function boundLaunch(client: ModuleEngineClient, block: BoundBlock, tokenV
   const expectedToken = getCreate2Address({ from: block.release.contracts.tokenFactory.address, salt: keccak256(encodeAbiParameters(parseAbiParameters("string,string,uint8,address,bytes32"), [tokenName, tokenSymbol, 18, host, graffiti])), bytecodeHash: block.release.tokenCreationCodeHash });
   same(expectedToken, token, "Factory CREATE2 token identity");
   same(contextHash, keccak256(encodeAbiParameters(parseAbiParameters(ENGINE_CONTEXT), [contextFor(block.release, r)])), "Engine context");
-  if (isModuleEngineAnyQuoteRelease(block.release)) {
+  if (isModuleEngineSharedQuoteRelease(block.release)) {
     const [asset, configuration, poolId, enginePoolId, ledgerConfiguration] = await Promise.all([
       read(client, block.release.contracts.ledger.address, "quoteAsset", [id], block.blockNumber, moduleEngineAnyQuoteLedgerAbi),
       read(client, block.release.contracts.ledger.address, "configurationHash", [id], block.blockNumber, moduleEngineAnyQuoteLedgerAbi),
@@ -275,9 +340,9 @@ async function prepareModuleEngineLaunchAt(input: Omit<PrepareModuleEngineLaunch
   const account = moduleAddress(input.account, "account"), release = block.release, template = await assertTemplate(input.client, block, rawTemplate, true), m = template.manifest.manifest;
   const quoteAsset = moduleAddress(input.quoteAsset, "quoteAsset"); if (m.revision.fixedQuoteAsset !== ZERO) same(quoteAsset, m.revision.fixedQuoteAsset, "Fixed quote asset");
   const quoteCode = await input.client.getCode({ address: quoteAsset, blockNumber: block.blockNumber }); need(quoteCode && quoteCode !== "0x", "Quote asset is not a deployed token.");
-  const quoteDecimals = Number(await read(input.client, quoteAsset, "decimals", [], block.blockNumber)); need(Number.isInteger(quoteDecimals) && quoteDecimals >= 0 && quoteDecimals <= (isModuleEngineAnyQuoteRelease(release) ? 36 : 18), "Quote decimals are unsupported.");
+  const quoteDecimals = Number(await read(input.client, quoteAsset, "decimals", [], block.blockNumber)); need(Number.isInteger(quoteDecimals) && quoteDecimals >= 0 && quoteDecimals <= (isModuleEngineSharedQuoteRelease(release) ? 36 : 18), "Quote decimals are unsupported.");
   const expiresAt = input.anyQuotePreparation ? BigInt(input.anyQuotePreparation.validUntil) : deadline(block.timestamp, input.deadlineSeconds);
-  if (isModuleEngineAnyQuoteRelease(release)) {
+  if (isModuleEngineSharedQuoteRelease(release)) {
     need(input.anyQuotePreparation, "A current Any Quote preview is required.");
     need(quoteDecimals === input.anyQuotePreparation.readiness.token.decimals, "Quote decimals changed from the price preview.");
     assertAnyQuoteLaunchPreparation(input.anyQuotePreparation, { releaseDigest: release.releaseDigest, templateId: input.templateId, account, quoteAsset,
@@ -298,17 +363,17 @@ async function prepareModuleEngineLaunchAt(input: Omit<PrepareModuleEngineLaunch
   }
   const predicted = await read(input.client, host, "predictTokenAddress", [parameters.name, parameters.symbol, account, parameters.creatorSalt], block.blockNumber, moduleEngineHostAbi) as readonly [Address, Hex];
   same(predicted[1], graffiti, "Token graffiti"); same(predicted[0], predictedToken, "Predicted token");
-  if (initialOperation.operationId !== ZERO_HASH && !(isModuleEngineAnyQuoteRelease(release) && initialOperation.operationId === ANY_QUOTE_NATIVE_BUY_OPERATION_ID)) { const required = await validateOperation(input.client, block, { launchId, revisionId: m.revision.packageId, creator: account, token: predictedToken, quoteAsset }, initialOperation, account); if (required) return required; }
+  if (initialOperation.operationId !== ZERO_HASH && !(isModuleEngineSharedQuoteRelease(release) && initialOperation.operationId === ANY_QUOTE_NATIVE_BUY_OPERATION_ID)) { const required = await validateOperation(input.client, block, { launchId, revisionId: m.revision.packageId, creator: account, token: predictedToken, quoteAsset }, initialOperation, account); if (required) return required; }
   const transaction = tx(account, host, encodeFunctionData({ abi: moduleEngineHostAbi, functionName: "launch", args: [parameters] }), initialOperation.inputAsset === ZERO ? initialOperation.inputAmount : 0n, "launch", `Launch ${parameters.symbol} with ${m.catalogDefinition.title}`);
   const simulated = await simulate(input.client, block, transaction), result = launchRecord(decodeFunctionResult({ abi: moduleEngineHostAbi, functionName: "launch", data: simulated.data }));
   for (const [key, expected] of Object.entries({ launchId, revisionId: m.revision.packageId, token: predictedToken, creator: account, quoteAsset, engine: engineIdentity.address, engineCodeHash, constructorHash, initCodeHash, configurationHash, planHash })) same(result[key as keyof ModuleEngineLaunchRecord], expected, `Simulated ${key}`);
   // Host V1 admits its immutable reviewed family list into Ledger V2. Its reused Registry V1
   // has no Native V2 familyFeeEligibility getter; the list itself selects the 10/30 bps policy.
-  const platformFeeBps = isModuleEngineAnyQuoteRelease(release) || m.revision.eligibleFamilies.length > 0 ? 30 : 10;
-  const prepared: PreparedModuleEngineLaunch = { sourceKind: "module-engine-v1", kind: "launch", account, releaseDigest: release.releaseDigest, blockNumber: block.blockNumber, expiresAt, gasEstimate: simulated.gasEstimate, transaction: { ...transaction, gas: toHex(simulated.gasEstimate * 12n / 10n) }, predictedToken, engine: engineIdentity.address, launchId, revisionId: m.revision.packageId, planHash, configurationHash, engineCodeHash, quoteAsset, quoteDecimals, initialOperation, platformFeeBps, buyCreatorFeeBps, sellCreatorFeeBps, ...(input.anyQuotePreparation ? { anyQuote: { initialBuyWei: BigInt(input.anyQuotePreparation.intent.initialBuyWei), outputAmount: BigInt(input.anyQuotePreparation.initialBuy?.output ?? "0"), minimumOutput: BigInt(input.anyQuotePreparation.initialBuy?.minimumOutput ?? "0"), actualFdvUsd: input.anyQuotePreparation.actualFdvUsd } } : {}) };
+  const platformFeeBps = isModuleEngineSharedQuoteRelease(release) || m.revision.eligibleFamilies.length > 0 ? 30 : 10;
+  const prepared: PreparedModuleEngineLaunch = { sourceKind: "module-engine-v1", kind: "launch", ...(isModuleEngineAnyQuoteEthRelease(release) ? { nativeEthFees: true } : {}), account, releaseDigest: release.releaseDigest, blockNumber: block.blockNumber, expiresAt, gasEstimate: simulated.gasEstimate, transaction: { ...transaction, gas: toHex(simulated.gasEstimate * 12n / 10n) }, predictedToken, engine: engineIdentity.address, launchId, revisionId: m.revision.packageId, planHash, configurationHash, engineCodeHash, quoteAsset, quoteDecimals, initialOperation, platformFeeBps, buyCreatorFeeBps, sellCreatorFeeBps, ...(input.anyQuotePreparation ? { anyQuote: { initialBuyWei: BigInt(input.anyQuotePreparation.intent.initialBuyWei), outputAmount: BigInt(input.anyQuotePreparation.initialBuy?.output ?? "0"), minimumOutput: BigInt(input.anyQuotePreparation.initialBuy?.minimumOutput ?? "0"), actualFdvUsd: input.anyQuotePreparation.actualFdvUsd } } : {}) };
   return { prepared, refresh: async (current: BoundBlock) => {
     need(current.timestamp <= expiresAt, "Launch preview expired."); await assertTemplate(input.client, current, template, true);
-    if (initialOperation.operationId !== ZERO_HASH && !(isModuleEngineAnyQuoteRelease(release) && initialOperation.operationId === ANY_QUOTE_NATIVE_BUY_OPERATION_ID)) need(!await validateOperation(input.client, current, { ...result }, initialOperation, account), "Initial funding approval changed.");
+    if (initialOperation.operationId !== ZERO_HASH && !(isModuleEngineSharedQuoteRelease(release) && initialOperation.operationId === ANY_QUOTE_NATIVE_BUY_OPERATION_ID)) need(!await validateOperation(input.client, current, { ...result }, initialOperation, account), "Initial funding approval changed.");
     if (input.anyQuotePreparation?.initialBuy) {
       const p = input.anyQuotePreparation;
       const route = buildAnyQuoteSwapV1({ pool: p.pool, owner: account, recipient: account, side: "buy", amountIn: BigInt(p.intent.initialBuyWei), minimumAmountOut: BigInt(p.initialBuy!.minimumOutput), deadline: expiresAt, externalRoute: p.initialBuy!.externalRoute, now: current.timestamp });
@@ -340,7 +405,7 @@ export async function prepareModuleEngineSourceApprovalV1(input: Omit<Parameters
 }
 async function prepareModuleEngineApprovalAt(input: Omit<Parameters<typeof prepareModuleEngineApproval>[0], "release">, block: BoundBlock): Promise<ModuleEngineSourcePreparationV1<PreparedModuleEngineApproval>> {
   const account = moduleAddress(input.account, "account"), token = moduleAddress(input.token, "token"), amount = uint(input.amount, "approval amount"), release = block.release;
-  const shared = isModuleEngineAnyQuoteRelease(release), allowanceKind = input.allowanceKind ?? "erc20";
+  const shared = isModuleEngineSharedQuoteRelease(release), allowanceKind = input.allowanceKind ?? "erc20";
   const spender = shared ? ANY_QUOTE_INFRASTRUCTURE.permit2 : release.contracts.host.address;
   if (input.spender) same(input.spender, spender, "Approval spender");
   need(shared || allowanceKind === "erc20", "Permit2 is only used by shared-quote routing.");
@@ -409,7 +474,7 @@ async function verifyModuleEngineLaunchReceiptAt(input: Omit<Parameters<typeof v
   same(encodeAbiParameters(moduleEngineLaunchParameters, [parameters]), encodedParameters, "Canonical launch parameters");
   same(keccak256(encodeAbiParameters(moduleEnginePlanParameters, [4663n, block.release.contracts.host.address, actual.creator, parameters])), actual.planHash, "Parameters event plan hash");
   same(args.runtimeCodeHash, actual.engineCodeHash, "Engine runtime event"); same(args.economicsPolicyId, block.release.economicsPolicyId, "Engine economics event"); await canonical(input.client, block);
-  const initial = isModuleEngineAnyQuoteRelease(block.release) && parameters.initialOperation.operationId !== ZERO_HASH
+  const initial = isModuleEngineSharedQuoteRelease(block.release) && parameters.initialOperation.operationId !== ZERO_HASH
     ? await verifyModuleEngineOperationReceiptAt({ client: input.client, release: block.release, launch: actual, operation: parameters.initialOperation, receipt: input.receipt }, block) : null;
   return receiptResult(input.receipt, "launch", { token: actual.token, launch: actual, ...(initial ? { outputAmount: initial.outputAmount } : {}) });
 }
@@ -423,6 +488,13 @@ async function verifyModuleEngineOperationReceiptAt(input: Omit<Parameters<typeo
   need(args.nonce === input.operation.nonce && args.inputAmount === input.operation.inputAmount, "Operation nonce or amount differs.");
   const outputAmount = uint(args.outputAmount, "outputAmount"); need(outputAmount >= input.operation.minimumOutput, "Actual operation output is below the reviewed minimum.");
   const nonce = uint(await read(input.client, block.release.contracts.host.address, "nonces", [launch.launchId, input.operation.actor], block.blockNumber, moduleEngineHostAbi), "nonce"); need(nonce > input.operation.nonce, "Operation nonce was not consumed."); await canonical(input.client, block);
+  if (isModuleEngineAnyQuoteEthRelease(block.release)) {
+    const swaps = events(input.receipt, block.release.contracts.sharedHook.address, "QuotePoolSwap", moduleEngineAnyQuoteHookAbi).filter(e => e.launchId === launch.launchId);
+    const nativeBuy = input.operation.operationId === ANY_QUOTE_NATIVE_BUY_OPERATION_ID;
+    need(swaps.length === 1 && swaps[0].buy === (nativeBuy || input.operation.operationId === ENGINE_OPERATIONS.buy) && swaps[0].exactInput === true, "Native host swap differs.");
+    same(swaps[0].swapSender, nativeBuy ? block.release.contracts.universalRouter.address : launch.engine, "Native host swap sender");
+    await verifyNativeSwapFees(input.client, block, input.receipt, launch, swaps[0]);
+  }
   return receiptResult(input.receipt, "execute", { token: launch.token, launch, outputAmount });
 }
 export async function verifyModuleEngineApprovalReceipt(input: { client: ModuleEngineClient; release: ModuleEngineRelease; account: Address; token: Address; amount: bigint; spender?: Address; allowanceKind?: "erc20" | "permit2"; permit2Spender?: Address; expiration?: bigint; receipt: TransactionReceipt }): Promise<ModuleEngineReceiptResult> {
@@ -452,7 +524,7 @@ export async function observeModuleEngineReceipt(prepared: PreparedModuleEngineT
 }
 
 async function assertAnyQuoteRouteAccounting(client: ModuleEngineClient, block: BoundBlock, accounting: { mode: string }, unbornToken?: Address) {
-  need(isModuleEngineAnyQuoteRelease(block.release), "Shared quote release required.");
+  need(isModuleEngineSharedQuoteRelease(block.release), "Shared quote release required.");
   need(accounting.mode === "unlock-deltas", "This route cannot isolate the funded swap from existing router balances. Try another route.");
   if (unbornToken) {
     const deployed = await client.getCode({ address: unbornToken, blockNumber: block.blockNumber });
@@ -469,7 +541,7 @@ export async function prepareModuleEngineSourceAnyQuoteSwapV1(input: Omit<Parame
   return prepareModuleEngineAnyQuoteSwapAt(input, await assertModuleEngineSourceIdentityV1(input));
 }
 async function prepareModuleEngineAnyQuoteSwapAt(input: Omit<Parameters<typeof prepareModuleEngineAnyQuoteSwap>[0], "release">, block: BoundBlock): Promise<ModuleEngineSourcePreparationV1<PreparedModuleEngineSwap> | ModuleEngineApprovalRequired> {
-  const release = block.release; need(isModuleEngineAnyQuoteRelease(release), "Shared quote release required.");
+  const release = block.release; need(isModuleEngineSharedQuoteRelease(release), "Shared quote release required.");
   const quote = freeze(structuredClone(input.quote)), account = moduleAddress(input.account, "account");
   const launch = await boundLaunch(input.client, block, quote.token), template = await assertTemplate(input.client, block, input.template, false);
   same(quote.releaseDigest, release.releaseDigest, "Trade release"); same(quote.account, account, "Trade wallet"); same(quote.quoteAsset, launch.quoteAsset, "Trade quote asset"); same(quote.token, launch.token, "Trade token");
@@ -483,6 +555,10 @@ async function prepareModuleEngineAnyQuoteSwapAt(input: Omit<Parameters<typeof p
   same(await read(input.client, release.contracts.host.address, "poolIdOf", [launch.launchId], block.blockNumber, moduleEngineAnyQuoteHostAbi), quote.pool.poolId, "Registered shared pool");
   const registeredKey = await read(input.client, release.contracts.sharedHook.address, "poolKey", [quote.pool.poolId], block.blockNumber, moduleEngineAnyQuoteHookAbi);
   equal(registeredKey, poolKey, "Shared hook pool key");
+  if (isModuleEngineAnyQuoteEthRelease(release)) {
+    need(quote.nativeFeeRouteHash, "Native fee route quote is missing.");
+    same(await read(input.client, release.contracts.sharedHook.address, "nativeFeeRouteHash", [quote.pool.poolId], block.blockNumber, anyQuoteNativeFeeRouteAbi), quote.nativeFeeRouteHash, "Trade native fee route");
+  } else need(quote.nativeFeeRouteHash === undefined, "Native fee quote cannot be used for a legacy pool.");
   const compiled = buildAnyQuoteSwapV1({ pool: quote.pool, owner: account, recipient: quote.recipient, side: quote.buy ? "buy" : "sell", amountIn: inputAmount, minimumAmountOut: minimumOutput, deadline: expiresAt, externalRoute: quote.externalRoute, now: block.timestamp });
   const approval = async (current: BoundBlock): Promise<ModuleEngineApprovalRequired | null> => {
     if (quote.buy) return null;
@@ -500,7 +576,7 @@ async function prepareModuleEngineAnyQuoteSwapAt(input: Omit<Parameters<typeof p
   await assertAnyQuoteRouteAccounting(input.client, block, compiled.balanceAccounting);
   const transaction = tx(account, compiled.transaction.to, compiled.transaction.data, BigInt(compiled.transaction.value), quote.buy ? "buy" : "sell", quote.buy ? "Buy with ETH through the pool quote asset" : "Sell to ETH through the pool quote asset");
   const simulation = await simulate(input.client, block, transaction, true), quoteDecimals = Number(await read(input.client, launch.quoteAsset, "decimals", [], block.blockNumber));
-  const prepared: PreparedModuleEngineSwap = { sourceKind: "module-engine-v1", kind: "swap", account, releaseDigest: release.releaseDigest, blockNumber: block.blockNumber, expiresAt, gasEstimate: simulation.gasEstimate,
+  const prepared: PreparedModuleEngineSwap = { sourceKind: "module-engine-v1", kind: "swap", ...(isModuleEngineAnyQuoteEthRelease(release) ? { nativeEthFees: true } : {}), account, releaseDigest: release.releaseDigest, blockNumber: block.blockNumber, expiresAt, gasEstimate: simulation.gasEstimate,
     transaction: { ...transaction, gas: toHex(simulation.gasEstimate * 12n / 10n) }, token: launch.token, quoteAsset: launch.quoteAsset, quoteDecimals, launchId: launch.launchId, revisionId: launch.revisionId, planHash: launch.planHash,
     buy: quote.buy, recipient: quote.recipient, inputAmount, outputAmount, minimumOutput, externalRoute: quote.externalRoute };
   return { prepared, refresh: async (current: BoundBlock) => {
@@ -515,10 +591,11 @@ export async function verifyModuleEngineAnyQuoteSwapReceipt(input: { client: Mod
 }
 async function verifyModuleEngineAnyQuoteSwapReceiptAt(input: Omit<Parameters<typeof verifyModuleEngineAnyQuoteSwapReceipt>[0], "release"> & { release: ModuleEngineReleaseIdentity }, block: BoundBlock): Promise<ModuleEngineReceiptResult> {
   const { release, launch, quote, minimumOutput, receipt } = input;
-  need(isModuleEngineAnyQuoteRelease(release), "Shared quote receipt source differs.");
+  need(isModuleEngineSharedQuoteRelease(release), "Shared quote receipt source differs.");
   const current = block, live = await boundLaunch(input.client, current, launch.token); same(live.planHash, launch.planHash, "Trade launch plan");
   const swaps = events(receipt, release.contracts.sharedHook.address, "QuotePoolSwap", moduleEngineAnyQuoteHookAbi).filter(e => e.poolId === quote.pool.poolId);
   need(swaps.length === 1, "Expected one swap in the selected module pool."); const swap = swaps[0]; same(swap.launchId, launch.launchId, "Swap launch"); same(swap.swapSender, release.contracts.universalRouter.address, "Swap router"); need(swap.buy === quote.buy && swap.exactInput === true, "Swap direction differs.");
+  await verifyNativeSwapFees(input.client, block, receipt, launch, swap);
   // Receipt success and reconstructed final router minimum prove ETH settlement. Do not invent an ETH output from token Core deltas.
   let output: bigint | undefined;
   if (quote.buy) { output = events(receipt, launch.token, "Transfer", erc20Abi).filter(e => String(e.from).toLowerCase() === release.contracts.poolManager.address.toLowerCase() && String(e.to).toLowerCase() === quote.recipient.toLowerCase()).reduce((sum, e) => sum + uint(e.value, "received tokens"), 0n); need(output >= minimumOutput, "Final token transfer is below the signed minimum."); }
@@ -557,16 +634,16 @@ export interface ModuleEngineAdministration {
 export async function readModuleEngineAdministration(input: { client: ModuleEngineClient; release: ModuleEngineRelease; template: ModuleEngineTemplate; token: Address; account: Address; requestId?: Hex }): Promise<ModuleEngineAdministration> {
   const block = await assertModuleEngineRelease(input), launch = await boundLaunch(input.client, block, input.token), template = await assertTemplate(input.client, block, input.template, false), actor = moduleAddress(input.account, "account");
   same(launch.revisionId, template.manifest.manifest.revision.packageId, "Administration template");
-  const quoteFees = isModuleEngineAnyQuoteRelease(block.release), ledger = block.release.contracts.ledger.address, ledgerRead = (fn: string, args: readonly unknown[]) => read(input.client, ledger, fn, args, block.blockNumber, ledgerAbi(block.release));
-  const platform = quoteFees ? ledgerRead("platformFeeBps", [launch.launchId]) : null;
+  const quoteFees = isModuleEngineAnyQuoteRelease(block.release), shared = isModuleEngineSharedQuoteRelease(block.release), nativeFees = isModuleEngineAnyQuoteEthRelease(block.release), ledger = block.release.contracts.ledger.address, ledgerRead = (fn: string, args: readonly unknown[]) => read(input.client, ledger, fn, args, block.blockNumber, ledgerAbi(block.release));
+  const platform = shared ? ledgerRead("platformFeeBps", [launch.launchId]) : null;
   const [claimable, claimed, contributed, treasury, administrator, recipients, quoteDecimals, buy, sell] = await Promise.all([
-    ledgerRead(quoteFees ? "claimableQuote" : "claimable", quoteFees ? [launch.quoteAsset, actor] : [actor]), ledgerRead("claimedBy", quoteFees ? [launch.quoteAsset, actor] : [actor]), ledgerRead(quoteFees ? "contributionByLaunch" : "contributionByPool", [launch.launchId, actor]), ledgerRead("treasury", []), ledgerRead("rewardAdmin", []), ledgerRead("creatorRecipients", [launch.launchId]), read(input.client, launch.quoteAsset, "decimals", [], block.blockNumber),
+    ledgerRead(quoteFees ? "claimableQuote" : nativeFees ? "claimableEth" : "claimable", quoteFees ? [launch.quoteAsset, actor] : [actor]), ledgerRead("claimedBy", quoteFees ? [launch.quoteAsset, actor] : [actor]), ledgerRead(shared ? "contributionByLaunch" : "contributionByPool", [launch.launchId, actor]), ledgerRead("treasury", []), ledgerRead("rewardAdmin", []), ledgerRead("creatorRecipients", [launch.launchId]), read(input.client, launch.quoteAsset, "decimals", [], block.blockNumber),
     platform ? platform.then(bps => [bps, launch.buyCreatorFeeBps]) : read(input.client, block.release.contracts.host.address, "feeTerms", [launch.launchId, true], block.blockNumber, moduleEngineHostAbi), platform ? platform.then(bps => [bps, launch.sellCreatorFeeBps]) : read(input.client, block.release.contracts.host.address, "feeTerms", [launch.launchId, false], block.blockNumber, moduleEngineHostAbi),
   ]);
   const [wallets, shares, adminRevision] = recipients as [Address[], number[], bigint], buyFees = buy as [number, number], sellFees = sell as [number, number];
-  need((quoteFees ? buyFees[0] === 30 : [10, 30].includes(buyFees[0])) && buyFees[0] === sellFees[0] && buyFees[1] === launch.buyCreatorFeeBps && sellFees[1] === launch.sellCreatorFeeBps, "Stored fee terms differ.");
+  need((shared ? buyFees[0] === 30 : [10, 30].includes(buyFees[0])) && buyFees[0] === sellFees[0] && buyFees[1] === launch.buyCreatorFeeBps && sellFees[1] === launch.sellCreatorFeeBps, "Stored fee terms differ.");
   const result: ModuleEngineAdministration = { launch, blockNumber: block.blockNumber, timestamp: block.timestamp, quoteDecimals: Number(quoteDecimals), actor, permissions: template.manifest.manifest.revision.operationPermissions,
-    fees: { ...(quoteFees ? { feeAsset: launch.quoteAsset, feeDecimals: Number(quoteDecimals) } : {}), claimable: uint(claimable, "claimable"), claimed: uint(claimed, "claimed"), contributionByLaunch: uint(contributed, "contribution"), treasury: moduleAddress(treasury, "treasury"), administrator: moduleAddress(administrator, "administrator"), creatorWallets: wallets.map(wallet => moduleAddress(wallet, "creator recipient")), creatorSharesBps: shares, adminRevision: uint(adminRevision, "admin revision"), buyPlatformBps: buyFees[0], sellPlatformBps: sellFees[0], buyCreatorBps: buyFees[1], sellCreatorBps: sellFees[1] } };
+    fees: { ...(shared ? { feeAsset: quoteFees ? launch.quoteAsset : ZERO, feeDecimals: quoteFees ? Number(quoteDecimals) : 18 } : {}), claimable: uint(claimable, "claimable"), claimed: uint(claimed, "claimed"), contributionByLaunch: uint(contributed, "contribution"), treasury: moduleAddress(treasury, "treasury"), administrator: moduleAddress(administrator, "administrator"), creatorWallets: wallets.map(wallet => moduleAddress(wallet, "creator recipient")), creatorSharesBps: shares, adminRevision: uint(adminRevision, "admin revision"), buyPlatformBps: buyFees[0], sellPlatformBps: sellFees[0], buyCreatorBps: buyFees[1], sellCreatorBps: sellFees[1] } };
   const engineRead = (fn: string, args: readonly unknown[] = []) => read(input.client, launch.engine, fn, args, block.blockNumber);
   const profile = template.manifest.manifest.catalogDefinition.interface;
   if (profile === "escrow-v1") {
@@ -606,7 +683,7 @@ async function feeFamilies(client: ModuleEngineClient, block: BoundBlock, launch
 async function feeControlsAt(input: { client: ModuleEngineClient; template: ModuleEngineTemplate; token: Address; account: Address }, block: BoundBlock): Promise<ModuleEngineFeeControlsSnapshot> {
   const launch = await boundLaunch(input.client, block, input.token), template = await assertTemplate(input.client, block, input.template, false);
   same(launch.revisionId, template.manifest.manifest.revision.packageId, "Fee controls revision");
-  const families = isModuleEngineAnyQuoteRelease(block.release) ? [] : await feeFamilies(input.client, block, launch), ledger = block.release.contracts.ledger.address;
+  const families = isModuleEngineSharedQuoteRelease(block.release) ? [] : await feeFamilies(input.client, block, launch), ledger = block.release.contracts.ledger.address;
   const [recipients, treasury, administrator, authors] = await Promise.all([
     read(input.client, ledger, "creatorRecipients", [launch.launchId], block.blockNumber, ledgerAbi(block.release)),
     read(input.client, ledger, "treasury", [], block.blockNumber, ledgerAbi(block.release)),
@@ -618,7 +695,7 @@ async function feeControlsAt(input: { client: ModuleEngineClient; template: Modu
     })),
   ]);
   return { releaseDigest: block.release.releaseDigest, launch, actor: moduleAddress(input.account, "account"), blockNumber: block.blockNumber,
-    ...creatorRecipients(recipients), quoteFees: isModuleEngineAnyQuoteRelease(block.release), treasury: moduleAddress(treasury, "treasury"), administrator: moduleAddress(administrator, "administrator"), authors };
+    ...creatorRecipients(recipients), quoteFees: isModuleEngineSharedQuoteRelease(block.release), treasury: moduleAddress(treasury, "treasury"), administrator: moduleAddress(administrator, "administrator"), authors };
 }
 export async function readModuleEngineFeeControls(input: { client: ModuleEngineClient; release: ModuleEngineRelease; template: ModuleEngineTemplate; token: Address; account: Address }): Promise<ModuleEngineFeeControlsSnapshot> {
   const block = await assertModuleEngineRelease(input), result = await feeControlsAt(input, block);
@@ -665,7 +742,7 @@ export async function prepareModuleEngineFeeChange(input: { client: ModuleEngine
   else if (change.kind === "rotate-creator") data = encodeFunctionData({ abi: ledgerAbi(block.release), functionName: "changeCreatorWallet", args: [launch.launchId, BigInt(change.index), change.recipient] });
   else if (change.kind === "replace-creators") data = encodeFunctionData({ abi: ledgerAbi(block.release), functionName: "replaceCreatorWallets", args: [launch.launchId, [...change.recipients], change.expectedAdminRevision, change.deadline] });
   else data = encodeFunctionData({ abi: moduleEngineAuthorWalletAbi, functionName: "changeAuthorWallet", args: [change.familyId, change.recipient] });
-  const transaction = tx(account, target, data, 0n, "manage", change.kind === "rotate-platform" ? "Change the future 0.3% platform fee recipient; accrued quote claims stay with their current wallets" : change.kind === "rotate-author" ? "Change your family's future author fee wallet; accrued claims stay with their current wallets" : "Change future creator fee recipients; fixed shares and accrued claims stay unchanged");
+  const transaction = tx(account, target, data, 0n, "manage", change.kind === "rotate-platform" ? "Change the future 0.3% platform fee recipient; accrued claims stay with their current wallets" : change.kind === "rotate-author" ? "Change your family's future author fee wallet; accrued claims stay with their current wallets" : "Change future creator fee recipients; fixed shares and accrued claims stay unchanged");
   const simulation = await simulate(input.client, block, transaction, true);
   const prepared: PreparedModuleEngineFeeChange = { ...change, sourceKind: "module-engine-v1", account, releaseDigest: release.releaseDigest, blockNumber: block.blockNumber,
     expiresAt, gasEstimate: simulation.gasEstimate, transaction: { ...transaction, gas: toHex(simulation.gasEstimate * 12n / 10n) }, token: launch.token, launchId: launch.launchId, revisionId: launch.revisionId, planHash: launch.planHash };
@@ -684,7 +761,7 @@ export async function prepareModuleEngineFeeChange(input: { client: ModuleEngine
   }, receipt: receipt => verifyModuleEngineFeeChangeReceipt({ client: input.client, release, launch, account, change, receipt }) });
 }
 function normalizedCreatorEvent(args: Record<string, unknown>, release: ModuleEngineRelease): Record<string, unknown> {
-  return isModuleEngineAnyQuoteRelease(release) ? { ...args, poolId: args.launchId, previousWallet: args.previous, newWallet: args.current,
+  return isModuleEngineSharedQuoteRelease(release) ? { ...args, poolId: args.launchId, previousWallet: args.previous, newWallet: args.current,
     adminRevision: args.revision, effectiveCreatorFeesReceived: args.effectiveCreatorReceived } : args;
 }
 /** Receipt events prove this transaction; later same-block rotations are reported without inventing a failed send. */
@@ -694,7 +771,7 @@ export async function verifyModuleEngineFeeChangeReceipt(input: { client: Module
   const change = input.change, account = moduleAddress(input.account, "account"), ledger = block.release.contracts.ledger.address;
   const result: NonNullable<ModuleEngineReceiptResult["feeChange"]> = { changes: [], previewChanged: false, subsequentlyChanged: false };
   if (change.kind === "rotate-platform") {
-    need(isModuleEngineAnyQuoteRelease(block.release), "Platform rotation source differs.");
+    need(isModuleEngineSharedQuoteRelease(block.release), "Platform rotation source differs.");
     same(input.receipt.to, ledger, "Platform ledger"); same(input.receipt.from, account, "Platform transaction wallet");
     const args = event(input.receipt, ledger, "PlatformWalletChanged", moduleEngineAnyQuoteLedgerAbi);
     same(args.administrator, account, "Platform rotation authority"); same(args.previous, change.previousWallet, "Previous platform wallet"); same(args.current, change.recipient, "New platform wallet");
@@ -755,14 +832,14 @@ export async function prepareModuleEngineSourceClaimV1(input: Omit<Parameters<ty
 }
 async function prepareModuleEngineClaimAt(input: Omit<Parameters<typeof prepareModuleEngineClaim>[0], "release">, block: BoundBlock): Promise<ModuleEngineSourcePreparationV1<PreparedModuleEngineClaim>> {
   const release = block.release, launch = await boundLaunch(input.client, block, input.token), account = moduleAddress(input.account, "account"), recipient = moduleAddress(input.recipient, "claim recipient"), ledger = release.contracts.ledger.address;
-  const quoteFees = isModuleEngineAnyQuoteRelease(release), abi = ledgerAbi(release), claimFunction = quoteFees ? "claimQuoteTo" : "claimTo", balanceFunction = quoteFees ? "claimableQuote" : "claimable";
+  const quoteFees = isModuleEngineAnyQuoteRelease(release), nativeFees = isModuleEngineAnyQuoteEthRelease(release), abi = ledgerAbi(release), claimFunction = quoteFees ? "claimQuoteTo" : nativeFees ? "claimEthTo" : "claimTo", balanceFunction = quoteFees ? "claimableQuote" : nativeFees ? "claimableEth" : "claimable";
   const balanceArgs = quoteFees ? [launch.quoteAsset, account] : [account];
   need(recipient !== ledger, "Choose an external claim recipient.");
   const [claimable, alreadyClaimed, decimals] = await Promise.all([read(input.client, ledger, balanceFunction, balanceArgs, block.blockNumber, abi), read(input.client, ledger, "claimedBy", balanceArgs, block.blockNumber, abi), quoteFees ? read(input.client, launch.quoteAsset, "decimals", [], block.blockNumber) : 18]);
-  const minimumAmount = uint(claimable, "claimable fees", true), claimedBefore = uint(alreadyClaimed, "claimed fees"), expiresAt = deadline(block.timestamp);
+  const availableAmount = uint(claimable, "claimable fees", true), minimumAmount = nativeFees && availableAmount > (1n << 127n) - 1n ? (1n << 127n) - 1n : availableAmount, claimedBefore = uint(alreadyClaimed, "claimed fees"), expiresAt = deadline(block.timestamp);
   const transaction = tx(account, ledger, encodeFunctionData({ abi, functionName: claimFunction, args: quoteFees ? [launch.quoteAsset, recipient] : [recipient] }), 0n, "manage", quoteFees ? "Claim your accrued fees in the pool quote asset" : "Claim your accrued engine fees in ETH");
   const simulated = await simulate(input.client, block, transaction); need(decodeFunctionResult({ abi, functionName: claimFunction, data: simulated.data }) === minimumAmount, "Claim simulation differs from the ledger balance.");
-  const prepared: PreparedModuleEngineClaim = { sourceKind: "module-engine-v1", kind: "claim", account, releaseDigest: release.releaseDigest, blockNumber: block.blockNumber, expiresAt, gasEstimate: simulated.gasEstimate, transaction: { ...transaction, gas: toHex(simulated.gasEstimate * 12n / 10n) }, token: launch.token, launchId: launch.launchId, revisionId: launch.revisionId, planHash: launch.planHash, recipient, minimumAmount, claimedBefore, ...(quoteFees ? { feeAsset: launch.quoteAsset, feeDecimals: Number(decimals) } : {}) };
+  const prepared: PreparedModuleEngineClaim = { sourceKind: "module-engine-v1", kind: "claim", ...(nativeFees ? { nativeEthFees: true } : {}), account, releaseDigest: release.releaseDigest, blockNumber: block.blockNumber, expiresAt, gasEstimate: simulated.gasEstimate, transaction: { ...transaction, gas: toHex(simulated.gasEstimate * 12n / 10n) }, token: launch.token, launchId: launch.launchId, revisionId: launch.revisionId, planHash: launch.planHash, recipient, minimumAmount, claimedBefore, ...(isModuleEngineSharedQuoteRelease(release) ? { feeAsset: quoteFees ? launch.quoteAsset : ZERO, feeDecimals: quoteFees ? Number(decimals) : 18 } : {}) };
   return { prepared, refresh: async (current: BoundBlock) => { need(current.timestamp <= expiresAt, "Claim preview expired."); const live = await boundLaunch(input.client, current, launch.token); same(live.planHash, launch.planHash, "Claim launch plan"); const currentClaimable = uint(await read(input.client, ledger, balanceFunction, balanceArgs, current.blockNumber, abi), "claimable fees"); need(currentClaimable >= minimumAmount, "Fee balance changed. Review the claim again."); await simulate(input.client, current, transaction); }, receipt: (receipt, current) => verifyModuleEngineClaimReceiptAt({ client: input.client, release, launch, account, recipient, minimumAmount, claimedBefore, receipt }, current) };
 }
 export async function verifyModuleEngineClaimReceipt(input: { client: ModuleEngineClient; release: ModuleEngineRelease; launch: ModuleEngineLaunchRecord; account: Address; recipient: Address; minimumAmount: bigint; claimedBefore: bigint; receipt: TransactionReceipt }): Promise<ModuleEngineReceiptResult> {
@@ -770,9 +847,9 @@ export async function verifyModuleEngineClaimReceipt(input: { client: ModuleEngi
 }
 async function verifyModuleEngineClaimReceiptAt(input: Omit<Parameters<typeof verifyModuleEngineClaimReceipt>[0], "release"> & { release: ModuleEngineReleaseIdentity }, block: BoundBlock): Promise<ModuleEngineReceiptResult> {
   const launch = await boundLaunch(input.client, block, input.launch.token); same(launch.planHash, input.launch.planHash, "Claim launch plan");
-  const quoteFees = isModuleEngineAnyQuoteRelease(block.release), abi = ledgerAbi(block.release);
-  const args = event(input.receipt, block.release.contracts.ledger.address, quoteFees ? "QuoteFeesClaimed" : "FeesClaimed", abi); same(args.beneficiary, input.account, "Claim beneficiary");
-  if (quoteFees) same(args.asset, launch.quoteAsset, "Claim quote asset"); else same(args.caller, input.account, "Claim caller");
+  const quoteFees = isModuleEngineAnyQuoteRelease(block.release), nativeFees = isModuleEngineAnyQuoteEthRelease(block.release), abi = ledgerAbi(block.release);
+  const args = event(input.receipt, block.release.contracts.ledger.address, quoteFees ? "QuoteFeesClaimed" : nativeFees ? "EthFeesClaimed" : "FeesClaimed", abi); same(args.beneficiary, input.account, "Claim beneficiary");
+  if (quoteFees) same(args.asset, launch.quoteAsset, "Claim quote asset"); else if (!nativeFees) same(args.caller, input.account, "Claim caller");
   same(args.recipient, input.recipient, "Claim recipient"); const outputAmount = uint(args.amount, "claimed amount", true); need(outputAmount >= input.minimumAmount, "Claim is below the reviewed balance.");
   if (quoteFees) {
     // Zero-value token events do not pay a claim; every positive movement must be the exact payment.
@@ -781,6 +858,7 @@ async function verifyModuleEngineClaimReceiptAt(input: Omit<Parameters<typeof ve
     same(transfers[0].from, block.release.contracts.poolManager.address, "Claim transfer source"); same(transfers[0].to, input.recipient, "Claim transfer recipient");
     need(uint(transfers[0].value, "quote claim transfer", true) === outputAmount, "Claim transfer differs from the ledger amount.");
   }
+  if (nativeFees) await verifyNativeClaimBacking(input.client, block, input.receipt, outputAmount);
   const claimed = uint(await read(input.client, block.release.contracts.ledger.address, "claimedBy", quoteFees ? [launch.quoteAsset, input.account] : [input.account], block.blockNumber, abi), "claimed total"); need(claimed >= input.claimedBefore + outputAmount, "Claimed ledger total was not updated."); await canonical(input.client, block); return receiptResult(input.receipt, "claim", { token: launch.token, launch, outputAmount });
 }
 

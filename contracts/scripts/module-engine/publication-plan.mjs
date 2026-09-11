@@ -38,7 +38,7 @@ export async function bindEngineReview(bundle, identity) {
   const source = api.validateModuleSubmissionRequest(bundle.source); need(source.ok, 'Invalid engine source package');
   need(api.validateModuleReviewDecisionRecordV1(bundle.review), 'Invalid engine review decision');
   const review = bundle.review, subject = api.parseReviewSubject(review.subject), artifact = api.parseReviewArtifact(bundle.artifact, subject), buildPlan = api.parseReviewPlan(bundle.buildPlan, subject);
-  if (api.isModuleEngineAnyQuoteRelease(identity)) assertAnyQuotePublicationIdentity(source, subject);
+  if (api.isModuleEngineSharedQuoteRelease(identity)) assertAnyQuotePublicationIdentity(source, subject);
   need(artifact.schemaVersion === 'programmable.modules.engine-build.v1' && buildPlan.schemaVersion === 'programmable.modules.engine-build-plan.v1', 'Protected engine profile required');
   api.verifyModuleEngineBuildArtifactV1(artifact, subject, buildPlan, source.request);
   need(review.command.outcome === 'accept' && review.command.artifactDigest === artifact.artifactDigest

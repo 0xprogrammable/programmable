@@ -1,3 +1,5 @@
+import { MODULE_ENGINE_SHARED_QUOTE_ETH_ENVIRONMENT_V1, MODULE_ENGINE_SHARED_QUOTE_ETH_POLICY_V1, MODULE_ENGINE_SHARED_QUOTE_ETH_REVIEW_AREAS_V1,
+  MODULE_ENGINE_SHARED_QUOTE_ETH_REVIEW_LEDGER_V1, MODULE_ENGINE_SHARED_QUOTE_ETH_REVIEW_INFRASTRUCTURE_V1 } from "../../module-mode/review-engine-shared-quote-eth";
 // Server and operator source reconstruction. Never imported by the browser review UI.
 import { decodeAbiParameters, encodeAbiParameters, keccak256 } from "viem";
 import { validateModuleSubmissionRequest } from "../../../packages/classic-modules/src/open-transport.mjs";
@@ -66,9 +68,10 @@ function sourceInput(source: unknown, subject: ModuleReviewSubjectV1, plan: Modu
   const target = checked.request.descriptor.components.find(c => c.id === plan.engineComponentId);
   need(target && target.runtime === MODULE_ENGINE_PROFILE_V1, "MODULE_BUILD_ADAPTER_UNSUPPORTED");
   need(/^[A-Za-z_$][A-Za-z0-9_$]{0,255}$/u.test(target.entrypoint), "MODULE_BUILD_ENTRYPOINT_INVALID");
-  const sharedQuote = plan.testEnvironment?.profile === MODULE_ENGINE_SHARED_QUOTE_ENVIRONMENT_V1.profile;
-  if (plan.testEnvironment?.profile === MODULE_ENGINE_SHARED_QUOTE_ENVIRONMENT_V1.profile) {
-    need(checked.request.descriptor.requiresHost.includes(MODULE_ENGINE_SHARED_QUOTE_POLICY_V1.hostRequirement), "MODULE_ENGINE_SHARED_QUOTE_HOST_PROFILE_MISSING");
+  const nativeEth = plan.testEnvironment?.profile === MODULE_ENGINE_SHARED_QUOTE_ETH_ENVIRONMENT_V1.profile;
+  const sharedQuote = nativeEth || plan.testEnvironment?.profile === MODULE_ENGINE_SHARED_QUOTE_ENVIRONMENT_V1.profile;
+  if (sharedQuote) {
+    need(checked.request.descriptor.requiresHost.includes(nativeEth ? MODULE_ENGINE_SHARED_QUOTE_ETH_POLICY_V1.hostRequirement : MODULE_ENGINE_SHARED_QUOTE_POLICY_V1.hostRequirement), "MODULE_ENGINE_SHARED_QUOTE_HOST_PROFILE_MISSING");
     const schema = object(checked.request.descriptor.configuration), fields = object(schema.fields);
     const fixedValue = (name: string) => object(object(fields[name]).binding).value;
     const manager = fixedValue("poolManager"), codeHash = fixedValue("poolManagerCodeHash"), hook = fixedValue("sharedHook");
@@ -100,7 +103,8 @@ function compiledCases(plan: ModuleEngineBuildPlanV1, source: ReturnType<typeof 
   const descriptor = source.checked.request.descriptor;
   return plan.cases.map(c => {
     let configBytes = c.rawConfigBytes ?? encodeModuleEngineConfiguration(plan.configurationAbi, compileOpenConfig(descriptor.configuration, c.parameters, { roles: { author: descriptor.author, reward: descriptor.rewardWallet } }), descriptor.configuration);
-    const sharedQuote = plan.testEnvironment?.profile === MODULE_ENGINE_SHARED_QUOTE_ENVIRONMENT_V1.profile;
+    const nativeEth = plan.testEnvironment?.profile === MODULE_ENGINE_SHARED_QUOTE_ETH_ENVIRONMENT_V1.profile;
+    const sharedQuote = nativeEth || plan.testEnvironment?.profile === MODULE_ENGINE_SHARED_QUOTE_ENVIRONMENT_V1.profile;
     let sharedQuoteConfiguration: ModuleEngineCompiledCaseV1["sharedQuoteConfiguration"];
     if (sharedQuote && c.expectedDeployment === "success") {
       need(configBytes.length === 514, "MODULE_ENGINE_SHARED_QUOTE_CONFIGURATION_INVALID");
@@ -113,7 +117,7 @@ function compiledCases(plan: ModuleEngineBuildPlanV1, source: ReturnType<typeof 
       // Admission above uses the exact submitted schema and values. Isolated execution then substitutes
       // only the owned manager/runtime/hook pins; dynamic quote, price and expiry fields remain byte-identical.
       sharedQuoteConfiguration = { sourceConfigBytes: configBytes, sourceConfigHash: keccak256(configBytes) };
-      const infrastructure = MODULE_ENGINE_SHARED_QUOTE_REVIEW_INFRASTRUCTURE_V1;
+      const infrastructure = nativeEth ? MODULE_ENGINE_SHARED_QUOTE_ETH_REVIEW_INFRASTRUCTURE_V1 : MODULE_ENGINE_SHARED_QUOTE_REVIEW_INFRASTRUCTURE_V1;
       configBytes = encodeAbiParameters(MODULE_ENGINE_SHARED_QUOTE_CONFIGURATION_ABI_V1, [schemaId,
         infrastructure.poolManager, infrastructure.poolManagerCodeHash, infrastructure.sharedHook, quote, tick, validUntil, priceHash]);
     }
@@ -121,7 +125,7 @@ function compiledCases(plan: ModuleEngineBuildPlanV1, source: ReturnType<typeof 
       host: MODULE_ENGINE_REVIEW_HOST_V1,
       launchId: moduleReviewDigestV1("programmable.modules.engine-review-launch.v1", { requestDigest: plan.requestDigest, caseId: c.id }),
       token: c.token, creator: MODULE_ENGINE_REVIEW_ACTOR_V1, quoteAsset: c.quoteAsset,
-      feeCollector: sharedQuote ? MODULE_ENGINE_SHARED_QUOTE_REVIEW_LEDGER_V1 : MODULE_ENGINE_REVIEW_HOST_V1,
+      feeCollector: nativeEth ? MODULE_ENGINE_SHARED_QUOTE_ETH_REVIEW_LEDGER_V1 : sharedQuote ? MODULE_ENGINE_SHARED_QUOTE_REVIEW_LEDGER_V1 : MODULE_ENGINE_REVIEW_HOST_V1,
     };
     const constructorArgs = encodeAbiParameters(MODULE_ENGINE_CONSTRUCTOR_ABI_V1, [context, configBytes]);
     const runtimeBytecode = materializeModuleEngineRuntimeV1(engine, constructorArgs);
@@ -150,7 +154,8 @@ function artifactContents(subject: ModuleReviewSubjectV1, plan: ModuleEngineBuil
     configurationCodec: plan.configurationCodec, configurationAbi: plan.configurationAbi,
     ...(plan.testEnvironment === undefined ? {} : { testEnvironment: plan.testEnvironment }),
     compiler: compilerIdentity(source.standard), engine, executionGas: plan.executionGas, operationPermissions: plan.operationPermissions, moneyRights: plan.moneyRights, coinRights: plan.coinRights, testEconomics: plan.testEconomics, cases, tests,
-    reviewRequired: plan.testEnvironment?.profile === MODULE_ENGINE_SHARED_QUOTE_ENVIRONMENT_V1.profile
+    reviewRequired: plan.testEnvironment?.profile === MODULE_ENGINE_SHARED_QUOTE_ETH_ENVIRONMENT_V1.profile
+      ? [...MODULE_ENGINE_REVIEW_AREAS_V1, ...MODULE_ENGINE_SHARED_QUOTE_ETH_REVIEW_AREAS_V1] : plan.testEnvironment?.profile === MODULE_ENGINE_SHARED_QUOTE_ENVIRONMENT_V1.profile
       ? [...MODULE_ENGINE_REVIEW_AREAS_V1, ...MODULE_ENGINE_SHARED_QUOTE_REVIEW_AREAS_V1] : MODULE_ENGINE_REVIEW_AREAS_V1, approved: false as const, registryApproved: false as const, available: false as const,
   };
 }

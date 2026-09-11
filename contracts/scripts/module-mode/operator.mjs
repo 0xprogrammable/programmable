@@ -24,6 +24,9 @@ import { observeQuoteStage, observeQuoteReceipt } from '../module-engine/quote-r
 import { sealAnyQuoteBuild } from '../module-engine/any-quote-build.mjs';
 import { ANY_QUOTE_PLAN_SCHEMA, assertAnyQuoteProfile, assertAnyQuotePlan, assertAnyQuoteBasis } from '../module-engine/any-quote-core.mjs';
 import { observeAnyQuoteStage, observeAnyQuoteReceipt } from '../module-engine/any-quote-rpc.mjs';
+import { sealAnyQuoteEthBuild } from '../module-engine/any-quote-eth-build.mjs';
+import { ANY_QUOTE_ETH_PLAN_SCHEMA, assertAnyQuoteEthProfile, assertAnyQuoteEthPlan, assertAnyQuoteEthBasis } from '../module-engine/any-quote-eth-core.mjs';
+import { observeAnyQuoteEthStage, observeAnyQuoteEthReceipt } from '../module-engine/any-quote-eth-rpc.mjs';
 
 const directory = path.dirname(fileURLToPath(import.meta.url));
 const profiles = [
@@ -41,6 +44,9 @@ const profiles = [
   { planSchema: ANY_QUOTE_PLAN_SCHEMA, identitySchema: 'programmable.module-engine.release.v1', sourceVersion: 'module-engine-any-quote-v1',
     sealBuild: sealAnyQuoteBuild, assertPlan: assertAnyQuotePlan, assertBasis: assertAnyQuoteBasis,
     observeStage: observeAnyQuoteStage, observeReceipt: observeAnyQuoteReceipt },
+  { planSchema: ANY_QUOTE_ETH_PLAN_SCHEMA, identitySchema: 'programmable.module-engine.release.v1', sourceVersion: 'module-engine-any-quote-eth-v1',
+    sealBuild: sealAnyQuoteEthBuild, assertPlan: assertAnyQuoteEthPlan, assertBasis: assertAnyQuoteEthBasis,
+    observeStage: observeAnyQuoteEthStage, observeReceipt: observeAnyQuoteEthReceipt },
 ].map(Object.freeze);
 
 /** Exact source dispatch only; every live path still reseals and uses the existing source/wallet authority. */
@@ -50,7 +56,8 @@ export function operatorSourceProfile(plan) {
   const profile = profiles.find(item => plan.schemaVersion === item.planSchema && identity.schemaVersion === item.identitySchema
     && identity.sourceVersion === item.sourceVersion);
   need(profile && (plan.sourceVersion === undefined || plan.sourceVersion === profile.sourceVersion), 'Unsupported or mixed deployment source schemas');
-  if (profile.sourceVersion === 'module-engine-any-quote-v1') assertAnyQuoteProfile(plan);
+  if (profile.sourceVersion === 'module-engine-any-quote-eth-v1') assertAnyQuoteEthProfile(plan);
+  else if (profile.sourceVersion === 'module-engine-any-quote-v1') assertAnyQuoteProfile(plan);
   else if (profile.sourceVersion === QUOTE_SOURCE_VERSION) assertQuoteProfile(plan);
   else if (profile.sourceVersion !== 'module-native-v1') need(identity.economicsPolicyId === ECONOMICS_POLICY_ID
     && plan.economics?.economicsPolicyId === ECONOMICS_POLICY_ID, 'Deployment economics policy differs');
@@ -117,7 +124,7 @@ export async function startOperator(options) {
           canRetry: !uiCheck && Boolean(options.retryAttempt && entry && !entry.transactionHash && !retry && entry.requestDigest === options.reviewedRequestDigest), retryAttempt: options.retryAttempt ?? null,
           role: step.role, target: step.target, transactionRecipient: step.to, owner: step.sender, value: step.value, parameters: plan.parameters, economics: plan.economics,
           ...(profile.sourceVersion === QUOTE_SOURCE_VERSION ? { quoteInfrastructure: { contracts: plan.identityCandidate.contracts, dependencies: plan.dependencies } } : {}),
-          ...(profile.sourceVersion === 'module-engine-any-quote-v1' ? { anyQuoteInfrastructure: plan.identityCandidate.contracts, reservedNonce: step.nonce } : {}),
+          ...(['module-engine-any-quote-v1', 'module-engine-any-quote-eth-v1'].includes(profile.sourceVersion) ? { anyQuoteInfrastructure: plan.identityCandidate.contracts, reservedNonce: step.nonce } : {}),
           constructorInputs: step.constructorInputs, constructorValues: step.constructorValues, initcodeHash: step.initcodeHash,
           initcodeBytes: step.initcodeBytes, runtime: { ...plan.contracts[step.role], runtime: undefined },
           ceilings: options.ceilings ?? null, authority: authority ?? null, journalState: entry ? entry.transactionHash ? 'transaction-recorded' : 'outcome-unknown' : 'not-requested', transactionHash: entry?.transactionHash ?? null }); return;

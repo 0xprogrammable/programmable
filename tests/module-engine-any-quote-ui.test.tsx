@@ -50,6 +50,13 @@ describe("Any Quote LP visible economic and availability boundaries", () => {
     expect(html).toContain("Review reward claim"); expect(html).toContain("1.25 pool pair tokens"); expect(html).toContain(QUOTE);
     expect(html).not.toContain("1.25 ETH");
   });
+  it("shows native fees in ETH without changing historical quote claims or adding launch controls", () => {
+    const html = renderToStaticMarkup(<ModuleEngineBuilder {...actions} {...anyQuoteUiFixture(true)} />);
+    expect(html.match(/id="engine-quote"/g)).toHaveLength(1); expect(html).toContain("Initial buy"); expect(html).not.toContain("Conversion route");
+    const prepared: PreparedModuleEngineClaim = { ...base, kind: "claim", nativeEthFees: true, recipient: ACCOUNT, minimumAmount: 125n * 10n ** 16n, claimedBefore: 0n, feeAsset: addr(0), feeDecimals: 18 };
+    const claim = renderToStaticMarkup(<ModuleEngineTransactionReview prepared={prepared} anyQuote quoteAsset={QUOTE} quoteDecimals={6} busy={false} onConfirm={vi.fn()} onEdit={vi.fn()} />);
+    expect(claim).toContain("Review ETH claim"); expect(claim).toContain("1.25 ETH"); expect(claim).not.toContain("pool pair tokens"); expect(claim).not.toContain("Reward token");
+  });
   it("shows both the allowance manager and authorized router with a bounded approval expiry", () => {
     const prepared: PreparedModuleEngineApproval = { ...base, kind: "approve", spender: addr(700), permit2Spender: addr(701), amount: 2n * 10n ** 18n, allowanceKind: "permit2", expiration: base.expiresAt };
     const html = renderToStaticMarkup(<ModuleEngineTransactionReview prepared={prepared} anyQuote busy={false} onConfirm={vi.fn()} onEdit={vi.fn()} />);
