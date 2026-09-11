@@ -1,3 +1,5 @@
+import type { MODULE_ENGINE_SHARED_QUOTE_ETH_ENVIRONMENT_V1 } from "./review-engine-shared-quote-eth";
+export { MODULE_ENGINE_SHARED_QUOTE_ETH_ENVIRONMENT_V1 } from "./review-engine-shared-quote-eth";
 // Engine review wire, kept byte-compatible with the protected backend engine-build.v1 profile.
 import type { Hex as ModuleDigestV1 } from "viem";
 import type { ReviewSubject as ModuleReviewSubjectV1 } from "./review-contract";
@@ -18,7 +20,7 @@ export const MODULE_ENGINE_QUOTE_NVDA_ENVIRONMENT_V1 = Object.freeze({
   profile: "programmable.engine-quote-nvda-v4-v3@1",
   sourceDigest: "0x99893b6a331147270eec445b65cbb3ee43265fb8aba36f72063c1542ef7ff41d",
 } as const);
-export type ModuleEngineTestEnvironmentV1 = typeof MODULE_ENGINE_QUOTE_ENVIRONMENT_V1 | typeof MODULE_ENGINE_QUOTE_NVDA_ENVIRONMENT_V1 | typeof MODULE_ENGINE_SHARED_QUOTE_ENVIRONMENT_V1;
+export type ModuleEngineTestEnvironmentV1 = typeof MODULE_ENGINE_QUOTE_ENVIRONMENT_V1 | typeof MODULE_ENGINE_QUOTE_NVDA_ENVIRONMENT_V1 | typeof MODULE_ENGINE_SHARED_QUOTE_ENVIRONMENT_V1 | typeof MODULE_ENGINE_SHARED_QUOTE_ETH_ENVIRONMENT_V1;
 export const MODULE_ENGINE_CONTEXT_ABI_V1 = [
   { name: "host", type: "address" }, { name: "launchId", type: "bytes32" },
   { name: "token", type: "address" }, { name: "creator", type: "address" },
@@ -136,6 +138,17 @@ export interface ModuleEngineTestRequestV1 {
   readonly cases: readonly ModuleEngineCompiledCaseV1[];
 }
 export interface ModuleEngineTestResultV1 {
+  readonly sharedQuoteEthChecks?: readonly {
+    readonly id: string;
+    readonly policyAndRuntimeBound: boolean | null;
+    readonly zeroQuoteLaunch: boolean | null;
+    readonly initialBuyRollback: boolean | null;
+    readonly externalRouterFourForms: boolean | null;
+    readonly partialFillRejected: boolean | null;
+    readonly nativeFeeConversion: boolean | null;
+    readonly nativeClaimsBacked: boolean | null;
+    readonly conversionRollback: boolean | null;
+  }[];
   readonly sharedQuoteChecks?: readonly {
     readonly id: string;
     readonly policyAndRuntimeBound: boolean | null;

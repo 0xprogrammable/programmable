@@ -1,20 +1,21 @@
 import "server-only";
-import { createPublicClient, custom, decodeFunctionData, decodeFunctionResult, encodeFunctionData, erc20Abi, keccak256, parseAbi, toHex, type Address, type Hex } from "viem";
+import { createPublicClient, custom, encodeAbiParameters, decodeFunctionData, decodeFunctionResult, encodeFunctionData, erc20Abi, keccak256, parseAbi, toHex, type Address, type Hex } from "viem";
 import { robinhoodChain } from "@/lib/chains";
 import { moduleAddress } from "@/lib/module-mode/release";
 import { assertModuleEngineSourceIdentityV1, readModuleEngineSourceLaunchV1, readModuleEngineSourceTemplateV1, type ModuleEngineClient } from "@/lib/module-engine/client";
-import { isModuleEngineAnyQuoteRelease } from "@/lib/module-engine/profile";
+import { isModuleEngineSharedQuoteRelease, isModuleEngineAnyQuoteEthRelease } from "@/lib/module-engine/profile";
 import { compileModuleEngineLaunch, type ModuleEngineLaunchInputs } from "@/lib/module-engine/operation-plan";
 import { moduleEngineAnyQuoteHostAbi, moduleEngineHostAbi } from "@/lib/module-engine/abi";
 import { anyQuoteLaunchIntent, anyQuoteMinimumOutput, anyQuotePoolFor, anyQuoteSlippageBps, predictAnyQuoteToken,
   type AnyQuoteCompatibleReadiness, type AnyQuoteLaunchIntent, type AnyQuoteLaunchPreparation, type AnyQuoteTradeQuote } from "@/lib/module-engine/any-quote/integration";
 import { encodeAnyQuoteConfigurationV1, planAnyQuoteInitialPriceV1 } from "@/lib/module-engine/any-quote/price";
-import { anyQuoteEvidenceHashV1, anyQuoteModulePoolKeyV1, buildAnyQuoteSwapV1 } from "@/lib/module-engine/any-quote/route";
+import { anyQuoteEvidenceHashV1, anyQuoteModulePoolKeyV1, anyQuoteSwapPathV1, buildAnyQuoteSwapV1 } from "@/lib/module-engine/any-quote/route";
 import { assessAnyQuoteAssetV1, requoteAnyQuoteExternalRouteV1, type AnyQuoteReadinessOptionsV1 } from "@/lib/module-engine/any-quote/readiness.server";
 import { ANY_QUOTE_INFRASTRUCTURE, ANY_QUOTE_NATIVE_BUY_OPERATION_ID, ANY_QUOTE_NATIVE, AnyQuoteErrorV1,
   anyQuoteSameAddressV1, anyQuoteUintV1, type AnyQuoteCheckpointV1 } from "@/lib/module-engine/any-quote/types";
 import { agreedTradeRpcV1, productionTradeRpcsV1, successfulTradeFramesV1, tradeTraceV1, type TradeRpcV1 } from "../custom-launch/routed-trade-rpc-v1";
 import { bindModuleEngineReleaseIdentity, bindModuleEngineTemplate, type ModuleEngineReleaseIdentity, type ModuleEngineTemplate } from "@/lib/module-engine/catalog";
+import { anyQuoteNativeFeeRouteAbi, anyQuoteNativeFeeRouteFromExternal, decodeAnyQuoteNativeFeeRoute, ANY_QUOTE_NATIVE_FEE_ROUTE_PARAMETERS } from "@/lib/module-engine/any-quote/native-fee-route";
 import { verifyAnyQuoteLaunchSettlementV1 } from "./any-quote-settlement";
 
 export type AnyQuoteIdentitySelectionV1 = { identity: ModuleEngineReleaseIdentity; template: ModuleEngineTemplate };
@@ -35,7 +36,7 @@ export function anyQuotePreparationClientV1(deps: AnyQuoteIdentityPreparationDep
 }
 function identitySelection(input: Selection & AnyQuoteIdentitySelectionV1) {
   const release = bindModuleEngineReleaseIdentity(input.identity);
-  if (!isModuleEngineAnyQuoteRelease(release) || input.releaseDigest !== release.releaseDigest) throw new AnyQuoteErrorV1("SOURCE_IDENTITY_MISMATCH");
+  if (!isModuleEngineSharedQuoteRelease(release) || input.releaseDigest !== release.releaseDigest) throw new AnyQuoteErrorV1("SOURCE_IDENTITY_MISMATCH");
   const template = bindModuleEngineTemplate(input.template, release);
   if (template.manifest.manifest.catalogDefinition.interface !== "quote-shared-v1" || template.manifest.manifest.catalogDefinition.id !== input.templateId) throw new AnyQuoteErrorV1("REVISION_MISMATCH");
   return { release, template };
@@ -59,6 +60,20 @@ async function quoteModule(pool: AnyQuoteTradeQuote["pool"], buy: boolean, amoun
   });
   return BigInt(output);
 }
+const fullQuoterAbi = parseAbi(["function quoteExactInput((address exactCurrency,(address intermediateCurrency,uint24 fee,int24 tickSpacing,address hooks,bytes hookData)[] path,uint128 exactAmount) params) returns (uint256 amountOut,uint256 gasEstimate)"]);
+async function quoteCombinedNativeTrade(pool: AnyQuoteTradeQuote["pool"], buy: boolean, amountIn: bigint, route: AnyQuoteTradeQuote["externalRoute"], deps: AnyQuoteIdentityPreparationDependenciesV1) {
+  const rpc = agreedTradeRpcV1(rpcs(deps)), ref = { blockHash: route.checkpoint.hash, requireCanonical: true };
+  const runtime = await rpc("eth_getCode", [ANY_QUOTE_INFRASTRUCTURE.v4Quoter, ref], value => String(value) as Hex);
+  if (keccak256(runtime) !== ANY_QUOTE_INFRASTRUCTURE.v4QuoterCodeHash) throw new AnyQuoteErrorV1("QUOTER_RUNTIME_MISMATCH");
+  const path = anyQuoteSwapPathV1(pool, buy ? "buy" : "sell", route);
+  const data = encodeFunctionData({ abi: fullQuoterAbi, functionName: "quoteExactInput", args: [{ exactCurrency: buy ? ANY_QUOTE_NATIVE : pool.token, path, exactAmount: amountIn }] });
+  const result = await rpc("eth_call", [{ to: ANY_QUOTE_INFRASTRUCTURE.v4Quoter, data }, ref], value => {
+    const [amount] = decodeFunctionResult({ abi: fullQuoterAbi, functionName: "quoteExactInput", data: String(value) as Hex });
+    return anyQuoteUintV1(amount.toString(), (1n << 127n) - 1n).toString();
+  });
+  return BigInt(result);
+}
+
 /** Complete trade quote uses current onchain module fees and external AMM execution, never an indicative USD price. */
 export type AnyQuoteTradeQuoteInputV1 = Selection & { account: Address; token: Address; recipient: Address; buy: boolean; inputAmount: string; slippageBps?: number };
 export async function readAnyQuoteIdentityTradeQuoteV1(input: AnyQuoteTradeQuoteInputV1 & AnyQuoteIdentitySelectionV1, deps: AnyQuoteIdentityPreparationDependenciesV1 = {}): Promise<AnyQuoteTradeQuote> {
@@ -71,7 +86,17 @@ export async function readAnyQuoteIdentityTradeQuoteV1(input: AnyQuoteTradeQuote
   const actualPool = await client.readContract({ address: release.contracts.host.address, abi: moduleEngineAnyQuoteHostAbi, functionName: "poolIdOf", args: [launch.launchId], blockNumber: BigInt(readiness.checkpoint.number) });
   if (actualPool !== pool.poolId) throw new AnyQuoteErrorV1("POOL_ID_MISMATCH");
   let externalRoute = readiness.routes.buy, output: bigint;
-  if (input.buy) output = await quoteModule(pool, true, BigInt(externalRoute.amountOut), externalRoute.checkpoint, deps);
+  let nativeFeeRouteHash: Hex | undefined;
+  if (isModuleEngineAnyQuoteEthRelease(release)) {
+    externalRoute = input.buy ? readiness.routes.buy : readiness.routes.sell;
+    const hops = await client.readContract({ address: release.contracts.sharedHook.address, abi: anyQuoteNativeFeeRouteAbi, functionName: "nativeFeeRoute", args: [pool.poolId], blockNumber: BigInt(externalRoute.checkpoint.number) });
+    const route = decodeAnyQuoteNativeFeeRoute(encodeAbiParameters(ANY_QUOTE_NATIVE_FEE_ROUTE_PARAMETERS, [hops]), pool);
+    nativeFeeRouteHash = await client.readContract({ address: release.contracts.sharedHook.address, abi: anyQuoteNativeFeeRouteAbi, functionName: "nativeFeeRouteHash", args: [pool.poolId], blockNumber: BigInt(externalRoute.checkpoint.number) });
+    if (route.routeHash !== nativeFeeRouteHash) throw new AnyQuoteErrorV1("NATIVE_FEE_ROUTE_MISMATCH");
+    // Actual full-path Core execution includes the nested fee conversion and shared external-pool state.
+    // Quoter reverts its simulation, so no allowance or invented user funding is needed for a quote.
+    output = await quoteCombinedNativeTrade(pool, input.buy, amount, externalRoute, deps);
+  } else if (input.buy) output = await quoteModule(pool, true, BigInt(externalRoute.amountOut), externalRoute.checkpoint, deps);
   else {
     const quoteOut = await quoteModule(pool, false, amount, readiness.checkpoint, deps);
     externalRoute = await (deps.requote ?? requoteAnyQuoteExternalRouteV1)(readiness.routes.sell, quoteOut, anyQuotePreparationOptionsV1(deps));
@@ -83,7 +108,7 @@ export async function readAnyQuoteIdentityTradeQuoteV1(input: AnyQuoteTradeQuote
   const validUntil = min(BigInt(readiness.validUntil), BigInt(externalRoute.validUntil)).toString();
   const quote: AnyQuoteTradeQuote = { schemaVersion: "programmable.any-quote.trade-quote.v1", releaseDigest: release.releaseDigest, templateId: input.templateId,
     account, token, quoteAsset: launch.quoteAsset, recipient, buy: input.buy, inputAmount: amount.toString(), output: output.toString(), minimumOutput: anyQuoteMinimumOutput(output, slippageBps).toString(), slippageBps,
-    validUntil, checkpoint: externalRoute.checkpoint, pool, externalRoute, evidenceHash: "0x" };
+    validUntil, checkpoint: externalRoute.checkpoint, pool, externalRoute, ...(nativeFeeRouteHash ? { nativeFeeRouteHash } : {}), evidenceHash: "0x" };
   return { ...quote, evidenceHash: anyQuoteEvidenceHashV1({ ...quote, evidenceHash: undefined }) };
 }
 
@@ -96,13 +121,14 @@ export async function readAnyQuoteIdentityLaunchPreviewV1(input: AnyQuoteLaunchP
   const predictedToken = predictAnyQuoteToken(intent, release), price = planAnyQuoteInitialPriceV1({ token: predictedToken, quoteAsset: intent.quoteAsset, quoteDecimals: readiness.token.decimals, quoteUsd: readiness.price.usd });
   const validUntil = min(block.timestamp + 180n, BigInt(readiness.validUntil)).toString();
   if (BigInt(validUntil) <= block.timestamp) throw new AnyQuoteErrorV1("READINESS_EXPIRED");
-  await verifyAnyQuoteLaunchSettlementV1({ account: intent.account, ledger: release.contracts.ledger.address,
+  if (!isModuleEngineAnyQuoteEthRelease(release)) await verifyAnyQuoteLaunchSettlementV1({ account: intent.account, ledger: release.contracts.ledger.address,
     creatorWallets: intent.creatorWallets, buyCreatorFeeBps: intent.buyCreatorFeeBps, sellCreatorFeeBps: intent.sellCreatorFeeBps,
     externalRoute: readiness.routes.buy, deadline: BigInt(validUntil), now: block.timestamp, rpcs: rpcs(deps) });
   const priceEvidenceHash = anyQuoteEvidenceHashV1({ domain: "programmable.any-quote.price-intent.v1", intent, readinessEvidenceHash: readiness.evidenceHash, price, validUntil });
   const encoded = encodeAnyQuoteConfigurationV1({ sharedHook: release.contracts.sharedHook.address, quoteAsset: intent.quoteAsset, initialTick: price.initialTick, validUntil: BigInt(validUntil), priceEvidenceHash });
   const preview: AnyQuoteLaunchPreparation = { schemaVersion: "programmable.any-quote.launch-preview.v1", intent, readiness, predictedToken,
     pool: anyQuotePoolFor(predictedToken, intent.quoteAsset, release.contracts.sharedHook.address), ...encoded, initialTick: price.initialTick, validUntil, actualFdvUsd: price.actualFdvUsd, initialBuy: null, evidenceHash: "0x" };
+  if (isModuleEngineAnyQuoteEthRelease(release)) preview.nativeFeeRoute = anyQuoteNativeFeeRouteFromExternal(readiness.routes.sell, preview.pool);
   if (BigInt(intent.initialBuyWei) > 0n) {
     const compiledRoute = buildAnyQuoteSwapV1({ pool: preview.pool, owner: intent.account, recipient: intent.account, side: "buy", amountIn: BigInt(intent.initialBuyWei), minimumAmountOut: 1n, deadline: BigInt(validUntil), externalRoute: readiness.routes.buy, now: block.timestamp });
     const compiled = await compileModuleEngineLaunch({ ...input, ...intent, configuration: {}, anyQuotePreparation: preview,

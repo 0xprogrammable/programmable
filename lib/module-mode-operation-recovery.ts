@@ -6,11 +6,11 @@ import { parseModuleModeAvailability } from "./module-mode/native-catalog";
 import { bindActiveModuleModeRelease, moduleHash, type ModuleModeRelease } from "./module-mode/release";
 import { parseModuleModeOperation, type ModuleModeOperation } from "./module-mode-operation-store";
 import { bindActiveModuleEngineRelease, ENGINE_ZERO_HASH, parseModuleEngineAvailability, type ModuleEngineRelease } from "./module-engine/catalog";
-import { isModuleEngineAnyQuoteRelease } from "./module-engine/profile";
+import { isModuleEngineSharedQuoteRelease, isModuleEngineAnyQuoteEthRelease } from "./module-engine/profile";
 import { ANY_QUOTE_INFRASTRUCTURE } from "./module-engine/any-quote/types";
 import { anyQuotePoolFor } from "./module-engine/any-quote/integration";
 import { buildAnyQuoteSwapV1 } from "./module-engine/any-quote/route";
-import { moduleEngineAnyQuoteLedgerAbi, moduleEnginePermit2Abi, moduleEngineAuthorWalletAbi, moduleEngineHostAbi, moduleEnginePlanParameters } from "./module-engine/abi";
+import { moduleEngineAnyQuoteEthLedgerAbi, moduleEngineAnyQuoteLedgerAbi, moduleEnginePermit2Abi, moduleEngineAuthorWalletAbi, moduleEngineHostAbi, moduleEnginePlanParameters } from "./module-engine/abi";
 import { ModuleEngineTransactionRevertedError, readModuleEngineLaunch, verifyModuleEngineAnyQuoteSwapReceipt, verifyModuleEngineFeeChangeReceipt, type ModuleEngineFeeChange, verifyModuleEngineApprovalReceipt, verifyModuleEngineClaimReceipt, verifyModuleEngineLaunchReceipt, verifyModuleEngineOperationReceipt, type ModuleEngineClient, type ModuleEngineOperation, type ModuleEngineReceiptResult } from "./module-engine/client";
 
 function requireMatch(condition: unknown, label: string): asserts condition {
@@ -111,8 +111,8 @@ export async function recoverModuleEngineOperation(input: {
   requireMatch(sha256(tx.input) === operation.calldataHash && tx.value === BigInt(operation.value), "transaction data and value");
   requireMatch(same(tx.blockHash, receipt.blockHash) && same(block.hash, receipt.blockHash) && tx.blockNumber === receipt.blockNumber && block.number === receipt.blockNumber, "canonical block");
   requireMatch(receipt.blockNumber > BigInt(operation.preparedBlock) && receipt.blockNumber >= BigInt(release.startBlock), "preparation block");
-  if (operation.version === 5) requireMatch(isModuleEngineAnyQuoteRelease(release), "shared quote source");
-  const target = operation.version === 5 && operation.kind === "swap" && isModuleEngineAnyQuoteRelease(release) ? release.contracts.universalRouter.address
+  if (operation.version === 5) requireMatch(isModuleEngineSharedQuoteRelease(release), "shared quote source");
+  const target = operation.version === 5 && operation.kind === "swap" && isModuleEngineSharedQuoteRelease(release) ? release.contracts.universalRouter.address
     : operation.version === 5 && operation.approval?.allowanceKind === "permit2" ? ANY_QUOTE_INFRASTRUCTURE.permit2
     : operation.kind === "approve" ? operation.token : operation.kind === "rotate-author" ? release.contracts.registry.address
     : operation.kind === "claim" || operation.version === 3 ? release.contracts.ledger.address : release.contracts.host.address;
@@ -127,7 +127,7 @@ export async function recoverModuleEngineOperation(input: {
 
   let result: ModuleEngineReceiptResult;
   if (operation.version === 5) {
-    requireMatch(isModuleEngineAnyQuoteRelease(release), "shared quote source");
+    requireMatch(isModuleEngineSharedQuoteRelease(release), "shared quote source");
     if (operation.kind === "swap") {
       requireMatch(operation.swap && operation.launch, "shared quote swap binding");
       const saved = operation.swap, pool = anyQuotePoolFor(operation.token, saved.quoteAsset, release.contracts.sharedHook.address);
@@ -173,8 +173,12 @@ export async function recoverModuleEngineOperation(input: {
     result = await verifyModuleEngineApprovalReceipt({ client: input.client, release, account: operation.account, token: operation.token, amount: BigInt(operation.approval.amount), receipt });
   } else if (operation.kind === "claim") {
     requireMatch(operation.claim && tx.value === 0n, "engine fee claim");
-    const shared = isModuleEngineAnyQuoteRelease(release), launch = await readBoundLaunch();
-    if (shared) {
+    const shared = isModuleEngineSharedQuoteRelease(release), launch = await readBoundLaunch();
+    if (isModuleEngineAnyQuoteEthRelease(release)) {
+      const decoded = decodeFunctionData({ abi: moduleEngineAnyQuoteEthLedgerAbi, data: tx.input });
+      requireMatch(decoded.functionName === "claimEthTo" && same(decoded.args[0], operation.claim.recipient), "native ETH claim recipient");
+      requireMatch(same(encodeFunctionData({ abi: moduleEngineAnyQuoteEthLedgerAbi, functionName: "claimEthTo", args: decoded.args }), tx.input), "canonical native ETH claim data");
+    } else if (shared) {
       const decoded = decodeFunctionData({ abi: moduleEngineAnyQuoteLedgerAbi, data: tx.input });
       requireMatch(decoded.functionName === "claimQuoteTo" && same(decoded.args[0], launch.quoteAsset) && same(decoded.args[1], operation.claim.recipient), "quote claim asset and recipient");
       requireMatch(same(encodeFunctionData({ abi: moduleEngineAnyQuoteLedgerAbi, functionName: "claimQuoteTo", args: decoded.args }), tx.input), "canonical quote claim data");
@@ -208,7 +212,7 @@ export async function recoverModuleEngineOperation(input: {
     if (decoded.functionName === "launch") {
       requireMatch(same(launch.creator, operation.account), "engine launch wallet");
       result = await verifyModuleEngineLaunchReceipt({ client: input.client, release, expected: launch, receipt });
-      if (!isModuleEngineAnyQuoteRelease(release) && !same(decoded.args[0].initialOperation.operationId, ENGINE_ZERO_HASH)) {
+      if (!isModuleEngineSharedQuoteRelease(release) && !same(decoded.args[0].initialOperation.operationId, ENGINE_ZERO_HASH)) {
         const initial = await verifyModuleEngineOperationReceipt({ client: input.client, release, launch, operation: decoded.args[0].initialOperation, receipt });
         result = { ...result, outputAmount: initial.outputAmount };
       }

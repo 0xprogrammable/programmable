@@ -12,10 +12,10 @@ import { canonicalizeJson, parseStrictJson } from "../projection-target/canonica
 
 export type SupportedModuleModeRelease = ModuleModeRelease | ModuleEngineRelease;
 function isEngineRelease(release: SupportedModuleModeRelease): release is ModuleEngineRelease {
-  return release.sourceVersion === "module-engine-v1" || release.sourceVersion === "module-engine-any-quote-v1";
+  return release.sourceVersion === "module-engine-v1" || release.sourceVersion === "module-engine-any-quote-v1" || release.sourceVersion === "module-engine-any-quote-eth-v1";
 }
 function bindSupportedRelease(value: unknown): SupportedModuleModeRelease {
-  return value && typeof value === "object" && ["module-engine-v1", "module-engine-any-quote-v1"].includes(Object.getOwnPropertyDescriptor(value, "sourceVersion")?.value)
+  return value && typeof value === "object" && ["module-engine-v1", "module-engine-any-quote-v1", "module-engine-any-quote-eth-v1"].includes(Object.getOwnPropertyDescriptor(value, "sourceVersion")?.value)
     ? bindActiveModuleEngineRelease(value) : bindActiveModuleModeRelease(value);
 }
 function sourceAddress(release: SupportedModuleModeRelease): string {
@@ -85,8 +85,9 @@ export function moduleEnginePublicLaunch(row: ModuleEngineProvenanceV1, launched
     configurationHash: row.configurationHash, constructorHash: row.constructorHash, initCodeHash: row.initCodeHash, planHash: row.planHash,
     resourcesHash: row.resourcesHash, verificationDigest: row.verificationDigest, primaryMarket: row.primaryMarket,
     economicsPolicyId: row.economicsPolicyId, protocolFeeBps: row.protocolFeeBps as 10 | 30, authorPoolFeeBps: row.authorPoolFeeBps as 0 | 20,
-    platformFeeBps: row.platformFeeBps as 10 | 30, feeEligibleFamilyIds: row.sourceVersion === "module-engine-any-quote-v1" ? Object.freeze([]) : row.eligibleFamilies,
-    ...(row.sourceVersion === "module-engine-any-quote-v1" ? { feeAsset: row.quoteAsset, feeLedgerAddress: row.feeLedgerAddress } : {}),
+    platformFeeBps: row.platformFeeBps as 10 | 30, feeEligibleFamilyIds: row.sourceVersion !== "module-engine-v1" ? Object.freeze([]) : row.eligibleFamilies,
+    ...(row.sourceVersion !== "module-engine-v1" ? { feeAsset: row.sourceVersion === "module-engine-any-quote-eth-v1" ? "0x0000000000000000000000000000000000000000" : row.quoteAsset, feeLedgerAddress: row.feeLedgerAddress } : {}),
+    ...(row.sourceVersion === "module-engine-any-quote-eth-v1" ? { feeDecimals: 18, nativeFeeRouteHash: row.nativeFeeRouteHash } : {}),
     modulePackageIds: Object.freeze([row.revisionId]), moduleFamilyIds: Object.freeze([row.familyId]),
     transactionHash: row.transactionHash, blockNumber: row.blockNumber, blockHash: row.blockHash, logIndex: row.logIndex,
     launchedAt, name: row.name, symbol: row.symbol, decimals: 18 });

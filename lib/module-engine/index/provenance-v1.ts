@@ -1,7 +1,7 @@
 import { concatHex, decodeAbiParameters, encodeAbiParameters, getCreate2Address, keccak256, parseAbiParameters, toHex, type Address, type Hex } from "viem";
 import { moduleAddress as address, moduleBytes as bytes, moduleEqual as equal, moduleHash as hash, moduleInteger as integer, moduleRecord as record, moduleUint as uint, rejectModuleEvidence as fail } from "../../module-mode/release";
-import { MODULE_ENGINE_INDEX_ABI_V1, MODULE_ENGINE_ANY_QUOTE_INDEX_ABI_V1, MODULE_ENGINE_PARAMETERS_MAX_BYTES_V1, ENGINE_LAUNCH_PARAMETERS, moduleEngineConstructorParameters, moduleEnginePlanParameters } from "./abi-v1";
-import { moduleEngineReleaseIdentity, isModuleEngineAnyQuoteRelease, moduleEngineSourceId, type ModuleEngineReleaseIdentity } from "./release-v1";
+import { MODULE_ENGINE_INDEX_ABI_V1, MODULE_ENGINE_ANY_QUOTE_INDEX_ABI_V1, MODULE_ENGINE_ANY_QUOTE_ETH_INDEX_ABI_V1, MODULE_ENGINE_PARAMETERS_MAX_BYTES_V1, ENGINE_LAUNCH_PARAMETERS, moduleEngineConstructorParameters, moduleEnginePlanParameters } from "./abi-v1";
+import { moduleEngineReleaseIdentity, isModuleEngineSharedQuoteRelease, isModuleEngineAnyQuoteEthRelease, moduleEngineSourceId, type ModuleEngineReleaseIdentity } from "./release-v1";
 import { bound, canonicalEngineLog, engineEvent, engineReadSet, finality, list, plain, same, text, type EngineBlock } from "./proof-v1";
 import { anyQuoteSourceBindings, normalizeAnyQuoteMarket } from "./any-quote-v1";
 export const MODULE_ENGINE_EVIDENCE_SCHEMA_V1 = "programmable.module-engine.evidence.v1" as const;
@@ -17,8 +17,8 @@ const obj = (value: unknown, label: string) => {
 };
 /** Internal consistency after authenticated dual-RPC observation; it does not admit caller supplied launch JSON. */
 export function normalizeModuleEngineLaunchV1(value: unknown, profile: ModuleEngineReleaseIdentity) {
-    const release = moduleEngineReleaseIdentity(profile), anyQuote = isModuleEngineAnyQuoteRelease(release);
-    const abi = anyQuote ? MODULE_ENGINE_ANY_QUOTE_INDEX_ABI_V1 : MODULE_ENGINE_INDEX_ABI_V1;
+    const release = moduleEngineReleaseIdentity(profile), anyQuote = isModuleEngineSharedQuoteRelease(release), nativeFees = isModuleEngineAnyQuoteEthRelease(release);
+    const abi = nativeFees ? MODULE_ENGINE_ANY_QUOTE_ETH_INDEX_ABI_V1 : anyQuote ? MODULE_ENGINE_ANY_QUOTE_INDEX_ABI_V1 : MODULE_ENGINE_INDEX_ABI_V1;
     const pins = Object.fromEntries(Object.entries(release.contracts).map(([role, pin]) => [role, { address: address(pin.address, `engine.${role}`), runtimeCodeHash: hash(pin.runtimeCodeHash, `engine.${role}.code`) }])) as typeof release.contracts;
     const raw = record(value, ["schemaVersion", "header", "receipt", "event", "state", "runtimeReads", "market", "verification"], "engine.evidence");
     equal(raw.schemaVersion, MODULE_ENGINE_EVIDENCE_SCHEMA_V1, "engine.schema");
@@ -48,8 +48,8 @@ export function normalizeModuleEngineLaunchV1(value: unknown, profile: ModuleEng
     for (const role of ["registry", "tokenFactory", "launchPolicy", "ledger"] as const)
         equal(state.take(pins.host.address, role), pins[role].address, `engine.host.${role}`);
     equal(state.take(pins.ledger.address, "ECONOMICS_POLICY_ID"), release.economicsPolicyId, "engine.ledger.policy");
-    if (isModuleEngineAnyQuoteRelease(release)) {
-        for (const [account, getter, expected] of anyQuoteSourceBindings(release.contracts)) equal(state.take(account, getter), expected, `anyQuote.source.${getter}`);
+    if (isModuleEngineSharedQuoteRelease(release)) {
+        for (const [account, getter, expected] of anyQuoteSourceBindings(release.contracts, nativeFees)) equal(state.take(account, getter), expected, `anyQuote.source.${getter}`);
     } else for (const [field, expected] of [["hook", pins.host.address], ["registry", pins.registry.address], ["poolManager", pins.poolManager.address]] as const)
         equal(state.take(pins.ledger.address, field), expected, `engine.ledger.${field}`);
     equal(emitted.args.economicsPolicyId, release.economicsPolicyId, "engine.event.policy");
@@ -141,17 +141,17 @@ export function normalizeModuleEngineLaunchV1(value: unknown, profile: ModuleEng
         same(state.take(pins.host.address, "feeTerms", [launchId, true]), [platformFeeBps, creatorFees[0]], "engine.buyFeeTerms");
         same(state.take(pins.host.address, "feeTerms", [launchId, false]), [platformFeeBps, creatorFees[1]], "engine.sellFeeTerms");
     }
-    const registered = engineEvent(logs, abi, pins.ledger.address, anyQuote ? "QuoteLaunchRegistered" : "PoolRegistered", launchId);
+    const registered = engineEvent(logs, abi, pins.ledger.address, nativeFees ? "EthLaunchRegistered" : anyQuote ? "QuoteLaunchRegistered" : "PoolRegistered", launchId);
     if (registered.logIndex >= emitted.logIndex)
         fail("engine.ledger.registration-order");
     const wallets = list(p.creatorWallets, "engine.creatorWallets", 10).map(value => address(value, "engine.creatorWallet")), shares = list(p.creatorSharesBps, "engine.creatorShares", 10).map(value => integer(value, "engine.creatorShare", 10000));
     if (!wallets.length || wallets.length !== shares.length || shares.some(v => v === 0) || shares.reduce((a, b) => a + b, 0) !== 10000 || new Set(wallets).size !== wallets.length)
         fail("engine.creatorAllocation");
-    const ledgerConfig = isModuleEngineAnyQuoteRelease(release) ? keccak256(encodeAbiParameters(parseAbiParameters("bytes32,uint256,address,address,address,address,bytes32,address,address[],uint16[]"), [release.economicsPolicyId, 4663n, pins.ledger.address, pins.poolManager.address, release.contracts.sharedHook.address, pins.host.address, launchId, quoteAsset, wallets, shares])) : keccak256(encodeAbiParameters(parseAbiParameters("bytes32,uint256,address,address,bytes32,address[],uint16[],bytes32[]"), [release.economicsPolicyId, 4663n, pins.ledger.address, pins.host.address, launchId, wallets, shares, eligibleFamilies]));
+    const ledgerConfig = isModuleEngineSharedQuoteRelease(release) ? keccak256(encodeAbiParameters(parseAbiParameters("bytes32,uint256,address,address,address,address,bytes32,address,address[],uint16[]"), [release.economicsPolicyId, 4663n, pins.ledger.address, pins.poolManager.address, release.contracts.sharedHook.address, pins.host.address, launchId, quoteAsset, wallets, shares])) : keccak256(encodeAbiParameters(parseAbiParameters("bytes32,uint256,address,address,bytes32,address[],uint16[],bytes32[]"), [release.economicsPolicyId, 4663n, pins.ledger.address, pins.host.address, launchId, wallets, shares, eligibleFamilies]));
     equal(registered.args.configurationHash, ledgerConfig, "engine.ledgerConfiguration.event");
     same(registered.args.creatorWallets, wallets, "engine.ledgerCreators");
     same(registered.args.creatorSharesBps, shares, "engine.ledgerShares");
-    if (anyQuote) equal(registered.args.asset, quoteAsset, "anyQuote.ledger.asset");
+    if (anyQuote) equal(nativeFees ? registered.args.quoteAsset : registered.args.asset, quoteAsset, "anyQuote.ledger.asset");
     else same(registered.args.moduleFamilies, eligibleFamilies, "engine.ledgerFamilies");
     equal(state.take(pins.ledger.address, "configurationHash", [launchId]), ledgerConfig, "engine.ledgerConfiguration.getter");
     equal(state.take(pins.ledger.address, "platformFeeBps", [launchId]), platformFeeBps, "engine.platformFee");
@@ -218,7 +218,9 @@ export function normalizeModuleEngineLaunchV1(value: unknown, profile: ModuleEng
     const tokenRuntimeCodeHash = keccak256(requireCode(token));
     equal(requireCode(engine, hash(launch.engineCodeHash, "engine.code.hash")), runtime, "engine.runtime.bytes");
     requireCode(quoteAsset);
-    const primaryMarket = isModuleEngineAnyQuoteRelease(release) ? normalizeAnyQuoteMarket(raw.market, block, release.contracts, { launchId, token, quoteAsset, engine, revisionId, familyId, configuration, configurationHash: configHash, quoteDecimals, resourcesHash: hash(launch.resourcesHash, "anyQuote.resourcesHash"), buyCreatorFeeBps: creatorFees[0]!, sellCreatorFeeBps: creatorFees[1]!, launchLogIndex: emitted.logIndex }, logs) : raw.market === null ? null : normalizeMarket(raw.market, block, pins, launchId, token, quoteAsset, engine, quoteDecimals, hash(launch.resourcesHash, "engine.resourcesHash"), logs);
+    const primaryMarket = isModuleEngineSharedQuoteRelease(release) ? normalizeAnyQuoteMarket(raw.market, block, release.contracts, { launchId, token, quoteAsset, engine, revisionId, familyId, configuration, configurationHash: configHash, quoteDecimals, resourcesHash: hash(launch.resourcesHash, "anyQuote.resourcesHash"), buyCreatorFeeBps: creatorFees[0]!, sellCreatorFeeBps: creatorFees[1]!, launchLogIndex: emitted.logIndex, ...(nativeFees ? { launchData: p.launchData as Hex } : {}) }, logs, nativeFees) : raw.market === null ? null : normalizeMarket(raw.market, block, pins, launchId, token, quoteAsset, engine, quoteDecimals, hash(launch.resourcesHash, "engine.resourcesHash"), logs);
+    const nativeFeeRouteHash = nativeFees && primaryMarket && "nativeFeeRouteHash" in primaryMarket ? hash(primaryMarket.nativeFeeRouteHash, "engine.nativeFeeRouteHash") : undefined;
+    if (nativeFees && !nativeFeeRouteHash) fail("engine.nativeFeeRouteHash.missing");
     if (used.size !== codes.length)
         fail("engine.code.unused");
     return Object.freeze({ schemaVersion: MODULE_ENGINE_PROVENANCE_SCHEMA_V1, kind: "module-engine" as const, chainId: 4663 as const, sourceVersion: release.sourceVersion, sourceReleaseDigest: release.releaseDigest,
@@ -226,6 +228,7 @@ export function normalizeModuleEngineLaunchV1(value: unknown, profile: ModuleEng
         constructorHash: hash(launch.constructorHash, "engine.constructorHash"), initCodeHash: hash(launch.initCodeHash, "engine.initCodeHash"), planHash: hash(launch.planHash, "engine.planHash"), resourcesHash: hash(launch.resourcesHash, "engine.resourcesHash"),
         transactionHash: tx, logIndex: event.logIndex, blockNumber: block.blockNumber, blockHash: block.blockHash, name, symbol, configuration, economicsPolicyId: release.economicsPolicyId,
         ...(anyQuote ? { feeLedgerAddress: pins.ledger.address } : {}),
+        ...(nativeFees ? { nativeFeeRouteHash, feeAsset: zeroAddress, feeDecimals: 18 as const } : {}),
         protocolFeeBps: anyQuote ? 30 : 10, authorPoolFeeBps: anyQuote ? 0 : eligibleFamilies.length ? 20 : 0, platformFeeBps, buyCreatorFeeBps: creatorFees[0]!, sellCreatorFeeBps: creatorFees[1]!, eligibleFamilies: Object.freeze(eligibleFamilies),
         creatorWallets: Object.freeze(wallets), creatorSharesBps: Object.freeze(shares), primaryMarket, marketStatus: primaryMarket ? "verified" as const : "unobserved" as const, ...verification });
 }

@@ -82,3 +82,11 @@ export const MODULE_ENGINE_ANY_QUOTE_INDEX_ABI_V1 = [...MODULE_ENGINE_INDEX_ABI_
     "event QuoteRewardCredited(bytes32 indexed launchId,address indexed asset,address indexed beneficiary,uint256 amount)",
     "event QuoteFeesClaimed(address indexed asset,address indexed beneficiary,address indexed recipient,uint256 amount)",
 ])];
+
+export { anyQuoteNativeFeeRouteAbi } from "../any-quote/native-fee-route";
+import { anyQuoteNativeFeeRouteAbi } from "../any-quote/native-fee-route";
+import { moduleEngineAnyQuoteEthLedgerAbi } from "../abi";
+export const MODULE_ENGINE_ANY_QUOTE_ETH_INDEX_ABI_V1 = [...MODULE_ENGINE_ANY_QUOTE_INDEX_ABI_V1,
+    ...anyQuoteNativeFeeRouteAbi, ...moduleEngineAnyQuoteEthLedgerAbi,
+    ...parseAbi(["function sharedHookCodeHash() view returns (bytes32)"]),
+];

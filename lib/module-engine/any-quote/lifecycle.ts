@@ -1,6 +1,6 @@
 import type { Address, TransactionReceipt } from "viem";
-import { bindModuleEngineReleaseIdentity, type ModuleEngineAnyQuoteReleaseIdentity, type ModuleEngineTemplate } from "../catalog";
-import { isModuleEngineAnyQuoteRelease } from "../profile";
+import { bindModuleEngineReleaseIdentity, type ModuleEngineSharedQuoteReleaseIdentity, type ModuleEngineTemplate } from "../catalog";
+import { isModuleEngineSharedQuoteRelease } from "../profile";
 import { assertModuleEngineSourceIdentityV1, assertModuleEngineSourceReceiptV1, prepareModuleEngineSourceApprovalV1,
   prepareModuleEngineSourceAnyQuoteSwapV1, prepareModuleEngineSourceClaimV1, prepareModuleEngineSourceLaunchV1,
   readModuleEngineSourceLaunchV1, readModuleEngineSourceTemplateV1,
@@ -15,7 +15,7 @@ export type AnyQuoteLifecycleJsonV1<T> = T extends bigint ? string : T extends r
 type Unsigned = PreparedModuleEngineLaunch | PreparedModuleEngineSwap | PreparedModuleEngineApproval | PreparedModuleEngineClaim;
 type Source = ModuleEngineSourcePreparationV1<Unsigned>;
 type LaunchInput = Omit<PrepareModuleEngineLaunchInput, "client" | "availability" | "configuration" | "initialOperation" | "anyQuotePreparation"> & { anyQuotePreparation: AnyQuoteLaunchPreparation };
-type Common = { client: ModuleEngineClient; identity: ModuleEngineAnyQuoteReleaseIdentity };
+type Common = { client: ModuleEngineClient; identity: ModuleEngineSharedQuoteReleaseIdentity };
 type SwapInput = Common & { template: ModuleEngineTemplate; account: Address; quote: AnyQuoteTradeQuote };
 export type AnyQuoteLifecycleRecipeV1 =
   | { kind: "launch"; template: ModuleEngineTemplate; input: LaunchInput }
@@ -23,7 +23,7 @@ export type AnyQuoteLifecycleRecipeV1 =
   | { kind: "claim"; template: ModuleEngineTemplate; account: Address; token: Address; recipient: Address };
 export interface AnyQuoteLifecyclePreparationV1 {
   schemaVersion: "programmable.any-quote.lifecycle-preparation.v1";
-  identity: ModuleEngineAnyQuoteReleaseIdentity;
+  identity: ModuleEngineSharedQuoteReleaseIdentity;
   recipe: AnyQuoteLifecycleRecipeV1;
   prepared: AnyQuoteLifecycleJsonV1<Unsigned>;
   funding?: AnyQuoteLifecycleJsonV1<ModuleEngineApprovalRequired>;
@@ -34,8 +34,8 @@ export type AnyQuoteLifecycleReceiptV1 = AnyQuoteLifecycleJsonV1<ModuleEngineRec
 function need(value: unknown, label: string): asserts value { if (!value) throw new Error(`Any Quote lifecycle: ${label}.`); }
 function json<T>(value: T): AnyQuoteLifecycleJsonV1<T> { return JSON.parse(JSON.stringify(value, (_key, item) => typeof item === "bigint" ? item.toString() : item)); }
 function freeze<T>(value: T): T { if (value && typeof value === "object") { Object.values(value).forEach(freeze); Object.freeze(value); } return value; }
-function identity(value: unknown): ModuleEngineAnyQuoteReleaseIdentity {
-  const result = bindModuleEngineReleaseIdentity(value); need(isModuleEngineAnyQuoteRelease(result), "a canonical shared-quote source identity is required"); return result;
+function identity(value: unknown): ModuleEngineSharedQuoteReleaseIdentity {
+  const result = bindModuleEngineReleaseIdentity(value); need(isModuleEngineSharedQuoteRelease(result), "a canonical shared-quote source identity is required"); return result;
 }
 function same(a: unknown, b: unknown, label: string) { need(anyQuoteEvidenceHashV1(a) === anyQuoteEvidenceHashV1(b), label); }
 
@@ -43,7 +43,7 @@ function same(a: unknown, b: unknown, label: string) { need(anyQuoteEvidenceHash
 export async function assertAnyQuoteLifecycleIdentityV1(input: Common & { blockNumber?: bigint }) {
   return assertModuleEngineSourceIdentityV1({ ...input, identity: identity(input.identity) });
 }
-async function materialize(client: ModuleEngineClient, release: ModuleEngineAnyQuoteReleaseIdentity, recipe: AnyQuoteLifecycleRecipeV1, blockNumber?: bigint): Promise<{ source: Source; funding?: ModuleEngineApprovalRequired } | ModuleEngineApprovalRequired> {
+async function materialize(client: ModuleEngineClient, release: ModuleEngineSharedQuoteReleaseIdentity, recipe: AnyQuoteLifecycleRecipeV1, blockNumber?: bigint): Promise<{ source: Source; funding?: ModuleEngineApprovalRequired } | ModuleEngineApprovalRequired> {
   const pinnedBlock = blockNumber ?? (await assertAnyQuoteLifecycleIdentityV1({ client, identity: release })).blockNumber;
   const common = { client, identity: release, blockNumber: pinnedBlock };
   if (recipe.kind === "launch") {

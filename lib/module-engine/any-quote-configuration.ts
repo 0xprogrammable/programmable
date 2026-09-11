@@ -1,8 +1,8 @@
 import type { OpenConfigSchema } from "@/packages/classic-modules/src/open-config.mjs";
 import { nativeCanonicalJson } from "@/lib/module-mode/native-catalog";
 import type { ModuleEngineCatalogDefinition, ModuleEngineRevisionDefinition } from "./catalog";
-import { isModuleEngineAnyQuoteRelease, MODULE_ENGINE_ANY_QUOTE_CONFIGURATION_SCHEMA_ID,
-  type ModuleEngineAnyQuoteReleaseProfile } from "./profile";
+import { isModuleEngineSharedQuoteRelease, MODULE_ENGINE_ANY_QUOTE_CONFIGURATION_SCHEMA_ID,
+  type ModuleEngineSharedQuoteReleaseProfile } from "./profile";
 
 export const ANY_QUOTE_CONFIGURATION_ABI = [
   { path: ["schemaId"], type: "bytes32" },
@@ -16,7 +16,7 @@ export const ANY_QUOTE_CONFIGURATION_ABI = [
 ] as const;
 
 /** Infrastructure is source-bound; the exact quote, tick and price evidence are chosen for each signed launch. */
-export function createAnyQuoteConfigurationSchema(release: ModuleEngineAnyQuoteReleaseProfile): OpenConfigSchema {
+export function createAnyQuoteConfigurationSchema(release: ModuleEngineSharedQuoteReleaseProfile): OpenConfigSchema {
   return { type: "record", fields: {
     schemaId: { type: "bytes", maxLength: 32, binding: { mode: "fixed", value: MODULE_ENGINE_ANY_QUOTE_CONFIGURATION_SCHEMA_ID } },
     poolManager: { type: "address", binding: { mode: "fixed", value: release.contracts.poolManager.address } },
@@ -30,7 +30,7 @@ export function createAnyQuoteConfigurationSchema(release: ModuleEngineAnyQuoteR
 }
 
 export function validateAnyQuoteManifestProfile(release: unknown, definition: ModuleEngineCatalogDefinition, revision: ModuleEngineRevisionDefinition): void {
-  const shared = isModuleEngineAnyQuoteRelease(release);
+  const shared = isModuleEngineSharedQuoteRelease(release);
   if (shared !== (definition.interface === "quote-shared-v1")) throw new Error("Shared quote presentation requires its authenticated source profile.");
   if (!shared) return;
   const zeroAddress = `0x${"00".repeat(20)}`, zeroHash = `0x${"00".repeat(32)}`;

@@ -3,7 +3,7 @@ import { moduleModeReleaseQuery } from "@/lib/module-mode/release-selection";
 import { parseModuleEngineAvailability, type ModuleEngineAvailability } from "./catalog";
 import type { PreparedModuleEngineTransaction } from "./client";
 import { ANY_QUOTE_INFRASTRUCTURE } from "./any-quote/types";
-import { isModuleEngineAnyQuoteRelease } from "./profile";
+import { isModuleEngineSharedQuoteRelease } from "./profile";
 
 /** The normal Module Mode endpoint selects the exact source authority; URLs never supply authority. */
 export async function fetchModuleEngineAvailability(releaseDigest?: Hex, signal?: AbortSignal): Promise<ModuleEngineAvailability> {
@@ -29,7 +29,7 @@ export function assertModuleEngineOperationAvailability(prepared: PreparedModule
   if (!before.release || !latest.release || before.release.releaseDigest !== prepared.releaseDigest
     || latest.release.releaseDigest !== prepared.releaseDigest) throw new Error("The template version changed. Review the transaction again.");
   if (prepared.kind === "approve") {
-    const release = latest.release, shared = isModuleEngineAnyQuoteRelease(release);
+    const release = latest.release, shared = isModuleEngineSharedQuoteRelease(release);
     const spender = shared ? ANY_QUOTE_INFRASTRUCTURE.permit2 : release.contracts.host.address;
     // ERC20 approvals fund Permit2 itself; only Permit2 allowances name the reviewed router.
     const routerAvailable = prepared.allowanceKind === "permit2"
