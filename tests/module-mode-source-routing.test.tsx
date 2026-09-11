@@ -6,7 +6,7 @@ import { fixture, TOKEN, hash } from "./module-engine-fixture";
 import { anyQuoteUiFixture } from "./module-engine-any-quote-ui-fixture";
 import reviewedAnyQuoteRelease from "@/config/module-engine/review-release.json";
 import { createAnyQuoteConfigurationSchema } from "@/lib/module-engine/any-quote-configuration";
-import { isModuleEngineAnyQuoteRelease, isModuleEngineAnyQuoteEthRelease } from "@/lib/module-engine/profile";
+import { isModuleEngineSharedQuoteRelease, isModuleEngineAnyQuoteEthRelease } from "@/lib/module-engine/profile";
 import engineEvidence from "./fixtures/module-engine-index.json";
 import { normalizeModuleEngineLaunchV1 } from "@/lib/module-engine/index/provenance-v1";
 import { bindActiveModuleEngineRelease, bindModuleEngineReleaseIdentity, computeModuleEngineHostManifestHash, moduleEngineReleaseIdentity } from "@/lib/module-engine/catalog";
@@ -31,8 +31,8 @@ beforeEach(() => { vi.clearAllMocks(); mocks.reviewIdentity = moduleEngineReleas
 
 /** A mocked availability sample for route gating only, not a publication or activation claim. */
 function reviewedAnyQuoteAvailability() {
-  const f = anyQuoteUiFixture(), release = bindActiveModuleEngineRelease({ ...f.release, ...reviewedAnyQuoteRelease });
-  if (!isModuleEngineAnyQuoteRelease(release)) throw new Error("Expected the reviewed Any Quote profile");
+  const f = anyQuoteUiFixture(isModuleEngineAnyQuoteEthRelease(reviewedAnyQuoteRelease)), release = bindActiveModuleEngineRelease({ ...f.release, ...reviewedAnyQuoteRelease });
+  if (!isModuleEngineSharedQuoteRelease(release)) throw new Error("Expected the reviewed Any Quote profile");
   const template = structuredClone(f.template);
   template.manifest.manifest.release = moduleEngineReleaseIdentity(release);
   template.manifest.manifest.catalogDefinition.schema = createAnyQuoteConfigurationSchema(release);
@@ -73,17 +73,19 @@ describe("source-specific Module Mode product routes", () => {
     expect(engine.type).toBe(ModuleEngineHost); expect(engine.props).toMatchObject({ releaseDigest: f.release.releaseDigest, versions: [version] });
     const native = await Page({ searchParams: Promise.resolve({}) }); expect(native.type).toBe(ModuleModeLaunchHost);
   });
-  it("offers the reviewed Any Quote setup only from current active availability with a matching publication", async () => {
+  it.each([false, true])("offers the exact reviewed public Any Quote generation (native ETH fees: %s)", async nativeEthFees => {
+    mocks.reviewIdentity = moduleEngineReleaseIdentity(anyQuoteUiFixture(nativeEthFees).release);
     const availability = reviewedAnyQuoteAvailability(); mocks.engine.mockResolvedValue(availability);
     const page = await Page({ searchParams: Promise.resolve({}) });
     expect(page.type).toBe(ModuleModeLaunchHost);
     expect(page.props.anyQuoteReleaseDigest).toBe(reviewedAnyQuoteRelease.releaseDigest);
-    expect(mocks.engine).toHaveBeenCalledWith();
+    expect(mocks.engine).toHaveBeenCalledWith(reviewedAnyQuoteRelease.releaseDigest);
     const selected = await Page({ searchParams: Promise.resolve({ sourceKind: "module-engine-v1", releaseDigest: page.props.anyQuoteReleaseDigest }) });
     expect(selected.type).toBe(ModuleEngineHost);
     expect(selected.props.releaseDigest).toBe(reviewedAnyQuoteRelease.releaseDigest);
   });
-  it("keeps Any Quote hidden during HOLD, provider failure, empty or unbound publication, and other source generations", async () => {
+  it.each([false, true])("keeps Any Quote hidden without matching public authority (native ETH fees: %s)", async nativeEthFees => {
+    mocks.reviewIdentity = moduleEngineReleaseIdentity(anyQuoteUiFixture(nativeEthFees).release);
     const current = reviewedAnyQuoteAvailability();
     mocks.engineVersions.mockResolvedValue([{ releaseDigest: reviewedAnyQuoteRelease.releaseDigest, sourceKind: "module-engine-v1", label: "Any Quote LP" }]);
     for (const unavailable of [
@@ -92,7 +94,7 @@ describe("source-specific Module Mode product routes", () => {
       { ...current, release: { ...current.release, enabled: false } },
       { ...current, templates: [fixture().template] },
       fixture().availability,
-      anyQuoteUiFixture().availability,
+      anyQuoteUiFixture(!nativeEthFees).availability,
     ]) {
       mocks.engine.mockResolvedValue(unavailable);
       const page = await Page({ searchParams: Promise.resolve({}) });
