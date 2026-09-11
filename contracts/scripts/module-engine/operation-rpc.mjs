@@ -336,14 +336,25 @@ async function assertAnyQuotePacketAnchors(plan, providers, c) {
     need((await c.pair(providers, 'eth_getBlockByNumber', [record.receipt.blockNumber, false])).every(block => block?.hash === record.receipt.blockHash
       && block.transactions.includes(record.transaction.hash)), 'Pre-activation deployment/admission anchor changed');
 }
-function anyQuoteClient(providers, c, block) {
+export function anyQuoteClient(providers, c, block) {
+  // One operation client only: share explicit-block call/code reads after quorum; keep canonical anchors fresh.
+  const reads = new Map();
   return createPublicClient({ cacheTime: 0, batch: { multicall: false }, transport: custom({ request: async ({ method, params = [] }) => {
     const anchored = method === 'eth_getBlockByNumber' && params[0] === 'latest' ? [block.number, ...params.slice(1)] : params;
-    return c.same(await c.pair(providers, method, anchored), `Any Quote ${method}`);
+    const read = async () => c.same(await c.pair(providers, method, anchored), `Any Quote ${method}`);
+    const reference = anchored[1], pinned = (typeof reference === 'string' && /^0x[0-9a-f]+$/i.test(reference))
+      || (reference?.requireCanonical === true && /^0x[0-9a-f]{64}$/i.test(reference.blockHash));
+    if (!['eth_call', 'eth_getCode'].includes(method) || !pinned) return read();
+    const key = JSON.stringify([method, anchored]);
+    if (!reads.has(key)) reads.set(key, read().catch(error => { reads.delete(key); throw error; }));
+    return reads.get(key);
   } }) });
 }
 export function anyQuoteWalletStep(plan, stepIndex, envelope) {
   const step = plan.steps[stepIndex]; need(isAnyQuoteLifecyclePlan(plan) && step?.kind.startsWith('any-quote-'), 'Closed Any Quote wallet step required');
+  if (envelope?.kind === 'approval-required') throw new Error(envelope.allowanceKind === 'permit2'
+    ? 'Permit2 approval must be renewed for this sell. Prepare a new bounded approval and a fresh sell request.'
+    : 'Token approval is required for this sell. Prepare the exact token approval and a fresh sell request.');
   need(envelope?.schemaVersion === 'programmable.any-quote.lifecycle-preparation.v1', 'Canonical Any Quote preparation required');
   equal(envelope.identity, plan.identity, 'Prepared Any Quote identity');
   const { recipe, prepared } = envelope, intent = step.intent;
