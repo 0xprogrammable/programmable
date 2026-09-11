@@ -413,7 +413,9 @@ regexTarget = "match"
 paths = [
   '''^config/module-engine/robinhood\.json$''',
   '''^config/module-engine/index-releases\.json$''',
+  '''^config/module-engine/historical-releases\.json$''',
   '''^config/module-engine/catalog\.json$''',
+  '''^public/developers/modules/0x09c61111bdecf969b903653e8a9776d1ed103b9201fbd33526aaee9e1c8a07e2/manifest\.json$''',
   '''^public/developers/modules/0x81185e910dec1032df4bd027f8139f524606f628c0a63dbae62c69bb86e470da/manifest\.json$''',
   '''^public/developers/modules/0x616f4584f5ec576a88bac5b6d5ee1ae841713f02129ab71a9b47e7e900312b2f/manifest\.json$''',
   '''^public/developers/modules/0xeec9f1128106907da53b9a729206a0ad78e1e6c0379fde31636a2986f9b03c08/manifest\.json$''',
@@ -445,3 +447,11 @@ regexes = [
   '''^tokenRuntimeCodeHash":\s*"0x21f0bf03dc072ce066e4a72c64fee2b8178bcabc2a69853977b29c45240460c2"$''',
   '''^primaryToken":\s*"0x38665576617c205e3cac17a3eefa8bd6475dcc34"$''',
 ]
+
+[[allowlists]]
+description = "Native ETH Any Quote accepted build cases repeat the exact public test token address"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "match"
+paths = ['''^config/module-engine/historical-releases\.json$''']
+regexes = ['''^token":\s*"0xcf7ed3acca5a467e9e704c703e8d87f634fb0fc9"$''']
