@@ -1,5 +1,5 @@
 {
-  "note": "Synthetic provider observations from backend 88ccda80397af6227035fd448b90b4598cc5b829, not deployment or finality authority.",
+  "note": "Synthetic provider observations from backend 88ccda80397af6227035fd448b90b4598cc5b829, augmented with the canonical native loss-cap source read; not deployment or finality authority.",
   "cases": [
     {
       "release": {
@@ -285,6 +285,12 @@
                     "functionName": "sharedHookCodeHash",
                     "args": [],
                     "result": "0xe9b5e57027fadd57fc148b255a5597d152ba4ef97a1eab4a88dcdf619591ed54"
+                  },
+                  {
+                    "address": "0x0000000000000000000000000000000000000326",
+                    "functionName": "NATIVE_FEE_MAX_LOSS_BPS",
+                    "args": [],
+                    "result": "0x00000000000000000000000000000000000000000000000000000000000001f4"
                   },
                   {
                     "address": "0x0000000000000000000000000000000000000320",
@@ -1100,6 +1106,12 @@
                     "result": "0xe9b5e57027fadd57fc148b255a5597d152ba4ef97a1eab4a88dcdf619591ed54"
                   },
                   {
+                    "address": "0x0000000000000000000000000000000000000326",
+                    "functionName": "NATIVE_FEE_MAX_LOSS_BPS",
+                    "args": [],
+                    "result": "0x00000000000000000000000000000000000000000000000000000000000001f4"
+                  },
+                  {
                     "address": "0x0000000000000000000000000000000000000320",
                     "functionName": "SOURCE_VERSION",
                     "args": [],
@@ -1895,6 +1907,12 @@
                     "functionName": "sharedHookCodeHash",
                     "args": [],
                     "result": "0xe9b5e57027fadd57fc148b255a5597d152ba4ef97a1eab4a88dcdf619591ed54"
+                  },
+                  {
+                    "address": "0x0000000000000000000000000000000000000326",
+                    "functionName": "NATIVE_FEE_MAX_LOSS_BPS",
+                    "args": [],
+                    "result": "0x00000000000000000000000000000000000000000000000000000000000001f4"
                   },
                   {
                     "address": "0x0000000000000000000000000000000000000320",

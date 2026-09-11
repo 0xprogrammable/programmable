@@ -50,6 +50,7 @@ export function normalizeModuleEngineLaunchV1(value: unknown, profile: ModuleEng
     equal(state.take(pins.ledger.address, "ECONOMICS_POLICY_ID"), release.economicsPolicyId, "engine.ledger.policy");
     if (isModuleEngineSharedQuoteRelease(release)) {
         for (const [account, getter, expected] of anyQuoteSourceBindings(release.contracts, nativeFees)) equal(state.take(account, getter), expected, `anyQuote.source.${getter}`);
+        if (nativeFees) equal(state.take(release.contracts.sharedHook.address, "NATIVE_FEE_MAX_LOSS_BPS"), "500", "anyQuote.source.NATIVE_FEE_MAX_LOSS_BPS");
     } else for (const [field, expected] of [["hook", pins.host.address], ["registry", pins.registry.address], ["poolManager", pins.poolManager.address]] as const)
         equal(state.take(pins.ledger.address, field), expected, `engine.ledger.${field}`);
     equal(emitted.args.economicsPolicyId, release.economicsPolicyId, "engine.event.policy");
