@@ -13,11 +13,14 @@ const actions = { wallet: { authenticated: false, sessionReady: true }, onConnec
 const base = { sourceKind: "module-engine-v1" as const, account: ACCOUNT, releaseDigest: hash(1), blockNumber: 100n, expiresAt: BigInt(Math.floor(Date.now() / 1_000) + 120), gasEstimate: 200_000n, transaction: { chainId: 4663 as const, action: "manage" as const, description: "Local Any Quote UI test", from: ACCOUNT, to: addr(2), data: "0x" as const, value: "0x0" as const }, token: TOKEN, launchId: hash(3), revisionId: hash(4), planHash: hash(5) };
 
 describe("Any Quote LP visible economic and availability boundaries", () => {
-  it("offers one CA and optional ETH buy before connecting, without pool, quote-funding or fee-conversion inputs", () => {
+  it("requires an ETH initial buy with one CA, without pool, quote-funding or fee-conversion inputs", () => {
     const html = renderToStaticMarkup(<ModuleEngineBuilder {...actions} {...anyQuoteUiFixture()} />);
     expect(html.match(/id="engine-quote"/g)).toHaveLength(1);
     expect(html).toContain("Pair with");
     expect(html).toContain("Initial buy");
+    expect(html.match(/<input[^>]*id="engine-amount"[^>]*>/)?.[0]).toContain('required=""');
+    expect(html).toContain('<label for="engine-amount">Initial buy</label>');
+    expect(html).not.toContain("Leave blank to launch without a buy");
     expect(html).toContain("Connect wallet");
     expect(html).toContain("0.3% module fee per buy and sell");
     expect(html).not.toContain("Check token");
