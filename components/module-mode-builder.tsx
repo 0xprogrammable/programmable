@@ -6,6 +6,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { ArrowLeft, ArrowRight, ChevronDown, Download, Plus, Puzzle, Settings2, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import type { Hex } from "viem";
 
 import { ModuleLibrary, ModuleCategoryIcon } from "@/components/module-library";
 import { ModulePickerDialog } from "@/components/module-picker-dialog";
@@ -77,7 +78,7 @@ export interface ModuleModeBuilderProps {
   previewDescription?: string;
   statusContent?: ReactNode;
   versionContent?: ReactNode;
-  anyQuoteModule?: { entry: ModuleLibraryEntry; disabled: boolean; onSelect: () => void };
+  anyQuoteModule?: { entry: ModuleLibraryEntry; releaseDigest?: Hex; disabled: boolean; onSelect: () => void };
   reviewContent?: ReactNode;
   resultContent?: ReactNode;
   onEdit?: () => void;

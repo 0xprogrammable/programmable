@@ -9,6 +9,7 @@ export type ModuleModeLaunchDraftHandoff = Pick<ModuleModeState,
   "initialBuyEth" | "buyFeePercent" | "sellFeePercent"
 > & {
   imageResource: ModuleModeImageResource | null;
+  quoteAsset?: string;
   /** Retained for returning to native; its module selections do not apply to Any Quote. */
   nativeState?: ModuleModeState;
 };
@@ -22,11 +23,11 @@ let pending: {
 /** A route transition transfers only draft fields, never a prepared transaction or wallet state. */
 export function saveModuleModeLaunchDraftHandoff(target: ModuleModeLaunchDraftTarget, draft: ModuleModeLaunchDraftHandoff): void {
   if (typeof window === "undefined") return;
-  const { name, symbol, description, socialLinks, tokenImage, initialBuyEth, buyFeePercent, sellFeePercent, nativeState } = draft;
+  const { name, symbol, description, socialLinks, tokenImage, initialBuyEth, buyFeePercent, sellFeePercent, nativeState, quoteAsset } = draft;
   pending = {
     target,
     draft: structuredClone({ name, symbol, description, socialLinks, tokenImage, initialBuyEth, buyFeePercent, sellFeePercent,
-      ...(nativeState ? { nativeState } : {}) }),
+      ...(nativeState ? { nativeState } : {}), ...(quoteAsset !== undefined ? { quoteAsset } : {}) }),
     imageBlob: tokenImage.kind === "local" ? draft.imageResource?.blob ?? null : null,
   };
 }
