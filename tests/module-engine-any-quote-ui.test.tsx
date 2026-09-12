@@ -29,7 +29,7 @@ describe("Any Quote LP visible economic and availability boundaries", () => {
   });
   it("keeps provider trouble retryable without declaring the CA invalid", () => {
     const html = renderToStaticMarkup(<ModuleEngineAnyQuoteAsset value={QUOTE} onChange={vi.fn()} availability={{ status: "inconclusive", result: null, retry: vi.fn() }} />);
-    expect(html).toContain("Availability could not be checked"); expect(html).toContain("Retry");
+    expect(html).toContain("The token check is temporarily unavailable"); expect(html).toContain("Retry");
     expect(html).not.toContain('aria-invalid="true"'); expect(html).not.toContain("Der Token ist leider nicht verfügbar.");
     const unavailable = renderToStaticMarkup(<ModuleEngineAnyQuoteAsset value={QUOTE} onChange={vi.fn()} availability={{ status: "incompatible", result: { status: "incompatible", chainId: 4663, quoteAsset: QUOTE, code: "NON_ERC20", retryable: false }, retry: vi.fn() }} />);
     expect(unavailable).toContain('aria-invalid="true"'); expect(unavailable).toContain("Der Token ist leider nicht verfügbar.");

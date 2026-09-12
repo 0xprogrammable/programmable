@@ -33,13 +33,15 @@ export interface ModuleLibraryProps<Entry extends ModuleLibraryEntry> {
   selectedIds: readonly string[];
   onAdd: (entry: Entry) => void;
   onRemove: (entry: Entry) => void;
+  onConfigure?: (entry: Entry) => void;
+  configurableIds?: readonly string[];
   feePolicyFor?: (entry: Entry) => ModuleModeFeePolicy | null;
   feeDescriptionFor?: (entry: Entry) => string | undefined;
   disabledFor?: (entry: Entry) => string | undefined;
   disabled?: boolean;
 }
 
-export function ModuleLibrary<Entry extends ModuleLibraryEntry>({ catalog, selectedIds, onAdd, onRemove, feePolicyFor, feeDescriptionFor, disabledFor, disabled = false }: ModuleLibraryProps<Entry>) {
+export function ModuleLibrary<Entry extends ModuleLibraryEntry>({ catalog, selectedIds, onAdd, onRemove, onConfigure, configurableIds = [], feePolicyFor, feeDescriptionFor, disabledFor, disabled = false }: ModuleLibraryProps<Entry>) {
   const id = useId();
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("all");
@@ -88,6 +90,7 @@ export function ModuleLibrary<Entry extends ModuleLibraryEntry>({ catalog, selec
         {feeDescription !== undefined ? <div className={styles.selectionFee} id={`${id}-${entry.id}-fee`}>{feeDescription}</div> : null}
         {disabledReason ? <div className={styles.disabledReason} id={`${id}-${entry.id}-disabled`}>{disabledReason}</div> : null}
         <div className={styles.moduleBottom}><ModuleAuthor entry={entry} />
+          {added && onConfigure && configurableIds.includes(entry.id) ? <button type="button" className={styles.add} disabled={disabled} aria-label={`Configure ${entry.title}`} onClick={() => onConfigure(entry)}>Edit</button> : null}
           <button type="button" className={styles.add} aria-label={`${added ? "Remove" : "Add"} ${entry.title}`} aria-pressed={added} aria-describedby={descriptionIds} disabled={disabled || (!added && Boolean(disabledReason))}
             onClick={() => added ? onRemove(entry) : onAdd(entry)}>{added ? <X size={16} aria-hidden="true" /> : <Plus size={16} aria-hidden="true" />}{added ? "Remove" : "Add"}</button>
         </div>

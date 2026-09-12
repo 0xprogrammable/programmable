@@ -4,12 +4,14 @@ import { X } from "lucide-react";
 import { useLayoutEffect, useId, useRef, type ReactNode } from "react";
 import styles from "./module-picker-dialog.module.css";
 
-export function ModulePickerDialog({ title, description, children, onClose, footer, animateOpen = false, variant }: {
+export function ModulePickerDialog({ title, description, children, onClose, onDone, doneDisabled = false, footer, animateOpen = false, variant }: {
   title: string;
   description?: string;
   children: ReactNode;
   footer?: ReactNode;
   onClose: () => void;
+  onDone?: () => void;
+  doneDisabled?: boolean;
   animateOpen?: boolean;
   variant?: "library";
 }) {
@@ -96,7 +98,7 @@ export function ModulePickerDialog({ title, description, children, onClose, foot
         <button type="button" className={styles.close} onClick={event => close(event.detail > 0)} aria-label="Close modules"><X size={20} aria-hidden="true" /></button>
       </header>
       <div className={styles.content}>{children}</div>
-      <footer className={styles.footer}>{footer}<button type="button" className={styles.done} onClick={event => close(event.detail > 0)}>Done</button></footer>
+      <footer className={styles.footer}>{footer}<button type="button" className={styles.done} disabled={doneDisabled} onClick={event => onDone ? onDone() : close(event.detail > 0)}>Done</button></footer>
     </div>
   </dialog>;
 }
