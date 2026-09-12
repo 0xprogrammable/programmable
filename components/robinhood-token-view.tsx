@@ -81,9 +81,10 @@ export function RobinhoodTokenView({ address, token, status }: {
           <div>
             <p className={styles.origin}>Programmable · {moduleLaunch ? "Module" : "Custom"}</p>
           </div>
-          {manageHref ? <div className={styles.launchActions}>
-            <Link className={styles.secondaryButton} href={manageHref} prefetch={false} aria-label="Manage coin">Manage <ArrowRight aria-hidden="true" size={16} /></Link>
-          </div> : null}
+          <div className={styles.launchActions}>
+            {hasAsset ? <Link className={styles.secondaryButton} href={`/swap?token=${address}&chain=4663`} aria-label={`Swap ${coinTicker(token.symbol)}`}>Swap <ArrowRight aria-hidden="true" size={16} /></Link> : null}
+            {manageHref ? <Link className={styles.secondaryButton} href={manageHref} prefetch={false} aria-label="Manage coin">Manage <ArrowRight aria-hidden="true" size={16} /></Link> : null}
+          </div>
         </section>
         {moduleLaunch ? <TokenLaunchModules launch={moduleLaunch} /> : null}
         {token.launchProjection ? <LaunchProjectionDetails projection={token.launchProjection} /> : null}
