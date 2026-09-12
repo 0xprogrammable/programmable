@@ -4,13 +4,14 @@ import { X } from "lucide-react";
 import { useLayoutEffect, useId, useRef, type ReactNode } from "react";
 import styles from "./module-picker-dialog.module.css";
 
-export function ModulePickerDialog({ title, description, children, onClose, footer, animateOpen = false }: {
+export function ModulePickerDialog({ title, description, children, onClose, footer, animateOpen = false, variant }: {
   title: string;
   description?: string;
   children: ReactNode;
   footer?: ReactNode;
   onClose: () => void;
   animateOpen?: boolean;
+  variant?: "library";
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const surface = useRef<HTMLDivElement>(null);
@@ -89,7 +90,7 @@ export function ModulePickerDialog({ title, description, children, onClose, foot
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
     }}
     onClick={event => { if (event.target === event.currentTarget) close(event.detail > 0); }}>
-    <div ref={surface} className={styles.surface}>
+    <div ref={surface} className={`${styles.surface}${variant === "library" ? ` ${styles.librarySurface}` : ""}`}>
       <header className={styles.header}>
         <div><h2 ref={heading} tabIndex={-1} id={`${id}-title`}>{title}</h2>{description ? <p id={`${id}-description`}>{description}</p> : null}</div>
         <button type="button" className={styles.close} onClick={event => close(event.detail > 0)} aria-label="Close modules"><X size={20} aria-hidden="true" /></button>

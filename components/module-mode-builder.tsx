@@ -90,6 +90,7 @@ export function ModuleModeBuilder({ catalog = PREVIEW_MODULE_CATALOG, engine = N
   const { expanded: feesOpen, setExpanded: setFeesOpen, toggle: toggleFees, panelProps: feesPanel } = useDisclosureState();
   const { expanded: moreLinks, setExpanded: setMoreLinks, toggle: toggleMoreLinks, panelProps: moreLinksPanel } = useDisclosureState();
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [pendingAnyQuote, setPendingAnyQuote] = useState(false);
   const [pickerPointer, setPickerPointer] = useState(false);
   const [configurationId, setConfigurationId] = useState<string | null>(null);
   const [checked, setChecked] = useState(false);
@@ -180,12 +181,20 @@ export function ModuleModeBuilder({ catalog = PREVIEW_MODULE_CATALOG, engine = N
     if (contextLocked || imageBusy || anyQuoteModule?.disabled) return;
     if (anyQuoteModule && entry.id === anyQuoteModule.entry.id) {
       if (state.selectedModules.length > 0) return;
-      saveModuleModeLaunchDraftHandoff("any-quote", { ...state, imageResource, nativeState: state });
-      anyQuoteModule.onSelect();
+      setPendingAnyQuote(true);
       return;
     }
+    if (pendingAnyQuote) return;
     const nativeEntry = catalog.find(candidate => candidate.id === entry.id);
     if (nativeEntry) add(nativeEntry);
+  }
+  function closeModulePicker() {
+    if (pendingAnyQuote && anyQuoteModule) {
+      if (contextLocked || imageBusy || anyQuoteModule.disabled) return;
+      saveModuleModeLaunchDraftHandoff("any-quote", { ...state, imageResource, nativeState: state });
+      setPickerOpen(false);
+      anyQuoteModule.onSelect();
+    } else setPickerOpen(false);
   }
   function showModules(pointer: boolean, id?: string) {
     setPickerPointer(pointer);
@@ -325,11 +334,13 @@ export function ModuleModeBuilder({ catalog = PREVIEW_MODULE_CATALOG, engine = N
           <Link href="/developers/modules" className={styles.buildModuleLink}><Puzzle size={16} aria-hidden="true" />Build your own module<ArrowRight size={16} aria-hidden="true" /></Link>
         </aside> : null}
       </div>
-      {pickerOpen ? <ModulePickerDialog animateOpen={pickerPointer} title="Add modules" description="Modules are upgrades for your coin. Pick the features you want." onClose={() => setPickerOpen(false)}>
-        <ModuleLibrary catalog={anyQuoteModule ? [...catalog, anyQuoteModule.entry] : catalog} selectedIds={state.selectedModules}
+      {pickerOpen ? <ModulePickerDialog variant="library" animateOpen={pickerPointer} title="Add modules" description="Modules are upgrades for your coin. Pick the features you want." onClose={closeModulePicker}>
+        <ModuleLibrary catalog={anyQuoteModule ? [...catalog, anyQuoteModule.entry] : catalog} selectedIds={pendingAnyQuote && anyQuoteModule ? [anyQuoteModule.entry.id] : state.selectedModules}
           disabled={contextLocked || imageBusy || anyQuoteModule?.disabled} onAdd={addFromLibrary}
-          onRemove={entry => { const nativeEntry = catalog.find(candidate => candidate.id === entry.id); if (nativeEntry) remove(nativeEntry); }}
-          disabledFor={entry => entry.id === anyQuoteModule?.entry.id && state.selectedModules.length > 0 ? "Remove your other modules to use Any Quote LP." : undefined}
+          onRemove={entry => { if (entry.id === anyQuoteModule?.entry.id) setPendingAnyQuote(false); else { const nativeEntry = catalog.find(candidate => candidate.id === entry.id); if (nativeEntry) remove(nativeEntry); } }}
+          disabledFor={entry => entry.id === anyQuoteModule?.entry.id
+            ? state.selectedModules.length > 0 ? "Remove your other modules to use Any Quote LP." : undefined
+            : pendingAnyQuote ? "Remove Any Quote LP to use this module." : undefined}
           feeDescriptionFor={entry => entry.id === anyQuoteModule?.entry.id ? "Platform fee: 0.30% per trade." : undefined}
           feePolicyFor={release ? entry => { const nativeEntry = catalog.find(candidate => candidate.id === entry.id); return nativeEntry ? moduleModeFeePolicy(release, state.selectedModules.includes(entry.id) ? selected : [...selected, nativeEntry]) : null; } : undefined} />
       </ModulePickerDialog> : null}

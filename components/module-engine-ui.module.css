@@ -80,6 +80,7 @@
 .coinIdentity { align-items: flex-start; display: flex; flex-direction: column; gap: 0; }
 .coinArtwork { border-radius: 12px; grid-row: 1 / 3; height: 64px; outline: 1px solid rgb(255 255 255 / .1); overflow: hidden; position: relative; width: 64px; }
 .coinArtwork img { object-fit: cover; }
+.coinPlaceholder { align-items: center; background: #30242b; border: 1px solid #775568; color: #f0bfd6; display: flex; font-size: 24px; justify-content: center; }
 .coinIdentity h2 { align-self: auto; font-size: 20px; font-weight: 500; letter-spacing: -.02em; line-height: 28px; margin: 0; overflow-wrap: anywhere; text-wrap: balance; }
 .coinIdentity > p { align-self: auto; color: var(--engine-muted); font-size: 14px; line-height: 20px; margin: 4px 0 0; overflow-wrap: anywhere; }
 .coinIdentity > .coinDescription { display: -webkit-box; grid-column: 1 / -1; margin-top: 16px; overflow: hidden; text-wrap: pretty; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }

@@ -27,7 +27,8 @@ export default async function ModuleModePage({ searchParams }: { searchParams: P
   ]);
   const versions = [nativeVersions, engineVersions].flatMap(result => result.status === "fulfilled" ? result.value : []);
   if (selection.sourceKind === "module-engine-v1") return <ModuleEngineHost releaseDigest={selection.releaseDigest} versions={versions}
-    nativeCatalog={nativeAvailability.status === "fulfilled" ? nativeAvailability.value?.catalog ?? [] : []} />;
+    nativeCatalog={nativeAvailability.status === "fulfilled" ? nativeAvailability.value?.catalog ?? [] : []}
+    nativeRelease={nativeAvailability.status === "fulfilled" ? nativeAvailability.value?.release : undefined} />;
   let anyQuoteReleaseDigest;
   let anyQuoteModule;
   if (currentEngine.status === "fulfilled") {

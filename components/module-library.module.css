@@ -11,7 +11,7 @@
 .categories button[aria-pressed="true"] { background: #e6dfd8; border-color: #e6dfd8; color: #292522; }
 .categoryIcon { align-items: center; background: #30272c; border-radius: 12px; color: #e7a9c6; display: inline-flex; flex: 0 0 auto; height: 40px; justify-content: center; width: 40px; }
 .resultCount { color: #b7b2ac; font-size: 13px; line-height: 20px; margin: 0 0 16px; overflow-wrap: anywhere; }
-.results { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); }
+.results { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); }
 .module { background: #20201f; border: 1px solid #66615d; border-radius: 16px; display: flex; flex-direction: column; min-width: 0; padding: 20px; }
 .module[data-selected="true"] { background: #282026; border-color: #d393b2; }
 .moduleTop { align-items: center; color: #bdb5af; display: flex; font-size: 12px; gap: 8px; line-height: 20px; margin-bottom: 16px; }

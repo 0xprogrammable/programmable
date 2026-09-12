@@ -55,7 +55,7 @@ export function ModuleLibrary<Entry extends ModuleLibraryEntry>({ catalog, selec
   const hasFilters = Boolean(query.trim() || category !== "all");
   const reset = () => { setQuery(""); setCategory("all"); setPage(1); };
   return <div className={styles.library}>
-    <div className={styles.toolbar} hidden={catalog.length < 5 && !query && category === "all"}>
+    <div className={styles.toolbar} hidden={catalog.length < 5}>
       <div className={styles.search}>
         <label className={styles.srOnly} htmlFor={`${id}-search`}>Search modules</label>
         <Search size={18} aria-hidden="true" />
@@ -71,7 +71,7 @@ export function ModuleLibrary<Entry extends ModuleLibraryEntry>({ catalog, selec
           {item.label}
         </button>)}
     </div>
-    <div className={styles.resultCount} hidden={!query.trim() && category === "all"} role="status" aria-live="polite">{results.length} {results.length === 1 ? "module" : "modules"}{query.trim() ? ` for “${query.trim()}”` : ""}</div>
+    <div className={styles.resultCount} hidden={!query.trim()} role="status" aria-live="polite">{results.length} {results.length === 1 ? "module" : "modules"}{query.trim() ? ` for “${query.trim()}”` : ""}</div>
     <div className={styles.results} aria-label="Module library">
       {visible.map(entry => {
         const added = selected.has(entry.id);

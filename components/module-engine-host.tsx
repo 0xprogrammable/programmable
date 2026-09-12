@@ -16,6 +16,7 @@ import { assertModuleEngineOperationAvailability, fetchModuleEngineAvailability 
 import { MODULE_ENGINE_AVAILABILITY_SCHEMA, type ModuleEngineAvailability, type ModuleEngineTemplate } from "@/lib/module-engine/catalog";
 import { createModuleEngineClient, ModuleEngineTransactionRevertedError, observeModuleEngineReceipt, readModuleEngineLaunch, type ModuleEngineReceiptResult, type PreparedModuleEngineTransaction } from "@/lib/module-engine/client";
 import type { ModuleModeImage, ModuleModeCatalogEntry } from "@/lib/module-mode/builder";
+import type { ModuleModeRelease } from "@/lib/module-mode/release";
 import { moduleModeReleaseQuery, type ModuleModeLaunchVersion } from "@/lib/module-mode/release-selection";
 import { clearModuleModeOperation, moduleModeOperationPath, type ModuleModeOperation } from "@/lib/module-mode-operation-store";
 import { fetchModuleEngineOperationRelease, recoverModuleEngineOperation } from "@/lib/module-mode-operation-recovery";
@@ -39,7 +40,7 @@ function errorMessage(error: unknown) {
 }
 
 /** Shared wallet, source authority and durable operation recovery for each reviewed template. */
-export function ModuleEngineHost({ releaseDigest, token, versions = [], nativeCatalog }: { releaseDigest?: Hex; token?: Address; versions?: readonly ModuleModeLaunchVersion[]; nativeCatalog?: readonly ModuleModeCatalogEntry[] }) {
+export function ModuleEngineHost({ releaseDigest, token, versions = [], nativeCatalog, nativeRelease }: { releaseDigest?: Hex; token?: Address; versions?: readonly ModuleModeLaunchVersion[]; nativeCatalog?: readonly ModuleModeCatalogEntry[]; nativeRelease?: ModuleModeRelease | null }) {
   const router = useRouter();
   const [changingVersion, startVersionChange] = useTransition();
   const { wallet, authenticated, sessionReady, authReady, connecting, openingWallet, switchingNetwork, disconnecting, openWallet, switchNetwork, getAccessToken, sendModuleModeTransaction } = useWallet();
@@ -206,5 +207,5 @@ export function ModuleEngineHost({ releaseDigest, token, versions = [], nativeCa
   if (token) return release && boundManagement ? <ModuleEngineConsole {...actions} token={token} release={release} template={boundManagement.template} client={client} statusContent={statusContent} />
     : <section className={styles.page}><header className={styles.heading}><h1>Coin controls</h1><p>Load the version bound to this coin to read its available actions.</p></header>{statusContent}</section>;
   if (loadedSelection === null && !saved.blocked) return <ModuleBuilderLoading />;
-  return <ModuleEngineBuilder {...actions} availability={availability} client={client} statusContent={statusContent} versionContent={versionContent} onUploadImage={uploadImage} nativeCatalog={nativeCatalog} onRemoveModule={removeModule} />;
+  return <ModuleEngineBuilder {...actions} availability={availability} client={client} statusContent={statusContent} versionContent={versionContent} onUploadImage={uploadImage} nativeCatalog={nativeCatalog} nativeRelease={nativeRelease} onRemoveModule={removeModule} />;
 }
