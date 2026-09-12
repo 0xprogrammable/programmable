@@ -8,6 +8,7 @@ import { isRobinhoodNativeModuleLaunch, isRobinhoodEngineLaunch, robinhoodModule
 import { isModuleEngineSharedQuoteRelease } from "@/lib/module-engine/profile";
 import { resolveProjectionAddress } from "@/lib/custom-launch/launch-projection-v1";
 import { readCustomV4SwapDescriptor } from "./custom-v4";
+import { readRobinhoodSwapDecimals } from "./token-metadata";
 import { SWAP_TOKEN_SCHEMA, SwapUnavailableError, type SwapChainId, type SwapTokenDescriptor } from "@/lib/swap/types";
 
 const ZERO = "0x0000000000000000000000000000000000000000";
@@ -17,10 +18,11 @@ export interface SwapTokenDependencies {
   native: typeof readModuleModeAvailability;
   engine: typeof readModuleEngineAvailability;
   custom: typeof readCustomV4SwapDescriptor;
+  decimals: typeof readRobinhoodSwapDecimals;
 }
 const readers: SwapTokenDependencies = {
   robinhood: readRobinhoodToken, ethereum: readEthereumToken,
-  native: readModuleModeAvailability, engine: readModuleEngineAvailability, custom: readCustomV4SwapDescriptor,
+  native: readModuleModeAvailability, engine: readModuleEngineAvailability, custom: readCustomV4SwapDescriptor, decimals: readRobinhoodSwapDecimals,
 };
 
 function tokenMetadata(row: { tokenAddress: string; name: string | null; symbol: string | null; decimals?: number | null; tokenDecimals?: number }) {
@@ -59,7 +61,8 @@ export async function resolveSwapToken(input: { address: string; chainId?: SwapC
 }
 
 async function resolveRobinhoodSwapToken(row: RobinhoodLaunch, dependencies: SwapTokenDependencies): Promise<SwapTokenDescriptor> {
-  const base = { schemaVersion: SWAP_TOKEN_SCHEMA, chainId: 4663 as const, token: tokenMetadata(row), manageHref: robinhoodModuleManageHref(row) };
+  const decimals = row.decimals ?? await dependencies.decimals(row.tokenAddress);
+  const base = { schemaVersion: SWAP_TOKEN_SCHEMA, chainId: 4663 as const, token: tokenMetadata({ ...row, decimals }), manageHref: robinhoodModuleManageHref(row) };
   if (isRobinhoodNativeModuleLaunch(row)) {
     const availability = await dependencies.native(row.sourceReleaseDigest);
     if (!availability.release || availability.release.releaseDigest.toLowerCase() !== row.sourceReleaseDigest.toLowerCase()) return unavailable(base, "This coin’s original module version is temporarily unavailable. Try again.");
