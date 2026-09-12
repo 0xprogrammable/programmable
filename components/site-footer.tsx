@@ -5,6 +5,7 @@ import styles from "@/components/site-footer.module.css";
 
 const productLinks = [
   { href: "/explore", label: "Explore" },
+  { href: "/swap", label: "Swap" },
   { href: "/launch", label: "Launch" },
   { href: "/launch/modules", label: "Modules" },
   { href: "/developers/api-keys", label: "API keys" },

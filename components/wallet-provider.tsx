@@ -93,6 +93,7 @@ import {
   getPredictionV2PreparedTransactionReviewV2,
 } from "@/lib/prediction-v2/prepared-transaction-v2";
 import type { PreparedModuleModeTransaction } from "@/components/module-mode-wallet-state";
+import type { CustomV4SwapWalletInput, CustomV4SwapWalletReview } from "@/lib/swap/custom-v4";
 import {
   buildEip1193TransactionRequest,
   buildPrivyTransactionRequest,
@@ -237,6 +238,7 @@ type WalletContextValue = {
     input: CustomLaunchWalletActionV1,
   ) => Promise<Hex>;
   sendLaunchPlanTradeWalletAction: (input: LaunchPlanTradeWalletInputV1) => Promise<LaunchPlanTradeWalletReviewV1 | Hex>;
+  sendCustomV4SwapWalletAction: (input: CustomV4SwapWalletInput) => Promise<CustomV4SwapWalletReview | Hex>;
   sendLaunchClaimWalletAction: (input: LaunchClaimWalletInputV1) => Promise<LaunchClaimWalletReviewV1 | Hex>;
   sendUniversalLaunchWalletAction: (input: UniversalLaunchWalletInputV1) => Promise<UniversalLaunchWalletReviewV1 | Hex>;
   sendCustomLaunchWalletActionV4: (
@@ -250,9 +252,9 @@ type WalletContextValue = {
     transaction: ParsedPredictionV2PreparedTransactionV2,
   ) => Promise<Hex>;
   sendModuleModeTransaction: (transaction: PreparedModuleModeTransaction) => Promise<Hex>;
-  readNativeBalance: () => Promise<WalletNativeBalance>;
+  readNativeBalance: (chainId?: 1 | 4663) => Promise<WalletNativeBalance>;
   readConnectedAccountCode: () => Promise<Hex>;
-  readTradeBalances: (token: `0x${string}`) => Promise<WalletTradeBalances>;
+  readTradeBalances: (token: `0x${string}`, chainId?: 1 | 4663) => Promise<WalletTradeBalances>;
 };
 
 const WalletContext = createContext<WalletContextValue | null>(null);
@@ -274,6 +276,7 @@ function loadWalletProviderRuntime() {
 export function shouldEagerLoadWalletRuntime(pathname: string) {
   return [
     "/launch",
+    "/swap",
     "/late-migration",
     "/migration",
     "/profile",
@@ -314,6 +317,12 @@ const appChain =
 const appChainHex = `0x${appChain.id.toString(16)}`;
 const appNetworkName = appChain.id === sepolia.id ? "Sepolia" : "Ethereum";
 const robinhoodChainHex = `0x${robinhoodChain.id.toString(16)}`;
+
+function balanceReadChain(chainId?: 1 | 4663) {
+  if (chainId !== undefined && chainId !== 1 && chainId !== 4663) throw new Error("Unsupported balance network");
+  const chain = chainId === 4663 ? robinhoodChain : chainId === 1 ? mainnet : appChain;
+  return { hex: `0x${chain.id.toString(16)}`, name: chain.name };
+}
 
 export function isPersistedWalletSessionHint(value: string | null) {
   return value === "authenticated";
@@ -1103,6 +1112,7 @@ function DeferredWalletProvider({
         throw new Error("Wallet sign-in is still loading");
       },
       sendLaunchPlanTradeWalletAction: async () => { throw new Error("Connect your trading wallet before continuing"); },
+      sendCustomV4SwapWalletAction: async () => { throw Object.assign(new Error("Connect your trading wallet before continuing"), { walletRequestAttempted: false }); },
       sendLaunchClaimWalletAction: async () => { throw new Error("Connect your controller wallet before continuing"); },
       sendUniversalLaunchWalletAction: async () => { throw new Error("Connect your controller wallet before continuing"); },
       sendCustomLaunchWalletActionV4: async () => {
@@ -2110,46 +2120,47 @@ function PrivyWalletBridge({
 
   const sendTransaction = useCallback(
     async (transaction: PreparedTransaction) => {
-      if (!connectedWallet || !wallet) {
-        throw new Error("Connect your wallet before continuing");
-      }
-      const prepared = parsePreparedTransactionForAccount(
-        transaction,
-        wallet.account,
-      );
-      if (prepared.kind === "main-token-migration") {
-        assertMainTokenMigrationTransaction(prepared, wallet.account);
-      }
-      const target =
-        prepared.kind === "prediction-market-launch" ||
-        prepared.kind === "prediction-market-action"
-        ? getWalletNetwork(String(robinhoodChain.id))
-        : getWalletNetwork(String(appChain.id));
-      if (!target || prepared.chainId !== target.chain.id) {
-        throw new Error(
-          `The prepared transaction is not for ${target?.name ?? "an approved network"}`,
-        );
-      }
-      const isEmbeddedWallet =
-        connectedWallet.walletClientType === "privy" ||
-        connectedWallet.walletClientType === "privy-v2";
-      const sessionSubject = user?.id ?? null;
-      const expectedAccount = wallet.account.toLowerCase();
-      if (sessionSubject === null) {
-        throw new Error("Your wallet session expired. Reconnect and try again");
-      }
-      const assertCurrentSession = () => {
-        const current = walletRequestSessionRef.current;
-        if (
-          !current.authenticated ||
-          current.privyUserId !== sessionSubject ||
-          current.account?.toLowerCase() !== expectedAccount
-        ) {
-          throw new Error("The wallet session changed. Reconnect and try again");
-        }
-      };
-
+      let walletRequestAttempted = false;
       try {
+        if (!connectedWallet || !wallet) {
+          throw new Error("Connect your wallet before continuing");
+        }
+        const prepared = parsePreparedTransactionForAccount(
+          transaction,
+          wallet.account,
+        );
+        if (prepared.kind === "main-token-migration") {
+          assertMainTokenMigrationTransaction(prepared, wallet.account);
+        }
+        const target =
+          prepared.kind === "prediction-market-launch" ||
+          prepared.kind === "prediction-market-action"
+          ? getWalletNetwork(String(robinhoodChain.id))
+          : getWalletNetwork(String(appChain.id));
+        if (!target || prepared.chainId !== target.chain.id) {
+          throw new Error(
+            `The prepared transaction is not for ${target?.name ?? "an approved network"}`,
+          );
+        }
+        const isEmbeddedWallet =
+          connectedWallet.walletClientType === "privy" ||
+          connectedWallet.walletClientType === "privy-v2";
+        const sessionSubject = user?.id ?? null;
+        const expectedAccount = wallet.account.toLowerCase();
+        if (sessionSubject === null) {
+          throw new Error("Your wallet session expired. Reconnect and try again");
+        }
+        const assertCurrentSession = () => {
+          const current = walletRequestSessionRef.current;
+          if (
+            !current.authenticated ||
+            current.privyUserId !== sessionSubject ||
+            current.account?.toLowerCase() !== expectedAccount
+          ) {
+            throw new Error("The wallet session changed. Reconnect and try again");
+          }
+        };
+
         if (isEmbeddedWallet && wallet.chainId !== target.chainHex) {
           await connectedWallet.switchChain(target.chain.id);
           assertCurrentSession();
@@ -2171,6 +2182,7 @@ function PrivyWalletBridge({
         if (isEmbeddedWallet) {
           return await sendLocked(async () => {
             const review = getPreparedTransactionReview(prepared.kind);
+            walletRequestAttempted = true;
             const result = await sendPrivyTransaction(
               buildPrivyTransactionRequest(prepared),
               {
@@ -2191,6 +2203,7 @@ function PrivyWalletBridge({
         });
         assertCurrentSession();
         return await sendLocked(async () => {
+          walletRequestAttempted = true;
           const hash = await provider.request({
             method: "eth_sendTransaction",
             params: [buildEip1193TransactionRequest(prepared, wallet.account)],
@@ -2198,10 +2211,12 @@ function PrivyWalletBridge({
           return parseSubmittedTransactionHash(hash);
         });
       } catch (caught) {
-        throw new Error(getWalletTransactionErrorMessage(caught));
+        throw Object.assign(new Error(getWalletTransactionErrorMessage(caught)), {
+          walletRequestAttempted, walletRequestRejected: errorIsExplicitWalletRejection(caught),
+        });
       }
     },
-    [connectedWallet, sendPrivyTransaction, user?.id, wallet],
+    [connectedWallet, sendPrivyTransaction, user, wallet],
   );
 
   const sendPredictionV2Transaction = useCallback(
@@ -2766,25 +2781,78 @@ function PrivyWalletBridge({
   }, [sendBrowserWalletAction, wallet]);
 
   const sendLaunchPlanTradeWalletAction = useCallback(async (input: LaunchPlanTradeWalletInputV1) => {
-    if (!connectedWallet || !wallet || !user?.id) throw new Error("Connect your trading wallet before continuing");
-    const account = wallet.account; const sessionSubject = user.id;
-    const assertCurrentSession = () => {
-      const current = walletRequestSessionRef.current;
-      if (!current.authenticated || current.privyUserId !== sessionSubject || current.account?.toLowerCase() !== account.toLowerCase()) throw new Error("The wallet session changed");
-    };
-    if (wallet.chainId !== robinhoodChainHex) { await connectedWallet.switchChain(robinhoodChain.id); assertCurrentSession(); }
-    const provider = await connectedWallet.getEthereumProvider();
-    const { prepareLaunchPlanTradeWalletV1 } = await import("@/lib/custom-launch/routed-trade-wallet-v1");
-    const review = await prepareLaunchPlanTradeWalletV1(provider, account, input); assertCurrentSession();
-    if (input.action === "review") return review;
-    if (!input.reviewed || input.reviewed.binding !== review.binding || BigInt(review.maxGasCostWei) > BigInt(input.reviewed.maxGasCostWei)) throw new Error("The exact trade or gas cost changed. Review it again.");
-    return runWithBrowserWalletRequestLock({ sessionSubject, account, chainId: "4663",
-      requestSubject: JSON.stringify(["launch-plan-trade-wallet-v1", review.binding]), assertCurrentSession,
-      execute: async () => {
-        const fresh = await prepareLaunchPlanTradeWalletV1(provider, account, input); assertCurrentSession();
-        if (fresh.binding !== review.binding || BigInt(fresh.maxGasCostWei) > BigInt(review.maxGasCostWei)) throw new Error("The exact trade changed. Refresh the review.");
-        return parseSubmittedTransactionHash(await provider.request({ method: "eth_sendTransaction", params: [fresh.transaction] }));
-      } });
+    let walletRequestAttempted = false;
+    try {
+      if (!connectedWallet || !wallet || !user?.id) throw new Error("Connect your trading wallet before continuing");
+      const account = wallet.account; const sessionSubject = user.id;
+      const assertCurrentSession = () => {
+        const current = walletRequestSessionRef.current;
+        if (!current.authenticated || current.privyUserId !== sessionSubject || current.account?.toLowerCase() !== account.toLowerCase()) throw new Error("The wallet session changed");
+      };
+      if (wallet.chainId !== robinhoodChainHex) { await connectedWallet.switchChain(robinhoodChain.id); assertCurrentSession(); }
+      const provider = await connectedWallet.getEthereumProvider();
+      const { prepareLaunchPlanTradeWalletV1 } = await import("@/lib/custom-launch/routed-trade-wallet-v1");
+      const review = await prepareLaunchPlanTradeWalletV1(provider, account, input); assertCurrentSession();
+      if (input.action === "review") return review;
+      if (!input.reviewed || input.reviewed.binding !== review.binding || BigInt(review.maxGasCostWei) > BigInt(input.reviewed.maxGasCostWei)) throw new Error("The exact trade or gas cost changed. Review it again.");
+      return await runWithBrowserWalletRequestLock({ sessionSubject, account, chainId: "4663",
+        requestSubject: JSON.stringify(["launch-plan-trade-wallet-v1", review.binding]), assertCurrentSession,
+        execute: async () => {
+          const fresh = await prepareLaunchPlanTradeWalletV1(provider, account, input); assertCurrentSession();
+          if (fresh.binding !== review.binding || BigInt(fresh.maxGasCostWei) > BigInt(review.maxGasCostWei)) throw new Error("The exact trade changed. Refresh the review.");
+          walletRequestAttempted = true;
+          return parseSubmittedTransactionHash(await provider.request({ method: "eth_sendTransaction", params: [fresh.transaction] }));
+        } });
+    } catch (caught) {
+      throw Object.assign(new Error(getWalletTransactionErrorMessage(caught)), {
+        walletRequestAttempted, walletRequestRejected: errorIsExplicitWalletRejection(caught),
+      });
+    }
+  }, [connectedWallet, user, wallet]);
+
+  const sendCustomV4SwapWalletAction = useCallback(async (input: CustomV4SwapWalletInput): Promise<CustomV4SwapWalletReview | Hex> => {
+    let walletRequestAttempted = false;
+    try {
+      if (!connectedWallet || !wallet || !user?.id) throw new Error("Connect your trading wallet before continuing");
+      const boundWallet = connectedWallet, account = wallet.account, sessionSubject = user.id;
+      const generation = walletSessionGenerationRef.current;
+      const assertCurrentSession = () => {
+        const current = walletRequestSessionRef.current;
+        if (walletSessionGenerationRef.current !== generation || !current.authenticated
+          || current.privyUserId !== sessionSubject || current.account?.toLowerCase() !== account.toLowerCase()
+          || current.walletCapability?.getEthereumProvider !== boundWallet.getEthereumProvider) {
+          throw new Error("The selected wallet changed. Refresh the swap.");
+        }
+      };
+      assertCurrentSession();
+      const provider = await getWalletProviderOnChain({ wallet: boundWallet, chainId: robinhoodChain.id,
+        networkName: robinhoodChain.name, assertCurrentSession });
+      const { prepareCustomV4SwapWallet } = await import("@/lib/swap/custom-v4");
+      if (input.action === "review") {
+        const review = await prepareCustomV4SwapWallet(provider, account, input);
+        assertCurrentSession();
+        return review;
+      }
+      if (!input.reviewed) throw new Error("Get a current swap quote before continuing.");
+      return await runWithBrowserWalletRequestLock({ sessionSubject, account, chainId: "4663",
+        requestSubject: JSON.stringify(["custom-v4-swap", input.reviewed.binding]), assertCurrentSession,
+        execute: async () => {
+          const fresh = await prepareCustomV4SwapWallet(provider, account, input);
+          assertCurrentSession();
+          if (fresh.binding !== input.reviewed!.binding || BigInt(fresh.maxGasCostWei) > BigInt(input.reviewed!.maxGasCostWei)) {
+            throw new Error("The swap or gas cost changed. Get a new quote.");
+          }
+          await assertExternalWalletAuthorityCurrent({ expectedAccount: account, expectedChainId: robinhoodChainHex,
+            networkName: robinhoodChain.name, request: method => provider.request({ method }) });
+          assertCurrentSession();
+          walletRequestAttempted = true;
+          return parseSubmittedTransactionHash(await provider.request({ method: "eth_sendTransaction", params: [fresh.transaction] }));
+        } });
+    } catch (caught) {
+      throw Object.assign(new Error(getWalletTransactionErrorMessage(caught)), {
+        walletRequestAttempted, walletRequestRejected: errorIsExplicitWalletRejection(caught),
+      });
+    }
   }, [connectedWallet, user, wallet]);
 
   const sendLaunchClaimWalletAction = useCallback(async (input: LaunchClaimWalletInputV1) => {
@@ -3001,7 +3069,7 @@ function PrivyWalletBridge({
   }, [connectedWallet, user?.id, wallet]);
 
   const readTradeBalances = useCallback(
-    async (token: `0x${string}`) => {
+    async (token: `0x${string}`, chainId?: 1 | 4663) => {
       if (!connectedWallet || !wallet) {
         throw new Error("Connect your wallet before continuing");
       }
@@ -3013,8 +3081,9 @@ function PrivyWalletBridge({
       const providerChainId = await provider.request({
         method: "eth_chainId",
       });
-      if (!walletChainIdsEqual(providerChainId, appChainHex)) {
-        throw new Error(`Switch your wallet to ${appNetworkName}`);
+      const expected = balanceReadChain(chainId);
+      if (!walletChainIdsEqual(providerChainId, expected.hex)) {
+        throw new Error(`Switch your wallet to ${expected.name}`);
       }
 
       const balanceOfData =
@@ -3048,7 +3117,7 @@ function PrivyWalletBridge({
     [connectedWallet, wallet],
   );
 
-  const readNativeBalance = useCallback(async () => {
+  const readNativeBalance = useCallback(async (chainId?: 1 | 4663) => {
     if (!connectedWallet || !wallet) {
       throw new Error("Connect your wallet before continuing");
     }
@@ -3057,8 +3126,9 @@ function PrivyWalletBridge({
     const providerChainId = await provider.request({
       method: "eth_chainId",
     });
-    if (!walletChainIdsEqual(providerChainId, appChainHex)) {
-      throw new Error(`Switch your wallet to ${appNetworkName}`);
+    const expected = balanceReadChain(chainId);
+    if (!walletChainIdsEqual(providerChainId, expected.hex)) {
+      throw new Error(`Switch your wallet to ${expected.name}`);
     }
 
     const [nativeBalance, gasPrice] = await Promise.all([
@@ -3144,6 +3214,7 @@ function PrivyWalletBridge({
       sendCustomLaunchWalletActionV4,
       sendUniversalLaunchWalletAction,
       sendLaunchPlanTradeWalletAction,
+      sendCustomV4SwapWalletAction,
       sendLaunchClaimWalletAction,
       signCustomLaunchFundingAuthorization,
       sendTransaction,
@@ -3183,6 +3254,7 @@ function PrivyWalletBridge({
       sendCustomLaunchWalletActionV4,
       sendUniversalLaunchWalletAction,
       sendLaunchPlanTradeWalletAction,
+      sendCustomV4SwapWalletAction,
       sendLaunchClaimWalletAction,
       signCustomLaunchFundingAuthorization,
       sendPredictionV2Transaction,
@@ -3309,6 +3381,7 @@ function UnconfiguredWalletProvider({ children }: { children: ReactNode }) {
         throw new Error("Wallet sign-in is unavailable");
       },
       sendLaunchPlanTradeWalletAction: async () => { throw new Error("Connect your trading wallet before continuing"); },
+      sendCustomV4SwapWalletAction: async () => { throw Object.assign(new Error("Connect your trading wallet before continuing"), { walletRequestAttempted: false }); },
       sendLaunchClaimWalletAction: async () => { throw new Error("Connect your controller wallet before continuing"); },
       sendUniversalLaunchWalletAction: async () => { throw new Error("Connect your controller wallet before continuing"); },
       sendCustomLaunchWalletActionV4: async () => {
