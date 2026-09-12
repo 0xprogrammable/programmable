@@ -670,7 +670,7 @@ export function moduleEngineDepositIntent(quoteAsset: Address, actor: Address, a
 export interface ModuleEngineFeeControlsSnapshot {
   releaseDigest: Hex; launch: ModuleEngineLaunchRecord; actor: Address; blockNumber: bigint;
   creatorWallets: readonly Address[]; creatorSharesBps: readonly number[]; adminRevision: bigint;
-  treasury: Address; administrator: Address; quoteFees?: boolean;
+  treasury: Address; administrator: Address; quoteFees?: boolean; nativeEthFees?: boolean;
   authors: readonly { familyId: Hex; author: Address; wallet: Address }[];
 }
 function creatorRecipients(value: unknown) {
@@ -700,7 +700,7 @@ async function feeControlsAt(input: { client: ModuleEngineClient; template: Modu
     })),
   ]);
   return { releaseDigest: block.release.releaseDigest, launch, actor: moduleAddress(input.account, "account"), blockNumber: block.blockNumber,
-    ...creatorRecipients(recipients), quoteFees: isModuleEngineSharedQuoteRelease(block.release), treasury: moduleAddress(treasury, "treasury"), administrator: moduleAddress(administrator, "administrator"), authors };
+    ...creatorRecipients(recipients), quoteFees: isModuleEngineSharedQuoteRelease(block.release), ...(isModuleEngineAnyQuoteEthRelease(block.release) ? { nativeEthFees: true } : {}), treasury: moduleAddress(treasury, "treasury"), administrator: moduleAddress(administrator, "administrator"), authors };
 }
 export async function readModuleEngineFeeControls(input: { client: ModuleEngineClient; release: ModuleEngineRelease; template: ModuleEngineTemplate; token: Address; account: Address }): Promise<ModuleEngineFeeControlsSnapshot> {
   const block = await assertModuleEngineRelease(input), result = await feeControlsAt(input, block);
@@ -749,7 +749,7 @@ export async function prepareModuleEngineFeeChange(input: { client: ModuleEngine
   else data = encodeFunctionData({ abi: moduleEngineAuthorWalletAbi, functionName: "changeAuthorWallet", args: [change.familyId, change.recipient] });
   const transaction = tx(account, target, data, 0n, "manage", change.kind === "rotate-platform" ? "Change the future 0.3% platform fee recipient; accrued claims stay with their current wallets" : change.kind === "rotate-author" ? "Change your family's future author fee wallet; accrued claims stay with their current wallets" : "Change future creator fee recipients; fixed shares and accrued claims stay unchanged");
   const simulation = await simulate(input.client, block, transaction, true);
-  const prepared: PreparedModuleEngineFeeChange = { ...change, sourceKind: "module-engine-v1", account, releaseDigest: release.releaseDigest, blockNumber: block.blockNumber,
+  const prepared: PreparedModuleEngineFeeChange = { ...change, sourceKind: "module-engine-v1", ...(isModuleEngineAnyQuoteEthRelease(release) ? { nativeEthFees: true } : {}), account, releaseDigest: release.releaseDigest, blockNumber: block.blockNumber,
     expiresAt, gasEstimate: simulation.gasEstimate, transaction: { ...transaction, gas: toHex(simulation.gasEstimate * 12n / 10n) }, token: launch.token, launchId: launch.launchId, revisionId: launch.revisionId, planHash: launch.planHash };
   // Snapshot-derived intent is immutable; UI edits can never change the pending request.
   const intent: ModuleEngineFeeChangeIntent = change.kind === "rotate-platform" ? { kind: change.kind, recipient: change.recipient } : change.kind === "rotate-creator" ? { kind: change.kind, index: change.index, recipient: change.recipient }
