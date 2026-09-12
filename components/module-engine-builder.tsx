@@ -214,7 +214,7 @@ export function ModuleEngineBuilder({ availability: raw, client: suppliedClient,
   const tokenImageSource = moduleModeImageSource(image, imageResource)
     ?? (imageUri ? moduleModeImageSource({ kind: "uri", uri: imageUri, contentVerified: false }, null) : null);
   const quoteLabel = anyQuote ? "Pool pair" : spot ? "Trading token" : "Funding token";
-  const quoteShort = readyQuote?.token.symbol || (quoteAsset ? `${quoteAsset.slice(0, 6)}…${quoteAsset.slice(-4)}` : "Not chosen");
+  const quoteShort = anyQuote ? anyQuoteAvailability.symbol || "Not selected" : quoteAsset ? `${quoteAsset.slice(0, 6)}…${quoteAsset.slice(-4)}` : "Not chosen";
 
   return <div className={`${styles.page} ${engineStyles.root} ${engineStyles.builderRoot}${anyQuote ? ` ${engineStyles.anyQuoteBuilder}` : ""}`}>
     <div className={engineStyles.pageTop}><a href="/launch"><ArrowLeft size={16} aria-hidden="true" />Back</a></div>

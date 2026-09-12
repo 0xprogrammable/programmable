@@ -5,7 +5,7 @@ import { isAddress, type Hex } from "viem";
 import { Check, CircleAlert, LoaderCircle, RefreshCw } from "lucide-react";
 import { fetchAnyQuoteReadiness } from "@/lib/module-engine/any-quote/integration-client";
 import type { AnyQuoteReadinessV1 } from "@/lib/module-engine/any-quote/types";
-import { forgetAnyQuoteDisplayCheck, readAnyQuoteDisplayCheck, rememberAnyQuoteDisplayCheck } from "@/lib/module-engine/any-quote/readiness-display-cache";
+import { forgetAnyQuoteDisplayCheck, readAnyQuoteDisplayCheck, readAnyQuoteDisplaySymbol, rememberAnyQuoteDisplayCheck } from "@/lib/module-engine/any-quote/readiness-display-cache";
 import styles from "./module-mode-builder.module.css";
 import engineStyles from "./module-engine-ui.module.css";
 
@@ -13,6 +13,7 @@ type AvailabilityStatus = "idle" | "invalid" | "checking" | AnyQuoteReadinessV1[
 export interface AnyQuoteAssetAvailability {
   status: AvailabilityStatus;
   result: AnyQuoteReadinessV1 | null;
+  symbol?: string;
   retry: () => void;
 }
 
@@ -81,7 +82,7 @@ export function useAnyQuoteAssetAvailability({ enabled, releaseDigest, templateI
   const current = latestCheck?.status === "compatible" ? cached ? latestCheck : null
     : latestCheck ?? (attempt === 0 && cached ? { status: "compatible" as const, result: cached } : null);
   const status = !enabled || !address ? "idle" : !validAddress ? "invalid" : current?.status ?? "checking";
-  return { status, result: current?.result ?? null, retry: () => { forgetAnyQuoteDisplayCheck(key); setAttempt(value => value + 1); } };
+  return { status, result: current?.result ?? null, symbol: enabled && validAddress ? readAnyQuoteDisplaySymbol(key) : undefined, retry: () => { forgetAnyQuoteDisplayCheck(key); setAttempt(value => value + 1); } };
 }
 
 export function ModuleEngineAnyQuoteAsset({ value, onChange, availability, inputId = "engine-quote" }: {
