@@ -16,12 +16,16 @@ for (const [index, name] of ["universalRouter", "poolManager", "stateView", "v4Q
   fixtureCode.set(contract.address.toLowerCase(), code);
   contract.runtimeCodeHash = keccak256(code);
 }
-const bundled = await build({ absWorkingDir: root, stdin: { contents: ["types", "route", "discovery.server", "readiness.server"].map(name => `export * from './lib/module-engine/any-quote/${name}'`).join("\n") + "; export { agreedTradeRpcV1 } from './lib/server/custom-launch/routed-trade-rpc-v1'; export { quoteModule } from './lib/server/module-engine/any-quote-preparation'", resolveDir: root },
+const multicallAddress = "0xca11bde05977b3631167028862be2a173976ca11", multicallCode = "0x6006600055";
+fixtureCode.set(multicallAddress, multicallCode);
+const bundled = await build({ absWorkingDir: root, stdin: { contents: ["types", "route", "discovery.server", "readiness.server"].map(name => `export * from './lib/module-engine/any-quote/${name}'`).join("\n") + "; export { agreedTradeRpcV1, TradeRpcExecutionRevertedV1 } from './lib/server/custom-launch/routed-trade-rpc-v1'; export { quoteModule } from './lib/server/module-engine/any-quote-preparation'", resolveDir: root },
   bundle: true, format: "cjs", platform: "node", packages: "external", write: false,
   plugins: [{ name: "fixture-environment", setup(b) {
     b.onResolve({ filter: /^server-only$/ }, () => ({ path: "empty", namespace: "empty" }));
     b.onLoad({ filter: /.*/, namespace: "empty" }, () => ({ contents: "" }));
     b.onLoad({ filter: /chain-4663\.v1\.json$/ }, () => ({ contents: JSON.stringify(profile), loader: "json" }));
+    b.onLoad({ filter: /lib\/chains\.ts$/ }, async args => ({ contents: (await readFile(args.path, "utf8")).replace(
+      /"0xd5c15df687b16f2ff992fc8d767b4216323184a2bbc6ee2f9c398c318e770891"/, JSON.stringify(keccak256(multicallCode))), loader: "ts" }));
     // Expose the unchanged private reader only to this test bundle; production exports remain closed.
     b.onLoad({ filter: /any-quote-preparation\.ts$/ }, async args => ({ contents: `${await readFile(args.path, "utf8")}\nexport { quoteModule };`, loader: "ts" }));
   } }],
@@ -36,6 +40,7 @@ const HASH = `0x${"aa".repeat(32)}`, NOW = 1_000_000n, HEIGHT = 20_000n;
 const checkpoint = { number: String(HEIGHT), hash: HASH, timestamp: String(NOW) };
 const initializeAbi = parseAbi(["event Initialize(bytes32 indexed id,address indexed currency0,address indexed currency1,uint24 fee,int24 tickSpacing,address hooks,uint160 sqrtPriceX96,int24 tick)"]);
 const readAbi = parseAbi([
+  "function aggregate3((address target,bool allowFailure,bytes callData)[] calls) payable returns ((bool success,bytes returnData)[] returnData)",
   "function decimals() view returns (uint8)", "function totalSupply() view returns (uint256)", "function name() view returns (string)", "function symbol() view returns (string)",
   "function latestRoundData() view returns (uint80,int256,uint256,uint256,uint80)",
   "function getSlot0(bytes32) view returns (uint160,int24,uint24,uint24)", "function getLiquidity(bytes32) view returns (uint128)",
@@ -101,6 +106,14 @@ function fixture(pools, options = {}) {
     else if (functionName === "symbol") result = "Q";
     else if (functionName === "latestRoundData") result = [1n, 2500n * 10n ** 8n, NOW, NOW, 1n];
     else if (functionName === "getSlot0") result = [1n << 96n, 0, 0, 0];
+    else if (functionName === "aggregate3") result = args[0].map(call => {
+      assert.equal(call.target.toLowerCase(), a.ANY_QUOTE_INFRASTRUCTURE.stateView.toLowerCase());
+      assert.equal(call.allowFailure, false);
+      const read = decodeFunctionData({ abi: readAbi, data: call.callData });
+      assert.equal(read.functionName, "getLiquidity");
+      return { success: true, returnData: encodeFunctionResult({ abi: readAbi, functionName: "getLiquidity",
+        result: pools.find(p => p.poolId.toLowerCase() === read.args[0].toLowerCase())?.liquidity ?? 0n }) };
+    });
     else if (functionName === "getLiquidity") result = pools.find(p => p.poolId.toLowerCase() === args[0].toLowerCase())?.liquidity ?? 0n;
     else if (functionName === "quoteExactInputSingle") {
       const params = args[0], actual = pools.find(p => p.poolId.toLowerCase() === a.anyQuotePoolIdV1(params.poolKey).toLowerCase());
@@ -201,11 +214,52 @@ test("malformed successful responses are never treated as unavailable providers 
   }
 });
 
-test("hint verification retains the fixed request budget and never accepts an unverified pool", async () => {
-  const f = fixture(Array.from({ length: 24 }, (_, i) => pool(ZERO, Q, { fee: i * 500, block: 10_000n + BigInt(i) * 10_000n })), { override: quickNodeRangeLimit });
-  await assert.rejects(() => a.createAnyQuoteV4InitializeDiscoveryV1({ checkpoint: longCheckpoint, rpcs: f.rpcs }).nativePools(Q),
-    error => error.code === "V4_DISCOVERY_REQUEST_LIMIT" && error.status === "inconclusive");
-  assert.equal(f.calls.length, 2, "An over-budget hint set stops before requesting verification windows");
+test("popular tokens rank active pool hints in pinned batches before canonical verification", async () => {
+  const pools = Array.from({ length: 155 }, (_, i) => pool(ZERO, Q, { fee: i * 500, block: 10_000n + BigInt(i) * 10_000n,
+    liquidity: i < 130 ? 0n : BigInt(i + 1) }));
+  const f = fixture(pools, { override: quickNodeRangeLimit });
+  const discovery = a.createAnyQuoteV4InitializeDiscoveryV1({ checkpoint: longCheckpoint, rpcs: f.rpcs });
+  const selected = await discovery.nativePools(Q);
+  assert.equal(selected.length, 16);
+  assert.deepEqual(new Set(selected.map(value => value.poolId)), new Set(pools.slice(-16).map(value => value.poolId)));
+  assert.equal(discovery.hasIncompleteCoverage(), true, "A bounded shortlist never claims index completeness");
+  const logs = f.calls.filter(value => value.method === "eth_getLogs");
+  assert.equal(logs.length, 34, "One full-range hint query and16 canonical verification windows on each provider");
+  for (const selectedPool of selected) for (const provider of [0, 1]) assert.ok(logs.some(call => call.provider === provider
+    && BigInt(call.params[0].fromBlock) === BigInt(selectedPool.blockNumber) && !wideRange(call.params)));
+  const batches = f.calls.filter(call => call.method === "eth_call");
+  assert.equal(batches.length, 6, "155 pools use three liquidity reads per independent provider");
+  assert.ok(batches.every(call => call.params[1].blockHash === HASH && call.params[1].requireCanonical === true));
+  const priorCalls = f.calls.length;
+  assert.deepEqual(await discovery.nativePools(Q), selected);
+  assert.equal(f.calls.length, priorCalls, "The reverse route reuses this request's verified pool keys");
+});
+
+test("shortlist verification permits unrelated canonical logs in the same bounded window", async () => {
+  const pools = Array.from({ length: 24 }, (_, i) => pool(ZERO, Q, { fee: i * 500, block: 10_000n + BigInt(i), liquidity: i % 2 ? 1n : 0n }));
+  const f = fixture(pools, { override: quickNodeRangeLimit });
+  const selected = await a.createAnyQuoteV4InitializeDiscoveryV1({ checkpoint: longCheckpoint, rpcs: f.rpcs }).nativePools(Q);
+  assert.equal(selected.length, 12);
+  assert.deepEqual(new Set(selected.map(value => value.poolId)), new Set(pools.filter(p => p.liquidity > 0n).map(p => p.poolId)));
+});
+
+test("active pool ranking cannot ignore provider disagreement, malformed data or changed infrastructure", async () => {
+  const pools = Array.from({ length: 24 }, (_, i) => pool(ZERO, Q, { fee: i * 500, block: 10_000n + BigInt(i) * 10_000n }));
+  for (const corruption of ["disagreement", "malformed", "runtime"]) {
+    const f = fixture(pools, { override: info => {
+      quickNodeRangeLimit(info);
+      if (corruption === "runtime" && info.method === "eth_getCode" && info.params[0].toLowerCase() === multicallAddress) return "0x00";
+      if (info.method !== "eth_call" || info.params[0].to.toLowerCase() !== multicallAddress || info.provider !== 1) return;
+      if (corruption === "malformed") return "0x00";
+      if (corruption === "disagreement") {
+        const read = decodeFunctionData({ abi: readAbi, data: info.params[0].data });
+        return encodeFunctionResult({ abi: readAbi, functionName: "aggregate3", result: read.args[0].map(() => ({ success: true,
+          returnData: encodeFunctionResult({ abi: readAbi, functionName: "getLiquidity", result: 0n }) })) });
+      }
+    } });
+    await assert.rejects(() => a.createAnyQuoteV4InitializeDiscoveryV1({ checkpoint: longCheckpoint, rpcs: f.rpcs }).nativePools(Q));
+    assert.equal(f.calls.filter(call => call.method === "eth_getLogs").length, 2, "Untrusted ranking must never reach candidate verification");
+  }
 });
 
 test("empty direct hints still allow an independently verified indirect route; empty coverage stays inconclusive", async () => {
@@ -294,6 +348,36 @@ test("a reverted candidate quote stays non-executable without treating malformed
   assert.equal(result.status, "compatible", JSON.stringify(result));
   assert.deepEqual([...rejectedBy], [0, 1], "Both RPCs rejected the non-executable candidate call");
   for (const side of ["buy", "sell"]) assert.equal(result.routes[side].hops[0].poolId, deep.poolId);
+});
+
+test("an independently agreed depth revert can select another qualified pool", async () => {
+  const failing = pool(), deep = pool(ZERO, Q, { fee: 500 });
+  const f = fixture([failing, deep], { override: info => {
+    if (info.method !== "eth_call") return;
+    const read = decodeFunctionData({ abi: readAbi, data: info.params[0].data });
+    if (read.functionName === "quoteExactInputSingle" && read.args[0].poolKey.fee === 0 && read.args[0].exactAmount > ONE_DOLLAR_ETH)
+      throw new a.TradeRpcExecutionRevertedV1("0x1234");
+  } });
+  const result = await a.assessAnyQuoteAssetV1({ quoteAsset: Q }, f.options);
+  assert.equal(result.status, "compatible", JSON.stringify(result));
+  for (const side of ["buy", "sell"]) assert.equal(result.routes[side].hops[0].poolId, deep.poolId);
+});
+
+test("unconfirmed or inconsistent depth reverts never select another pool", async () => {
+  for (const other of ["success", "different-revert", "outage"]) {
+    const f = fixture([pool(), pool(ZERO, Q, { fee: 500 })], { override: info => {
+      if (info.method !== "eth_call") return;
+      const read = decodeFunctionData({ abi: readAbi, data: info.params[0].data });
+      if (read.functionName !== "quoteExactInputSingle" || read.args[0].poolKey.fee !== 0 || read.args[0].exactAmount <= ONE_DOLLAR_ETH) return;
+      if (info.provider === 0) throw new a.TradeRpcExecutionRevertedV1("0x1234");
+      if (other === "different-revert") throw new a.TradeRpcExecutionRevertedV1("0x5678");
+      if (other === "outage") throw Error("provider unavailable");
+    } });
+    const result = await a.assessAnyQuoteAssetV1({ quoteAsset: Q }, f.options);
+    assert.equal(result.status, "inconclusive", `${other}: ${JSON.stringify(result)}`);
+    assert.equal(result.retryable, true);
+    if (other !== "outage") assert.equal(result.code, "TRADE_PROVIDER_DISAGREEMENT");
+  }
 });
 
 test("provider disagreement and malformed initial or depth quotes cannot fall back to a healthy pool", async () => {

@@ -1,6 +1,6 @@
 import "server-only";
 import { decodeFunctionResult, encodeFunctionData, keccak256, parseAbi, toHex, type Abi, type Address, type Hex } from "viem";
-import { agreedTradeRpcV1, productionTradeRpcsV1, tradeBlockV1, type TradeRpcV1 } from "@/lib/server/custom-launch/routed-trade-rpc-v1";
+import { agreedTradeRpcV1, productionTradeRpcsV1, tradeBlockV1, TradeRpcExecutionRevertedV1, type TradeRpcV1 } from "@/lib/server/custom-launch/routed-trade-rpc-v1";
 import {
   ANY_QUOTE_INFRASTRUCTURE as INFRA, ANY_QUOTE_NATIVE, ANY_QUOTE_WETH, ANY_QUOTE_USDG,
   AnyQuoteErrorV1, anyQuoteAddressV1, anyQuoteSameAddressV1, anyQuoteUintV1,
@@ -74,7 +74,7 @@ async function fetchJson(url: string, options: AnyQuoteReadinessOptionsV1, body?
 async function context(options: AnyQuoteReadinessOptionsV1) {
   const now = options.now ?? BigInt(Math.floor(Date.now() / 1000));
   const rpcs = options.rpcs ?? productionTradeRpcsV1();
-  const agreed = agreedTradeRpcV1(rpcs);
+  const agreed = agreedTradeRpcV1(rpcs, { preserveExecutionReverts: true });
   const chainId = await agreed("eth_chainId", [], value => quantity(value).toString());
   if (chainId !== "4663") throw new AnyQuoteErrorV1("PROVIDER_CHAIN_MISMATCH");
   const heads = await Promise.all(rpcs.map(async rpc => tradeBlockV1(await rpc("eth_getBlockByNumber", ["latest", false]))));
@@ -405,8 +405,15 @@ export async function assessAnyQuoteAssetV1(input: { quoteAsset: string; probeEt
       if (difference * 10_000n > reference * 1_000n) throw new AnyQuoteErrorV1("REFERENCE_MARKET_PRICE_DISAGREEMENT");
     };
     const qualifyDepth = (smallIn: bigint): CandidateQualification => async ({ route }) => {
-      const [smallOut, largeOut] = await Promise.all([quoteHops(route.hops, smallIn, ctx), quoteHops(route.hops, smallIn * 100n, ctx)]);
-      qualifyAnyQuoteDepthV1(smallIn, smallOut, smallIn * 100n, largeOut);
+      try {
+        const [smallOut, largeOut] = await Promise.all([quoteHops(route.hops, smallIn, ctx), quoteHops(route.hops, smallIn * 100n, ctx)]);
+        qualifyAnyQuoteDepthV1(smallIn, smallOut, smallIn * 100n, largeOut);
+      } catch (error) {
+        // An identical execution revert from both providers disqualifies this pool at the
+        // required depth. Provider errors and disagreement must not select a different pool.
+        if (error instanceof TradeRpcExecutionRevertedV1) throw new AnyQuoteErrorV1("MARKET_DEPTH_UNAVAILABLE");
+        throw error;
+      }
     };
     const qualifyBuy: CandidateQualification = authoritative ? async ({ spot }) => qualifyReference(spot) : qualifyDepth(referenceEth);
     const { route: buy, spot } = await discover({ tokenIn: ANY_QUOTE_WETH, tokenOut: quoteAsset, amountIn: probe }, ctx, options, qualifyBuy);

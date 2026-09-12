@@ -1,5 +1,6 @@
 import "server-only";
-import { decodeEventLog, keccak256, pad, parseAbi, stringToHex, toHex, type Address, type Hex } from "viem";
+import { decodeEventLog, decodeFunctionResult, encodeFunctionData, keccak256, pad, parseAbi, stringToHex, toHex, type Address, type Hex } from "viem";
+import { ROBINHOOD_MULTICALL3_ADDRESS, ROBINHOOD_MULTICALL3_RUNTIME_CODE_HASH } from "@/lib/chains";
 import { canonicalBrowserJsonV2 } from "@/lib/custom-launch/browser-authority-v2";
 import { agreedTradeRpcV1, type TradeRpcV1 } from "@/lib/server/custom-launch/routed-trade-rpc-v1";
 import { anyQuotePoolIdV1 } from "./route";
@@ -14,6 +15,10 @@ import {
 export const ANY_QUOTE_V4_START_BLOCK = 9070n;
 export const ANY_QUOTE_V4_MAX_POOL_CANDIDATES = 64;
 const MAX_LOG_REQUESTS = 24;
+const MAX_DISCOVERY_HINTS = 512;
+const MAX_ACTIVE_HINTS = 16;
+const liquidityAbi = parseAbi(["function getLiquidity(bytes32) view returns (uint128)"]);
+const aggregateAbi = parseAbi(["function aggregate3((address target,bool allowFailure,bytes callData)[] calls) payable returns ((bool success,bytes returnData)[] returnData)"]);
 const MAX_RANGE_SPLITS = 2;
 const MAX_VERIFICATION_BLOCKS = 10_000n;
 const initializeAbi = parseAbi(["event Initialize(bytes32 indexed id,address indexed currency0,address indexed currency1,uint24 fee,int24 tickSpacing,address hooks,uint160 sqrtPriceX96,int24 tick)"]);
@@ -27,7 +32,8 @@ const quantity = (value: unknown) => typeof value === "string" && /^0x[0-9a-f]{1
 export function parseAnyQuoteV4InitializeV1(value: unknown, input: {
   currency: Address; otherCurrency?: Address; fromBlock: bigint; toBlock: bigint;
 }): PoolRecord[] {
-  if (!Array.isArray(value) || value.length > ANY_QUOTE_V4_MAX_POOL_CANDIDATES) return invalid();
+  if (!Array.isArray(value)) return invalid();
+  if (value.length > MAX_DISCOVERY_HINTS) throw new AnyQuoteErrorV1("V4_DISCOVERY_CANDIDATE_LIMIT");
   try {
     const result = value.map((raw): PoolRecord => {
       if (!raw || typeof raw !== "object" || Array.isArray(raw)) return invalid();
@@ -100,10 +106,47 @@ export function createAnyQuoteV4InitializeDiscoveryV1(input: { checkpoint: AnyQu
   const requireSame = (a: PoolRecord[], b: PoolRecord[]) => {
     if (canonicalBrowserJsonV2(a) !== canonicalBrowserJsonV2(b)) throw new AnyQuoteErrorV1("V4_DISCOVERY_PROVIDER_DISAGREEMENT");
   };
+  const shortlist = async (hints: PoolRecord[]): Promise<PoolRecord[]> => {
+    if (hints.length <= MAX_ACTIVE_HINTS) return hints;
+    incompleteCoverage = true;
+    const block = { blockHash: input.checkpoint.hash, requireCanonical: true };
+    const bytes = (value: unknown): Hex => typeof value === "string" && /^0x(?:[0-9a-f]{2})*$/i.test(value)
+      ? value.toLowerCase() as Hex : invalid();
+    // Popular assets can have hundreds of empty historical pools. Rank current active liquidity
+    // in bounded read-only batches before spending the canonical-log verification budget.
+    // Neither a hint nor this ranking makes a pool executable: every selected log, key,
+    // price and bidirectional quote still passes the existing independent-provider checks.
+    await Promise.all([
+      [ROBINHOOD_MULTICALL3_ADDRESS, ROBINHOOD_MULTICALL3_RUNTIME_CODE_HASH],
+      [ANY_QUOTE_INFRASTRUCTURE.stateView, ANY_QUOTE_INFRASTRUCTURE.stateViewCodeHash],
+    ].map(async ([address, expected]) => {
+      const code = await agreed("eth_getCode", [address, block], bytes);
+      if (keccak256(code) !== expected) throw new AnyQuoteErrorV1("INFRASTRUCTURE_RUNTIME_MISMATCH");
+    }));
+    const active: { hint: PoolRecord; liquidity: bigint }[] = [];
+    for (let start = 0; start < hints.length; start += 64) {
+      const batch = hints.slice(start, start + 64);
+      const data = encodeFunctionData({ abi: aggregateAbi, functionName: "aggregate3", args: [batch.map(hint => ({
+        target: ANY_QUOTE_INFRASTRUCTURE.stateView, allowFailure: false,
+        callData: encodeFunctionData({ abi: liquidityAbi, functionName: "getLiquidity", args: [hint.poolId] }),
+      }))] });
+      const amounts = await agreed("eth_call", [{ to: ROBINHOOD_MULTICALL3_ADDRESS, data }, block], value => {
+        try {
+          const results = decodeFunctionResult({ abi: aggregateAbi, functionName: "aggregate3", data: bytes(value) });
+          if (results.length !== batch.length || results.some(result => !result.success)) return invalid();
+          return results.map(result => decodeFunctionResult({ abi: liquidityAbi, functionName: "getLiquidity", data: result.returnData }).toString());
+        } catch { return invalid(); }
+      });
+      for (const [index, amount] of amounts.entries()) if (BigInt(amount) > 0n) active.push({ hint: batch[index], liquidity: BigInt(amount) });
+    }
+    active.sort((a, b) => a.liquidity > b.liquidity ? -1 : a.liquidity < b.liquidity ? 1 : a.hint.poolId.localeCompare(b.hint.poolId));
+    return active.slice(0, MAX_ACTIVE_HINTS).map(value => value.hint);
+  };
   const filter = (topics: readonly (Hex | null)[], fromBlock: bigint, end: bigint) =>
     [{ address: ANY_QUOTE_INFRASTRUCTURE.poolManager, fromBlock: toHex(fromBlock), toBlock: toHex(end), topics }];
-  const verifyHints = async (hints: PoolRecord[], currency: Address, otherCurrency: Address | undefined, topics: readonly (Hex | null)[]) => {
+  const verifyHints = async (allHints: PoolRecord[], currency: Address, otherCurrency: Address | undefined, topics: readonly (Hex | null)[]) => {
     incompleteCoverage = true;
+    const hints = await shortlist(allHints);
     // A single-provider empty result may prompt an intermediate search, never an incompatibility verdict.
     const windows: PoolRecord[][] = [];
     for (const hint of [...hints].sort((a, b) => Number(BigInt(a.blockNumber) - BigInt(b.blockNumber)))) {
@@ -124,8 +167,10 @@ export function createAnyQuoteV4InitializeDiscoveryV1(input: { checkpoint: AnyQu
         const code = error && typeof error === "object" && "code" in error ? String(error.code) : "";
         throw new AnyQuoteErrorV1(code === "TRADE_PROVIDER_DISAGREEMENT" ? "V4_DISCOVERY_PROVIDER_DISAGREEMENT" : "V4_DISCOVERY_PROVIDER_UNAVAILABLE");
       }
-      requireSame(verified, window.sort((a, b) => a.poolId.localeCompare(b.poolId)));
-      return verified;
+      const selectedIds = new Set(window.map(hint => hint.poolId));
+      const selected = verified.filter(pool => selectedIds.has(pool.poolId));
+      requireSame(selected, window.sort((a, b) => a.poolId.localeCompare(b.poolId)));
+      return selected;
     }))).flat());
     return result.sort((a, b) => a.poolId.localeCompare(b.poolId));
   };
@@ -135,7 +180,7 @@ export function createAnyQuoteV4InitializeDiscoveryV1(input: { checkpoint: AnyQu
     // Invalid successful responses are terminal, not provider outages eligible for fallback.
     const records = responses.map(response => response.status === "fulfilled"
       ? parseAnyQuoteV4InitializeV1(response.value, { currency, otherCurrency, fromBlock, toBlock: end }) : null);
-    if (records[0] !== null && records[1] !== null) { requireSame(records[0], records[1]); return records[0]; }
+    if (records[0] !== null && records[1] !== null) { requireSame(records[0], records[1]); return shortlist(records[0]); }
     const hints = records[0] ?? records[1];
     if (hints !== null) return verifyHints(hints, currency, otherCurrency, topics);
     if (depth >= MAX_RANGE_SPLITS || fromBlock === end) throw new AnyQuoteErrorV1("V4_DISCOVERY_PROVIDER_UNAVAILABLE");

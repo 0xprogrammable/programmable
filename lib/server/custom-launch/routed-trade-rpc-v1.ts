@@ -2,6 +2,10 @@ import { getAddress, toHex, type Address, type Hex } from "viem";
 import { canonicalBrowserJsonV2 } from "@/lib/custom-launch/browser-authority-v2";
 import { LaunchPlanTradeErrorV1 } from "@/lib/custom-launch/routed-trade-plan-v1";
 
+export class TradeRpcExecutionRevertedV1 extends Error {
+  readonly code = "TRADE_EXECUTION_REVERTED";
+  constructor(readonly data: Hex) { super("The simulated call reverted."); this.name = "TradeRpcExecutionRevertedV1"; }
+}
 export type TradeRpcV1 = (method: string, params: readonly unknown[]) => Promise<unknown>;
 export const pendingTradeV1 = (code = "TRADE_ANALYSIS_PENDING"): never => { throw new LaunchPlanTradeErrorV1(code, "The exact trade could not be verified across independent providers. Try again when its execution adapter is available.", 503); };
 export const objectV1 = (v: unknown): Record<string, unknown> => v && typeof v === "object" && !Array.isArray(v) ? v as Record<string, unknown> : pendingTradeV1();
@@ -39,15 +43,33 @@ export function productionTradeRpcsV1(env: Readonly<Record<string, string | unde
             if (size > 1_048_576) { await reader.cancel(); return pendingTradeV1(); } chunks.push(part.value); }
         } finally { reader.releaseLock(); }
         const data = objectV1(JSON.parse(Buffer.concat(chunks).toString("utf8")));
-        if (data.jsonrpc !== "2.0" || data.id !== 1 || data.error || !Object.hasOwn(data, "result")) return pendingTradeV1();
+        if (data.jsonrpc !== "2.0" || data.id !== 1) return pendingTradeV1();
+        if (method === "eth_call" && data.error && typeof data.error === "object" && !Array.isArray(data.error) && !Object.hasOwn(data, "result")) {
+          const error = data.error as Record<string, unknown>;
+          if (error.code === 3 && typeof error.message === "string" && /^execution reverted\b/i.test(error.message)
+            && typeof error.data === "string" && /^0x(?:[0-9a-f]{2}){0,32768}$/i.test(error.data)) {
+            throw new TradeRpcExecutionRevertedV1(error.data.toLowerCase() as Hex);
+          }
+        }
+        if (data.error || !Object.hasOwn(data, "result")) return pendingTradeV1();
         return data.result;
-      } catch { return pendingTradeV1(); } finally { clearTimeout(timeout); }
+      } catch (error) { if (error instanceof TradeRpcExecutionRevertedV1) throw error; return pendingTradeV1(); } finally { clearTimeout(timeout); }
     };
   }) as unknown as readonly [TradeRpcV1, TradeRpcV1];
 }
-export function agreedTradeRpcV1(rpcs: readonly [TradeRpcV1, TradeRpcV1]) {
+export function agreedTradeRpcV1(rpcs: readonly [TradeRpcV1, TradeRpcV1], options: { preserveExecutionReverts?: boolean } = {}) {
   return async <T>(method: string, params: readonly unknown[], parse: (value: unknown) => T): Promise<T> => {
     const values = await Promise.allSettled(rpcs.map(async rpc => parse(await rpc(method, params))));
+    if (options.preserveExecutionReverts) {
+      const [a, b] = values;
+      const first = a.status === "rejected" && a.reason instanceof TradeRpcExecutionRevertedV1 ? a.reason : null;
+      const second = b.status === "rejected" && b.reason instanceof TradeRpcExecutionRevertedV1 ? b.reason : null;
+      if (first && second) {
+        if (first.data !== second.data) return pendingTradeV1("TRADE_PROVIDER_DISAGREEMENT");
+        throw first;
+      }
+      if ((first && b.status === "fulfilled") || (second && a.status === "fulfilled")) return pendingTradeV1("TRADE_PROVIDER_DISAGREEMENT");
+    }
     if (values[0].status !== "fulfilled" || values[1].status !== "fulfilled") return pendingTradeV1();
     if (canonicalBrowserJsonV2(values[0].value) !== canonicalBrowserJsonV2(values[1].value)) return pendingTradeV1("TRADE_PROVIDER_DISAGREEMENT");
     return values[0].value;
