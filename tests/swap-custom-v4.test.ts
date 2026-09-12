@@ -155,7 +155,7 @@ describe("historical V4 native swap adapter", () => {
     expect(() => parseCustomV4SwapRequest({ ...request(), amountIn: (1n << 128n).toString() })).toThrow();
     expect(() => buildCustomV4SwapApproval(request(), "token_approval")).toThrow();
   });
-  it("wallet preparation reconstructs and checks the transaction without sending", async () => {
+  it.each(["0x6d", 109])("wallet preparation accepts nonce %j and checks the transaction without sending", async nonce => {
     const value = await prepared(), source = await descriptor(), methods: string[] = [];
     const clock = vi.spyOn(Date, "now").mockReturnValue(Number(now * 1000n));
     try {
@@ -163,13 +163,13 @@ describe("historical V4 native swap adapter", () => {
         methods.push(method);
         if (method === "eth_accounts") return [owner]; if (method === "eth_chainId") return "0x1237";
         if (method === "eth_getCode") return String(params?.[0]).toLowerCase() === owner.toLowerCase() ? "0x" : runtime;
-        if (method === "eth_getTransactionCount") return "0x1";
+        if (method === "eth_getTransactionCount") return nonce;
         if (method === "eth_call") return "0x"; if (method === "eth_estimateGas") return "0x186a0";
         if (method === "eth_gasPrice") return "0x1"; if (method === "eth_getBalance") return toHex(10n ** 18n);
         throw new Error("Unexpected wallet request");
       } };
       const result = await prepareCustomV4SwapWallet(provider, owner, { action: "review", descriptor: source, request: request() }, (async () => Response.json(value)) as typeof fetch);
-      expect(result.transaction.to).toBe(getAddress(infra.universalRouter.address)); expect(result.transaction.nonce).toBe("0x1");
+      expect(result.transaction.to).toBe(getAddress(infra.universalRouter.address)); expect(result.transaction.nonce).toBe("0x6d");
       const originalMinimum = value.quote.amountOutMinimum;
       const sendReview = await prepareCustomV4SwapWallet(provider, owner, { action: "send", descriptor: source, request: request(), reviewed: result }, (async (_url, init) => {
         const sendRequest = JSON.parse(String(init?.body));
@@ -180,6 +180,12 @@ describe("historical V4 native swap adapter", () => {
       expect(sendReview.preparation.quote.amountOut).toBe("49900");
       await expect(prepareCustomV4Swap({ ...request(), amountOutMinimum: originalMinimum }, { loadLaunch: async () => launch(), rpcs: [fixtureRpc({ outputAmount: 49000n }), fixtureRpc({ outputAmount: 49000n })], now: () => now })).rejects.toThrow("minimum");
       expect(methods).not.toContain("eth_sendTransaction");
+      for (const invalidNonce of [-1, 1.5, Number.MAX_SAFE_INTEGER + 1, NaN, Infinity, "109", null]) {
+        const invalidProvider = { request: async (input: { method: string; params?: readonly unknown[] }) =>
+          input.method === "eth_getTransactionCount" ? invalidNonce : provider.request(input) };
+        await expect(prepareCustomV4SwapWallet(invalidProvider, owner, { action: "review", descriptor: source, request: request() },
+          (async () => Response.json(value)) as typeof fetch)).rejects.toMatchObject({ code: "INVALID_WALLET_READ" });
+      }
     } finally { clock.mockRestore(); }
   });
 });
