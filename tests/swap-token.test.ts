@@ -22,7 +22,7 @@ vi.mock("@/lib/server/swap/custom-v4", () => ({ readCustomV4SwapDescriptor: vi.f
 function dependencies(row: RobinhoodLaunch) {
   return {
     robinhood: vi.fn(async () => ({ token: row, status: "ready" })), ethereum: vi.fn(),
-    native: vi.fn(), engine: vi.fn(), custom: vi.fn(async () => ({ launch: row })),
+    native: vi.fn(), engine: vi.fn(), custom: vi.fn(async () => ({ launch: row })), decimals: vi.fn(async () => 18),
   } as unknown as SwapTokenDependencies;
 }
 function nativeFixture(v2 = false) {
@@ -83,6 +83,23 @@ describe("swap source resolution", () => {
     vi.mocked(f.deps.robinhood).mockResolvedValue({ token: null, status: "ready" } as Awaited<ReturnType<SwapTokenDependencies["robinhood"]>>);
     await expect(resolveSwapToken({ address: a(900) }, f.deps)).rejects.toMatchObject({ code: "TOKEN_NOT_FOUND" });
     expect(f.deps.custom).not.toHaveBeenCalled();
+  });
+
+  it.each([0, 6, 18])("reads missing projected token units from the contract (%s decimals)", async decimals => {
+    const row = { ...nativeFixture().row, sourceKind: "multi-role-v2", decimals: null } as RobinhoodLaunch;
+    const deps = dependencies(row);
+    vi.mocked(deps.decimals).mockResolvedValue(decimals);
+    expect(await resolveSwapToken({ address: row.tokenAddress }, deps)).toMatchObject({ status: "ready", token: { decimals }, route: { kind: "custom-v4" } });
+    expect(deps.decimals).toHaveBeenCalledWith(row.tokenAddress);
+    expect(deps.custom).toHaveBeenCalledWith(row);
+  });
+
+  it("does not guess token units when the contract read fails", async () => {
+    const row = { ...nativeFixture().row, sourceKind: "multi-role-v2", decimals: null } as RobinhoodLaunch;
+    const deps = dependencies(row);
+    vi.mocked(deps.decimals).mockRejectedValue(new Error("Provider unavailable"));
+    await expect(resolveSwapToken({ address: row.tokenAddress }, deps)).rejects.toThrow("Provider unavailable");
+    expect(deps.custom).not.toHaveBeenCalled();
   });
 
   it("reuses the existing Ethereum classic adapter with token decimals", async () => {
