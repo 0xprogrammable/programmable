@@ -19,6 +19,7 @@ import { beginModuleModeOperation, clearModuleModeOperation, moduleModeOperation
 import { moduleModeReleaseQuery, type ModuleModeLaunchVersion, type ModuleModeReleaseSelection } from "@/lib/module-mode/release-selection";
 import { fetchModuleModeOperationRelease, recoverModuleModeOperation } from "@/lib/module-mode-operation-recovery";
 import type { ModuleLibraryEntry } from "@/lib/module-mode/library";
+import { moduleLaunchRequestPromise } from "@/lib/module-mode/launch-workspace";
 
 type LaunchFlow = {
   phase: "idle" | "uploading" | "preparing" | "signing" | "pending" | "mined" | "reverted" | "receipt-unavailable" | "error" | "uncertain";
@@ -96,7 +97,7 @@ export function ModuleModeLaunchHost({ releaseDigest, versions = [], anyQuoteRel
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; operation.current += 1; }; }, []);
   useEffect(() => {
     const controller = new AbortController();
-    const request = refreshKey === 0 && availabilityRequest ? availabilityRequest : fetchAvailability(releaseDigest, controller.signal);
+    const request = moduleLaunchRequestPromise(refreshKey === 0 && availabilityRequest ? availabilityRequest : fetchAvailability(releaseDigest, controller.signal));
     void request.then((next) => {
       if (releaseDigest && next.release && next.release.releaseDigest !== releaseDigest) throw new Error("The requested launch version could not be verified.");
       if (!controller.signal.aborted) { setAvailability(next); setAvailabilityError(false); setAvailabilityLoading(false); setLoadedSelection(releaseDigest ?? "current"); }

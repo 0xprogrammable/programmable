@@ -6,7 +6,7 @@ import { ModuleModeLaunchHost } from "./module-mode-launch-host";
 import { ModuleEngineHost } from "./module-engine-host";
 import type { ModuleModeAvailability } from "@/lib/module-mode/native-catalog";
 import type { ModuleEngineAvailability } from "@/lib/module-engine/catalog";
-import { availableAnyQuoteLibraryEntry, moduleLaunchSelectionKey, moduleLaunchSelectionPath, type ModuleLaunchWorkspaceRequests } from "@/lib/module-mode/launch-workspace";
+import { availableAnyQuoteLibraryEntry, moduleLaunchRequestPromise, moduleLaunchSelectionKey, moduleLaunchSelectionPath, type ModuleLaunchWorkspaceRequests } from "@/lib/module-mode/launch-workspace";
 import { parseModuleModeReleaseSelection, type ModuleModeLaunchVersion, type ModuleModeReleaseSelection } from "@/lib/module-mode/release-selection";
 
 type Snapshot = { source: "native"; value: ModuleModeAvailability } | { source: "engine"; value: ModuleEngineAvailability };
@@ -36,14 +36,14 @@ export function ModuleLaunchWorkspace({ initialSelection, reviewedAnyQuoteDigest
   useEffect(() => {
     let active = true;
     for (const [key, source] of requestMap) {
-      void source.request.then(value => {
+      void moduleLaunchRequestPromise<ModuleModeAvailability | ModuleEngineAvailability>(source.request).then(value => {
         if (!active) return;
         const snapshot = source.source === "native" ? { source: "native" as const, value: value as ModuleModeAvailability }
           : { source: "engine" as const, value: value as ModuleEngineAvailability };
         setSnapshots(current => new Map(current).set(key, snapshot));
       }).catch(() => { /* The selected host exposes the retry; failed discovery adds no cards. */ });
     }
-    void requests.versions.then(next => { if (active) setVersions(next); }).catch(() => { /* Current setup does not depend on historical discovery. */ });
+    void moduleLaunchRequestPromise(requests.versions).then(next => { if (active) setVersions(next); }).catch(() => { /* Current setup does not depend on historical discovery. */ });
     return () => { active = false; };
   }, [requestMap, requests.versions]);
 

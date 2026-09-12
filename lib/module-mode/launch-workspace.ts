@@ -14,6 +14,11 @@ export interface ModuleLaunchWorkspaceRequests {
   versions: Promise<readonly ModuleModeLaunchVersion[]>;
 }
 
+/** React Flight supplies thenables whose then() is not a chainable native Promise. */
+export function moduleLaunchRequestPromise<T>(request: PromiseLike<T>): Promise<T> {
+  return Promise.resolve(request);
+}
+
 export function moduleLaunchSelectionKey(selection: ModuleModeReleaseSelection): string {
   return `${selection.sourceKind ?? "native"}:${selection.releaseDigest ?? "current"}`;
 }
