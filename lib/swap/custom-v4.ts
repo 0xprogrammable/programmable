@@ -174,7 +174,11 @@ export async function prepareCustomV4SwapWallet(provider: LaunchWalletProviderV1
   if (!response.ok) throw new LaunchPlanTradeErrorV1(projectionObject(body) && typeof body.code === "string" ? body.code : "SWAP_UNAVAILABLE",
     projectionObject(body) && typeof body.error === "string" && body.error.length < 512 ? body.error : "The swap could not be prepared.", response.status === 400 ? 400 : response.status === 409 ? 409 : 503);
   const preparation = validateCustomV4SwapPreparation(body, { descriptor: input.descriptor, request });
-  const quantity = (value: unknown) => typeof value === "string" && /^0x[0-9a-f]{1,64}$/i.test(value) ? BigInt(value) : invalid("INVALID_WALLET_READ");
+  const quantity = (value: unknown) => {
+    // Wallet SDKs can normalize RPC quantities, including the pending nonce, to numbers.
+    if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) return BigInt(value);
+    return typeof value === "string" && /^0x[0-9a-f]{1,64}$/i.test(value) ? BigInt(value) : invalid("INVALID_WALLET_READ");
+  };
   const [chain, accounts, controllerCode] = await Promise.all([provider.request({ method: "eth_chainId" }), provider.request({ method: "eth_accounts" }),
     provider.request({ method: "eth_getCode", params: [from, "latest"] })]);
   if (quantity(chain) !== 4663n || !Array.isArray(accounts) || typeof accounts[0] !== "string" || getAddress(accounts[0]) !== from
