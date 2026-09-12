@@ -11,10 +11,12 @@ import {
   useSyncExternalStore,
   type FormEvent,
   type KeyboardEvent,
+  type ReactNode,
 } from "react";
 import {
   ArrowLeft,
   ArrowRight,
+  Braces,
   Check,
   Copy,
   ChevronDown,
@@ -25,6 +27,7 @@ import {
 } from "lucide-react";
 
 import styles from "@/components/developer-api-keys.module.css";
+import hookStyles from "@/components/custom-hook-builder.module.css";
 import { AGENT_KEY_SCHEMA, AGENT_SCOPES, buildAgentConnection, buildAgentInstructions } from "@/lib/agent-connection";
 import { DeveloperUniversalLaunchHistory } from "@/components/developer-universal-launch-history";
 import type { LaunchContractSetupV1 } from "@/lib/server/custom-launch/launch-contract-setup-v1";
@@ -899,6 +902,33 @@ export function DeveloperApiKeys({
   );
 }
 
+function CustomHookBuilderFrame({ enabled, children }: {
+  enabled: boolean;
+  children: ReactNode;
+}) {
+  if (!enabled) return <>{children}</>;
+
+  return (
+    <div className={hookStyles.layout}>
+      <div className={hookStyles.formPanel}>{children}</div>
+      <aside className={hookStyles.previewPanel} aria-label="About custom hooks">
+        <div className={hookStyles.hookCard}>
+          <span className={hookStyles.hookIcon}><Braces size={30} aria-hidden="true" /></span>
+          <h2>Custom hook</h2>
+          <p>A coin with your own trading rules.</p>
+          <dl className={hookStyles.hookDetails}>
+            <div><dt>Fees</dt><dd>Set your own logic</dd></div>
+            <div><dt>Rewards</dt><dd>Choose how they work</dd></div>
+            <div><dt>Pool</dt><dd>Define its behavior</dd></div>
+          </dl>
+          <p className={hookStyles.reviewNote}>Your builder checks what your idea needs before submitting it for review.</p>
+        </div>
+        <Link className={hookStyles.docsLink} href="/developer-reference/custom-launch">How custom hooks work <ArrowRight size={16} aria-hidden="true" /></Link>
+      </aside>
+    </div>
+  );
+}
+
 export function DeveloperApiKeysView({
   moduleBuilder = false,
   hookBuilder = false,
@@ -1577,7 +1607,7 @@ export function DeveloperApiKeysView({
   };
 
   return (
-    <div className={`${styles.page} ${builderKind ? styles.builderPage : ""} page-width`}>
+    <div className={`${styles.page} ${moduleBuilder ? styles.builderPage : ""} ${hookBuilder ? hookStyles.page : ""} page-width`}>
       <p
         className={styles.visuallyHidden}
         role="status"
@@ -1588,14 +1618,15 @@ export function DeveloperApiKeysView({
       </p>
 
       <nav className={styles.topNavigation} aria-label="Builder navigation">
-        <Link className={styles.backLink} href="/launch">
+        <Link className={`${styles.backLink} ${hookBuilder ? hookStyles.backLink : ""}`} href="/launch">
           <ArrowLeft aria-hidden="true" size={16} strokeWidth={1.9} />
           <span>Back</span>
         </Link>
         <Link className={styles.textLink} href={hookBuilder ? "/developers/api-keys?view=history" : "/profile?section=submissions#profile-modules-title"}>{hookBuilder ? "Your launches" : "Submissions"} <ArrowRight size={16} aria-hidden="true" /></Link>
       </nav>
 
-      <header className={styles.hero}>
+      <CustomHookBuilderFrame enabled={hookBuilder}>
+      <header className={`${styles.hero} ${hookBuilder ? hookStyles.heading : ""}`}>
         <div className={styles.heroCopy}>
           <h1>{activeSection === "keys" ? moduleBuilder ? "Build a module" : hookBuilder ? "Build a custom hook" : "API keys" : activeSection === "launch" ? "Launch a hook" : "Your launches"}</h1>
           <p className={styles.intro}>
@@ -2268,6 +2299,8 @@ export function DeveloperApiKeysView({
           )}
         </>
       )}
+
+      </CustomHookBuilderFrame>
 
       {launchContractSetup ? <details className={styles.connectionOptions} data-manifest-digest={launchContractSetup.manifestDigest}>
         <summary>Custom Launch Plan instructions</summary>
