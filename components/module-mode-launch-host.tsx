@@ -7,7 +7,6 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExtern
 import { formatUnits, toHex, type Address, type Hex } from "viem";
 
 import { ModuleModeBuilder, type ModuleModeLaunchAction } from "@/components/module-mode-builder";
-import { ModuleBuilderLoading } from "@/components/module-builder-loading";
 import { assertModuleModeWalletUnchanged, isModuleModeWalletRejection, moduleModeSubmissionIsUncertain, moduleModeWalletStep, switchModuleModeNetwork, uploadModuleModeImage, useModuleModeOperation, type ModuleModeWalletSnapshot } from "@/components/module-mode-wallet-state";
 import { useWallet } from "@/components/wallet-provider";
 import styles from "@/components/module-mode-builder.module.css";
@@ -17,9 +16,10 @@ import { moduleNativeCatalogDigest, parseModuleModeAvailability, type ModuleMode
 import { createModuleNativeClient, ModuleNativeTransactionRevertedError, prepareModuleNativeLaunch, waitForModuleNativeReceipt, type ModuleNativeImageBinding, type ModuleNativeReceiptResult, type PreparedModuleNativeLaunch } from "@/lib/module-mode/native-client";
 import { browserWalletRequestIsPending, subscribeToBrowserWalletRequest } from "@/lib/wallet-request-lock";
 import { beginModuleModeOperation, clearModuleModeOperation, moduleModeOperationPath, rememberModuleModeTransactionHash, type ModuleModeOperation } from "@/lib/module-mode-operation-store";
-import { moduleModeReleaseQuery, type ModuleModeLaunchVersion } from "@/lib/module-mode/release-selection";
+import { moduleModeReleaseQuery, type ModuleModeLaunchVersion, type ModuleModeReleaseSelection } from "@/lib/module-mode/release-selection";
 import { fetchModuleModeOperationRelease, recoverModuleModeOperation } from "@/lib/module-mode-operation-recovery";
 import type { ModuleLibraryEntry } from "@/lib/module-mode/library";
+import { moduleLaunchRequestPromise } from "@/lib/module-mode/launch-workspace";
 
 type LaunchFlow = {
   phase: "idle" | "uploading" | "preparing" | "signing" | "pending" | "mined" | "reverted" | "receipt-unavailable" | "error" | "uncertain";
@@ -66,17 +66,21 @@ function assertDraftAvailability(draft: ModuleModeDraft, current: ModuleModeAvai
   }
 }
 
-export function ModuleModeLaunchHost({ releaseDigest, versions = [], anyQuoteReleaseDigest, anyQuoteModule }: { releaseDigest?: string; versions?: readonly ModuleModeLaunchVersion[]; anyQuoteReleaseDigest?: Hex; anyQuoteModule?: ModuleLibraryEntry }) {
+export function ModuleModeLaunchHost({ releaseDigest, versions = [], anyQuoteReleaseDigest, anyQuoteModule, initialAvailability, availabilityRequest, onNavigateSelection }: {
+  releaseDigest?: string; versions?: readonly ModuleModeLaunchVersion[]; anyQuoteReleaseDigest?: Hex; anyQuoteModule?: ModuleLibraryEntry;
+  initialAvailability?: ModuleModeAvailability; availabilityRequest?: Promise<ModuleModeAvailability>;
+  onNavigateSelection?: (selection: ModuleModeReleaseSelection) => void;
+}) {
   const router = useRouter();
   const [changingVersion, startVersionChange] = useTransition();
   const requestedRelease = useRef(releaseDigest);
   requestedRelease.current = releaseDigest;
-  const [loadedSelection, setLoadedSelection] = useState<string | null>(null);
+  const [loadedSelection, setLoadedSelection] = useState<string | null>(initialAvailability ? releaseDigest ?? "current" : null);
   const { wallet, authenticated, sessionReady, authReady, connecting, openingWallet, switchingNetwork, disconnecting, openWallet, switchNetwork, getAccessToken, sendModuleModeTransaction } = useWallet();
   const client = useMemo(() => createModuleNativeClient(), []);
-  const [availability, setAvailability] = useState<ModuleModeAvailability | null>(null);
+  const [availability, setAvailability] = useState<ModuleModeAvailability | null>(initialAvailability ?? null);
   const [availabilityError, setAvailabilityError] = useState(false);
-  const [availabilityLoading, setAvailabilityLoading] = useState(true);
+  const [availabilityLoading, setAvailabilityLoading] = useState(!initialAvailability);
   const [flow, setFlow] = useState<LaunchFlow>({ phase: "idle" });
   const [receiptChecking, setReceiptChecking] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -93,17 +97,20 @@ export function ModuleModeLaunchHost({ releaseDigest, versions = [], anyQuoteRel
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; operation.current += 1; }; }, []);
   useEffect(() => {
     const controller = new AbortController();
-    void fetchAvailability(releaseDigest, controller.signal).then((next) => {
+    const request = moduleLaunchRequestPromise(refreshKey === 0 && availabilityRequest ? availabilityRequest : fetchAvailability(releaseDigest, controller.signal));
+    void request.then((next) => {
+      if (releaseDigest && next.release && next.release.releaseDigest !== releaseDigest) throw new Error("The requested launch version could not be verified.");
       if (!controller.signal.aborted) { setAvailability(next); setAvailabilityError(false); setAvailabilityLoading(false); setLoadedSelection(releaseDigest ?? "current"); }
     }).catch(() => {
       if (!controller.signal.aborted) { setAvailability(null); setAvailabilityError(true); setAvailabilityLoading(false); setLoadedSelection(releaseDigest ?? "current"); }
     });
     return () => controller.abort();
-  }, [refreshKey, releaseDigest]);
+  }, [refreshKey, releaseDigest, availabilityRequest]);
 
   const selectionPending = loadedSelection !== (releaseDigest ?? "current") || changingVersion;
   const release = selectionPending ? null : availability?.release ?? null;
-  const catalog = useMemo(() => availability ? release ? availability.catalog.filter((entry) => entry.status === "available") : availability.catalog : PREVIEW_MODULE_CATALOG, [availability, release]);
+  const catalog = useMemo(() => availability ? release ? availability.catalog.filter((entry) => entry.status === "available") : availability.catalog
+    : availabilityLoading ? [] : PREVIEW_MODULE_CATALOG, [availability, release, availabilityLoading]);
   const walletStep = moduleModeWalletStep({ account: wallet?.account, chainId: wallet?.chainId, authenticated, sessionReady });
   const walletAccount = wallet?.account;
   const configurationContext = useMemo(() => walletAccount ? { roles: { creator: walletAccount, launchWallet: walletAccount } } : {}, [walletAccount]);
@@ -231,20 +238,23 @@ export function ModuleModeLaunchHost({ releaseDigest, versions = [], anyQuoteRel
     setAvailabilityLoading(true); setAvailabilityError(false); setRefreshKey((key) => key + 1);
   }
 
-  if (loadedSelection === null && !hasSubmission) return <ModuleBuilderLoading />;
+  function navigateSelection(selection: ModuleModeReleaseSelection) {
+    if (onNavigateSelection) onNavigateSelection(selection);
+    else router.push(`/launch/modules${moduleModeReleaseQuery(selection)}`, { scroll: false });
+  }
 
   return <ModuleModeBuilder
     release={release}
-    anyQuoteModule={anyQuoteReleaseDigest && anyQuoteModule ? { entry: anyQuoteModule, disabled: working || requestPending || hasSubmission || changingVersion, onSelect: () => {
+    anyQuoteModule={anyQuoteReleaseDigest && anyQuoteModule ? { entry: anyQuoteModule, releaseDigest: anyQuoteReleaseDigest, disabled: working || requestPending || hasSubmission || changingVersion, onSelect: () => {
       if (working || requestPending || hasSubmission || changingVersion) return;
       operation.current += 1; setFlow({ phase: "idle" });
-      startVersionChange(() => router.push(`/launch/modules${moduleModeReleaseQuery({ sourceKind: "module-engine-v1", releaseDigest: anyQuoteReleaseDigest })}`, { scroll: false }));
+      startVersionChange(() => navigateSelection({ sourceKind: "module-engine-v1", releaseDigest: anyQuoteReleaseDigest }));
     } } : undefined}
     versionContent={versions.length > 1 ? <div className={styles.field}><label htmlFor="module-launch-version">Module version</label><select id="module-launch-version" value={releaseDigest ?? availability?.release?.releaseDigest ?? versions[0]?.releaseDigest} disabled={working || requestPending || hasSubmission || changingVersion} onChange={event => {
       const version = versions.find(candidate => candidate.releaseDigest === event.target.value);
       if (!version || working || requestPending || hasSubmission) return;
       operation.current += 1; setFlow({ phase: "idle" });
-      startVersionChange(() => router.push(`/launch/modules${moduleModeReleaseQuery({ releaseDigest: version.releaseDigest, ...(version.sourceKind ? { sourceKind: version.sourceKind } : {}) })}`, { scroll: false }));
+      startVersionChange(() => navigateSelection({ releaseDigest: version.releaseDigest, ...(version.sourceKind ? { sourceKind: version.sourceKind } : {}) }));
     }}>{releaseDigest && !versions.some(version => version.releaseDigest === releaseDigest) ? <option value={releaseDigest}>Selected version unavailable</option> : null}{versions.map(version => <option key={version.releaseDigest} value={version.releaseDigest}>{version.label}</option>)}</select><p className={styles.help}>Choose an earlier version to use its supported modules. Review its fees before launching.</p></div> : undefined}
     catalog={catalog}
     configurationContext={configurationContext}

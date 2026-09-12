@@ -6,9 +6,12 @@ import Image from "next/image";
 import Link from "next/link";
 import { ArrowLeft, ArrowRight, ChevronDown, Download, Plus, Puzzle, Settings2, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import type { Hex } from "viem";
 
 import { ModuleLibrary, ModuleCategoryIcon } from "@/components/module-library";
 import { ModulePickerDialog } from "@/components/module-picker-dialog";
+import { ModuleAnyQuoteConfiguration } from "@/components/module-any-quote-configuration";
+import { useAnyQuoteAssetAvailability } from "@/components/module-engine-any-quote-asset";
 import { moduleCategory, type ModuleLibraryEntry } from "@/lib/module-mode/library";
 import { consumeModuleModeLaunchDraftHandoff, saveModuleModeLaunchDraftHandoff } from "@/lib/module-mode/launch-draft-handoff";
 import { ModuleSchemaField } from "@/components/module-mode-fields";
@@ -77,7 +80,7 @@ export interface ModuleModeBuilderProps {
   previewDescription?: string;
   statusContent?: ReactNode;
   versionContent?: ReactNode;
-  anyQuoteModule?: { entry: ModuleLibraryEntry; disabled: boolean; onSelect: () => void };
+  anyQuoteModule?: { entry: ModuleLibraryEntry; releaseDigest?: Hex; disabled: boolean; onSelect: () => void };
   reviewContent?: ReactNode;
   resultContent?: ReactNode;
   onEdit?: () => void;
@@ -91,6 +94,9 @@ export function ModuleModeBuilder({ catalog = PREVIEW_MODULE_CATALOG, engine = N
   const { expanded: moreLinks, setExpanded: setMoreLinks, toggle: toggleMoreLinks, panelProps: moreLinksPanel } = useDisclosureState();
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pendingAnyQuote, setPendingAnyQuote] = useState(false);
+  const [configuringAnyQuote, setConfiguringAnyQuote] = useState(false);
+  const [quoteAsset, setQuoteAsset] = useState("");
+  const quoteAvailability = useAnyQuoteAssetAvailability({ enabled: pendingAnyQuote, releaseDigest: anyQuoteModule?.releaseDigest, templateId: anyQuoteModule?.entry.id, quoteAsset });
   const [pickerPointer, setPickerPointer] = useState(false);
   const [configurationId, setConfigurationId] = useState<string | null>(null);
   const [checked, setChecked] = useState(false);
@@ -123,13 +129,14 @@ export function ModuleModeBuilder({ catalog = PREVIEW_MODULE_CATALOG, engine = N
     draftRestored.current = true;
     const handoff = consumeModuleModeLaunchDraftHandoff("native");
     if (!handoff) return;
-    const { imageResource: restoredImage, nativeState, ...fields } = handoff;
+    const { imageResource: restoredImage, nativeState, quoteAsset: restoredQuote, ...fields } = handoff;
     if (restoredImage) imageUrls.current.add(restoredImage.objectUrl);
     queueMicrotask(() => {
       if (!imageMounted.current) return;
       selectionFocus.current = { kind: "add" };
       setState({ ...(nativeState ?? createModuleModeState()), ...fields });
       setImageResource(restoredImage);
+      setQuoteAsset(restoredQuote ?? "");
       setAnnouncement("Any Quote LP removed. Your coin details are kept.");
     });
   }, []);
@@ -182,19 +189,23 @@ export function ModuleModeBuilder({ catalog = PREVIEW_MODULE_CATALOG, engine = N
     if (anyQuoteModule && entry.id === anyQuoteModule.entry.id) {
       if (state.selectedModules.length > 0) return;
       setPendingAnyQuote(true);
+      setConfiguringAnyQuote(true);
       return;
     }
     if (pendingAnyQuote) return;
     const nativeEntry = catalog.find(candidate => candidate.id === entry.id);
     if (nativeEntry) add(nativeEntry);
   }
-  function closeModulePicker() {
+  function completeModulePicker() {
     if (pendingAnyQuote && anyQuoteModule) {
-      if (contextLocked || imageBusy || anyQuoteModule.disabled) return;
-      saveModuleModeLaunchDraftHandoff("any-quote", { ...state, imageResource, nativeState: state });
-      setPickerOpen(false);
+      if (contextLocked || imageBusy || anyQuoteModule.disabled || quoteAvailability.status !== "compatible") return;
+      saveModuleModeLaunchDraftHandoff("any-quote", { ...state, imageResource, nativeState: state, quoteAsset });
+      setPendingAnyQuote(false); setConfiguringAnyQuote(false); setPickerOpen(false);
       anyQuoteModule.onSelect();
     } else setPickerOpen(false);
+  }
+  function closeModulePicker() {
+    setPendingAnyQuote(false); setConfiguringAnyQuote(false); setPickerOpen(false);
   }
   function showModules(pointer: boolean, id?: string) {
     setPickerPointer(pointer);
@@ -334,15 +345,21 @@ export function ModuleModeBuilder({ catalog = PREVIEW_MODULE_CATALOG, engine = N
           <Link href="/developers/modules" className={styles.buildModuleLink}><Puzzle size={16} aria-hidden="true" />Build your own module<ArrowRight size={16} aria-hidden="true" /></Link>
         </aside> : null}
       </div>
-      {pickerOpen ? <ModulePickerDialog variant="library" animateOpen={pickerPointer} title="Add modules" description="Modules are upgrades for your coin. Pick the features you want." onClose={closeModulePicker}>
+      {pickerOpen ? <ModulePickerDialog variant="library" animateOpen={pickerPointer} title={configuringAnyQuote ? "Any Quote LP" : "Add modules"} description={configuringAnyQuote ? "Choose the token for your coin’s liquidity pool." : "Modules are upgrades for your coin. Pick the features you want."}
+        onClose={closeModulePicker} onDone={completeModulePicker} doneDisabled={pendingAnyQuote && quoteAvailability.status !== "compatible"}>
+        <div hidden={configuringAnyQuote}>
         <ModuleLibrary catalog={anyQuoteModule ? [...catalog, anyQuoteModule.entry] : catalog} selectedIds={pendingAnyQuote && anyQuoteModule ? [anyQuoteModule.entry.id] : state.selectedModules}
+          configurableIds={anyQuoteModule ? [anyQuoteModule.entry.id] : []} onConfigure={() => setConfiguringAnyQuote(true)}
           disabled={contextLocked || imageBusy || anyQuoteModule?.disabled} onAdd={addFromLibrary}
-          onRemove={entry => { if (entry.id === anyQuoteModule?.entry.id) setPendingAnyQuote(false); else { const nativeEntry = catalog.find(candidate => candidate.id === entry.id); if (nativeEntry) remove(nativeEntry); } }}
+          onRemove={entry => { if (entry.id === anyQuoteModule?.entry.id) { setPendingAnyQuote(false); setConfiguringAnyQuote(false); } else { const nativeEntry = catalog.find(candidate => candidate.id === entry.id); if (nativeEntry) remove(nativeEntry); } }}
           disabledFor={entry => entry.id === anyQuoteModule?.entry.id
             ? state.selectedModules.length > 0 ? "Remove your other modules to use Any Quote LP." : undefined
             : pendingAnyQuote ? "Remove Any Quote LP to use this module." : undefined}
           feeDescriptionFor={entry => entry.id === anyQuoteModule?.entry.id ? "Platform fee: 0.30% per trade." : undefined}
           feePolicyFor={release ? entry => { const nativeEntry = catalog.find(candidate => candidate.id === entry.id); return nativeEntry ? moduleModeFeePolicy(release, state.selectedModules.includes(entry.id) ? selected : [...selected, nativeEntry]) : null; } : undefined} />
+        </div>
+        {configuringAnyQuote ? <ModuleAnyQuoteConfiguration value={quoteAsset} onChange={setQuoteAsset} availability={quoteAvailability}
+          disabled={contextLocked || imageBusy || anyQuoteModule?.disabled} onBack={() => setConfiguringAnyQuote(false)} onRemove={() => { setPendingAnyQuote(false); setConfiguringAnyQuote(false); }} /> : null}
       </ModulePickerDialog> : null}
       {configuredEntry ? <ModulePickerDialog animateOpen={pickerPointer} title={configuredEntry.title} description={configuredEntry.summary} onClose={() => setConfigurationId(null)}>
         <fieldset className={styles.formFields} disabled={contextLocked}>{renderModuleConfiguration(configuredEntry)}</fieldset>

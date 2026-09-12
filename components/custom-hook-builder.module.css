@@ -1,0 +1,122 @@
+.page:global(.page-width) {
+  --webde-surface: #181818;
+  --webde-control: #20201f;
+  --webde-line: #383736;
+  --webde-muted: #b4b1ad;
+  --webde-ink: #f5f3ef;
+  margin-inline: auto;
+  max-width: 1040px;
+  padding: 24px 20px 64px;
+  width: 100%;
+}
+
+.page .backLink {
+  background: #1c1c1c;
+  border: 1px solid #64615f;
+  border-radius: 24px;
+  color: var(--webde-ink);
+  padding-inline: 16px;
+}
+
+.layout {
+  align-items: stretch;
+  background: var(--webde-surface);
+  border: 1px solid #353433;
+  border-radius: 24px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  overflow: clip;
+}
+
+.formPanel { min-width: 0; padding: 32px; }
+.heading { margin-bottom: 28px; }
+.heading h1 { font-size: 30px; font-weight: 500; letter-spacing: -.035em; line-height: 1.2; text-wrap: initial; }
+.heading p { color: var(--webde-muted); font-size: 14px; line-height: 20px; margin-top: 12px; }
+.formPanel > ol { gap: 12px 24px; margin-bottom: 28px; }
+
+.formPanel > section[aria-labelledby="builder-prompt-title"] {
+  --module-muted: var(--webde-muted);
+  --module-line: var(--webde-line);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  margin-bottom: 24px;
+  padding: 0;
+}
+
+.formPanel > section[aria-labelledby="builder-prompt-title"] h2 { font-size: 16px; line-height: 24px; }
+.formPanel > section[aria-labelledby="builder-prompt-title"] > header p { font-size: 13px; line-height: 20px; margin: 4px 0 20px; }
+.formPanel > section[aria-labelledby="builder-prompt-title"] form > div { max-width: none; }
+.formPanel > section[aria-labelledby="builder-prompt-title"] label > span { color: #c5c1bc; font-size: 13px; }
+.formPanel > section[aria-labelledby="builder-prompt-title"] textarea { background: var(--webde-control); font-size: 14px; min-height: 160px; }
+.formPanel > section[aria-labelledby="builder-prompt-title"] textarea::placeholder { color: #a8a39d; }
+.formPanel > section[aria-labelledby="builder-prompt-title"] > p { font-size: 13px; line-height: 20px; }
+.formPanel > section[aria-labelledby="builder-prompt-title"] > div > p { font-size: 13px; line-height: 20px; }
+
+.formPanel > section:has(#connect-title),
+.formPanel > section[aria-busy="true"],
+.formPanel > section[role="alert"] {
+  align-items: stretch;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  flex-direction: column;
+  gap: 20px;
+  justify-content: flex-start;
+  min-height: 144px;
+  padding: 0;
+}
+
+.formPanel section:has(> div > #create-key-title) { background: transparent; border: 0; border-radius: 0; padding: 0; }
+.formPanel form:has(#api-key-label) > div { grid-template-columns: minmax(0, 1fr); }
+.formPanel form:has(#api-key-label) > div > button { justify-self: stretch; min-width: 0; width: 100%; }
+.formPanel :is(input, textarea):focus { border-color: var(--api-accent); }
+
+.previewPanel {
+  align-items: center;
+  background: #222221;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  padding: 32px;
+}
+
+.hookCard { background: #191919; border: 1px solid #484643; border-radius: 20px; min-width: 0; padding: 24px; width: 100%; }
+.hookIcon { align-items: center; background: #30242b; border: 1px solid #775568; border-radius: 16px; color: #f0bfd6; display: flex; height: 64px; justify-content: center; margin-bottom: 16px; width: 64px; }
+.hookCard h2 { color: var(--webde-ink); font-size: 22px; font-weight: 500; letter-spacing: -.02em; line-height: 28px; margin: 0; }
+.hookCard > p { color: var(--webde-muted); font-size: 14px; line-height: 20px; margin: 8px 0 0; }
+.hookDetails { border-block: 1px solid #353330; display: grid; gap: 16px; margin: 24px 0 0; padding-block: 20px; }
+.hookDetails > div { display: grid; gap: 12px; grid-template-columns: minmax(0, .7fr) minmax(0, 1.3fr); }
+.hookDetails dt { color: var(--webde-muted); font-size: 13px; line-height: 20px; }
+.hookDetails dd { color: var(--webde-ink); font-size: 13px; line-height: 20px; margin: 0; text-align: right; }
+.hookCard > .reviewNote { font-size: 12px; line-height: 18px; margin-top: 16px; }
+.docsLink { align-items: center; color: #c6c0bb; display: inline-flex; font-size: 13px; gap: 8px; justify-content: center; line-height: 20px; margin-top: 12px; min-height: 44px; text-decoration: none; width: 100%; }
+.docsLink > svg { flex-shrink: 0; }
+.page :is(button, a, input, textarea, select, summary):focus-visible { outline: 2px solid var(--api-accent); outline-offset: 3px; }
+.page :is(button, a, summary) { touch-action: manipulation; }
+
+@media (hover: hover) and (pointer: fine) {
+  .page .backLink:hover { background: #292827; color: #fff; }
+  .docsLink:hover { color: #f0bfd6; }
+}
+
+@media (max-width: 900px) { .formPanel, .previewPanel { padding: 24px; } }
+@media (max-width: 760px) {
+  .page:global(.page-width) { padding: 16px 16px 48px; }
+  .layout { grid-template-columns: minmax(0, 1fr); }
+  .formPanel, .previewPanel { padding: 24px 20px; }
+  .heading h1 { font-size: 28px; }
+  .hookCard { max-width: 440px; }
+  .formPanel > section[aria-labelledby="builder-prompt-title"] textarea { font-size: 16px; }
+}
+@media (max-width: 360px) {
+  .page:global(.page-width) { padding-inline: 12px; }
+  .formPanel, .previewPanel { padding: 20px 16px; }
+  .hookCard { padding: 20px; }
+  .hookDetails > div { gap: 8px; }
+}
+@media (forced-colors: active) {
+  .layout, .hookCard, .hookIcon { border-color: CanvasText; }
+  .page :is(button, a, input, textarea, select, summary):focus-visible { outline-color: Highlight; }
+}

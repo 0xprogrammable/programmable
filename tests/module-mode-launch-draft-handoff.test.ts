@@ -3,7 +3,8 @@ import type { ModuleModeLaunchDraftHandoff } from "@/lib/module-mode/launch-draf
 
 function draft(): ModuleModeLaunchDraftHandoff {
   return { name: "My coin", symbol: "COIN", description: "A saved draft", socialLinks: { website: "https://example.com" },
-    tokenImage: { kind: "none" }, imageResource: null, initialBuyEth: "0.0075", buyFeePercent: "1", sellFeePercent: "2" };
+    tokenImage: { kind: "none" }, imageResource: null, initialBuyEth: "0.0075", buyFeePercent: "1", sellFeePercent: "2",
+    quoteAsset: "0x2e8c31162b855a2ffa90f6f8634643ad6f111e18" };
 }
 
 beforeEach(() => { vi.stubGlobal("window", {}); });

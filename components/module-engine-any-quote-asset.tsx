@@ -5,6 +5,7 @@ import { isAddress, type Hex } from "viem";
 import { Check, CircleAlert, LoaderCircle, RefreshCw } from "lucide-react";
 import { fetchAnyQuoteReadiness } from "@/lib/module-engine/any-quote/integration-client";
 import type { AnyQuoteReadinessV1 } from "@/lib/module-engine/any-quote/types";
+import { forgetAnyQuoteDisplayCheck, readAnyQuoteDisplayCheck, rememberAnyQuoteDisplayCheck } from "@/lib/module-engine/any-quote/readiness-display-cache";
 import styles from "./module-mode-builder.module.css";
 import engineStyles from "./module-engine-ui.module.css";
 
@@ -42,6 +43,14 @@ export function useAnyQuoteAssetAvailability({ enabled, releaseDigest, templateI
     const controller = new AbortController();
     let timeout: ReturnType<typeof setTimeout> | undefined;
     let expiry: ReturnType<typeof setTimeout> | undefined;
+    const cached = attempt === 0 ? readAnyQuoteDisplayCheck(key) : null;
+    if (cached) {
+      expiry = setTimeout(() => {
+        forgetAnyQuoteDisplayCheck(key);
+        setChecked({ key, attempt, status: "inconclusive", result: null });
+      }, Math.min(Number(cached.validUntil) * 1_000 - Date.now(), 180_000));
+      return () => clearTimeout(expiry);
+    }
     const timer = setTimeout(async () => {
       setChecked({ key, attempt, status: "checking", result: null });
       timeout = setTimeout(() => {
@@ -56,7 +65,8 @@ export function useAnyQuoteAssetAvailability({ enabled, releaseDigest, templateI
         if (result.status === "compatible") {
           const remaining = Number(result.validUntil) * 1_000 - Date.now();
           if (!Number.isFinite(remaining) || remaining <= 0) throw new Error("Availability expired.");
-          expiry = setTimeout(() => setChecked({ key, attempt, status: "inconclusive", result: null }), Math.min(remaining, 180_000));
+          rememberAnyQuoteDisplayCheck(key, result);
+          expiry = setTimeout(() => { forgetAnyQuoteDisplayCheck(key); setChecked({ key, attempt, status: "inconclusive", result: null }); }, Math.min(remaining, 180_000));
         }
         setChecked({ key, attempt, status: result.status, result });
       } catch {
@@ -66,13 +76,16 @@ export function useAnyQuoteAssetAvailability({ enabled, releaseDigest, templateI
     return () => { controller.abort(); clearTimeout(timer); clearTimeout(timeout); clearTimeout(expiry); };
   }, [enabled, releaseDigest, templateId, address, validAddress, key, attempt]);
 
-  const current = checked?.key === key && checked.attempt === attempt ? checked : null;
+  const cached = enabled && validAddress ? readAnyQuoteDisplayCheck(key) : null;
+  const latestCheck = checked?.key === key && checked.attempt === attempt ? checked : null;
+  const current = latestCheck?.status === "compatible" ? cached ? latestCheck : null
+    : latestCheck ?? (attempt === 0 && cached ? { status: "compatible" as const, result: cached } : null);
   const status = !enabled || !address ? "idle" : !validAddress ? "invalid" : current?.status ?? "checking";
-  return { status, result: current?.result ?? null, retry: () => setAttempt(value => value + 1) };
+  return { status, result: current?.result ?? null, retry: () => { forgetAnyQuoteDisplayCheck(key); setAttempt(value => value + 1); } };
 }
 
-export function ModuleEngineAnyQuoteAsset({ value, onChange, availability }: {
-  value: string; onChange: (value: string) => void; availability: AnyQuoteAssetAvailability;
+export function ModuleEngineAnyQuoteAsset({ value, onChange, availability, inputId = "engine-quote" }: {
+  value: string; onChange: (value: string) => void; availability: AnyQuoteAssetAvailability; inputId?: string;
 }) {
   const [blurred, setBlurred] = useState(false);
   const invalid = availability.status === "incompatible" || availability.status === "invalid" && blurred;
@@ -80,17 +93,19 @@ export function ModuleEngineAnyQuoteAsset({ value, onChange, availability }: {
   const message = availability.status === "checking" ? "Checking token, price and ETH routes…"
     : ready ? `${ready.token.name || ready.token.symbol} (${ready.token.symbol}) is available.`
     : availability.status === "incompatible" ? "Der Token ist leider nicht verfügbar."
-    : availability.status === "inconclusive" ? "Availability could not be checked. Please try again."
+    : availability.status === "inconclusive" ? availability.result?.status === "inconclusive" && /PRICE|ROUTE|DEPTH/.test(availability.result.code)
+      ? "A reliable price and ETH route could not be confirmed. Try again."
+      : "The token check is temporarily unavailable. Please try again."
     : invalid ? "Enter a valid token address on Robinhood Chain." : null;
   return <div className={engineStyles.anyQuoteAsset}>
     <div className={styles.field}>
-      <label htmlFor="engine-quote">Pair with</label>
-      <input id="engine-quote" value={value} placeholder="Token contract address, 0x…" spellCheck={false} autoComplete="off" autoCapitalize="none"
-        required aria-invalid={invalid || undefined} aria-describedby="engine-quote-help engine-quote-availability"
+      <label htmlFor={inputId}>Pair with</label>
+      <input id={inputId} value={value} placeholder="Token contract address, 0x…" spellCheck={false} autoComplete="off" autoCapitalize="none"
+        required aria-invalid={invalid || undefined} aria-describedby={`${inputId}-help ${inputId}-availability`}
         onBlur={() => setBlurred(true)} onChange={event => { setBlurred(false); onChange(event.target.value); }} />
-      <p id="engine-quote-help" className={styles.help}>Enter an ERC20 address on Robinhood Chain. Your coin trades with ETH; this token is its pool pair.</p>
+      <p id={`${inputId}-help`} className={styles.help}>Enter an ERC20 address on Robinhood Chain. Your coin trades with ETH; this token is its pool pair.</p>
     </div>
-    <div id="engine-quote-availability" className={engineStyles.anyQuoteAvailability} data-status={availability.status} role="status" aria-live="polite" aria-atomic="true">
+    <div id={`${inputId}-availability`} className={engineStyles.anyQuoteAvailability} data-status={availability.status} role="status" aria-live="polite" aria-atomic="true">
       {message ? <div className={engineStyles.anyQuoteStatusText}>
         {availability.status === "checking" ? <LoaderCircle className={engineStyles.anyQuoteSpinner} size={16} aria-hidden="true" /> : ready ? <Check size={16} aria-hidden="true" /> : <CircleAlert size={16} aria-hidden="true" />}
         <span>{message}{ready ? <small>ETH buys and sells available. No {ready.token.symbol} balance needed to launch.</small> : null}</span>

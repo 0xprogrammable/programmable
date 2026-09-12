@@ -17,7 +17,7 @@ import { MODULE_ENGINE_AVAILABILITY_SCHEMA, type ModuleEngineAvailability, type 
 import { createModuleEngineClient, ModuleEngineTransactionRevertedError, observeModuleEngineReceipt, readModuleEngineLaunch, type ModuleEngineReceiptResult, type PreparedModuleEngineTransaction } from "@/lib/module-engine/client";
 import type { ModuleModeImage, ModuleModeCatalogEntry } from "@/lib/module-mode/builder";
 import type { ModuleModeRelease } from "@/lib/module-mode/release";
-import { moduleModeReleaseQuery, type ModuleModeLaunchVersion } from "@/lib/module-mode/release-selection";
+import { moduleModeReleaseQuery, type ModuleModeLaunchVersion, type ModuleModeReleaseSelection } from "@/lib/module-mode/release-selection";
 import { clearModuleModeOperation, moduleModeOperationPath, type ModuleModeOperation } from "@/lib/module-mode-operation-store";
 import { fetchModuleEngineOperationRelease, recoverModuleEngineOperation } from "@/lib/module-mode-operation-recovery";
 import styles from "@/components/module-mode-builder.module.css";
@@ -40,7 +40,11 @@ function errorMessage(error: unknown) {
 }
 
 /** Shared wallet, source authority and durable operation recovery for each reviewed template. */
-export function ModuleEngineHost({ releaseDigest, token, versions = [], nativeCatalog, nativeRelease }: { releaseDigest?: Hex; token?: Address; versions?: readonly ModuleModeLaunchVersion[]; nativeCatalog?: readonly ModuleModeCatalogEntry[]; nativeRelease?: ModuleModeRelease | null }) {
+export function ModuleEngineHost({ releaseDigest, token, versions = [], nativeCatalog, nativeRelease, initialAvailability, availabilityRequest, onNavigateSelection }: {
+  releaseDigest?: Hex; token?: Address; versions?: readonly ModuleModeLaunchVersion[]; nativeCatalog?: readonly ModuleModeCatalogEntry[]; nativeRelease?: ModuleModeRelease | null;
+  initialAvailability?: ModuleEngineAvailability; availabilityRequest?: Promise<ModuleEngineAvailability>;
+  onNavigateSelection?: (selection: ModuleModeReleaseSelection) => void;
+}) {
   const router = useRouter();
   const [changingVersion, startVersionChange] = useTransition();
   const { wallet, authenticated, sessionReady, authReady, connecting, openingWallet, switchingNetwork, disconnecting, openWallet, switchNetwork, getAccessToken, sendModuleModeTransaction } = useWallet();
@@ -50,9 +54,9 @@ export function ModuleEngineHost({ releaseDigest, token, versions = [], nativeCa
   const client = useMemo(() => createModuleEngineClient(), []);
   const saved = useModuleModeOperation(wallet?.account);
   const requestPending = useModuleWalletRequestPending(wallet?.account);
-  const [availability, setAvailability] = useState<ModuleEngineAvailability>(empty);
+  const [availability, setAvailability] = useState<ModuleEngineAvailability>(initialAvailability ?? empty);
   const [management, setManagement] = useState<{ token: Address; digest: Hex; template: ModuleEngineTemplate } | null>(null);
-  const [loadedSelection, setLoadedSelection] = useState<string | null>(null);
+  const [loadedSelection, setLoadedSelection] = useState<string | null>(initialAvailability && !token ? `${releaseDigest ?? "current"}:launch` : null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [storedFlow, setFlow] = useState<Flow>({ phase: "idle" });
@@ -66,7 +70,8 @@ export function ModuleEngineHost({ releaseDigest, token, versions = [], nativeCa
     const controller = new AbortController();
     void (async () => {
       try {
-        const current = await fetchModuleEngineAvailability(releaseDigest, controller.signal);
+        const current = await (refreshKey === 0 && availabilityRequest ? availabilityRequest : fetchModuleEngineAvailability(releaseDigest, controller.signal));
+        if (releaseDigest && current.release && current.release.releaseDigest !== releaseDigest) throw new Error("The requested template version could not be verified.");
         let bound: typeof management = null;
         if (token && current.release) {
           const launch = await readModuleEngineLaunch({ client, release: current.release, token });
@@ -83,7 +88,7 @@ export function ModuleEngineHost({ releaseDigest, token, versions = [], nativeCa
       }
     })();
     return () => controller.abort();
-  }, [client, releaseDigest, token, selection, refreshKey]);
+  }, [client, releaseDigest, token, selection, refreshKey, availabilityRequest]);
 
   const loading = loadedSelection !== selection || changingVersion;
   const release = availability.release;
@@ -166,10 +171,15 @@ export function ModuleEngineHost({ releaseDigest, token, versions = [], nativeCa
     assertSession(); return binding.uri;
   }
 
+  function navigateSelection(next: ModuleModeReleaseSelection) {
+    if (onNavigateSelection) onNavigateSelection(next);
+    else router.push(`/launch/modules${moduleModeReleaseQuery(next)}`, { scroll: false });
+  }
+
   function removeModule() {
     if (busy.current || working || requestPending || unresolved || changingVersion) return;
     generation.current += 1; setFlow({ phase: "idle" });
-    startVersionChange(() => router.push("/launch/modules", { scroll: false }));
+    startVersionChange(() => navigateSelection({}));
   }
 
   const versionContent = versions.length > 1 ? <div className={styles.field}><label htmlFor="engine-launch-version">Module version</label>
@@ -177,7 +187,7 @@ export function ModuleEngineHost({ releaseDigest, token, versions = [], nativeCa
       const version = versions.find(candidate => candidate.releaseDigest === event.target.value);
       if (!version || busy.current || unresolved || requestPending) return;
       generation.current += 1; setFlow({ phase: "idle" });
-      startVersionChange(() => router.push(`/launch/modules${moduleModeReleaseQuery({ releaseDigest: version.releaseDigest, ...(version.sourceKind ? { sourceKind: version.sourceKind } : {}) })}`, { scroll: false }));
+      startVersionChange(() => navigateSelection({ releaseDigest: version.releaseDigest, ...(version.sourceKind ? { sourceKind: version.sourceKind } : {}) }));
     }}>{!versions.some(version => version.releaseDigest === (releaseDigest ?? release?.releaseDigest)) ? <option value={releaseDigest ?? release?.releaseDigest ?? ""}>Selected version unavailable</option> : null}
       {versions.map(version => <option key={`${version.sourceKind ?? "native"}:${version.releaseDigest}`} value={version.releaseDigest}>{version.label}</option>)}
     </select><p className={styles.help}>Each version keeps its published templates and fee rules.</p></div> : undefined;

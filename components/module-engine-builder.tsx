@@ -23,6 +23,7 @@ import { ModuleEnginePicker } from "./module-engine-library";
 import { ModuleCategoryIcon, ModuleLibrary } from "./module-library";
 import { ModulePickerDialog } from "./module-picker-dialog";
 import { anyQuoteLibraryEntry } from "@/lib/module-engine/library-entry";
+import { ModuleAnyQuoteConfiguration } from "./module-any-quote-configuration";
 import { ModuleEngineCustomOperationFields } from "./module-engine-custom-operation";
 import { emptyModuleEngineCustomOperation, moduleEngineCustomOperationIntent } from "@/lib/module-engine/custom-operation";
 import { ModuleEngineTransactionReview, type ModuleEngineWalletActions } from "./module-engine-transaction-review";
@@ -81,6 +82,8 @@ export function ModuleEngineBuilder({ availability: raw, client: suppliedClient,
   const coinDetails = useRef<HTMLDetailsElement>(null);
   const [pickerOpen, setPickerOpen] = useState(false), [pickerPointer, setPickerPointer] = useState(false);
   const [pickerAnyQuoteRemoved, setPickerAnyQuoteRemoved] = useState(false), [pickerNativeDraft, setPickerNativeDraft] = useState(createModuleModeState);
+  const [pickerConfiguringQuote, setPickerConfiguringQuote] = useState(false);
+  const [quoteConfiguredInPicker, setQuoteConfiguredInPicker] = useState(false);
   const template = availability?.templates.find(item => item.manifest.manifest.catalogDefinition.id === selected) ?? availability?.templates[0];
   const definition = template?.manifest.manifest.catalogDefinition, revision = template?.manifest.manifest.revision;
   const fixedQuote = revision && revision.fixedQuoteAsset !== ENGINE_ZERO_ADDRESS ? revision.fixedQuoteAsset : null;
@@ -99,6 +102,8 @@ export function ModuleEngineBuilder({ availability: raw, client: suppliedClient,
       setName(draft.name); setSymbol(draft.symbol); setDescription(draft.description); setSocialLinks(draft.socialLinks ?? {});
       setImage(draft.tokenImage); setImageResource(draft.imageResource); setImageUri(draft.tokenImage.kind === "uri" ? draft.tokenImage.uri : "");
       setAmount(draft.initialBuyEth); setBuyFee(draft.buyFeePercent); setSellFee(draft.sellFeePercent);
+      setQuote(draft.quoteAsset ?? "");
+      setQuoteConfiguredInPicker(Boolean(draft.quoteAsset));
     });
   }, [anyQuote]);
   const anyQuoteAvailability = useAnyQuoteAssetAvailability({ enabled: anyQuote, releaseDigest: availability?.release?.releaseDigest, templateId: definition?.id, quoteAsset });
@@ -117,32 +122,35 @@ export function ModuleEngineBuilder({ availability: raw, client: suppliedClient,
     if (!anyQuote || !onRemoveModule || !hydrated || busy || imageBusy || blocked || prepared) return;
     saveModuleModeLaunchDraftHandoff("native", { name, symbol, description, socialLinks,
       tokenImage: image.kind === "none" && imageUri ? { kind: "uri", uri: imageUri, contentVerified: false } : image,
-      imageResource, initialBuyEth: amount, buyFeePercent: buyFee, sellFeePercent: sellFee, nativeState: nativeDraft.current });
+      imageResource, initialBuyEth: amount, buyFeePercent: buyFee, sellFeePercent: sellFee, nativeState: nativeDraft.current, quoteAsset });
     setPickerOpen(false); onRemoveModule();
   }
   function openAnyQuotePicker(pointer: boolean) {
     setPickerAnyQuoteRemoved(false);
+    setPickerConfiguringQuote(false);
     setPickerNativeDraft(structuredClone(nativeDraft.current ?? createModuleModeState()));
     setPickerPointer(pointer); setPickerOpen(true);
   }
   function changePickerModule(id: string, selected: boolean) {
     if (!hydrated || busy || imageBusy || blocked || prepared || !onRemoveModule) return;
     if (id === anyQuoteEntry?.id) {
-      if (!selected || pickerNativeDraft.selectedModules.length === 0) setPickerAnyQuoteRemoved(!selected);
+      if (!selected || pickerNativeDraft.selectedModules.length === 0) { setPickerAnyQuoteRemoved(!selected); setPickerConfiguringQuote(selected); }
       return;
     }
     if (!pickerAnyQuoteRemoved) return;
     const entry = nativeCatalog.find(candidate => candidate.id === id);
     if (entry) setPickerNativeDraft(current => setModuleSelected(current, entry, selected));
   }
-  function closeAnyQuotePicker() {
+  function completeAnyQuotePicker() {
+    if (!pickerAnyQuoteRemoved && pickerConfiguringQuote && anyQuoteAvailability.status !== "compatible") return;
+    if (!pickerAnyQuoteRemoved && pickerConfiguringQuote) setQuoteConfiguredInPicker(true);
     nativeDraft.current = pickerNativeDraft;
     if (pickerAnyQuoteRemoved) removeAnyQuoteModule();
     setPickerOpen(false);
   }
+  function closeAnyQuotePicker() { setPickerAnyQuoteRemoved(false); setPickerConfiguringQuote(false); setPickerOpen(false); }
   function configureAnyQuoteModule() {
-    const input = document.getElementById("engine-quote");
-    input?.scrollIntoView({ block: "center" }); input?.focus({ preventScroll: true });
+    openAnyQuotePicker(false); setPickerConfiguringQuote(true);
   }
   async function checkQuote() {
     if (!availability?.release || !template || !wallet.account) return; setBusy(true); setError(null);
@@ -208,7 +216,7 @@ export function ModuleEngineBuilder({ availability: raw, client: suppliedClient,
   const quoteLabel = anyQuote ? "Pool pair" : spot ? "Trading token" : "Funding token";
   const quoteShort = readyQuote?.token.symbol || (quoteAsset ? `${quoteAsset.slice(0, 6)}…${quoteAsset.slice(-4)}` : "Not chosen");
 
-  return <div className={`${styles.page} ${engineStyles.root} ${engineStyles.builderRoot}`}>
+  return <div className={`${styles.page} ${engineStyles.root} ${engineStyles.builderRoot}${anyQuote ? ` ${engineStyles.anyQuoteBuilder}` : ""}`}>
     <div className={engineStyles.pageTop}><a href="/launch"><ArrowLeft size={16} aria-hidden="true" />Back</a></div>
     {statusContent}
     {!template || !definition || !availability?.release ? <section className={engineStyles.emptyState}><h1>Create a coin</h1><p role="status">No modules available yet.{parsed.error || availability?.reason ? ` ${parsed.error ?? availability?.reason}` : ""}</p></section> : <>
@@ -242,10 +250,11 @@ export function ModuleEngineBuilder({ availability: raw, client: suppliedClient,
                 <div className={`${styles.moduleSectionHeading} ${engineStyles.sectionHeading}`}><div><h2>Modules</h2><p>Add features to your coin.</p></div><Puzzle size={24} strokeWidth={1.6} aria-hidden="true" /></div>
                 <ul className={styles.selectedModules}><li id={`module-selection-${anyQuoteEntry.id}`}>
                   <ModuleCategoryIcon category="pairs" size={20} />
-                  <button type="button" className={styles.configureModule} disabled={!hydrated || busy || imageBusy || blocked} onClick={configureAnyQuoteModule} aria-label={`Configure ${anyQuoteEntry.title}`}><span>{anyQuoteEntry.title}</span><Settings2 size={16} aria-hidden="true" /></button>
+                  <button type="button" className={styles.configureModule} disabled={!hydrated || busy || imageBusy || blocked} onClick={configureAnyQuoteModule} aria-label={`Configure ${anyQuoteEntry.title}`}><span className={engineStyles.pairChoice}>{anyQuoteEntry.title}{quoteConfiguredInPicker ? <small>Paired with {quoteShort}</small> : null}</span><Settings2 size={16} aria-hidden="true" /></button>
                   <button type="button" className={styles.removeModule} disabled={!hydrated || busy || imageBusy || blocked || !onRemoveModule} onClick={removeAnyQuoteModule} aria-label={`Remove ${anyQuoteEntry.title}`}><X size={17} aria-hidden="true" /></button>
                 </li></ul>
-                <ModuleEngineAnyQuoteAsset value={quoteAsset} availability={anyQuoteAvailability} onChange={value => edit(() => setQuote(value))} />
+                {quoteConfiguredInPicker ? !quoteVerified ? <button type="button" className={engineStyles.anyQuoteRetry} onClick={configureAnyQuoteModule} disabled={!hydrated || busy || imageBusy || blocked}>{anyQuoteAvailability.status === "checking" ? "Checking pair…" : "Check pair to continue"}</button> : null
+                  : <ModuleEngineAnyQuoteAsset value={quoteAsset} availability={anyQuoteAvailability} onChange={value => edit(() => setQuote(value))} />}
                 <button type="button" className={styles.addModulesButton} data-module-add disabled={!hydrated || busy || imageBusy || blocked} onClick={event => openAnyQuotePicker(event.detail > 0)} aria-haspopup="dialog"><Plus size={18} aria-hidden="true" />Add modules</button>
               </> : <><div className={engineStyles.sectionHeading}><h2>Modules</h2><p>Add features to your coin.</p></div><div className={engineStyles.selectedModule}>
                 <Puzzle size={20} aria-hidden="true" />
@@ -371,8 +380,11 @@ export function ModuleEngineBuilder({ availability: raw, client: suppliedClient,
           <Link href="/developers/modules" className={engineStyles.buildLink}><Puzzle size={16} aria-hidden="true" />Build your own module<ArrowUpRight size={16} aria-hidden="true" /></Link>
         </aside>
       </div>
-      {anyQuoteEntry ? pickerOpen ? <ModulePickerDialog variant="library" animateOpen={pickerPointer} title="Add modules" description="Modules are upgrades for your coin. Pick the features you want." onClose={closeAnyQuotePicker}>
+      {anyQuoteEntry ? pickerOpen ? <ModulePickerDialog variant="library" animateOpen={pickerPointer} title={pickerConfiguringQuote ? "Any Quote LP" : "Add modules"} description={pickerConfiguringQuote ? "Choose the token for your coin’s liquidity pool." : "Modules are upgrades for your coin. Pick the features you want."}
+        onClose={closeAnyQuotePicker} onDone={completeAnyQuotePicker} doneDisabled={!pickerAnyQuoteRemoved && pickerConfiguringQuote && anyQuoteAvailability.status !== "compatible"}>
+        <div hidden={pickerConfiguringQuote}>
         <ModuleLibrary catalog={[...nativeCatalog.filter(entry => entry.id !== anyQuoteEntry.id), anyQuoteEntry]} selectedIds={pickerAnyQuoteRemoved ? pickerNativeDraft.selectedModules : [anyQuoteEntry.id]}
+          configurableIds={[anyQuoteEntry.id]} onConfigure={() => setPickerConfiguringQuote(true)}
           disabled={!hydrated || busy || imageBusy || blocked || Boolean(prepared) || !onRemoveModule}
           disabledFor={entry => entry.id === anyQuoteEntry.id
             ? pickerAnyQuoteRemoved && pickerNativeDraft.selectedModules.length > 0 ? "Remove your other modules to use Any Quote LP." : undefined
@@ -381,6 +393,9 @@ export function ModuleEngineBuilder({ availability: raw, client: suppliedClient,
           feePolicyFor={nativeRelease ? entry => moduleModeFeePolicy(nativeRelease, nativeCatalog.filter(candidate => candidate.id === entry.id || pickerNativeDraft.selectedModules.includes(candidate.id))) : undefined}
           onAdd={entry => changePickerModule(entry.id, true)}
           onRemove={entry => changePickerModule(entry.id, false)} />
+        </div>
+        {pickerConfiguringQuote ? <ModuleAnyQuoteConfiguration value={quoteAsset} onChange={value => edit(() => setQuote(value))} availability={anyQuoteAvailability}
+          disabled={!hydrated || busy || imageBusy || blocked || Boolean(prepared)} onBack={() => setPickerConfiguringQuote(false)} onRemove={() => changePickerModule(anyQuoteEntry.id, false)} /> : null}
       </ModulePickerDialog> : null : <ModuleEnginePicker open={pickerOpen} templates={availability.templates} selectedId={definition.id} disabled={!hydrated || busy || imageBusy || blocked} onClose={() => setPickerOpen(false)} onSelect={item => { edit(() => { setSelected(item.manifest.manifest.catalogDefinition.id); setQuoteState(null); setAmount(""); setAmountError(null); salts.current = null; setCustomInitialForm(emptyModuleEngineCustomOperation()); setCreatorSaltInput(""); setEngineSaltInput(""); setLaunchData("0x"); setBuyFee("0"); setSellFee("0"); }); setPickerOpen(false); }} />}
       {approval && !prepared ? <section className={engineStyles.notice} role="status"><p>Allow the launch contract to use exactly {quoteState ? formatUnits(approval.amount, quoteState.decimals) : approval.amount.toString()} quote tokens to fund this launch.</p><button id="engine-approval-review" className={styles.secondaryButton} type="button" disabled={busy || blocked} onClick={() => void prepareApproval()}>{approval.currentAllowance > 0n ? "Review allowance reset" : "Review exact approval"}</button></section> : null}
       {prepared ? <ModuleEngineTransactionReview prepared={prepared} busy={busy} disabled={blocked || step !== "prepare"} onEdit={backToEdit} onConfirm={() => void confirm()} quoteAsset={readyQuote?.quoteAsset ?? quoteState?.address} quoteDecimals={readyQuote?.token.decimals ?? quoteState?.decimals} quoteSymbol={readyQuote?.token.symbol} anyQuote={anyQuote} tradeFees={spot || customLaunch} genericAction={customInitial} showLaunchInputs={customLaunch}>{prepared.kind === "launch" ? <div className={engineStyles.launchSummary}><strong>{name} · {symbol}</strong><p>{description}</p><p className={styles.help}>Image: {imageUri || MODULE_DEFAULT_TOKEN_IMAGE}</p>{checkedSocial.ok ? <dl className={styles.reviewRows}>{socialFields.filter(({ key }) => checkedSocial.links[key]).map(({ key, label }) => <div key={key}><dt>{label}</dt><dd>{checkedSocial.links[key]}</dd></div>)}</dl> : null}</div> : null}</ModuleEngineTransactionReview> : null}

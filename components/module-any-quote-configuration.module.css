@@ -1,0 +1,7 @@
+.panel { display: grid; gap: 24px; padding-top: 4px; }
+.fields { border: 0; margin: 0; min-width: 0; padding: 0; }
+.back, .remove { align-items: center; background: transparent; border: 0; color: #d7d5d0; cursor: pointer; display: inline-flex; font: inherit; font-size: 14px; gap: 8px; justify-self: start; min-height: 44px; padding: 8px 0; }
+.remove { color: #b9b6b2; }
+.back:focus-visible, .remove:focus-visible { border-radius: 4px; outline: 2px solid #e786b2; outline-offset: 4px; }
+.fields:disabled, .remove:disabled { opacity: .5; }
+@media (hover: hover) and (pointer: fine) { .back:hover, .remove:not(:disabled):hover { color: #fff; } }
