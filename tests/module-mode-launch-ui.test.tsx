@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
 import { ModuleModeBuilder } from "@/components/module-mode-builder";
-import { ModuleModeAnyQuoteLaunchEntry, ModuleModeLaunchResult } from "@/components/module-mode-launch-host";
+import { ModuleModeLaunchResult } from "@/components/module-mode-launch-host";
 import { ModuleSchemaField } from "@/components/module-mode-fields";
 import { bindActiveModuleModeRelease, computeModuleModeReleaseDigest, MODULE_MODE_ECONOMICS_POLICY_V2 } from "@/lib/module-mode/release";
 import { moduleEvidenceFixture, a } from "./fixtures/module-mode-evidence";
@@ -17,18 +17,6 @@ const token = `0x${"12".repeat(20)}` as const;
 const transactionHash = `0x${"34".repeat(32)}` as const;
 
 describe("Module Mode launch presentation", () => {
-  it("names the Any Quote setup without version controls and disables entry during an existing wallet flow", () => {
-    const onSelect = vi.fn();
-    const available = renderToStaticMarkup(<ModuleModeAnyQuoteLaunchEntry disabled={false} onSelect={onSelect} />);
-    expect(available).toContain("Any Quote LP");
-    expect(available).toContain("Start a coin paired with a compatible token of your choice. Trade with ETH.");
-    expect(available).toContain('aria-labelledby="module-any-quote-title"');
-    expect(available).toMatch(/<button[^>]+type="button"[^>]*>Use Any Quote LP /);
-    expect(available).not.toMatch(/<select|Module version|sourceKind|releaseDigest/);
-    const locked = renderToStaticMarkup(<ModuleModeAnyQuoteLaunchEntry disabled onSelect={onSelect} />);
-    expect(locked).toMatch(/<button[^>]+disabled=""/);
-    expect(onSelect).not.toHaveBeenCalled();
-  });
   it("renders the released plain fee for each generation and no V2 fee under a V1 release", () => {
     const v1 = bindActiveModuleModeRelease(moduleEvidenceFixture().release);
     const identity = { ...v1, schemaVersion: "programmable.module-mode-source.v2", sourceVersion: "module-native-v2", economicsPolicyId: MODULE_MODE_ECONOMICS_POLICY_V2 };

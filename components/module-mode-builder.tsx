@@ -9,7 +9,8 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, 
 
 import { ModuleLibrary, ModuleCategoryIcon } from "@/components/module-library";
 import { ModulePickerDialog } from "@/components/module-picker-dialog";
-import { moduleCategory } from "@/lib/module-mode/library";
+import { moduleCategory, type ModuleLibraryEntry } from "@/lib/module-mode/library";
+import { consumeModuleModeLaunchDraftHandoff, saveModuleModeLaunchDraftHandoff } from "@/lib/module-mode/launch-draft-handoff";
 import { ModuleSchemaField } from "@/components/module-mode-fields";
 import { ModuleModeImagePicker, moduleModeImageSource, type ModuleModeImageResource } from "@/components/module-mode-image";
 import { useRouteViewChain } from "@/components/view-chain";
@@ -76,13 +77,13 @@ export interface ModuleModeBuilderProps {
   previewDescription?: string;
   statusContent?: ReactNode;
   versionContent?: ReactNode;
-  moduleLaunchContent?: ReactNode;
+  anyQuoteModule?: { entry: ModuleLibraryEntry; disabled: boolean; onSelect: () => void };
   reviewContent?: ReactNode;
   resultContent?: ReactNode;
   onEdit?: () => void;
 }
 
-export function ModuleModeBuilder({ catalog = PREVIEW_MODULE_CATALOG, engine = NATIVE_ENGINE_PROFILE, configurationContext = {}, launchAction, minimumInitialBuyWei, release, previewDescription, statusContent, moduleLaunchContent, reviewContent, resultContent, onEdit }: Readonly<ModuleModeBuilderProps>) {
+export function ModuleModeBuilder({ catalog = PREVIEW_MODULE_CATALOG, engine = NATIVE_ENGINE_PROFILE, configurationContext = {}, launchAction, minimumInitialBuyWei, release, previewDescription, statusContent, anyQuoteModule, reviewContent, resultContent, onEdit }: Readonly<ModuleModeBuilderProps>) {
   const { hydrated } = useRouteViewChain(4663);
   const [state, setState] = useState(createModuleModeState);
   const { expanded: detailsOpen, setExpanded: setDetailsOpen, toggle: toggleDetails, panelProps: detailsPanel } = useDisclosureState();
@@ -104,12 +105,33 @@ export function ModuleModeBuilder({ catalog = PREVIEW_MODULE_CATALOG, engine = N
   const [previousImage, setPreviousImage] = useState<{ image: ModuleModeImage; resource: ModuleModeImageResource | null } | null>(null);
   const [imageBusy, setImageBusy] = useState(false);
   const imageUrls = useRef(new Set<string>());
-  useEffect(() => {
-    const urls = imageUrls.current;
-    return () => { for (const url of urls) URL.revokeObjectURL(url); };
-  }, []);
+  const imageMounted = useRef(false);
+  const draftRestored = useRef(false);
   const form = useRef<HTMLFormElement>(null);
   const selectionFocus = useRef<{ kind: "add" } | { kind: "configure"; id: string } | null>(null);
+  useEffect(() => {
+    const urls = imageUrls.current;
+    imageMounted.current = true;
+    return () => {
+      imageMounted.current = false;
+      queueMicrotask(() => { if (!imageMounted.current) for (const url of urls) URL.revokeObjectURL(url); });
+    };
+  }, []);
+  useEffect(() => {
+    if (draftRestored.current) return;
+    draftRestored.current = true;
+    const handoff = consumeModuleModeLaunchDraftHandoff("native");
+    if (!handoff) return;
+    const { imageResource: restoredImage, nativeState, ...fields } = handoff;
+    if (restoredImage) imageUrls.current.add(restoredImage.objectUrl);
+    queueMicrotask(() => {
+      if (!imageMounted.current) return;
+      selectionFocus.current = { kind: "add" };
+      setState({ ...(nativeState ?? createModuleModeState()), ...fields });
+      setImageResource(restoredImage);
+      setAnnouncement("Any Quote LP removed. Your coin details are kept.");
+    });
+  }, []);
   useLayoutEffect(() => {
     const target = selectionFocus.current;
     selectionFocus.current = null;
@@ -153,6 +175,17 @@ export function ModuleModeBuilder({ catalog = PREVIEW_MODULE_CATALOG, engine = N
     if (fromEditor) selectionFocus.current = { kind: "add" };
     setState((current) => setModuleSelected(current, entry, false)); setRemoved(entry);
     setAnnouncement(`${entry.title} removed. Your settings are kept.`);
+  }
+  function addFromLibrary(entry: ModuleLibraryEntry) {
+    if (contextLocked || imageBusy || anyQuoteModule?.disabled) return;
+    if (anyQuoteModule && entry.id === anyQuoteModule.entry.id) {
+      if (state.selectedModules.length > 0) return;
+      saveModuleModeLaunchDraftHandoff("any-quote", { ...state, imageResource, nativeState: state });
+      anyQuoteModule.onSelect();
+      return;
+    }
+    const nativeEntry = catalog.find(candidate => candidate.id === entry.id);
+    if (nativeEntry) add(nativeEntry);
   }
   function showModules(pointer: boolean, id?: string) {
     setPickerPointer(pointer);
@@ -293,9 +326,12 @@ export function ModuleModeBuilder({ catalog = PREVIEW_MODULE_CATALOG, engine = N
         </aside> : null}
       </div>
       {pickerOpen ? <ModulePickerDialog animateOpen={pickerPointer} title="Add modules" description="Modules are upgrades for your coin. Pick the features you want." onClose={() => setPickerOpen(false)}>
-        {moduleLaunchContent}
-        <ModuleLibrary catalog={catalog} selectedIds={state.selectedModules} onAdd={add} onRemove={remove}
-          feePolicyFor={release ? entry => moduleModeFeePolicy(release, state.selectedModules.includes(entry.id) ? selected : [...selected, entry]) : undefined} />
+        <ModuleLibrary catalog={anyQuoteModule ? [...catalog, anyQuoteModule.entry] : catalog} selectedIds={state.selectedModules}
+          disabled={contextLocked || imageBusy || anyQuoteModule?.disabled} onAdd={addFromLibrary}
+          onRemove={entry => { const nativeEntry = catalog.find(candidate => candidate.id === entry.id); if (nativeEntry) remove(nativeEntry); }}
+          disabledFor={entry => entry.id === anyQuoteModule?.entry.id && state.selectedModules.length > 0 ? "Remove your other modules to use Any Quote LP." : undefined}
+          feeDescriptionFor={entry => entry.id === anyQuoteModule?.entry.id ? "Platform fee: 0.30% per trade." : undefined}
+          feePolicyFor={release ? entry => { const nativeEntry = catalog.find(candidate => candidate.id === entry.id); return nativeEntry ? moduleModeFeePolicy(release, state.selectedModules.includes(entry.id) ? selected : [...selected, nativeEntry]) : null; } : undefined} />
       </ModulePickerDialog> : null}
       {configuredEntry ? <ModulePickerDialog animateOpen={pickerPointer} title={configuredEntry.title} description={configuredEntry.summary} onClose={() => setConfigurationId(null)}>
         <fieldset className={styles.formFields} disabled={contextLocked}>{renderModuleConfiguration(configuredEntry)}</fieldset>

@@ -15,7 +15,7 @@ import { ROBINHOOD_BLOCK_EXPLORER_URL } from "@/lib/chains";
 import { assertModuleEngineOperationAvailability, fetchModuleEngineAvailability } from "@/lib/module-engine/availability-client";
 import { MODULE_ENGINE_AVAILABILITY_SCHEMA, type ModuleEngineAvailability, type ModuleEngineTemplate } from "@/lib/module-engine/catalog";
 import { createModuleEngineClient, ModuleEngineTransactionRevertedError, observeModuleEngineReceipt, readModuleEngineLaunch, type ModuleEngineReceiptResult, type PreparedModuleEngineTransaction } from "@/lib/module-engine/client";
-import type { ModuleModeImage } from "@/lib/module-mode/builder";
+import type { ModuleModeImage, ModuleModeCatalogEntry } from "@/lib/module-mode/builder";
 import { moduleModeReleaseQuery, type ModuleModeLaunchVersion } from "@/lib/module-mode/release-selection";
 import { clearModuleModeOperation, moduleModeOperationPath, type ModuleModeOperation } from "@/lib/module-mode-operation-store";
 import { fetchModuleEngineOperationRelease, recoverModuleEngineOperation } from "@/lib/module-mode-operation-recovery";
@@ -39,7 +39,7 @@ function errorMessage(error: unknown) {
 }
 
 /** Shared wallet, source authority and durable operation recovery for each reviewed template. */
-export function ModuleEngineHost({ releaseDigest, token, versions = [] }: { releaseDigest?: Hex; token?: Address; versions?: readonly ModuleModeLaunchVersion[] }) {
+export function ModuleEngineHost({ releaseDigest, token, versions = [], nativeCatalog }: { releaseDigest?: Hex; token?: Address; versions?: readonly ModuleModeLaunchVersion[]; nativeCatalog?: readonly ModuleModeCatalogEntry[] }) {
   const router = useRouter();
   const [changingVersion, startVersionChange] = useTransition();
   const { wallet, authenticated, sessionReady, authReady, connecting, openingWallet, switchingNetwork, disconnecting, openWallet, switchNetwork, getAccessToken, sendModuleModeTransaction } = useWallet();
@@ -165,6 +165,12 @@ export function ModuleEngineHost({ releaseDigest, token, versions = [] }: { rele
     assertSession(); return binding.uri;
   }
 
+  function removeModule() {
+    if (busy.current || working || requestPending || unresolved || changingVersion) return;
+    generation.current += 1; setFlow({ phase: "idle" });
+    startVersionChange(() => router.push("/launch/modules", { scroll: false }));
+  }
+
   const versionContent = versions.length > 1 ? <div className={styles.field}><label htmlFor="engine-launch-version">Module version</label>
     <select id="engine-launch-version" value={releaseDigest ?? release?.releaseDigest ?? ""} disabled={working || unresolved || requestPending || changingVersion} onChange={event => {
       const version = versions.find(candidate => candidate.releaseDigest === event.target.value);
@@ -200,5 +206,5 @@ export function ModuleEngineHost({ releaseDigest, token, versions = [] }: { rele
   if (token) return release && boundManagement ? <ModuleEngineConsole {...actions} token={token} release={release} template={boundManagement.template} client={client} statusContent={statusContent} />
     : <section className={styles.page}><header className={styles.heading}><h1>Coin controls</h1><p>Load the version bound to this coin to read its available actions.</p></header>{statusContent}</section>;
   if (loadedSelection === null && !saved.blocked) return <ModuleBuilderLoading />;
-  return <ModuleEngineBuilder {...actions} availability={availability} client={client} statusContent={statusContent} versionContent={versionContent} onUploadImage={uploadImage} />;
+  return <ModuleEngineBuilder {...actions} availability={availability} client={client} statusContent={statusContent} versionContent={versionContent} onUploadImage={uploadImage} nativeCatalog={nativeCatalog} onRemoveModule={removeModule} />;
 }

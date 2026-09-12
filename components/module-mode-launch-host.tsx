@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowRight, ArrowUpRight, Check, Copy, LoaderCircle, RefreshCw } from "lucide-react";
+import { ArrowUpRight, Check, Copy, LoaderCircle, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, useTransition, type FormEvent } from "react";
 import { formatUnits, toHex, type Address, type Hex } from "viem";
 
@@ -19,6 +19,7 @@ import { browserWalletRequestIsPending, subscribeToBrowserWalletRequest } from "
 import { beginModuleModeOperation, clearModuleModeOperation, moduleModeOperationPath, rememberModuleModeTransactionHash, type ModuleModeOperation } from "@/lib/module-mode-operation-store";
 import { moduleModeReleaseQuery, type ModuleModeLaunchVersion } from "@/lib/module-mode/release-selection";
 import { fetchModuleModeOperationRelease, recoverModuleModeOperation } from "@/lib/module-mode-operation-recovery";
+import type { ModuleLibraryEntry } from "@/lib/module-mode/library";
 
 type LaunchFlow = {
   phase: "idle" | "uploading" | "preparing" | "signing" | "pending" | "mined" | "reverted" | "receipt-unavailable" | "error" | "uncertain";
@@ -65,7 +66,7 @@ function assertDraftAvailability(draft: ModuleModeDraft, current: ModuleModeAvai
   }
 }
 
-export function ModuleModeLaunchHost({ releaseDigest, versions = [], anyQuoteReleaseDigest }: { releaseDigest?: string; versions?: readonly ModuleModeLaunchVersion[]; anyQuoteReleaseDigest?: Hex }) {
+export function ModuleModeLaunchHost({ releaseDigest, versions = [], anyQuoteReleaseDigest, anyQuoteModule }: { releaseDigest?: string; versions?: readonly ModuleModeLaunchVersion[]; anyQuoteReleaseDigest?: Hex; anyQuoteModule?: ModuleLibraryEntry }) {
   const router = useRouter();
   const [changingVersion, startVersionChange] = useTransition();
   const requestedRelease = useRef(releaseDigest);
@@ -234,11 +235,11 @@ export function ModuleModeLaunchHost({ releaseDigest, versions = [], anyQuoteRel
 
   return <ModuleModeBuilder
     release={release}
-    moduleLaunchContent={anyQuoteReleaseDigest ? <ModuleModeAnyQuoteLaunchEntry disabled={working || requestPending || hasSubmission || changingVersion} onSelect={() => {
+    anyQuoteModule={anyQuoteReleaseDigest && anyQuoteModule ? { entry: anyQuoteModule, disabled: working || requestPending || hasSubmission || changingVersion, onSelect: () => {
       if (working || requestPending || hasSubmission || changingVersion) return;
       operation.current += 1; setFlow({ phase: "idle" });
       startVersionChange(() => router.push(`/launch/modules${moduleModeReleaseQuery({ sourceKind: "module-engine-v1", releaseDigest: anyQuoteReleaseDigest })}`, { scroll: false }));
-    }} /> : undefined}
+    } } : undefined}
     versionContent={versions.length > 1 ? <div className={styles.field}><label htmlFor="module-launch-version">Module version</label><select id="module-launch-version" value={releaseDigest ?? availability?.release?.releaseDigest ?? versions[0]?.releaseDigest} disabled={working || requestPending || hasSubmission || changingVersion} onChange={event => {
       const version = versions.find(candidate => candidate.releaseDigest === event.target.value);
       if (!version || working || requestPending || hasSubmission) return;
@@ -274,14 +275,6 @@ export function ModuleModeLaunchHost({ releaseDigest, versions = [], anyQuoteRel
       onRecover={recoveryOperation?.kind === "launch" && recoveryOperation.sourceKind !== "module-engine-v1" ? transactionHash => void checkRecoveredReceipt(transactionHash) : undefined}
     /> : undefined}
   />;
-}
-
-export function ModuleModeAnyQuoteLaunchEntry({ disabled, onSelect }: { disabled: boolean; onSelect: () => void }) {
-  return <section className={styles.catalogRow} aria-labelledby="module-any-quote-title"><div>
-    <h3 id="module-any-quote-title">Any Quote LP</h3>
-    <p>Start a coin paired with a compatible token of your choice. Trade with ETH.</p>
-    <button type="button" className={styles.textButton} disabled={disabled} onClick={onSelect}>Use Any Quote LP <ArrowRight size={16} aria-hidden="true" /></button>
-  </div></section>;
 }
 
 export function ModuleModeLaunchResult({ phase, token, symbol, transactionHash, message, checking = false, onCheck, onRecover }: {
