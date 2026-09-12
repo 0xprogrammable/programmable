@@ -1513,6 +1513,11 @@ async function defaultReadRpcSnapshot(input: Readonly<{
             symbol?.status !== "success" ||
             decimals?.status !== "success"
           ) {
+            // Multicall returns transport errors as failed results. Preserve
+            // them for the outer RPC failover and endpoint redaction.
+            for (const required of [name, symbol, decimals]) {
+              if (required?.status === "failure") throw required.error;
+            }
             throw new Error(`Token metadata read failed for ${tokenAddress}`);
           }
           return validTokenMetadata(

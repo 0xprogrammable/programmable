@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { encodeFunctionResult, multicall3Abi, numberToHex } from "viem";
 
 vi.mock("server-only", () => ({}));
 
@@ -16,6 +17,9 @@ import {
   ENVIO_CLASSIC_V3_TOKEN_METADATA_CONCURRENCY,
   envioClassicV3IdentityCommitmentV1,
 } from "../lib/market-data/envio-classic-v3-catalog.server";
+import { uerc20ReadAbi } from "../lib/onchain/abis";
+import * as onchainConfig from "../lib/onchain/config";
+import type { ReadyOnchainDeployment } from "../lib/onchain/types";
 
 const release = getDataPipelineReleaseBinding();
 const ANCHOR_BLOCK = 25_770_000;
@@ -493,6 +497,89 @@ describe("Envio Classic V3 public catalog", () => {
   it("bounds RPC metadata work to 96 calls and two concurrent batches", () => {
     expect(ENVIO_CLASSIC_V3_TOKEN_METADATA_BATCH_SIZE).toBe(24);
     expect(ENVIO_CLASSIC_V3_TOKEN_METADATA_CONCURRENCY).toBe(2);
+  });
+
+  it("fails over a rejected metadata multicall but keeps missing and invalid metadata closed", async () => {
+    const deployment = {
+      environment: "production",
+      releaseVersion: "classic-v2",
+      chainId: 1,
+      status: "ready",
+      launcher: address(1),
+      feeHook: address(2),
+      launcherRuntimeCodeHash: hex32(1),
+      feeHookRuntimeCodeHash: hex32(2),
+      deploymentBlock: 1n,
+      stateView: address(3),
+      stateViewRuntimeCodeHash: hex32(3),
+      rpcUrl: "https://primary.example/rpc",
+      rpcUrlSecondary: "https://secondary.example/rpc",
+      rpcProviderIds: { primary: "alchemy", secondary: "quicknode" },
+      confirmations: 12n,
+      logBlockRange: 5_000n,
+    } satisfies ReadyOnchainDeployment;
+    const binding = vi.spyOn(onchainConfig, "getWebsiteReadOnchainDeployment")
+      .mockReturnValue(deployment);
+    const providers: string[] = [];
+    let failure: "provider" | "missing" | "invalid" | "revert" = "provider";
+    const rpcFetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const provider = new URL(input instanceof Request ? input.url : String(input)).hostname;
+      const request = JSON.parse(input instanceof Request
+        ? await input.text()
+        : String(init?.body)) as { id: number; method: string };
+      providers.push(provider);
+      const respond = (result: unknown) => json({ jsonrpc: "2.0", id: request.id, result });
+      if (request.method === "eth_blockNumber") {
+        return respond(numberToHex(ANCHOR_BLOCK + release.confirmations));
+      }
+      if (request.method === "eth_getBlockByNumber") {
+        return respond({ number: numberToHex(ANCHOR_BLOCK), hash: hex32(60_000),
+          timestamp: numberToHex(1_785_480_010), transactions: [] });
+      }
+      if (request.method !== "eth_call") throw new Error("Unexpected RPC method");
+      if (failure === "provider" && provider === "primary.example") {
+        return json({ jsonrpc: "2.0", id: request.id,
+          error: { code: -32_005, message: "rate limit exceeded" } });
+      }
+      const results = Array.from({ length: 2 }, () => [
+        { success: failure !== "revert", returnData: failure === "revert" ? "0x" as const : encodeFunctionResult({
+          abi: uerc20ReadAbi, functionName: "name", result: failure === "invalid" ? "" : "Token",
+        }) },
+        { success: true, returnData: encodeFunctionResult({
+          abi: uerc20ReadAbi, functionName: "symbol", result: "TKN",
+        }) },
+        { success: true, returnData: encodeFunctionResult({
+          abi: uerc20ReadAbi, functionName: "decimals", result: 18,
+        }) },
+        { success: false, returnData: "0x" as const },
+      ]).flat();
+      return respond(encodeFunctionResult({ abi: multicall3Abi, functionName: "aggregate3",
+        result: failure === "missing" ? results.slice(0, 2) : results }));
+    });
+    vi.stubGlobal("fetch", rpcFetch);
+    const read = () => {
+      const test = harness();
+      return createEnvioClassicV3CatalogReaderV1({
+        fetcher: test.fetcher, catalogBinding: test.catalogBinding,
+      })();
+    };
+    try {
+      await expect(read()).resolves.toMatchObject({ status: "current", entries: [{}, {}] });
+      expect([...new Set(providers)]).toEqual(["primary.example", "secondary.example"]);
+      for (const [invalid, message] of [
+        ["missing", /multicall results mismatch/u],
+        ["invalid", /Token metadata is invalid/u],
+        ["revert", /reverted/u],
+      ] as const) {
+        failure = invalid;
+        providers.length = 0;
+        await expect(read()).rejects.toThrow(message);
+        expect([...new Set(providers)]).toEqual(["primary.example"]);
+      }
+    } finally {
+      binding.mockRestore();
+      vi.unstubAllGlobals();
+    }
   });
 
   it("requires the catalog anchor to have the configured RPC confirmation depth", async () => {
