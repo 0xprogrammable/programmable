@@ -2,15 +2,15 @@ import "server-only";
 import { decodeEventLog, decodeFunctionData, decodeFunctionResult, encodeAbiParameters, encodeFunctionData, getAddress, keccak256, parseAbi, toHex, type Address, type Hex } from "viem";
 import chainProfile from "@/contracts/spec/robinhood-custom-launch/chain-4663.v1.json";
 import type { RobinhoodLaunch } from "@/lib/robinhood-launches";
-import { canonicalBrowserSha256V2 } from "@/lib/custom-launch/browser-authority-v2";
+import { canonicalBrowserJsonV2, canonicalBrowserSha256V2 } from "@/lib/custom-launch/browser-authority-v2";
 import { isRobinhoodProjectedLaunch, projectionAddress, projectionHash, projectionObject, resolveProjectionAddress } from "@/lib/custom-launch/launch-projection-v1";
-import { launchPlanTradeAmountsV1, LaunchPlanTradeErrorV1, ROUTED_TRADE_CONTRACTS_V1, ROUTED_TRADE_PERMIT2_ABI_V1,
+import { LaunchPlanTradeErrorV1, ROUTED_TRADE_CONTRACTS_V1, ROUTED_TRADE_PERMIT2_ABI_V1,
   ROUTED_TRADE_TOKEN_ABI_V1, type LaunchPlanTradeTransactionV1 } from "@/lib/custom-launch/routed-trade-plan-v1";
 import { agreedTradeRpcV1, bytesV1, objectV1, pendingTradeV1, productionTradeRpcsV1, quantityV1, successfulTradeFramesV1,
   tradeBlockV1, tradePostStateV1, tradeTraceV1, type TradeRpcV1 } from "@/lib/server/custom-launch/routed-trade-rpc-v1";
 import { readRobinhoodToken } from "@/lib/server/robinhood-index/read";
 import { buildCustomV4Swap, buildCustomV4SwapApproval, CUSTOM_V4_NATIVE, CUSTOM_V4_SWAP_DESCRIPTOR, CUSTOM_V4_SWAP_RESPONSE,
-  customV4PoolId, customV4SwapDescriptorDigest, customV4SwapPreparationDigest, parseCustomV4SwapRequest, validateCustomV4SwapDescriptor,
+  customV4PoolId, customV4SwapAmounts, customV4SwapDescriptorDigest, customV4SwapPreparationDigest, parseCustomV4SwapRequest, validateCustomV4SwapDescriptor,
   type CustomV4RuntimeBinding, type CustomV4SwapDescriptor, type CustomV4SwapPreparation } from "@/lib/swap/custom-v4";
 
 const INFRA = ["poolManager", "universalRouter", "v4Quoter", "stateView", "permit2"] as const;
@@ -150,7 +150,8 @@ export async function prepareCustomV4Swap(input: unknown, dependencies: {
   const latest = await Promise.all(rpcs.map(async read => tradeBlockV1(await read("eth_getBlockByNumber", ["latest", false]))));
   const height = BigInt(latest[0]!.number) < BigInt(latest[1]!.number) ? latest[0]!.number : latest[1]!.number;
   const tag = toHex(BigInt(height)), block = await rpc("eth_getBlockByNumber", [tag, false], tradeBlockV1);
-  if (BigInt(block.timestamp) > now || BigInt(block.timestamp) + 60n < now) return pendingTradeV1("SWAP_CHECKPOINT_STALE");
+  const checkpointNow = dependencies.now?.() ?? BigInt(Math.floor(Date.now() / 1000));
+  if (BigInt(block.timestamp) > checkpointNow || BigInt(block.timestamp) + 60n < checkpointNow) return pendingTradeV1("SWAP_CHECKPOINT_STALE");
   const reference = { blockHash: block.hash, requireCanonical: true };
   const expected = new Map(descriptor.runtimeBindings.map(binding => [binding.address.toLowerCase(), binding.runtimeCodeHash.toLowerCase()]));
   for (const name of INFRA) { const pinned = ROUTED_TRADE_CONTRACTS_V1[name];
@@ -173,7 +174,7 @@ export async function prepareCustomV4Swap(input: unknown, dependencies: {
       poolKey: descriptor.poolKey, zeroForOne: request.buy, exactAmount: BigInt(request.amountIn), hookData: "0x" }] })), tokenUint("decimals", []),
   ]);
   const [amountOut] = decodeFunctionResult({ abi: QUOTER, functionName: "quoteExactInputSingle", data: quoteRaw });
-  const amounts = launchPlanTradeAmountsV1(amountOut, 0, request.slippageBps);
+  const amounts = customV4SwapAmounts(amountOut, request);
   if (tokenDecimals > 255n) return pendingTradeV1("SWAP_TOKEN_READ_PENDING");
   let transaction = buildCustomV4Swap(descriptor, request, amountOut);
   if (!request.buy) {
@@ -195,21 +196,42 @@ export async function prepareCustomV4Swap(input: unknown, dependencies: {
     .filter(address => !same(address, CUSTOM_V4_NATIVE) && !runtimeBindings.some(binding => same(binding.address, address)));
   if (runtimeBindings.length + missing.length > 512) return pendingTradeV1("SWAP_TRACE_LIMIT");
   await Promise.all(missing.map(async address => runtimeBindings.push({ address: getAddress(address), runtimeCodeHash: keccak256(await rpc("eth_getCode", [address, reference], bytesV1)) })));
-  const [result, estimate, post] = await Promise.all([
+  const [result, estimate, posts] = await Promise.all([
     rpc("eth_call", [transactionRpc(transaction), reference], bytesV1),
     rpc("eth_estimateGas", [transactionRpc(transaction), tag], value => quantityV1(value).toString()),
-    rpc("debug_traceCall", [transactionRpc(transaction), tag, { tracer: "prestateTracer", timeout: "10s", tracerConfig: { diffMode: true } }], tradePostStateV1),
+    Promise.all(rpcs.map(async read => tradePostStateV1(await read("debug_traceCall", [transactionRpc(transaction), tag,
+      { tracer: "prestateTracer", timeout: "10s", tracerConfig: { diffMode: true } }])))),
   ]);
   if (result !== trace.output || (transaction.kind === "token_approval" && result !== "0x" && BigInt(result) !== 1n)) return pendingTradeV1("SWAP_SIMULATION_DISAGREEMENT");
   const gas = (BigInt(estimate) * 120n + 99n) / 100n;
   if (gas === 0n || gas > 30_000_000n || BigInt(trace.gasUsed) > gas) return pendingTradeV1("SWAP_GAS_PENDING");
   transaction = { ...transaction, gasLimit: gas.toString() };
+  // ArbOS also writes internal gas bookkeeping during a trace. Its counters can
+  // differ between providers even when the same swap executes identically.
+  // Require identical state for every source, runtime, owner and reached call,
+  // then independently read the actual balance/allowance effects from each
+  // provider's own application poststate. Chain-internal accounts cannot be
+  // overridden by eth_call. No synthetic approval or balance is used.
+  const reached = new Set(runtimeBindings.map(binding => binding.address.toLowerCase()));
+  const applicationState = (post: Record<string, Record<string, unknown>>) => Object.fromEntries(Object.entries(post).filter(([address]) => reached.has(address.toLowerCase())));
+  if (canonicalBrowserJsonV2(applicationState(posts[0]!)) !== canonicalBrowserJsonV2(applicationState(posts[1]!))) return pendingTradeV1("SWAP_POST_STATE_DISAGREEMENT");
+  const postCall = async (to: Address, data: Hex) => {
+    const results = await Promise.all(rpcs.map(async (read, index) => bytesV1(await read("eth_call", [{ from: request.owner, to, data }, reference, applicationState(posts[index]!)]))));
+    if (results[0] !== results[1]) return pendingTradeV1("SWAP_EFFECT_DISAGREEMENT");
+    return results[0]!;
+  };
+  const postTokenUint = async (functionName: "balanceOf" | "allowance", args: readonly unknown[]) => {
+    const raw = await postCall(request.token, encodeFunctionData({ abi: ROUTED_TRADE_TOKEN_ABI_V1, functionName, args: args as never }));
+    if (raw.length !== 66) return pendingTradeV1("SWAP_TOKEN_READ_PENDING"); return BigInt(raw);
+  };
   let settlement: CustomV4SwapPreparation["evidence"]["settlement"] = null;
   if (transaction.kind === "swap") {
     const owner = request.owner.toLowerCase();
     const nativeBefore = BigInt(await rpc("eth_getBalance", [request.owner, reference], value => quantityV1(value).toString()));
-    const nativeAfter = post[owner]?.balance === undefined ? nativeBefore : quantityV1(post[owner]!.balance);
-    const [tokenBefore, tokenAfter] = await Promise.all([tokenUint("balanceOf", [request.owner]), tokenUint("balanceOf", [request.owner], post)]);
+    const nativeResults = posts.map(post => post[owner]?.balance === undefined ? nativeBefore : quantityV1(post[owner]!.balance));
+    if (nativeResults[0] !== nativeResults[1]) return pendingTradeV1("SWAP_EFFECT_DISAGREEMENT");
+    const nativeAfter = nativeResults[0]!;
+    const [tokenBefore, tokenAfter] = await Promise.all([tokenUint("balanceOf", [request.owner]), postTokenUint("balanceOf", [request.owner])]);
     const inputDecrease = request.buy ? nativeBefore - nativeAfter : tokenBefore - tokenAfter;
     const outputIncrease = request.buy ? tokenAfter - tokenBefore : nativeAfter - nativeBefore;
     const output = request.buy ? request.token : CUSTOM_V4_NATIVE;
@@ -221,12 +243,12 @@ export async function prepareCustomV4Swap(input: unknown, dependencies: {
     if (inputDecrease < 0n || inputDecrease > BigInt(request.amountIn) || outputIncrease !== amountOut
       || takes.length !== 1 || !same(takes[0]!.recipient, request.owner) || takes[0]!.amount !== amountOut) return pendingTradeV1("SWAP_SETTLEMENT_UNPROVEN");
     settlement = { inputBalanceDecrease: inputDecrease.toString(), outputBalanceIncrease: outputIncrease.toString(), takeAmount: takes[0]!.amount.toString(),
-      postStateDigest: canonicalBrowserSha256V2("programmable.custom-v4-swap-post-state.v1", post) };
+      postStateDigest: canonicalBrowserSha256V2("programmable.custom-v4-swap-post-state.v1", posts) };
   } else if (transaction.kind === "token_approval") {
-    if (await tokenUint("allowance", [request.owner, ROUTED_TRADE_CONTRACTS_V1.permit2.address], post) !== BigInt(request.amountIn)) return pendingTradeV1("EXACT_APPROVAL_UNPROVEN");
+    if (await postTokenUint("allowance", [request.owner, ROUTED_TRADE_CONTRACTS_V1.permit2.address]) !== BigInt(request.amountIn)) return pendingTradeV1("EXACT_APPROVAL_UNPROVEN");
   } else {
-    const raw = await call(getAddress(ROUTED_TRADE_CONTRACTS_V1.permit2.address), encodeFunctionData({ abi: ROUTED_TRADE_PERMIT2_ABI_V1,
-      functionName: "allowance", args: [request.owner, request.token, getAddress(ROUTED_TRADE_CONTRACTS_V1.universalRouter.address)] }), post);
+    const raw = await postCall(getAddress(ROUTED_TRADE_CONTRACTS_V1.permit2.address), encodeFunctionData({ abi: ROUTED_TRADE_PERMIT2_ABI_V1,
+      functionName: "allowance", args: [request.owner, request.token, getAddress(ROUTED_TRADE_CONTRACTS_V1.universalRouter.address)] }));
     const [amount, expiration] = decodeFunctionResult({ abi: ROUTED_TRADE_PERMIT2_ABI_V1, functionName: "allowance", data: raw });
     if (amount !== BigInt(request.amountIn) || BigInt(expiration) !== BigInt(request.deadline)) return pendingTradeV1("EXACT_APPROVAL_UNPROVEN");
   }

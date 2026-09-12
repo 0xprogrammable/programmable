@@ -24,7 +24,9 @@ export type CustomV4SwapDescriptor = Readonly<{
   source: Readonly<{ kind: "router_v1" | "multi_role_v2"; router: Address; routerRuntimeCodeHash: Hex; onchainLaunchId: Hex; stampHash: Hex }>;
   runtimeBindings: readonly CustomV4RuntimeBinding[]; descriptorDigest: `sha256:${string}`;
 }>;
-export type CustomV4SwapRequest = Readonly<{ token: Address; owner: Address; buy: boolean; amountIn: string; slippageBps: number; deadline: string }>;
+export type CustomV4SwapRequest = Readonly<{ token: Address; owner: Address; buy: boolean; amountIn: string; slippageBps: number; deadline: string;
+  /** Used only to revalidate the already-reviewed transaction before sending. */
+  amountOutMinimum?: string }>;
 export type CustomV4SwapPreparation = Readonly<{
   schemaVersion: typeof CUSTOM_V4_SWAP_RESPONSE; status: "ready" | "approval_required"; request: CustomV4SwapRequest;
   descriptorDigest: `sha256:${string}`;
@@ -52,16 +54,24 @@ const uint = (value: unknown, maximum = UINT128_MAX): bigint => {
   return BigInt(value);
 };
 export function parseCustomV4SwapRequest(value: unknown): CustomV4SwapRequest {
-  if (!projectionObject(value) || Object.keys(value).sort().join() !== ["token", "owner", "buy", "amountIn", "slippageBps", "deadline"].sort().join()
+  if (!projectionObject(value) || Object.keys(value).sort().join() !== ["token", "owner", "buy", "amountIn", "slippageBps", "deadline", ...(Object.hasOwn(value, "amountOutMinimum") ? ["amountOutMinimum"] : [])].sort().join()
     || typeof value.token !== "string" || !ADDRESS.test(value.token) || same(value.token, CUSTOM_V4_NATIVE)
     || typeof value.owner !== "string" || !ADDRESS.test(value.owner) || same(value.owner, CUSTOM_V4_NATIVE)
     || typeof value.buy !== "boolean" || !Number.isInteger(value.slippageBps) || Number(value.slippageBps) < 1 || Number(value.slippageBps) > 5000
-    || uint(value.amountIn) === 0n || uint(value.deadline, (1n << 48n) - 1n) === 0n) return invalid("INVALID_SWAP_REQUEST", "The swap amount or wallet is invalid.", 400);
+    || uint(value.amountIn) === 0n || uint(value.deadline, (1n << 48n) - 1n) === 0n
+    || Object.hasOwn(value, "amountOutMinimum") && uint(value.amountOutMinimum) === 0n) return invalid("INVALID_SWAP_REQUEST", "The swap amount or wallet is invalid.", 400);
   return Object.freeze({ ...value, token: getAddress(value.token), owner: getAddress(value.owner) }) as CustomV4SwapRequest;
 }
 export function customV4PoolId(key: CustomV4PoolKey) {
   return keccak256(encodeAbiParameters([{ type: "address" }, { type: "address" }, { type: "uint24" }, { type: "int24" }, { type: "address" }],
     [key.currency0, key.currency1, key.fee, key.tickSpacing, key.hooks]));
+}
+export function customV4SwapAmounts(amountOut: bigint, request: CustomV4SwapRequest) {
+  const amounts = launchPlanTradeAmountsV1(amountOut, 0, request.slippageBps);
+  if (request.amountOutMinimum === undefined) return amounts;
+  const minimum = uint(request.amountOutMinimum);
+  if (minimum === 0n || minimum > amountOut) return invalid("SWAP_MINIMUM_NO_LONGER_AVAILABLE", "The price moved beyond your minimum. Refresh the quote.");
+  return { ...amounts, amountOutMinimum: minimum.toString() };
 }
 export function customV4SwapDescriptorDigest(value: Omit<CustomV4SwapDescriptor, "descriptorDigest">) {
   return canonicalBrowserSha256V2(CUSTOM_V4_SWAP_DESCRIPTOR, value);
@@ -89,7 +99,7 @@ export function validateCustomV4SwapDescriptor(value: CustomV4SwapDescriptor): C
 export function buildCustomV4Swap(descriptor: CustomV4SwapDescriptor, request: CustomV4SwapRequest, amountOut: bigint): LaunchPlanTradeTransactionV1 {
   validateCustomV4SwapDescriptor(descriptor);
   if (!same(request.token, descriptor.launch.tokenAddress)) return invalid("SWAP_TOKEN_CHANGED");
-  const amounts = launchPlanTradeAmountsV1(amountOut, 0, request.slippageBps);
+  const amounts = customV4SwapAmounts(amountOut, request);
   const input = request.buy ? CUSTOM_V4_NATIVE : request.token, output = request.buy ? request.token : CUSTOM_V4_NATIVE;
   const planner = new V4Planner();
   planner.addAction(Actions.SWAP_EXACT_IN_SINGLE, [{ poolKey: descriptor.poolKey, zeroForOne: request.buy,
@@ -118,7 +128,7 @@ export function validateCustomV4SwapPreparation(value: unknown, context: { descr
   if (!projectionObject(value) || value.schemaVersion !== CUSTOM_V4_SWAP_RESPONSE || !projectionObject(value.quote)
     || !projectionObject(value.transaction) || !projectionObject(value.evidence)) return invalid("INVALID_SWAP_PREPARATION");
   const prepared = value as unknown as CustomV4SwapPreparation, quote = prepared.quote, evidence = prepared.evidence, tx = prepared.transaction;
-  const amounts = launchPlanTradeAmountsV1(uint(quote.amountOut), 0, request.slippageBps);
+  const amounts = customV4SwapAmounts(uint(quote.amountOut), request);
   if (canonicalBrowserJsonV2(prepared.request) !== canonicalBrowserJsonV2(request) || prepared.descriptorDigest !== descriptor.descriptorDigest
     || quote.amountOutMinimum !== amounts.amountOutMinimum || uint(quote.validUntil) <= now || uint(quote.validUntil) > now + 30n
     || uint(quote.blockTimestamp) > now || uint(quote.blockTimestamp) + 90n < now || uint(request.deadline) <= now
@@ -152,7 +162,12 @@ export function validateCustomV4SwapPreparation(value: unknown, context: { descr
 /** No transaction is sent here. The wallet provider owns the single-send lock,
  * reviewed-action comparison, pending record and eth_sendTransaction boundary. */
 export async function prepareCustomV4SwapWallet(provider: LaunchWalletProviderV1, account: string, input: CustomV4SwapWalletInput, fetcher: typeof fetch = fetch): Promise<CustomV4SwapWalletReview> {
-  const from = getAddress(account), request = parseCustomV4SwapRequest(input.request);
+  const from = getAddress(account), originalRequest = parseCustomV4SwapRequest(input.request);
+  if (originalRequest.amountOutMinimum !== undefined) return invalid("UNREVIEWED_SWAP_MINIMUM");
+  if (input.action === "send" && (!input.reviewed || canonicalBrowserJsonV2(input.reviewed.preparation.request) !== canonicalBrowserJsonV2(originalRequest)
+    || input.reviewed.preparation.descriptorDigest !== input.descriptor.descriptorDigest)) return invalid("SWAP_REVIEW_REQUIRED");
+  const request = input.action === "send" && input.reviewed?.preparation.transaction.kind === "swap"
+    ? parseCustomV4SwapRequest({ ...originalRequest, amountOutMinimum: input.reviewed.preparation.quote.amountOutMinimum }) : originalRequest;
   if (from !== request.owner) throw new Error("Connect the wallet used for this swap.");
   const response = await fetcher("/api/swap/custom/prepare", { method: "POST", cache: "no-store", headers: { "Content-Type": "application/json" }, body: JSON.stringify(request) });
   const body: unknown = await response.json();
@@ -171,12 +186,14 @@ export async function prepareCustomV4SwapWallet(provider: LaunchWalletProviderV1
   }));
   const tx = preparation.transaction;
   const nonce = controllerKind === "eoa" ? toHex(quantity(await provider.request({ method: "eth_getTransactionCount", params: [from, "pending"] }))) : undefined;
-  const transaction = { chainId: "0x1237" as const, from, to: tx.to, data: tx.data, value: toHex(BigInt(tx.value)), gas: toHex(BigInt(tx.gasLimit)), ...(nonce ? { nonce } : {}) };
+  const gasLimit = input.action === "send" && input.reviewed ? quantity(input.reviewed.transaction.gas) : BigInt(tx.gasLimit);
+  if (gasLimit === 0n || gasLimit > 30_000_000n) return invalid("INVALID_SWAP_GAS");
+  const transaction = { chainId: "0x1237" as const, from, to: tx.to, data: tx.data, value: toHex(BigInt(tx.value)), gas: toHex(gasLimit), ...(nonce ? { nonce } : {}) };
   await provider.request({ method: "eth_call", params: [transaction, "latest"] });
   const [estimate, price, balance] = await Promise.all([provider.request({ method: "eth_estimateGas", params: [transaction] }),
     provider.request({ method: "eth_gasPrice" }), provider.request({ method: "eth_getBalance", params: [from, "latest"] })]);
-  if (quantity(estimate) > BigInt(tx.gasLimit)) throw new Error("The gas requirement changed. Review the swap again.");
-  const cost = BigInt(tx.gasLimit) * quantity(price);
+  if (quantity(estimate) > gasLimit) throw new Error("The gas requirement changed. Review the swap again.");
+  const cost = gasLimit * quantity(price);
   if (controllerKind === "eoa" && quantity(balance) < cost + BigInt(tx.value)) throw new Error("Keep enough ETH in the wallet for the swap and gas.");
   const binding = canonicalBrowserSha256V2("programmable.custom-v4-swap-wallet.v1", { transaction,
     descriptorDigest: preparation.descriptorDigest, runtimeBindings: preparation.evidence.runtimeBindings, controllerKind });
