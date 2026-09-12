@@ -1,10 +1,26 @@
 import { describe, expect, it } from "vitest";
 import { PREVIEW_MODULE_CATALOG } from "../lib/module-mode/builder";
-import { MODULE_LIBRARY_PAGE_SIZE, isModuleDiscovery, moduleCategory, searchModuleLibrary } from "../lib/module-mode/library";
+import { MODULE_LIBRARY_PAGE_SIZE, isModuleDiscovery, moduleAuthorLabel, moduleCategory, moduleDiscovery, searchModuleLibrary, type ModuleLibraryEntry } from "../lib/module-mode/library";
 import { AGENT_KEY_SCHEMA, AGENT_SCOPES, buildAgentConnection, buildAgentInstructions, PROGRAMMABLE_AGENT_ENTRY } from "../lib/agent-connection";
 import { apiKeyRotationVersion, apiKeyMutationPath, parseApiKeyMutationResult } from "../components/developer-api-keys";
 
 describe("module discovery and agent connections", () => {
+  it("discovers presentation entries without source bindings and preserves their caller data", () => {
+    const entry = {
+      id: "any-quote", title: "Any Quote", summary: "Choose a quote token", status: "available" as const,
+      discovery: { category: "pairs/quote-assets", tags: ["PGRAM"], author: "0xd88539d3c4c460136a733a3fd60cf6bf269079da" as const },
+      templateId: "caller-owned-template",
+    };
+    const matches = searchModuleLibrary([entry], "PGRAM D885", "pairs");
+    expect(matches).toEqual([entry]);
+    expect(matches[0]).toBe(entry);
+    expect(matches[0].templateId).toBe("caller-owned-template");
+    expect(moduleAuthorLabel(entry)).toBe("0xd885…79da");
+    const undiscovered: ModuleLibraryEntry = { id: "minimal", title: "Minimal", summary: "No discovery metadata", status: "preview" };
+    expect(moduleDiscovery(undiscovered)).toEqual({ category: "experiments" });
+    expect(moduleAuthorLabel(undiscovered)).toBeNull();
+  });
+
   it("finds category, tag and author across a thousand entries without changing their identities", () => {
     const catalog = Array.from({ length: 1000 }, (_, i) => ({ ...PREVIEW_MODULE_CATALOG[0], id: `fixture-${i}`, title: `Module ${i}`, discovery: { category: i === 999 ? "pairs/stocks" : "rewards/buyers", tags: i === 999 ? ["TSLA", "Tokenized stock"] : ["ETH"], author: "0x1111111111111111111111111111111111111111" as const } }));
     expect(searchModuleLibrary(catalog, "tsla stock", "pairs")).toEqual([catalog[999]]);

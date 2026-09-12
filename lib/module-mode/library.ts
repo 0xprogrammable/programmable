@@ -1,10 +1,19 @@
-import type { ModuleModeCatalogEntry } from "./builder";
-
 /** Discovery metadata is reviewed with a module. Categories never grant runtime capabilities. */
 export interface ModuleDiscovery {
   category: string;
   tags?: string[];
   author?: `0x${string}`;
+}
+
+/** Display data only; runtime admission and configuration stay with the caller. */
+export interface ModuleLibraryEntry {
+  id: string;
+  title: string;
+  summary: string;
+  status: "available" | "preview";
+  discovery?: ModuleDiscovery;
+  source?: { sha256: string };
+  nativeBinding?: { packageId?: string };
 }
 
 export const MODULE_CATEGORIES = [
@@ -33,27 +42,27 @@ const STARTER_DISCOVERY: Readonly<Record<string, ModuleDiscovery>> = {
   },
 };
 
-export function moduleDiscovery(entry: ModuleModeCatalogEntry): ModuleDiscovery {
+export function moduleDiscovery(entry: ModuleLibraryEntry): ModuleDiscovery {
   if (entry.discovery) return entry.discovery;
-  const binding = "nativeBinding" in entry ? entry.nativeBinding as { packageId?: string } : undefined;
+  const binding = entry.nativeBinding;
   const published = binding?.packageId ? STARTER_DISCOVERY[binding.packageId.toLowerCase()] : undefined;
   if (published) return published;
-  if (entry.source.sha256 === "ea0c547131d6e41878c0f75129db4a242059feda2e121edb8be024108cda9079") return { category: "trading/opening-limits", tags: ["Buy cap", "Opening window"] };
-  if (entry.source.sha256 === "0390c47404c11c9f15a2e6c87c8b8dc8e183623c7134e2903f9103168f6dfc0c") return { category: "rewards/buyer-rewards", tags: ["ETH", "Every Nth buy"] };
+  if (entry.source?.sha256 === "ea0c547131d6e41878c0f75129db4a242059feda2e121edb8be024108cda9079") return { category: "trading/opening-limits", tags: ["Buy cap", "Opening window"] };
+  if (entry.source?.sha256 === "0390c47404c11c9f15a2e6c87c8b8dc8e183623c7134e2903f9103168f6dfc0c") return { category: "rewards/buyer-rewards", tags: ["ETH", "Every Nth buy"] };
   return { category: "experiments" };
 }
 
-export function moduleCategory(entry: ModuleModeCatalogEntry) {
+export function moduleCategory(entry: ModuleLibraryEntry) {
   const parent = moduleDiscovery(entry).category.split("/")[0];
   return MODULE_CATEGORIES.find(category => category.id === parent) ?? MODULE_CATEGORIES[7];
 }
 
-export function moduleAuthorLabel(entry: ModuleModeCatalogEntry) {
+export function moduleAuthorLabel(entry: ModuleLibraryEntry) {
   const author = moduleDiscovery(entry).author;
   return author ? `${author.slice(0, 6)}…${author.slice(-4)}` : null;
 }
 
-export function searchModuleLibrary(catalog: readonly ModuleModeCatalogEntry[], query: string, category: string) {
+export function searchModuleLibrary<Entry extends ModuleLibraryEntry>(catalog: readonly Entry[], query: string, category: string): Entry[] {
   const words = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
   return catalog.filter(entry => {
     if (category !== "all" && moduleCategory(entry).id !== category) return false;

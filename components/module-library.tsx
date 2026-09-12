@@ -11,8 +11,8 @@ import { ShieldCheckIcon } from "@phosphor-icons/react/dist/ssr/ShieldCheck";
 import { SlidersHorizontalIcon } from "@phosphor-icons/react/dist/ssr/SlidersHorizontal";
 import { WavesIcon } from "@phosphor-icons/react/dist/ssr/Waves";
 import { ArrowRight, ChevronLeft, ChevronRight, Plus, Search, X } from "lucide-react";
-import { feeBreakdown, type ModuleModeCatalogEntry, type ModuleModeFeePolicy } from "@/lib/module-mode/builder";
-import { MODULE_CATEGORIES, MODULE_LIBRARY_PAGE_SIZE, moduleAuthorLabel, moduleCategory, moduleDiscovery, searchModuleLibrary, type ModuleCategoryId } from "@/lib/module-mode/library";
+import { feeBreakdown, type ModuleModeFeePolicy } from "@/lib/module-mode/builder";
+import { MODULE_CATEGORIES, MODULE_LIBRARY_PAGE_SIZE, moduleAuthorLabel, moduleCategory, moduleDiscovery, searchModuleLibrary, type ModuleCategoryId, type ModuleLibraryEntry } from "@/lib/module-mode/library";
 import styles from "@/components/module-library.module.css";
 
 const icons = { rewards: GiftIcon, trading: ArrowsLeftRightIcon, fees: SlidersHorizontalIcon,
@@ -23,16 +23,23 @@ export function ModuleCategoryIcon({ category, size = 22 }: { category: ModuleCa
   return <span className={styles.categoryIcon} data-category={category}><Icon size={size} weight="regular" aria-hidden="true" /></span>;
 }
 
-export function ModuleAuthor({ entry }: { entry: ModuleModeCatalogEntry }) {
+export function ModuleAuthor({ entry }: { entry: ModuleLibraryEntry }) {
   const author = moduleDiscovery(entry).author;
   return author ? <Link href={`/profile?account=${author}&chain=4663`} className={styles.author} title={`Module author ${author}`}>By {moduleAuthorLabel(entry)}</Link> : null;
 }
 
-export function ModuleLibrary({ catalog, selectedIds, onAdd, onRemove, feePolicyFor }: {
-  catalog: readonly ModuleModeCatalogEntry[]; selectedIds: readonly string[];
-  onAdd: (entry: ModuleModeCatalogEntry) => void; onRemove: (entry: ModuleModeCatalogEntry) => void;
-  feePolicyFor?: (entry: ModuleModeCatalogEntry) => ModuleModeFeePolicy | null;
-}) {
+export interface ModuleLibraryProps<Entry extends ModuleLibraryEntry> {
+  catalog: readonly Entry[];
+  selectedIds: readonly string[];
+  onAdd: (entry: Entry) => void;
+  onRemove: (entry: Entry) => void;
+  feePolicyFor?: (entry: Entry) => ModuleModeFeePolicy | null;
+  feeDescriptionFor?: (entry: Entry) => string | undefined;
+  disabledFor?: (entry: Entry) => string | undefined;
+  disabled?: boolean;
+}
+
+export function ModuleLibrary<Entry extends ModuleLibraryEntry>({ catalog, selectedIds, onAdd, onRemove, feePolicyFor, feeDescriptionFor, disabledFor, disabled = false }: ModuleLibraryProps<Entry>) {
   const id = useId();
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("all");
@@ -48,7 +55,7 @@ export function ModuleLibrary({ catalog, selectedIds, onAdd, onRemove, feePolicy
   const hasFilters = Boolean(query.trim() || category !== "all");
   const reset = () => { setQuery(""); setCategory("all"); setPage(1); };
   return <div className={styles.library}>
-    <div className={styles.toolbar} hidden={catalog.length < 5 && !query && category === "all"}>
+    <div className={styles.toolbar} hidden={catalog.length < 5}>
       <div className={styles.search}>
         <label className={styles.srOnly} htmlFor={`${id}-search`}>Search modules</label>
         <Search size={18} aria-hidden="true" />
@@ -64,15 +71,24 @@ export function ModuleLibrary({ catalog, selectedIds, onAdd, onRemove, feePolicy
           {item.label}
         </button>)}
     </div>
-    <div className={styles.resultCount} hidden={!query.trim() && category === "all"} role="status" aria-live="polite">{results.length} {results.length === 1 ? "module" : "modules"}{query.trim() ? ` for “${query.trim()}”` : ""}</div>
+    <div className={styles.resultCount} hidden={!query.trim()} role="status" aria-live="polite">{results.length} {results.length === 1 ? "module" : "modules"}{query.trim() ? ` for “${query.trim()}”` : ""}</div>
     <div className={styles.results} aria-label="Module library">
-      {visible.map(entry => { const added = selected.has(entry.id); const group = moduleCategory(entry); const selectionPolicy = feePolicyFor?.(entry); return <article key={entry.id} className={styles.module} data-selected={added}>
+      {visible.map(entry => {
+        const added = selected.has(entry.id);
+        const group = moduleCategory(entry);
+        const feeOverride = feeDescriptionFor?.(entry);
+        const selectionPolicy = feeOverride === undefined ? feePolicyFor?.(entry) : undefined;
+        const feeDescription = feeOverride ?? (feePolicyFor ? selectionPolicy ? `Estimated platform fee: ${feeBreakdown("0", "0", selectionPolicy).programmable} per trade.` : "Platform fee unavailable." : undefined);
+        const disabledReason = disabledFor?.(entry);
+        const descriptionIds = [feeDescription !== undefined ? `${id}-${entry.id}-fee` : undefined, disabledReason ? `${id}-${entry.id}-disabled` : undefined].filter(Boolean).join(" ") || undefined;
+        return <article key={entry.id} className={styles.module} data-selected={added}>
         <div className={styles.moduleTop}><ModuleCategoryIcon category={group.id} />{entry.status === "preview" ? <span className={styles.preview}>Draft only</span> : null}</div>
         <h3 id={`module-${entry.id}-title`} tabIndex={-1}>{entry.title}</h3>
         <p>{entry.summary}</p>
-        {feePolicyFor ? <div className={styles.selectionFee} id={`${id}-${entry.id}-fee`}>{selectionPolicy ? `Estimated platform fee: ${feeBreakdown("0", "0", selectionPolicy).programmable} per trade.` : "Platform fee unavailable."}</div> : null}
+        {feeDescription !== undefined ? <div className={styles.selectionFee} id={`${id}-${entry.id}-fee`}>{feeDescription}</div> : null}
+        {disabledReason ? <div className={styles.disabledReason} id={`${id}-${entry.id}-disabled`}>{disabledReason}</div> : null}
         <div className={styles.moduleBottom}><ModuleAuthor entry={entry} />
-          <button type="button" className={styles.add} aria-label={`${added ? "Remove" : "Add"} ${entry.title}`} aria-pressed={added} aria-describedby={feePolicyFor ? `${id}-${entry.id}-fee` : undefined}
+          <button type="button" className={styles.add} aria-label={`${added ? "Remove" : "Add"} ${entry.title}`} aria-pressed={added} aria-describedby={descriptionIds} disabled={disabled || (!added && Boolean(disabledReason))}
             onClick={() => added ? onRemove(entry) : onAdd(entry)}>{added ? <X size={16} aria-hidden="true" /> : <Plus size={16} aria-hidden="true" />}{added ? "Remove" : "Add"}</button>
         </div>
       </article>; })}
