@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ModuleEngineHost } from "@/components/module-engine-host";
-import { ModuleModeLaunchHost } from "@/components/module-mode-launch-host";
+import { ModuleLaunchWorkspace } from "@/components/module-launch-workspace";
+import { availableAnyQuoteLibraryEntry } from "@/lib/module-mode/launch-workspace";
 import { ModuleCoinConsole } from "@/components/module-coin-console";
 import { fixture, TOKEN, hash } from "./module-engine-fixture";
 import { anyQuoteUiFixture } from "./module-engine-any-quote-ui-fixture";
@@ -15,6 +16,7 @@ const mocks = vi.hoisted(() => ({ native: vi.fn(), engine: vi.fn(), nativeVersio
 vi.mock("@/config/module-engine/review-release.json", () => ({ get default() { return mocks.reviewIdentity; } }));
 vi.mock("@/components/module-engine-host", () => ({ ModuleEngineHost: () => null }));
 vi.mock("@/components/module-mode-launch-host", () => ({ ModuleModeLaunchHost: () => null }));
+vi.mock("@/components/module-launch-workspace", () => ({ ModuleLaunchWorkspace: () => null }));
 vi.mock("@/components/module-coin-console", () => ({ ModuleCoinConsole: () => null }));
 vi.mock("next/navigation", () => ({ notFound: () => { throw new Error("NOT_FOUND"); } }));
 vi.mock("@/lib/server/module-mode/catalog", async original => ({ ...await original<typeof import("@/lib/server/module-mode/catalog")>(), readModuleModeAvailability: mocks.native }));
@@ -27,7 +29,7 @@ import ManagePage from "@/app/launch/modules/manage/[address]/page";
 
 const { ANY_QUOTE_ETH_GUARD_RELEASE } = await import(new URL("../contracts/scripts/module-engine/any-quote-eth-basis.mjs", import.meta.url).href);
 
-beforeEach(() => { vi.clearAllMocks(); mocks.reviewIdentity = moduleEngineReleaseIdentity(ANY_QUOTE_ETH_GUARD_RELEASE); mocks.nativeVersions.mockResolvedValue([]); mocks.engineVersions.mockResolvedValue([]); mocks.engine.mockResolvedValue({ ...fixture().availability, release: null, templates: [] }); mocks.token.mockResolvedValue({ token: null }); });
+beforeEach(() => { vi.clearAllMocks(); mocks.reviewIdentity = moduleEngineReleaseIdentity(ANY_QUOTE_ETH_GUARD_RELEASE); mocks.native.mockResolvedValue({ schemaVersion: "programmable.module-mode.availability.v1", release: null, catalog: [], reason: "Unavailable" }); mocks.nativeVersions.mockResolvedValue([]); mocks.engineVersions.mockResolvedValue([]); mocks.engine.mockResolvedValue({ ...fixture().availability, release: null, templates: [] }); mocks.token.mockResolvedValue({ token: null }); });
 
 /** A mocked availability sample for route gating only, not a publication or activation claim. */
 function reviewedAnyQuoteAvailability() {
@@ -49,9 +51,9 @@ describe("source-specific Module Mode product routes", () => {
     // Review identity alone has no public activation or lifecycle evidence.
     mocks.engine.mockResolvedValue({ ...fixture().availability, release: identity, templates: [] });
     const page = await Page({ searchParams: Promise.resolve({}) });
-    expect(page.type).toBe(ModuleModeLaunchHost);
-    expect(page.props.anyQuoteReleaseDigest).toBeUndefined();
-    expect(page.props.versions).toEqual([]);
+    expect(page.type).toBe(ModuleLaunchWorkspace);
+    expect(availableAnyQuoteLibraryEntry(await page.props.requests.anyQuote, page.props.reviewedAnyQuoteDigest)).toBeNull();
+    expect(await page.props.requests.versions).toEqual([]);
   });
   it("keeps the current native reader and dispatches only explicit Engine selectors", async () => {
     const f = fixture(); mocks.native.mockResolvedValue({ release: null, catalog: [], reason: "Native disabled" }); mocks.engine.mockResolvedValue(f.availability);
@@ -70,19 +72,22 @@ describe("source-specific Module Mode product routes", () => {
     const f = fixture(), version = { releaseDigest: f.release.releaseDigest, sourceKind: "module-engine-v1", label: "Fixture template version" };
     mocks.nativeVersions.mockRejectedValue(new Error("Native source unavailable")); mocks.engineVersions.mockResolvedValue([version]);
     const engine = await Page({ searchParams: Promise.resolve({ sourceKind: "module-engine-v1", releaseDigest: f.release.releaseDigest }) });
-    expect(engine.type).toBe(ModuleEngineHost); expect(engine.props).toMatchObject({ releaseDigest: f.release.releaseDigest, versions: [version] });
-    const native = await Page({ searchParams: Promise.resolve({}) }); expect(native.type).toBe(ModuleModeLaunchHost);
+    expect(engine.type).toBe(ModuleLaunchWorkspace); expect(engine.props.initialSelection).toEqual({ sourceKind: "module-engine-v1", releaseDigest: f.release.releaseDigest });
+    expect(await engine.props.requests.versions).toEqual([version]);
+    const native = await Page({ searchParams: Promise.resolve({}) }); expect(native.type).toBe(ModuleLaunchWorkspace);
   });
   it.each([false, true])("offers the exact reviewed public Any Quote generation (native ETH fees: %s)", async nativeEthFees => {
     mocks.reviewIdentity = moduleEngineReleaseIdentity(anyQuoteUiFixture(nativeEthFees).release);
     const availability = reviewedAnyQuoteAvailability(); mocks.engine.mockResolvedValue(availability);
     const page = await Page({ searchParams: Promise.resolve({}) });
-    expect(page.type).toBe(ModuleModeLaunchHost);
-    expect(page.props.anyQuoteReleaseDigest).toBe(reviewedAnyQuoteRelease.releaseDigest);
+    expect(page.type).toBe(ModuleLaunchWorkspace);
+    const entry = availableAnyQuoteLibraryEntry(await page.props.requests.anyQuote, page.props.reviewedAnyQuoteDigest);
+    expect(entry?.releaseDigest).toBe(reviewedAnyQuoteRelease.releaseDigest);
     expect(mocks.engine).toHaveBeenCalledWith(reviewedAnyQuoteRelease.releaseDigest);
-    const selected = await Page({ searchParams: Promise.resolve({ sourceKind: "module-engine-v1", releaseDigest: page.props.anyQuoteReleaseDigest }) });
-    expect(selected.type).toBe(ModuleEngineHost);
-    expect(selected.props.releaseDigest).toBe(reviewedAnyQuoteRelease.releaseDigest);
+    const selected = await Page({ searchParams: Promise.resolve({ sourceKind: "module-engine-v1", releaseDigest: entry?.releaseDigest }) });
+    expect(selected.type).toBe(ModuleLaunchWorkspace);
+    expect(selected.props.initialSelection.releaseDigest).toBe(reviewedAnyQuoteRelease.releaseDigest);
+    expect(selected.props.requests.selectedEngine).toBe(selected.props.requests.anyQuote);
   });
   it.each([false, true])("keeps Any Quote hidden without matching public authority (native ETH fees: %s)", async nativeEthFees => {
     mocks.reviewIdentity = moduleEngineReleaseIdentity(anyQuoteUiFixture(nativeEthFees).release);
@@ -98,12 +103,23 @@ describe("source-specific Module Mode product routes", () => {
     ]) {
       mocks.engine.mockResolvedValue(unavailable);
       const page = await Page({ searchParams: Promise.resolve({}) });
-      expect(page.type).toBe(ModuleModeLaunchHost);
-      expect(page.props.anyQuoteReleaseDigest).toBeUndefined();
+      expect(page.type).toBe(ModuleLaunchWorkspace);
+      expect(availableAnyQuoteLibraryEntry(await page.props.requests.anyQuote, page.props.reviewedAnyQuoteDigest)).toBeNull();
     }
     mocks.engine.mockRejectedValue(new Error("Current source unavailable"));
-    expect((await Page({ searchParams: Promise.resolve({}) })).props.anyQuoteReleaseDigest).toBeUndefined();
+    const unavailablePage = await Page({ searchParams: Promise.resolve({}) });
+    expect(availableAnyQuoteLibraryEntry(await unavailablePage.props.requests.anyQuote, unavailablePage.props.reviewedAnyQuoteDigest)).toBeNull();
   });
+  it("renders the setup without waiting for availability or historical discovery", async () => {
+    const pending = new Promise<never>(() => {});
+    mocks.native.mockReturnValue(pending); mocks.engine.mockReturnValue(pending);
+    mocks.nativeVersions.mockReturnValue(pending); mocks.engineVersions.mockReturnValue(pending);
+    const page = await Page({ searchParams: Promise.resolve({}) });
+    expect(page.type).toBe(ModuleLaunchWorkspace);
+    expect(page.props.requests.selectedNative).toBe(page.props.requests.native);
+    expect(mocks.native).toHaveBeenCalledExactlyOnceWith(undefined);
+    expect(mocks.engine).toHaveBeenCalledExactlyOnceWith(reviewedAnyQuoteRelease.releaseDigest);
+  }, 500);
   it("dispatches exact management hints and uses the indexed source for a plain coin URL", async () => {
     const hinted = await ManagePage({ params: Promise.resolve({ address: TOKEN }), searchParams: Promise.resolve({ sourceKind: "module-engine-v1", releaseDigest: fixture().release.releaseDigest }) });
     expect(hinted.type).toBe(ModuleEngineHost); expect(hinted.props.token).toBe(TOKEN);
