@@ -83,6 +83,7 @@ export function ModuleEngineBuilder({ availability: raw, client: suppliedClient,
   const [pickerOpen, setPickerOpen] = useState(false), [pickerPointer, setPickerPointer] = useState(false);
   const [pickerAnyQuoteRemoved, setPickerAnyQuoteRemoved] = useState(false), [pickerNativeDraft, setPickerNativeDraft] = useState(createModuleModeState);
   const [pickerConfiguringQuote, setPickerConfiguringQuote] = useState(false);
+  const [quoteConfiguredInPicker, setQuoteConfiguredInPicker] = useState(false);
   const template = availability?.templates.find(item => item.manifest.manifest.catalogDefinition.id === selected) ?? availability?.templates[0];
   const definition = template?.manifest.manifest.catalogDefinition, revision = template?.manifest.manifest.revision;
   const fixedQuote = revision && revision.fixedQuoteAsset !== ENGINE_ZERO_ADDRESS ? revision.fixedQuoteAsset : null;
@@ -102,6 +103,7 @@ export function ModuleEngineBuilder({ availability: raw, client: suppliedClient,
       setImage(draft.tokenImage); setImageResource(draft.imageResource); setImageUri(draft.tokenImage.kind === "uri" ? draft.tokenImage.uri : "");
       setAmount(draft.initialBuyEth); setBuyFee(draft.buyFeePercent); setSellFee(draft.sellFeePercent);
       setQuote(draft.quoteAsset ?? "");
+      setQuoteConfiguredInPicker(Boolean(draft.quoteAsset));
     });
   }, [anyQuote]);
   const anyQuoteAvailability = useAnyQuoteAssetAvailability({ enabled: anyQuote, releaseDigest: availability?.release?.releaseDigest, templateId: definition?.id, quoteAsset });
@@ -141,6 +143,7 @@ export function ModuleEngineBuilder({ availability: raw, client: suppliedClient,
   }
   function completeAnyQuotePicker() {
     if (!pickerAnyQuoteRemoved && pickerConfiguringQuote && anyQuoteAvailability.status !== "compatible") return;
+    if (!pickerAnyQuoteRemoved && pickerConfiguringQuote) setQuoteConfiguredInPicker(true);
     nativeDraft.current = pickerNativeDraft;
     if (pickerAnyQuoteRemoved) removeAnyQuoteModule();
     setPickerOpen(false);
@@ -213,7 +216,7 @@ export function ModuleEngineBuilder({ availability: raw, client: suppliedClient,
   const quoteLabel = anyQuote ? "Pool pair" : spot ? "Trading token" : "Funding token";
   const quoteShort = readyQuote?.token.symbol || (quoteAsset ? `${quoteAsset.slice(0, 6)}…${quoteAsset.slice(-4)}` : "Not chosen");
 
-  return <div className={`${styles.page} ${engineStyles.root} ${engineStyles.builderRoot}`}>
+  return <div className={`${styles.page} ${engineStyles.root} ${engineStyles.builderRoot}${anyQuote ? ` ${engineStyles.anyQuoteBuilder}` : ""}`}>
     <div className={engineStyles.pageTop}><a href="/launch"><ArrowLeft size={16} aria-hidden="true" />Back</a></div>
     {statusContent}
     {!template || !definition || !availability?.release ? <section className={engineStyles.emptyState}><h1>Create a coin</h1><p role="status">No modules available yet.{parsed.error || availability?.reason ? ` ${parsed.error ?? availability?.reason}` : ""}</p></section> : <>
@@ -247,10 +250,11 @@ export function ModuleEngineBuilder({ availability: raw, client: suppliedClient,
                 <div className={`${styles.moduleSectionHeading} ${engineStyles.sectionHeading}`}><div><h2>Modules</h2><p>Add features to your coin.</p></div><Puzzle size={24} strokeWidth={1.6} aria-hidden="true" /></div>
                 <ul className={styles.selectedModules}><li id={`module-selection-${anyQuoteEntry.id}`}>
                   <ModuleCategoryIcon category="pairs" size={20} />
-                  <button type="button" className={styles.configureModule} disabled={!hydrated || busy || imageBusy || blocked} onClick={configureAnyQuoteModule} aria-label={`Configure ${anyQuoteEntry.title}`}><span>{anyQuoteEntry.title}</span><Settings2 size={16} aria-hidden="true" /></button>
+                  <button type="button" className={styles.configureModule} disabled={!hydrated || busy || imageBusy || blocked} onClick={configureAnyQuoteModule} aria-label={`Configure ${anyQuoteEntry.title}`}><span className={engineStyles.pairChoice}>{anyQuoteEntry.title}{quoteConfiguredInPicker ? <small>Paired with {quoteShort}</small> : null}</span><Settings2 size={16} aria-hidden="true" /></button>
                   <button type="button" className={styles.removeModule} disabled={!hydrated || busy || imageBusy || blocked || !onRemoveModule} onClick={removeAnyQuoteModule} aria-label={`Remove ${anyQuoteEntry.title}`}><X size={17} aria-hidden="true" /></button>
                 </li></ul>
-                <ModuleEngineAnyQuoteAsset value={quoteAsset} availability={anyQuoteAvailability} onChange={value => edit(() => setQuote(value))} />
+                {quoteConfiguredInPicker ? !quoteVerified ? <button type="button" className={engineStyles.anyQuoteRetry} onClick={configureAnyQuoteModule} disabled={!hydrated || busy || imageBusy || blocked}>{anyQuoteAvailability.status === "checking" ? "Checking pair…" : "Check pair to continue"}</button> : null
+                  : <ModuleEngineAnyQuoteAsset value={quoteAsset} availability={anyQuoteAvailability} onChange={value => edit(() => setQuote(value))} />}
                 <button type="button" className={styles.addModulesButton} data-module-add disabled={!hydrated || busy || imageBusy || blocked} onClick={event => openAnyQuotePicker(event.detail > 0)} aria-haspopup="dialog"><Plus size={18} aria-hidden="true" />Add modules</button>
               </> : <><div className={engineStyles.sectionHeading}><h2>Modules</h2><p>Add features to your coin.</p></div><div className={engineStyles.selectedModule}>
                 <Puzzle size={20} aria-hidden="true" />
