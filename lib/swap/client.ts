@@ -148,7 +148,6 @@ export async function prepareSwap(input: PrepareSwapInput, wallet: SwapWalletAct
         amount: quote.currentAllowance > 0n && quote.allowanceKind !== "permit2" ? 0n : quote.amount,
         spender: quote.spender, allowanceKind: quote.allowanceKind, permit2Spender: quote.permit2Spender, expiration: quote.expiration })
       : quote.prepared;
-    requireValue(prepared.kind !== "approval-required", "The approval state changed. Refresh the quote.");
     const engineState = await import("@/components/module-mode-wallet-state"), store = await import("@/lib/module-mode-operation-store");
     requireValue(store.moduleModeOperationSnapshot(account) === null, "A previous module transaction is awaiting confirmation. Open this coin’s controls to check it.");
     let operation: import("@/lib/module-mode-operation-store").ModuleModeOperation | undefined;
@@ -252,15 +251,15 @@ export async function submitSwap(review: SwapReview, wallet: SwapWalletActions):
   let transactionHash: Hex;
   try { transactionHash = await binding.submit(wallet); }
   catch (error) {
-    if (definitelyNotSent(error)) { clearPendingSwap(pending); binding.state = "ready"; }
+    if (definitelyNotSent(error)) { await clearPendingSwap(pending); binding.state = "ready"; }
     throw error;
   }
   binding.state = "submitted";
   let recorded = pending;
-  try { recorded = recordPendingSwapHash(pending, transactionHash); } catch { /* Keep the returned hash and the original pending record for recovery. */ }
+  try { recorded = await recordPendingSwapHash(pending, transactionHash); } catch { /* Keep the returned hash and the original pending record for recovery. */ }
   return { hash: transactionHash, wait: async () => {
     const result = binding.wait ? await binding.wait(transactionHash) : await recoverSwap(recorded, transactionHash);
-    clearPendingSwap(pending);
+    await clearPendingSwap(pending);
     return result;
   } };
 }
@@ -293,6 +292,6 @@ export async function recoverSwap(pending: PendingSwap, transactionHash: Hex | n
     }
   }
   requireValue((await client.getBlock({ blockNumber: receipt.blockNumber })).hash === receipt.blockHash, "The receipt block changed. Check again.");
-  clearPendingSwap(pending);
+  await clearPendingSwap(pending);
   return { status: receipt.status === "success" ? "success" : "reverted", hash: transactionHash, chainId: pending.chainId, blockNumber: receipt.blockNumber };
 }

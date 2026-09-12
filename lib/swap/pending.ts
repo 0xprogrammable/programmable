@@ -47,33 +47,44 @@ export function subscribePendingSwap(listener: () => void) {
   return () => { window.removeEventListener(EVENT, listener); window.removeEventListener("storage", listener); };
 }
 function notify() { window.dispatchEvent(new Event(EVENT)); }
-export async function beginPendingSwap(input: Omit<PendingBody, "version" | "createdAt" | "dataHash"> & { data: Hex }): Promise<PendingSwap> {
+async function locked<T>(owner: string, chainId: SwapChainId, callback: () => T): Promise<T> {
   if (typeof navigator === "undefined" || !navigator.locks) throw new Error("Enable browser storage before opening your wallet.");
-  return navigator.locks.request(key(input.owner, input.chainId), { mode: "exclusive", ifAvailable: true }, lock => {
-    if (!lock || getPendingSwap(input.owner, input.chainId)) throw new Error("Check the previous swap in your wallet before sending another.");
+  return navigator.locks.request(key(owner, chainId), { mode: "exclusive", ifAvailable: true }, lock => {
+    if (!lock) throw new Error("The saved swap is busy in another tab. Try again.");
+    return callback();
+  });
+}
+export async function beginPendingSwap(input: Omit<PendingBody, "version" | "createdAt" | "dataHash"> & { data: Hex }): Promise<PendingSwap> {
+  return locked(input.owner, input.chainId, () => {
+    if (getPendingSwap(input.owner, input.chainId)) throw new Error("Check the previous swap in your wallet before sending another.");
     const body: PendingBody = { version: 1, chainId: input.chainId, owner: getAddress(input.owner), token: getAddress(input.token), kind: input.kind,
-      to: getAddress(input.to), dataHash: sha256(input.data), value: input.value, preparedBlock: input.preparedBlock, createdAt: Date.now() };
+      to: getAddress(input.to), dataHash: sha256(input.data), value: BigInt(input.value).toString(), preparedBlock: input.preparedBlock, createdAt: Date.now() };
     const pending = Object.freeze({ ...body, id: digest(body), hash: null });
     const raw = JSON.stringify(pending);
+    parse(raw, input.owner, input.chainId);
     window.localStorage.setItem(key(input.owner, input.chainId), raw);
     if (window.localStorage.getItem(key(input.owner, input.chainId)) !== raw) throw new Error("The swap could not be saved for recovery. No transaction was sent.");
     notify();
     return pending;
   });
 }
-export function recordPendingSwapHash(pending: PendingSwap, transactionHash: Hex): PendingSwap {
+export async function recordPendingSwapHash(pending: PendingSwap, transactionHash: Hex): Promise<PendingSwap> {
   if (!hash(transactionHash)) throw new Error("Enter a transaction hash from your wallet.");
-  const current = getPendingSwap(pending.owner, pending.chainId);
-  if (!current || current.id !== pending.id || (current.hash !== null && current.hash.toLowerCase() !== transactionHash.toLowerCase())) throw new Error("The saved swap changed. Check your wallet activity.");
-  const next = Object.freeze({ ...current, hash: transactionHash });
-  window.localStorage.setItem(key(pending.owner, pending.chainId), JSON.stringify(next));
-  notify();
-  return next;
+  return locked(pending.owner, pending.chainId, () => {
+    const current = getPendingSwap(pending.owner, pending.chainId);
+    if (!current || current.id !== pending.id || (current.hash !== null && current.hash.toLowerCase() !== transactionHash.toLowerCase())) throw new Error("The saved swap changed. Check your wallet activity.");
+    const next = Object.freeze({ ...current, hash: transactionHash });
+    window.localStorage.setItem(key(pending.owner, pending.chainId), JSON.stringify(next));
+    notify();
+    return next;
+  });
 }
-export function clearPendingSwap(pending: PendingSwap) {
-  const current = getPendingSwap(pending.owner, pending.chainId);
-  if (!current) return;
-  if (current.id !== pending.id) throw new Error("A newer swap is awaiting confirmation.");
-  window.localStorage.removeItem(key(pending.owner, pending.chainId));
-  notify();
+export async function clearPendingSwap(pending: PendingSwap) {
+  return locked(pending.owner, pending.chainId, () => {
+    const current = getPendingSwap(pending.owner, pending.chainId);
+    if (!current) return;
+    if (current.id !== pending.id) throw new Error("A newer swap is awaiting confirmation.");
+    window.localStorage.removeItem(key(pending.owner, pending.chainId));
+    notify();
+  });
 }
